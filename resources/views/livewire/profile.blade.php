@@ -23,4 +23,10 @@
         <p class="text-sm mb-2">Paste into <code>~/.claude/settings.json</code> under the top level.</p>
         <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $claudeSnippet }}</pre>
     </section>
+
+    <section class="border rounded p-4">
+        <h2 class="font-semibold mb-2">Codex hook config</h2>
+        <p class="text-sm mb-2">Paste into <code>~/.codex/config.toml</code> under <code>[[hooks]]</code> blocks.</p>
+        <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $codexSnippet }}</pre>
+    </section>
 </div>

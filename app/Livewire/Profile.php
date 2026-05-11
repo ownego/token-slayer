@@ -29,6 +29,10 @@ class Profile extends Component
                 'token' => $this->plainToken ?? 'YOUR_TOKEN',
                 'baseUrl' => url('/api/events'),
             ])->render(),
+            'codexSnippet' => view('partials.codex-snippet', [
+                'token' => $this->plainToken ?? 'YOUR_TOKEN',
+                'baseUrl' => url('/api/events').'?provider=codex',
+            ])->render(),
         ]);
     }
 }
