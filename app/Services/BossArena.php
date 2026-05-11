@@ -12,6 +12,26 @@ class BossArena
             ?? $this->spawnFirst();
     }
 
+    public function lockedCurrent(): Boss
+    {
+        $boss = Boss::where('status', 'alive')
+            ->orderByDesc('number')
+            ->lockForUpdate()
+            ->first();
+
+        if ($boss !== null) {
+            return $boss;
+        }
+
+        // No alive boss inside this transaction — ensure one exists, then re-lock.
+        $this->current();
+
+        return Boss::where('status', 'alive')
+            ->orderByDesc('number')
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
     public function spawnNext(): Boss
     {
         $latest = Boss::orderByDesc('number')->first();

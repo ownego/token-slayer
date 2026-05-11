@@ -6,5 +6,8 @@ use App\Models\Boss;
 
 class DamageResult
 {
-    public function __construct(public Boss $boss, public ?Boss $killedBoss = null) {}
+    /**
+     * @param  array<int, Boss>  $killedBosses  Defeated bosses in kill order (oldest first).
+     */
+    public function __construct(public Boss $boss, public array $killedBosses = []) {}
 }
