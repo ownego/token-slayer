@@ -57,6 +57,29 @@ test('Stop event with tokens damages the current boss and broadcasts HitDealt', 
     });
 });
 
+test('Stop event without inline tokens reads damage from the transcript file', function () {
+    $transcript = tempnam(sys_get_temp_dir(), 'transcript-');
+    file_put_contents($transcript, collect([
+        ['type' => 'user', 'message' => ['content' => [['type' => 'text', 'text' => 'go']]]],
+        ['type' => 'assistant', 'message' => ['usage' => ['output_tokens' => 120_000]]],
+        ['type' => 'user', 'message' => ['content' => [['type' => 'tool_result', 'content' => 'ok']]]],
+        ['type' => 'assistant', 'message' => ['usage' => ['output_tokens' => 80_000]]],
+    ])->map(fn ($e) => json_encode($e))->implode("\n"));
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-transcript',
+            'transcript_path' => $transcript,
+        ])
+        ->assertCreated();
+
+    expect(Boss::sole()->current_hp)->toBe(800_000)
+        ->and(Event::where('event_type', 'stop')->sole()->tokens)->toBe(200_000);
+
+    @unlink($transcript);
+});
+
 test('Stop event still applies damage when a broadcast listener throws', function () {
     Illuminate\Support\Facades\Event::listen(HitDealt::class, function () {
         throw new RuntimeException('simulated broadcast failure');

@@ -11,12 +11,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Boss;
 use App\Models\Event;
 use App\Services\DamageService;
+use App\Services\TranscriptReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class EventController extends Controller
 {
-    public function __construct(private DamageService $damage) {}
+    public function __construct(
+        private DamageService $damage,
+        private TranscriptReader $transcripts,
+    ) {}
 
     public function store(Request $request): JsonResponse
     {
@@ -26,7 +30,7 @@ class EventController extends Controller
         $hookName = $payload['hook_event_name'] ?? 'unknown';
         $eventType = $this->normalizeEventType($hookName);
         $provider = $request->query('provider', 'claude-code');
-        $tokens = $eventType === 'stop' ? (int) ($payload['tokens'] ?? 0) : null;
+        $tokens = $this->resolveStopTokens($eventType, $payload);
 
         $boss = Boss::where('status', 'alive')->orderByDesc('number')->first();
 
@@ -70,6 +74,33 @@ class EventController extends Controller
     private function normalizeEventType(string $hookName): string
     {
         return strtolower(preg_replace('/([a-z])([A-Z])/', '$1-$2', $hookName));
+    }
+
+    /**
+     * Resolve the damage tokens for a Stop event. Inline payload wins so
+     * cross-machine deployments can extract tokens client-side; otherwise
+     * fall back to reading the transcript when the hook host is the same
+     * machine as the server. Non-Stop events return null.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function resolveStopTokens(string $eventType, array $payload): ?int
+    {
+        if ($eventType !== 'stop') {
+            return null;
+        }
+
+        $inline = (int) ($payload['tokens'] ?? 0);
+        if ($inline > 0) {
+            return $inline;
+        }
+
+        $path = $payload['transcript_path'] ?? null;
+        if (! is_string($path)) {
+            return 0;
+        }
+
+        return $this->transcripts->latestTurnOutputTokens($path);
     }
 
     /**
