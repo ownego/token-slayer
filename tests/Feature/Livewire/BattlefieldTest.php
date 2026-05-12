@@ -35,3 +35,10 @@ test('each fighter avatar carries data-fighter-id for projectile origin lookup',
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('data-fighter-id="'.$fighter->id.'"');
 });
+
+test('boss block carries data-boss-target for projectile destination lookup', function () {
+    Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('data-boss-target');
+});

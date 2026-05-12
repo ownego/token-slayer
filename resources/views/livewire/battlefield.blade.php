@@ -25,7 +25,7 @@
     "
     class="relative min-h-screen bg-slate-950 text-white"
 >
-    <div class="absolute inset-0 flex flex-col items-center justify-center gap-4">
+    <div class="absolute inset-0 flex flex-col items-center justify-center gap-4" data-boss-target>
         <h2 class="text-3xl font-bold" :class="{ 'shake': isShaking }">Boss #{{ $boss->number }}</h2>
         <div class="w-96 h-4 bg-slate-700 rounded">
             <div class="h-4 bg-red-500 rounded" :style="`width: ${(hp / max) * 100}%`" style="width: {{ ($boss->current_hp / $boss->max_hp) * 100 }}%"></div>
