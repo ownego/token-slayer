@@ -28,3 +28,10 @@ test('battlefield spawns boss #1 when no alive boss exists', function () {
 
     expect(Boss::where('status', 'alive')->count())->toBe(1);
 });
+
+test('each fighter avatar carries data-fighter-id for projectile origin lookup', function () {
+    $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('data-fighter-id="'.$fighter->id.'"');
+});

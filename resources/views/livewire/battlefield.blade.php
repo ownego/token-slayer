@@ -35,7 +35,7 @@
 
     <div class="absolute inset-x-0 bottom-8 flex justify-center gap-4 flex-wrap">
         @foreach ($fighters as $f)
-            <div class="text-center" wire:key="fighter-{{ $f->id }}">
+            <div class="text-center" wire:key="fighter-{{ $f->id }}" data-fighter-id="{{ $f->id }}">
                 <img src="{{ $f->avatar_url }}" class="w-12 h-12 rounded-full ring-2 ring-amber-400">
                 <p class="text-xs mt-1">{{ $f->slack_handle }}</p>
             </div>
