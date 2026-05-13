@@ -320,8 +320,7 @@ export class BattlefieldScene extends Phaser.Scene {
       },
       setActivity: newActivity => {
         text.setText(truncateActivity(newActivity));
-        bg.width = text.width + 8;
-        bg.height = text.height + 4;
+        bg.setSize(text.width + 8, text.height + 4);
       },
     };
   }
