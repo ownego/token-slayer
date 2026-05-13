@@ -88,7 +88,8 @@ export class BattlefieldScene extends Phaser.Scene {
 
     this.hpBarBg = this.add
       .rectangle(L.hpBar.x, L.hpBar.y, L.hpBar.width, L.hpBar.height, 0x334155)
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setStrokeStyle(1, 0x94a3b8, 1);
 
     this.hpBarFill = this.add
       .rectangle(
