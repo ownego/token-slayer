@@ -6,7 +6,10 @@ import {
   BOSS_ANCHOR,
   HP_BAR,
   BOSS_NAME,
+  FIGHTER_ROW_X_RANGE,
+  FIGHTER_ROW_Y,
 } from './config.js';
+import { computeFighterPositions } from './layout.js';
 
 export class BattlefieldScene extends Phaser.Scene {
   constructor() {
@@ -70,6 +73,55 @@ export class BattlefieldScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setResolution(2);
 
+    this.fighters = new Map();
+    const positions = computeFighterPositions(
+      state.fighters.length,
+      FIGHTER_ROW_X_RANGE,
+      FIGHTER_ROW_Y,
+    );
+    state.fighters.forEach((f, i) => this.addFighter(f, positions[i]));
+
     this.events.emit('ready');
+  }
+
+  async loadAvatarTexture(fighter) {
+    const key = `fighter-${fighter.id}`;
+    if (this.textures.exists(key)) {
+      return key;
+    }
+    await new Promise((resolve, reject) => {
+      this.load.image(key, fighter.avatarUrl);
+      this.load.once(`filecomplete-image-${key}`, () => resolve());
+      this.load.once('loaderror', file => {
+        if (file && file.key === key) {
+          reject(new Error(`avatar load failed: ${fighter.avatarUrl}`));
+        }
+      });
+      this.load.start();
+    });
+    return key;
+  }
+
+  async addFighter(fighter, pos) {
+    let key;
+    try {
+      key = await this.loadAvatarTexture(fighter);
+    } catch (e) {
+      console.warn('[battlefield]', e.message);
+      return;
+    }
+    const sprite = this.add.image(pos.x, pos.y, key).setDisplaySize(24, 24);
+    const maskShape = this.make.graphics({ x: pos.x, y: pos.y, add: false });
+    maskShape.fillCircle(0, 0, 12);
+    sprite.setMask(maskShape.createGeometryMask());
+    const handle = this.add
+      .text(pos.x, pos.y + 16, fighter.handle, {
+        fontFamily: 'monospace',
+        fontSize: '8px',
+        color: '#fbbf24',
+      })
+      .setOrigin(0.5)
+      .setResolution(2);
+    this.fighters.set(fighter.id, { sprite, handle, pos, maskShape });
   }
 }
