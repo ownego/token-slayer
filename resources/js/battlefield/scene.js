@@ -23,6 +23,7 @@ function truncateActivity(activity) {
 import { bus } from './bus.js';
 import { spawnProjectile } from './projectile.js';
 import { applyImpact } from './impact.js';
+import { createLeaderboard, showMvpCard } from './leaderboard.js';
 
 export class BattlefieldScene extends Phaser.Scene {
   constructor() {
@@ -124,9 +125,11 @@ export class BattlefieldScene extends Phaser.Scene {
     );
     state.fighters.forEach((f, i) => this.addFighter(f, positions[i], config));
 
+    this.leaderboard = createLeaderboard(this);
+
     bus.on('hit', payload => this.handleHit(payload));
     bus.on('boss-spawned', payload => this.handleBossSpawned(payload));
-    bus.on('boss-killed', () => this.handleBossKilled());
+    bus.on('boss-killed', payload => this.handleBossKilled(payload));
 
     this.charges = new Map();
     bus.on('fighter-charging', payload => this.handleCharging(payload));
@@ -165,7 +168,11 @@ export class BattlefieldScene extends Phaser.Scene {
     const fighter = this.fighters.get(payload.user_id);
     const fromX = fighter ? fighter.pos.x : LOGICAL_WIDTH / 2;
     const fromY = fighter ? fighter.pos.y : LOGICAL_HEIGHT / 2;
-    spawnProjectile(this, fromX, fromY, () => applyImpact(this, payload.boss_hp_after));
+    spawnProjectile(this, fromX, fromY, () => {
+      const damage = Math.max(0, this.bossState.currentHp - payload.boss_hp_after);
+      this.leaderboard?.onHit(payload.user_id, damage);
+      applyImpact(this, payload.boss_hp_after);
+    });
   }
 
   handleBossSpawned(payload) {
@@ -198,21 +205,28 @@ export class BattlefieldScene extends Phaser.Scene {
     this.bossNameText.setText(`BOSS #${payload.boss_number}`);
     this.hpBarFill.width = HP_BAR.width;
     this.hpText.setText(`${payload.max_hp} / ${payload.max_hp}`);
+    this.leaderboard?.reset();
   }
 
-  handleBossKilled() {
-    if (!this.bossSprite) {
-      return;
+  handleBossKilled(payload = {}) {
+    if (this.bossSprite) {
+      this.tweens.add({
+        targets: this.bossSprite,
+        scale: 0,
+        alpha: 0,
+        angle: 360,
+        duration: TIMINGS.bossKilledMs,
+        ease: 'Quad.easeIn',
+      });
+      this.cameras.main.flash(400, 255, 255, 255);
     }
-    this.tweens.add({
-      targets: this.bossSprite,
-      scale: 0,
-      alpha: 0,
-      angle: 360,
-      duration: TIMINGS.bossKilledMs,
-      ease: 'Quad.easeIn',
-    });
-    this.cameras.main.flash(400, 255, 255, 255);
+    if (this.leaderboard) {
+      showMvpCard(this, {
+        bossNumber: payload.boss_number ?? this.bossState.number,
+        ranked: this.leaderboard.getRanked(),
+        killerHandle: payload.killer_slack_handle ?? null,
+      });
+    }
   }
 
   handleCharging(payload) {
@@ -415,6 +429,13 @@ export class BattlefieldScene extends Phaser.Scene {
         fontSize: '8px',
         color: '#fbbf24',
       });
-    this.fighters.set(fighter.id, { sprite, handle, pos, maskShape, displaySize: size });
+    this.fighters.set(fighter.id, {
+      sprite,
+      handle,
+      handleText: fighter.handle ?? '',
+      pos,
+      maskShape,
+      displaySize: size,
+    });
   }
 }
