@@ -1,4 +1,4 @@
-export function computeFighterPositions(count, [minX, maxX], bottomY, perRow = 14, rowSpacing = 27) {
+export function computeFighterPositions(count, [minX, maxX], topY, perRow = 14, rowSpacing = 27) {
   if (count === 0) {
     return [];
   }
@@ -11,7 +11,7 @@ export function computeFighterPositions(count, [minX, maxX], bottomY, perRow = 1
     const x = rowCount === 1
       ? (minX + maxX) / 2
       : minX + ((maxX - minX) / (rowCount - 1)) * idxInRow;
-    const y = bottomY - row * rowSpacing;
+    const y = topY + row * rowSpacing;
     positions.push({ x, y });
   }
   return positions;
@@ -24,18 +24,18 @@ export function rowsNeeded(count, perRow = 14) {
 export function fighterDisplayConfig(count, mode = 'landscape') {
   if (mode === 'portrait') {
     if (count <= 8) {
-      return { displaySize: 28, bottomY: 410, rowSpacing: 32, showHandle: true, perRow: 8 };
+      return { displaySize: 28, topY: 290, rowSpacing: 32, showHandle: true, perRow: 8 };
     }
     if (count <= 24) {
-      return { displaySize: 22, bottomY: 410, rowSpacing: 26, showHandle: false, perRow: 8 };
+      return { displaySize: 22, topY: 290, rowSpacing: 26, showHandle: false, perRow: 8 };
     }
-    return { displaySize: 18, bottomY: 420, rowSpacing: 22, showHandle: false, perRow: 10 };
+    return { displaySize: 18, topY: 300, rowSpacing: 22, showHandle: false, perRow: 10 };
   }
   if (count <= 14) {
-    return { displaySize: 24, bottomY: 230, rowSpacing: 27, showHandle: true, perRow: 14 };
+    return { displaySize: 24, topY: 230, rowSpacing: 27, showHandle: true, perRow: 14 };
   }
   if (count <= 28) {
-    return { displaySize: 22, bottomY: 244, rowSpacing: 24, showHandle: false, perRow: 14 };
+    return { displaySize: 22, topY: 220, rowSpacing: 24, showHandle: false, perRow: 14 };
   }
-  return { displaySize: 18, bottomY: 250, rowSpacing: 22, showHandle: false, perRow: 14 };
+  return { displaySize: 18, topY: 200, rowSpacing: 22, showHandle: false, perRow: 14 };
 }

@@ -139,7 +139,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const positions = computeFighterPositions(
       state.fighters.length,
       L.fighters.rowXRange,
-      config.bottomY,
+      config.topY,
       config.perRow,
       config.rowSpacing,
     );
@@ -416,7 +416,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const positions = computeFighterPositions(
       count,
       this.layout.fighters.rowXRange,
-      config.bottomY,
+      config.topY,
       config.perRow,
       config.rowSpacing,
     );
