@@ -209,7 +209,9 @@ export class BattlefieldScene extends Phaser.Scene {
     if (!fighter) {
       return;
     }
-    if (this.charges.has(payload.user_id)) {
+    const existing = this.charges.get(payload.user_id);
+    if (existing) {
+      this.updateActivityBubble(existing, fighter, payload.activity);
       return;
     }
     const ring = this.add
@@ -232,7 +234,50 @@ export class BattlefieldScene extends Phaser.Scene {
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
-    this.charges.set(payload.user_id, { ring, pulse, breath });
+    const entry = { ring, pulse, breath, bubble: null };
+    this.updateActivityBubble(entry, fighter, payload.activity);
+    this.charges.set(payload.user_id, entry);
+  }
+
+  updateActivityBubble(entry, fighter, activity) {
+    if (!activity) {
+      if (entry.bubble) {
+        entry.bubble.destroy();
+        entry.bubble = null;
+      }
+      return;
+    }
+    if (entry.bubble) {
+      entry.bubble.setActivity(activity);
+      return;
+    }
+    entry.bubble = this.createActivityBubble(fighter.pos.x, fighter.pos.y - 22, activity);
+  }
+
+  createActivityBubble(x, y, activity) {
+    const text = this.addSharpText(x, y, activity, {
+      fontFamily: 'monospace',
+      fontSize: '7px',
+      color: '#f1f5f9',
+      padding: { left: 4, right: 4, top: 2, bottom: 2 },
+    });
+    const bg = this.add
+      .rectangle(x, y, text.width + 8, text.height + 4, 0x1e293b, 0.92)
+      .setOrigin(0.5)
+      .setStrokeStyle(1, 0x64748b, 0.9);
+    bg.setDepth(100);
+    text.setDepth(101);
+    return {
+      destroy: () => {
+        text.destroy();
+        bg.destroy();
+      },
+      setActivity: newActivity => {
+        text.setText(newActivity);
+        bg.width = text.width + 8;
+        bg.height = text.height + 4;
+      },
+    };
   }
 
   handleIdled(payload) {
@@ -246,6 +291,10 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     entry.pulse.stop();
     entry.breath.stop();
+    if (entry.bubble) {
+      entry.bubble.destroy();
+      entry.bubble = null;
+    }
     this.tweens.add({
       targets: entry.ring,
       alpha: 0,

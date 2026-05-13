@@ -47,7 +47,11 @@ class EventController extends Controller
         $user->forceFill(['last_event_at' => now()])->save();
 
         if ($eventType === 'user-prompt-submit') {
-            $this->dispatchSafely(new FighterCharging($user));
+            $this->dispatchSafely(new FighterCharging($user, 'thinking…'));
+        }
+
+        if ($eventType === 'pre-tool-use') {
+            $this->dispatchSafely(new FighterCharging($user, $this->summarizeToolUse($payload)));
         }
 
         if ($eventType === 'session-start') {
@@ -74,6 +78,30 @@ class EventController extends Controller
     private function normalizeEventType(string $hookName): string
     {
         return strtolower(preg_replace('/([a-z])([A-Z])/', '$1-$2', $hookName));
+    }
+
+    /**
+     * Build a short "what is the agent doing" string from a PreToolUse payload.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function summarizeToolUse(array $payload): string
+    {
+        $tool = (string) ($payload['tool_name'] ?? 'tool');
+        $input = (array) ($payload['tool_input'] ?? []);
+
+        $detail = match ($tool) {
+            'Bash' => '$ '.(string) ($input['command'] ?? ''),
+            'Read', 'Edit', 'Write', 'NotebookEdit' => $tool.': '.basename((string) ($input['file_path'] ?? '')),
+            'Grep' => 'Grep: '.(string) ($input['pattern'] ?? ''),
+            'Glob' => 'Glob: '.(string) ($input['pattern'] ?? ''),
+            'WebFetch' => 'WebFetch: '.(string) ($input['url'] ?? ''),
+            'TodoWrite' => 'TodoWrite',
+            'Task' => 'Agent: '.(string) ($input['description'] ?? ''),
+            default => $tool,
+        };
+
+        return mb_strlen($detail) > 40 ? mb_substr($detail, 0, 39).'…' : $detail;
     }
 
     /**

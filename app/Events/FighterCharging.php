@@ -12,7 +12,7 @@ class FighterCharging implements ShouldBroadcastNow
 {
     use Dispatchable, SerializesModels;
 
-    public function __construct(public User $user) {}
+    public function __construct(public User $user, public ?string $activity = null) {}
 
     /**
      * @return array<int, Channel>
@@ -36,6 +36,7 @@ class FighterCharging implements ShouldBroadcastNow
             'user_id' => $this->user->id,
             'slack_handle' => $this->user->slack_handle,
             'avatar_url' => $this->user->avatar_url,
+            'activity' => $this->activity,
         ];
     }
 }
