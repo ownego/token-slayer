@@ -2,19 +2,19 @@ import { LOGICAL_WIDTH } from './config.js';
 
 const TOP_ROWS = 5;
 const ROW_X = LOGICAL_WIDTH - 8;
-const ROW_TOP_Y = 8;
-const ROW_HEIGHT = 10;
+const ROW_TOP_Y = 10;
+const ROW_HEIGHT = 14;
 
 export function createLeaderboard(scene) {
   const damageByFighter = new Map();
   const rows = Array.from({ length: TOP_ROWS }, (_, i) => {
     return scene.addSharpText(ROW_X, ROW_TOP_Y + i * ROW_HEIGHT, '', {
       fontFamily: 'monospace',
-      fontSize: '7px',
+      fontSize: '10px',
       color: '#e2e8f0',
       stroke: '#0f172a',
-      strokeThickness: 2,
-    }).setOrigin(1, 0);
+      strokeThickness: 3,
+    }, 3).setOrigin(1, 0);
   });
 
   function render() {
