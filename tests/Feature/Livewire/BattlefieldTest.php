@@ -14,8 +14,8 @@ test('battlefield component renders the current boss and active fighters', funct
     User::factory()->create(['last_event_at' => now()->subHour()]); // idle
 
     Livewire::test(Battlefield::class)
-        ->assertSee('Boss #3')
-        ->assertSee($fighter->slack_handle)
+        ->assertSeeHtml('&quot;number&quot;:3')
+        ->assertSeeHtml('&quot;handle&quot;:&quot;'.$fighter->slack_handle.'&quot;')
         ->assertSet('boss.id', $boss->id);
 });
 
@@ -23,22 +23,22 @@ test('battlefield spawns boss #1 when no alive boss exists', function () {
     expect(Boss::count())->toBe(0);
 
     Livewire::test(Battlefield::class)
-        ->assertSee('Boss #1')
+        ->assertSeeHtml('&quot;number&quot;:1')
         ->assertSet('boss.number', 1);
 
     expect(Boss::where('status', 'alive')->count())->toBe(1);
 });
 
-test('each fighter avatar carries data-fighter-id for projectile origin lookup', function () {
+test('each fighter is included in the battlefield state payload for projectile origin lookup', function () {
     $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
 
     Livewire::test(Battlefield::class)
-        ->assertSeeHtml('data-fighter-id="'.$fighter->id.'"');
+        ->assertSeeHtml('&quot;id&quot;:'.$fighter->id);
 });
 
-test('boss block carries data-boss-target for projectile destination lookup', function () {
+test('battlefield mount carries data-battlefield-state for projectile destination lookup', function () {
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
 
     Livewire::test(Battlefield::class)
-        ->assertSeeHtml('data-boss-target');
+        ->assertSeeHtml('data-battlefield-state');
 });
