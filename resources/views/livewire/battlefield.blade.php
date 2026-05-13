@@ -4,6 +4,7 @@
         data-battlefield-state="{{ json_encode([
             'boss' => [
                 'number' => $boss->number,
+                'name' => $boss->name,
                 'currentHp' => $boss->current_hp,
                 'maxHp' => $boss->max_hp,
             ],

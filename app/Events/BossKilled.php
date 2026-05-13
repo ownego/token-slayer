@@ -35,6 +35,7 @@ class BossKilled implements ShouldBroadcastNow
     {
         return [
             'boss_number' => $this->boss->number,
+            'boss_name' => $this->boss->name,
             'boss_id' => $this->boss->id,
             'killer_user_id' => $this->killer->id,
             'killer_slack_handle' => $this->killer->slack_handle,

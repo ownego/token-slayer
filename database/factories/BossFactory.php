@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Boss;
+use App\Services\BossNameGenerator;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,6 +22,7 @@ class BossFactory extends Factory
 
         return [
             'number' => $number,
+            'name' => fn () => app(BossNameGenerator::class)->next(),
             'max_hp' => fn (array $attributes) => $attributes['number'] * config('game.base_hp'),
             'current_hp' => fn (array $attributes) => $attributes['max_hp'],
             'status' => 'alive',

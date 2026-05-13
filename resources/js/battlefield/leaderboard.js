@@ -51,7 +51,7 @@ export function createLeaderboard(scene) {
   };
 }
 
-export function showMvpCard(scene, { bossNumber, ranked, killerHandle }) {
+export function showMvpCard(scene, { bossLabel, ranked, killerHandle }) {
   const cardX = LOGICAL_WIDTH / 2;
   const cardY = 120;
   const cardW = 280;
@@ -66,7 +66,7 @@ export function showMvpCard(scene, { bossNumber, ranked, killerHandle }) {
     .setDepth(200)
     .setAlpha(0);
 
-  const title = scene.addSharpText(cardX, cardY - 26, `BOSS #${bossNumber} DEFEATED`, {
+  const title = scene.addSharpText(cardX, cardY - 26, `${bossLabel} DEFEATED`, {
     fontFamily: 'monospace',
     fontSize: '12px',
     color: '#fbbf24',

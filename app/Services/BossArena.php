@@ -6,6 +6,8 @@ use App\Models\Boss;
 
 class BossArena
 {
+    public function __construct(private BossNameGenerator $names) {}
+
     public function current(): Boss
     {
         return Boss::where('status', 'alive')->orderByDesc('number')->first()
@@ -51,6 +53,7 @@ class BossArena
 
         return Boss::create([
             'number' => $number,
+            'name' => $this->names->nextForSpawn(),
             'max_hp' => $hp,
             'current_hp' => $hp,
             'status' => 'alive',

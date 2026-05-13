@@ -86,7 +86,7 @@ export class BattlefieldScene extends Phaser.Scene {
       .setScale(BOSS_SCALE)
       .play(initialAnim);
 
-    this.bossNameText = this.addSharpText(BOSS_NAME.x, BOSS_NAME.y, `BOSS #${state.boss.number}`, {
+    this.bossNameText = this.addSharpText(BOSS_NAME.x, BOSS_NAME.y, this.bossLabel(state.boss), {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: '#ffffff',
@@ -138,6 +138,14 @@ export class BattlefieldScene extends Phaser.Scene {
 
     this.events.emit('ready');
     this.game.events.emit('ready');
+  }
+
+  bossLabel(boss) {
+    const name = boss?.name;
+    if (typeof name === 'string' && name.length > 0) {
+      return name.toUpperCase();
+    }
+    return `BOSS #${boss?.number ?? '?'}`;
   }
 
   addSharpText(x, y, content, style, resolution = 2) {
@@ -201,8 +209,9 @@ export class BattlefieldScene extends Phaser.Scene {
       currentHp: payload.max_hp,
       maxHp: payload.max_hp,
       number: payload.boss_number,
+      name: payload.boss_name,
     };
-    this.bossNameText.setText(`BOSS #${payload.boss_number}`);
+    this.bossNameText.setText(this.bossLabel(this.bossState));
     this.hpBarFill.width = HP_BAR.width;
     this.hpText.setText(`${payload.max_hp} / ${payload.max_hp}`);
     this.leaderboard?.reset();
@@ -222,7 +231,10 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     if (this.leaderboard) {
       showMvpCard(this, {
-        bossNumber: payload.boss_number ?? this.bossState.number,
+        bossLabel: this.bossLabel({
+          name: payload.boss_name ?? this.bossState.name,
+          number: payload.boss_number ?? this.bossState.number,
+        }),
         ranked: this.leaderboard.getRanked(),
         killerHandle: payload.killer_slack_handle ?? null,
       });

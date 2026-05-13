@@ -18,7 +18,7 @@
                 <tbody class="divide-y divide-slate-800">
                     @foreach ($bosses as $boss)
                         <tr>
-                            <td class="py-3 font-semibold">Boss #{{ $boss->number }}</td>
+                            <td class="py-3 font-semibold">{{ $boss->name ?: 'Boss #'.$boss->number }}</td>
                             <td>
                                 @if ($boss->killingBlowUser)
                                     <span class="inline-flex items-center gap-2">

@@ -35,6 +35,7 @@ class BossSpawned implements ShouldBroadcastNow
         return [
             'boss_id' => $this->boss->id,
             'boss_number' => $this->boss->number,
+            'boss_name' => $this->boss->name,
             'max_hp' => $this->boss->max_hp,
         ];
     }

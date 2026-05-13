@@ -69,13 +69,18 @@ class AnnounceBossKill implements ShouldQueue
     private function fallbackText(Boss $killed, User $killer, ?Boss $newBoss): string
     {
         $killerLabel = $this->mention($killer);
-        $line = sprintf('🐉 Boss #%d defeated by %s', $killed->number, $killerLabel);
+        $line = sprintf('🐉 %s defeated by %s', $this->bossLabel($killed), $killerLabel);
 
         if ($newBoss) {
-            $line .= sprintf(' · ⚔️ Boss #%d (%s HP) incoming', $newBoss->number, number_format($newBoss->max_hp));
+            $line .= sprintf(' · ⚔️ %s (%s HP) incoming', $this->bossLabel($newBoss), number_format($newBoss->max_hp));
         }
 
         return $line;
+    }
+
+    private function bossLabel(Boss $boss): string
+    {
+        return $boss->name ?: sprintf('Boss #%d', $boss->number);
     }
 
     /**
@@ -89,7 +94,7 @@ class AnnounceBossKill implements ShouldQueue
                 'type' => 'header',
                 'text' => [
                     'type' => 'plain_text',
-                    'text' => sprintf('🐉 Boss #%d defeated!', $killed->number),
+                    'text' => sprintf('🐉 %s defeated!', $this->bossLabel($killed)),
                     'emoji' => true,
                 ],
             ],
@@ -138,7 +143,7 @@ class AnnounceBossKill implements ShouldQueue
         if ($newBoss) {
             $fields[] = [
                 'type' => 'mrkdwn',
-                'text' => sprintf("*New boss*\n⚔️ Boss #%d (%s HP)", $newBoss->number, number_format($newBoss->max_hp)),
+                'text' => sprintf("*New boss*\n⚔️ %s (%s HP)", $this->bossLabel($newBoss), number_format($newBoss->max_hp)),
             ];
         }
 

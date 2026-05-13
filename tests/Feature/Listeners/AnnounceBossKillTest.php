@@ -18,27 +18,28 @@ test('boss kill posts Block Kit payload with killer and new boss', function () {
     $killer = User::factory()->create(['slack_handle' => 'alice']);
     $killed = Boss::factory()->defeated()->create([
         'number' => 12,
+        'name' => 'Smaug',
         'killing_blow_user_id' => $killer->id,
     ]);
-    Boss::factory()->create(['number' => 13, 'max_hp' => 13_000_000]);
+    Boss::factory()->create(['number' => 13, 'name' => 'Tiamat', 'max_hp' => 13_000_000]);
 
     event(new BossKilled($killed, $killer));
 
     Http::assertSent(function ($request) {
         expect($request->url())->toBe('https://hooks.slack/test');
         expect($request['text'])
-            ->toContain('Boss #12')
+            ->toContain('Smaug')
             ->toContain('@alice')
-            ->toContain('Boss #13');
+            ->toContain('Tiamat');
 
         $blocks = $request['blocks'];
         expect($blocks[0]['type'])->toBe('header');
-        expect($blocks[0]['text']['text'])->toContain('Boss #12');
+        expect($blocks[0]['text']['text'])->toContain('Smaug');
 
         $summaryFields = collect($blocks[1]['fields'])->pluck('text')->implode("\n");
         expect($summaryFields)
             ->toContain('@alice')
-            ->toContain('Boss #13')
+            ->toContain('Tiamat')
             ->toContain('13,000,000');
 
         return true;
