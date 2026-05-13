@@ -4,6 +4,28 @@
         max: {{ $boss->max_hp }},
         isShaking: false,
         isFlashing: false,
+        projectiles: [],
+        nextProjectileId: 1,
+        spawnProjectile(detail) {
+            const fighterEl = document.querySelector(`[data-fighter-id='${detail.user_id}']`);
+            const bossEl = document.querySelector('[data-boss-target]');
+            if (! bossEl) { return; }
+            const bossRect = bossEl.getBoundingClientRect();
+            const toX = bossRect.left + bossRect.width / 2;
+            const toY = bossRect.top + bossRect.height / 2;
+            let fromX = toX, fromY = toY;
+            if (fighterEl) {
+                const r = fighterEl.getBoundingClientRect();
+                fromX = r.left + r.width / 2;
+                fromY = r.top + r.height / 2;
+            }
+            const id = this.nextProjectileId++;
+            this.projectiles.push({ id, fromX, fromY, toX, toY, inFlight: false });
+            requestAnimationFrame(() => {
+                const p = this.projectiles.find(p => p.id === id);
+                if (p) { p.inFlight = true; }
+            });
+        },
     }"
     x-init="
         const applyHit = (e) => {
@@ -12,7 +34,10 @@
             setTimeout(() => isShaking = false, 200);
         };
 
-        window.addEventListener('battlefield:hit', (ev) => applyHit(ev.detail));
+        window.addEventListener('battlefield:hit', (ev) => {
+            spawnProjectile(ev.detail);
+            applyHit(ev.detail);
+        });
 
         if (window.Echo) {
             window.Echo.channel('battlefield')
@@ -44,4 +69,12 @@
     </div>
 
     <div x-show="isFlashing" class="absolute inset-0 bg-white pointer-events-none flash" style="display: none;"></div>
+
+    <template x-for="p in projectiles" :key="p.id">
+        <span
+            data-projectile
+            class="projectile"
+            :style="`left: ${p.fromX}px; top: ${p.fromY}px; transform: translate(${p.inFlight ? (p.toX - p.fromX) : 0}px, ${p.inFlight ? (p.toY - p.fromY) : 0}px);`"
+        >💥</span>
+    </template>
 </div>

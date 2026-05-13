@@ -28,3 +28,12 @@
 .flash {
     animation: flash 600ms ease-out forwards;
 }
+
+.projectile {
+    position: fixed;
+    font-size: 24px;
+    pointer-events: none;
+    z-index: 20;
+    transition: transform 300ms ease-in;
+    will-change: transform;
+}
