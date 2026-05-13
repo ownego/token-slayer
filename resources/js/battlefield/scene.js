@@ -155,7 +155,7 @@ export class BattlefieldScene extends Phaser.Scene {
       onComplete: () => oldSprite.destroy(),
     });
 
-    const textureKey = this.bossTextureFor(payload.number);
+    const textureKey = this.bossTextureFor(payload.boss_number);
     const animKey = this.ensureBossIdleAnim(textureKey);
     this.bossSprite = this.add
       .sprite(BOSS_ANCHOR.x, -40, textureKey)
@@ -171,9 +171,9 @@ export class BattlefieldScene extends Phaser.Scene {
     this.bossState = {
       currentHp: payload.max_hp,
       maxHp: payload.max_hp,
-      number: payload.number,
+      number: payload.boss_number,
     };
-    this.bossNameText.setText(`BOSS #${payload.number}`);
+    this.bossNameText.setText(`BOSS #${payload.boss_number}`);
     this.hpBarFill.width = HP_BAR.width;
     this.hpText.setText(`${payload.max_hp} / ${payload.max_hp}`);
   }
