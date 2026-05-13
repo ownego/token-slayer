@@ -32,6 +32,11 @@ export function applyImpact(scene, hpAfter) {
     TIMINGS.cameraShake.intensity,
   );
 
+  const damage = Math.max(0, scene.bossState.currentHp - hpAfter);
+  if (damage > 0) {
+    spawnDamagePopup(scene, damage);
+  }
+
   const max = scene.bossState.maxHp;
   const targetWidth = HP_BAR.width * (hpAfter / max);
   scene.tweens.add({
@@ -49,4 +54,25 @@ export function applyImpact(scene, hpAfter) {
     onUpdate: () => scene.hpText.setText(`${Math.round(counter.v)} / ${max}`),
   });
   scene.bossState.currentHp = hpAfter;
+}
+
+function spawnDamagePopup(scene, damage) {
+  const jitter = (Math.random() - 0.5) * 30;
+  const startX = BOSS_ANCHOR.x + jitter;
+  const startY = BOSS_ANCHOR.y - 20;
+  const popup = scene.addSharpText(startX, startY, `-${damage.toLocaleString()}`, {
+    fontFamily: 'monospace',
+    fontSize: '10px',
+    color: '#fca5a5',
+    stroke: '#7f1d1d',
+    strokeThickness: 3,
+  });
+  scene.tweens.add({
+    targets: popup,
+    y: startY - 40,
+    alpha: 0,
+    duration: 900,
+    ease: 'Quad.easeOut',
+    onComplete: () => popup.destroy(),
+  });
 }
