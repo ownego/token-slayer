@@ -62,7 +62,7 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   startBossPatrol() {
-    const range = 30;
+    const range = this.layout.hpBar.width;
     const sprite = this.bossSprite;
     const leftX = this.layout.boss.anchor.x - range / 2;
     const rightX = this.layout.boss.anchor.x + range / 2;
