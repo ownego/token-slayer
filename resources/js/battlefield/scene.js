@@ -175,8 +175,8 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     const g = this.make.graphics({ x: 0, y: 0, add: false });
     g.lineStyle(2, 0x22d3ee, 1);
-    g.strokeCircle(12, 12, 10);
-    g.generateTexture('charge-ring', 24, 24);
+    g.strokeCircle(16, 16, 15);
+    g.generateTexture('charge-ring', 32, 32);
     g.destroy();
   }
 
@@ -263,10 +263,12 @@ export class BattlefieldScene extends Phaser.Scene {
       }
       return;
     }
+    const ringSize = fighter.displaySize + 8;
     const ring = this.add
       .image(fighter.pos.x, fighter.pos.y, 'charge-ring')
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setAlpha(0.4);
+      .setAlpha(0.4)
+      .setDisplaySize(ringSize, ringSize);
     const pulse = this.tweens.add({
       targets: ring,
       alpha: 0.9,
