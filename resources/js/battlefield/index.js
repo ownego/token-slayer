@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { BattlefieldScene } from './scene.js';
-import { LOGICAL_WIDTH, LOGICAL_HEIGHT, BG_COLOR } from './config.js';
+import { LAYOUTS, BG_COLOR } from './config.js';
 import { bus } from './bus.js';
 
 const ECHO_EVENT_MAP = {
@@ -23,18 +23,25 @@ function subscribeEcho() {
   }
 }
 
+export function detectMode() {
+  return window.innerWidth < window.innerHeight ? 'portrait' : 'landscape';
+}
+
 export function bootBattlefield(mount, state) {
+  const mode = detectMode();
+  const layout = LAYOUTS[mode];
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: mount,
-    width: LOGICAL_WIDTH,
-    height: LOGICAL_HEIGHT,
+    width: layout.logicalWidth,
+    height: layout.logicalHeight,
     backgroundColor: BG_COLOR,
     pixelArt: true,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [BattlefieldScene],
   });
   game.registry.set('initialState', state);
+  game.registry.set('mode', mode);
 
   const onReady = () => {
     subscribeEcho();
@@ -43,6 +50,7 @@ export function bootBattlefield(mount, state) {
       bus,
       game,
       scene,
+      mode,
       bossHp: () => scene.bossState?.currentHp,
       bossMaxHp: () => scene.bossState?.maxHp,
     };
