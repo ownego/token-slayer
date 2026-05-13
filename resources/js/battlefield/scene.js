@@ -101,13 +101,22 @@ export class BattlefieldScene extends Phaser.Scene {
       .setOrigin(0, 0.5);
 
     this.hpText = this.add
-      .text(HP_BAR.x, HP_BAR.y + 8, `${state.boss.currentHp} / ${state.boss.maxHp}`, {
+      .text(HP_BAR.x, HP_BAR.y + 12, `${state.boss.currentHp} / ${state.boss.maxHp}`, {
         fontFamily: 'monospace',
-        fontSize: '7px',
-        color: '#cbd5e1',
+        fontSize: '11px',
+        color: '#ffffff',
+        stroke: '#0f172a',
+        strokeThickness: 3,
       })
       .setOrigin(0.5)
-      .setResolution(2);
+      .setResolution(3);
+    this.hpText.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+    const originalSetText = this.hpText.setText.bind(this.hpText);
+    this.hpText.setText = (...args) => {
+      const result = originalSetText(...args);
+      this.hpText.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+      return result;
+    };
 
     this.fighters = new Map();
     const positions = computeFighterPositions(
