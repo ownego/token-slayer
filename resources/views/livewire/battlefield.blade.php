@@ -20,24 +20,27 @@
                 fromY = r.top + r.height / 2;
             }
             const id = this.nextProjectileId++;
-            this.projectiles.push({ id, fromX, fromY, toX, toY, inFlight: false });
+            let resolved = false;
+            const applyImpact = () => {
+                if (resolved) { return; }
+                resolved = true;
+                this.projectiles = this.projectiles.filter(proj => proj.id !== id);
+                this.hp = detail.boss_hp_after;
+                this.isShaking = true;
+                setTimeout(() => this.isShaking = false, 200);
+            };
+            this.projectiles.push({ id, fromX, fromY, toX, toY, inFlight: false, applyImpact });
             requestAnimationFrame(() => {
-                const p = this.projectiles.find(p => p.id === id);
-                if (p) { p.inFlight = true; }
+                const proj = this.projectiles.find(p => p.id === id);
+                if (proj) { proj.inFlight = true; }
             });
+            // Safety net: fire impact even if transitionend doesn't (fallback case with no travel,
+            // or browser quirks). 320ms = 300ms transition + 20ms buffer; 0ms for fallback.
+            setTimeout(applyImpact, fighterEl ? 320 : 0);
         },
     }"
     x-init="
-        const applyHit = (e) => {
-            hp = e.boss_hp_after;
-            isShaking = true;
-            setTimeout(() => isShaking = false, 200);
-        };
-
-        window.addEventListener('battlefield:hit', (ev) => {
-            spawnProjectile(ev.detail);
-            applyHit(ev.detail);
-        });
+        window.addEventListener('battlefield:hit', (ev) => spawnProjectile(ev.detail));
 
         if (window.Echo) {
             window.Echo.channel('battlefield')
@@ -75,6 +78,7 @@
             data-projectile
             class="projectile"
             :style="`left: ${p.fromX}px; top: ${p.fromY}px; transform: translate(${p.inFlight ? (p.toX - p.fromX) : 0}px, ${p.inFlight ? (p.toY - p.fromY) : 0}px);`"
+            @transitionend="p.applyImpact()"
         >💥</span>
     </template>
 </div>
