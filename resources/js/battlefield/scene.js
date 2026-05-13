@@ -11,7 +11,7 @@ import {
   FIGHTER_ROW_Y,
   TIMINGS,
 } from './config.js';
-import { computeFighterPositions } from './layout.js';
+import { computeFighterPositions, fighterDisplayConfig } from './layout.js';
 
 const ACTIVITY_MAX_CHARS = 18;
 function truncateActivity(activity) {
@@ -114,12 +114,15 @@ export class BattlefieldScene extends Phaser.Scene {
     }, 3);
 
     this.fighters = new Map();
+    const config = fighterDisplayConfig(state.fighters.length);
     const positions = computeFighterPositions(
       state.fighters.length,
       FIGHTER_ROW_X_RANGE,
-      FIGHTER_ROW_Y,
+      config.bottomY,
+      config.perRow,
+      config.rowSpacing,
     );
-    state.fighters.forEach((f, i) => this.addFighter(f, positions[i]));
+    state.fighters.forEach((f, i) => this.addFighter(f, positions[i], config));
 
     bus.on('hit', payload => this.handleHit(payload));
     bus.on('boss-spawned', payload => this.handleBossSpawned(payload));
@@ -219,7 +222,9 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     const existing = this.charges.get(payload.user_id);
     if (existing) {
-      this.updateActivityBubble(existing, fighter, payload.activity);
+      if (this.fightersAllowBubbles()) {
+        this.updateActivityBubble(existing, fighter, payload.activity);
+      }
       return;
     }
     const ring = this.add
@@ -243,8 +248,14 @@ export class BattlefieldScene extends Phaser.Scene {
       ease: 'Sine.easeInOut',
     });
     const entry = { ring, pulse, breath, bubble: null };
-    this.updateActivityBubble(entry, fighter, payload.activity);
+    if (this.fightersAllowBubbles()) {
+      this.updateActivityBubble(entry, fighter, payload.activity);
+    }
     this.charges.set(payload.user_id, entry);
+  }
+
+  fightersAllowBubbles() {
+    return fighterDisplayConfig(this.fighters.size).showHandle;
   }
 
   updateActivityBubble(entry, fighter, activity) {
@@ -343,15 +354,24 @@ export class BattlefieldScene extends Phaser.Scene {
 
     // Recompute positions for the new count.
     const count = this.fighters.size + 1;
-    const positions = computeFighterPositions(count, FIGHTER_ROW_X_RANGE, FIGHTER_ROW_Y);
+    const config = fighterDisplayConfig(count);
+    const positions = computeFighterPositions(
+      count,
+      FIGHTER_ROW_X_RANGE,
+      config.bottomY,
+      config.perRow,
+      config.rowSpacing,
+    );
 
     // Tween existing fighters to their new slots.
     let i = 0;
     for (const entry of this.fighters.values()) {
       const target = positions[i++];
+      const tweenTargets = entry.handle ? [entry.sprite, entry.handle] : [entry.sprite];
       this.tweens.add({
-        targets: [entry.sprite, entry.handle],
+        targets: tweenTargets,
         x: target.x,
+        y: target.y,
         duration: 200,
         ease: 'Quad.easeOut',
       });
@@ -359,7 +379,7 @@ export class BattlefieldScene extends Phaser.Scene {
     }
 
     const newPos = positions[positions.length - 1];
-    await this.addFighter(fighter, newPos);
+    await this.addFighter(fighter, newPos, config);
     const entry = this.fighters.get(fighter.id);
     if (!entry) {
       return; // load failed; addFighter already warned
@@ -374,7 +394,7 @@ export class BattlefieldScene extends Phaser.Scene {
     });
   }
 
-  async addFighter(fighter, pos) {
+  async addFighter(fighter, pos, options = {}) {
     let key;
     try {
       key = await this.loadAvatarTexture(fighter);
@@ -382,15 +402,19 @@ export class BattlefieldScene extends Phaser.Scene {
       console.warn('[battlefield]', e.message);
       return;
     }
-    const sprite = this.add.image(pos.x, pos.y, key).setDisplaySize(24, 24);
+    const size = options.displaySize ?? 24;
+    const radius = size / 2;
+    const sprite = this.add.image(pos.x, pos.y, key).setDisplaySize(size, size);
     const maskShape = this.make.graphics({ x: pos.x, y: pos.y, add: false });
-    maskShape.fillCircle(0, 0, 12);
+    maskShape.fillCircle(0, 0, radius);
     sprite.setMask(maskShape.createGeometryMask());
-    const handle = this.addSharpText(pos.x, pos.y + 16, fighter.handle ?? '', {
-      fontFamily: 'monospace',
-      fontSize: '8px',
-      color: '#fbbf24',
-    });
-    this.fighters.set(fighter.id, { sprite, handle, pos, maskShape });
+    const handle = options.showHandle === false
+      ? null
+      : this.addSharpText(pos.x, pos.y + radius + 4, fighter.handle ?? '', {
+        fontFamily: 'monospace',
+        fontSize: '8px',
+        color: '#fbbf24',
+      });
+    this.fighters.set(fighter.id, { sprite, handle, pos, maskShape, displaySize: size });
   }
 }
