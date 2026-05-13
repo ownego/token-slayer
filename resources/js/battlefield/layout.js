@@ -26,7 +26,7 @@ export function fighterDisplayConfig(count, mode = 'landscape') {
     if (count <= 8) {
       return { displaySize: 28, topY: 290, rowSpacing: 32, showHandle: true, perRow: 8 };
     }
-    return { displaySize: 22, topY: 290, rowSpacing: 28, showHandle: false, perRow: 8 };
+    return { displaySize: 22, topY: 290, rowSpacing: 34, showHandle: false, perRow: 8 };
   }
   if (count <= 14) {
     return { displaySize: 24, topY: 230, rowSpacing: 27, showHandle: true, perRow: 14 };
