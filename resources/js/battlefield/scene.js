@@ -4,6 +4,7 @@ import {
   LOGICAL_WIDTH,
   LOGICAL_HEIGHT,
   BOSS_ANCHOR,
+  BOSS_SCALE,
   HP_BAR,
   BOSS_NAME,
   FIGHTER_ROW_X_RANGE,
@@ -73,7 +74,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const initialAnim = this.ensureBossIdleAnim(initialKey);
     this.bossSprite = this.add
       .sprite(BOSS_ANCHOR.x, BOSS_ANCHOR.y, initialKey)
-      .setScale(3)
+      .setScale(BOSS_SCALE)
       .play(initialAnim);
 
     this.bossNameText = this.add
@@ -161,7 +162,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const animKey = this.ensureBossIdleAnim(textureKey);
     this.bossSprite = this.add
       .sprite(BOSS_ANCHOR.x, -40, textureKey)
-      .setScale(3)
+      .setScale(BOSS_SCALE)
       .play(animKey);
     this.tweens.add({
       targets: this.bossSprite,
@@ -261,6 +262,7 @@ export class BattlefieldScene extends Phaser.Scene {
       });
       this.load.start();
     });
+    this.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
     return key;
   }
 
