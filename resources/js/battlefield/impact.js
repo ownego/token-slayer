@@ -1,4 +1,5 @@
 import { BOSS_ANCHOR, TIMINGS, HP_BAR } from './config.js';
+import { formatHp } from './format.js';
 
 export function applyImpact(scene, hpAfter) {
   if (!scene.anims.exists('explosion-once')) {
@@ -51,7 +52,7 @@ export function applyImpact(scene, hpAfter) {
     v: hpAfter,
     duration: TIMINGS.hpBarMs,
     ease: 'Quad.easeOut',
-    onUpdate: () => scene.hpText.setText(`${Math.round(counter.v)} / ${max}`),
+    onUpdate: () => scene.hpText.setText(`${formatHp(counter.v)} / ${formatHp(max)}`),
   });
   scene.bossState.currentHp = hpAfter;
 }

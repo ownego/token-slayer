@@ -24,6 +24,7 @@ import { bus } from './bus.js';
 import { spawnProjectile } from './projectile.js';
 import { applyImpact } from './impact.js';
 import { createLeaderboard, showMvpCard } from './leaderboard.js';
+import { formatHp } from './format.js';
 
 export class BattlefieldScene extends Phaser.Scene {
   constructor() {
@@ -106,7 +107,7 @@ export class BattlefieldScene extends Phaser.Scene {
       )
       .setOrigin(0, 0.5);
 
-    this.hpText = this.addSharpText(HP_BAR.x, HP_BAR.y + 12, `${state.boss.currentHp} / ${state.boss.maxHp}`, {
+    this.hpText = this.addSharpText(HP_BAR.x, HP_BAR.y + 12, `${formatHp(state.boss.currentHp)} / ${formatHp(state.boss.maxHp)}`, {
       fontFamily: 'monospace',
       fontSize: '11px',
       color: '#ffffff',
@@ -213,7 +214,7 @@ export class BattlefieldScene extends Phaser.Scene {
     };
     this.bossNameText.setText(this.bossLabel(this.bossState));
     this.hpBarFill.width = HP_BAR.width;
-    this.hpText.setText(`${payload.max_hp} / ${payload.max_hp}`);
+    this.hpText.setText(`${formatHp(payload.max_hp)} / ${formatHp(payload.max_hp)}`);
     this.leaderboard?.reset();
   }
 
