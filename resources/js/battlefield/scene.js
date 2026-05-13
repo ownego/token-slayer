@@ -61,6 +61,25 @@ export class BattlefieldScene extends Phaser.Scene {
     return animKey;
   }
 
+  startBossPatrol() {
+    const range = 30;
+    const sprite = this.bossSprite;
+    const leftX = this.layout.boss.anchor.x - range / 2;
+    const rightX = this.layout.boss.anchor.x + range / 2;
+    sprite.x = leftX;
+    sprite.setFlipX(true);
+    this.tweens.add({
+      targets: sprite,
+      x: rightX,
+      duration: 2400,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
+      onYoyo: () => sprite.setFlipX(false),
+      onRepeat: () => sprite.setFlipX(true),
+    });
+  }
+
   create() {
     this.mode = this.game.registry.get('mode') ?? 'landscape';
     this.layout = LAYOUTS[this.mode];
@@ -79,6 +98,7 @@ export class BattlefieldScene extends Phaser.Scene {
       .sprite(L.boss.anchor.x, L.boss.anchor.y, initialKey)
       .setScale(L.boss.scale)
       .play(initialAnim);
+    this.startBossPatrol();
 
     this.bossNameText = this.addSharpText(L.boss.name.x, L.boss.name.y, this.bossLabel(state.boss), {
       fontFamily: 'monospace',
@@ -213,6 +233,7 @@ export class BattlefieldScene extends Phaser.Scene {
       y: L.boss.anchor.y,
       duration: TIMINGS.bossSpawnMs,
       ease: 'Bounce.easeOut',
+      onComplete: () => this.startBossPatrol(),
     });
 
     this.bossState = {
