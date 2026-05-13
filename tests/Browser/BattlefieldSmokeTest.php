@@ -6,127 +6,93 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('battlefield page loads with no JS errors', function () {
-    // Skip if no Chromium / Chrome is available — Pest 4 browser tests need it.
+function ensureChrome(): void
+{
     $hasChrome = (bool) shell_exec('command -v chromium chromium-browser google-chrome chrome 2>/dev/null');
-
     if (! $hasChrome) {
-        $this->markTestSkipped('No Chromium/Chrome installed — browser environment unavailable.');
+        test()->markTestSkipped('No Chromium/Chrome installed — browser environment unavailable.');
     }
+}
 
+test('battlefield page mounts the Phaser canvas with no JS errors', function () {
+    ensureChrome();
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
 
     $page = visit('/battlefield');
 
-    $page->assertSee('Boss #1')
-        ->assertNoJavaScriptErrors();
+    $page->wait(500); // wait for Phaser boot + ready
+
+    expect($page->script('return document.querySelector("#battlefield-mount canvas") !== null'))->toBeTrue();
+    $page->assertNoJavaScriptErrors();
 });
 
-test('dispatching battlefield:hit updates the HP bar', function () {
-    $hasChrome = (bool) shell_exec('command -v chromium chromium-browser google-chrome chrome 2>/dev/null');
-    if (! $hasChrome) {
-        $this->markTestSkipped('No Chromium/Chrome installed.');
-    }
-
-    $boss = Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
-    $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
-
-    $page = visit('/battlefield');
-
-    $page->script(<<<JS
-        window.dispatchEvent(new CustomEvent('battlefield:hit', {
-            detail: {
-                user_id: {$fighter->id},
-                damage: 250,
-                boss_hp_after: 750,
-                boss_max_hp: 1000,
-            },
-        }));
-    JS);
-
-    $page->wait(800)
-        ->assertSee('750 / 1,000')
-        ->assertNoJavaScriptErrors();
-});
-
-test('dispatching battlefield:hit spawns a projectile node', function () {
-    $hasChrome = (bool) shell_exec('command -v chromium chromium-browser google-chrome chrome 2>/dev/null');
-    if (! $hasChrome) {
-        $this->markTestSkipped('No Chromium/Chrome installed.');
-    }
-
+test('emitting bus hit updates the boss HP via the scene', function () {
+    ensureChrome();
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
     $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
 
     $page = visit('/battlefield');
+    $page->wait(500);
 
     $page->script(<<<JS
-        window.dispatchEvent(new CustomEvent('battlefield:hit', {
-            detail: {
-                user_id: {$fighter->id},
-                damage: 100,
-                boss_hp_after: 900,
-                boss_max_hp: 1000,
-            },
-        }));
+        window.__battlefield.bus.emit('hit', {
+            user_id: {$fighter->id},
+            boss_hp_after: 750,
+            boss_max_hp: 1000,
+            damage: 250,
+        });
     JS);
 
-    $page->assertVisible('[data-projectile]')
-        ->assertNoJavaScriptErrors();
+    // The arc takes ~320ms and the HP tween another ~250ms.
+    $page->wait(800);
+
+    expect($page->script('return window.__battlefield.bossHp();'))->toBe(750);
+    $page->assertNoJavaScriptErrors();
 });
 
-test('HP bar holds until projectile impact', function () {
-    $hasChrome = (bool) shell_exec('command -v chromium chromium-browser google-chrome chrome 2>/dev/null');
-    if (! $hasChrome) {
-        $this->markTestSkipped('No Chromium/Chrome installed.');
-    }
-
+test('boss HP is not updated before the projectile impact', function () {
+    ensureChrome();
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
     $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
 
     $page = visit('/battlefield');
+    $page->wait(500);
 
     $page->script(<<<JS
-        window.dispatchEvent(new CustomEvent('battlefield:hit', {
-            detail: {
-                user_id: {$fighter->id},
-                damage: 250,
-                boss_hp_after: 750,
-                boss_max_hp: 1000,
-            },
-        }));
+        window.__battlefield.bus.emit('hit', {
+            user_id: {$fighter->id},
+            boss_hp_after: 750,
+            boss_max_hp: 1000,
+            damage: 250,
+        });
     JS);
 
-    $page->wait(50)
-        ->assertSee('1,000 / 1,000');
+    $page->wait(50);
+    expect($page->script('return window.__battlefield.bossHp();'))->toBe(1000);
 
-    $page->wait(500)
-        ->assertSee('750 / 1,000')
-        ->assertNoJavaScriptErrors();
+    $page->wait(700);
+    expect($page->script('return window.__battlefield.bossHp();'))->toBe(750);
+    $page->assertNoJavaScriptErrors();
 });
 
-test('hit from a user without a visible avatar still applies damage', function () {
-    $hasChrome = (bool) shell_exec('command -v chromium chromium-browser google-chrome chrome 2>/dev/null');
-    if (! $hasChrome) {
-        $this->markTestSkipped('No Chromium/Chrome installed.');
-    }
-
+test('hit from a user not in the fighter row still applies damage', function () {
+    ensureChrome();
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
 
     $page = visit('/battlefield');
+    $page->wait(500);
 
     $page->script(<<<'JS'
-        window.dispatchEvent(new CustomEvent('battlefield:hit', {
-            detail: {
-                user_id: 99999, // not in DOM
-                damage: 400,
-                boss_hp_after: 600,
-                boss_max_hp: 1000,
-            },
-        }));
+        window.__battlefield.bus.emit('hit', {
+            user_id: 99999,
+            boss_hp_after: 600,
+            boss_max_hp: 1000,
+            damage: 400,
+        });
     JS);
 
-    $page->wait(100)
-        ->assertSee('600 / 1,000')
-        ->assertNoJavaScriptErrors();
+    $page->wait(800);
+
+    expect($page->script('return window.__battlefield.bossHp();'))->toBe(600);
+    $page->assertNoJavaScriptErrors();
 });

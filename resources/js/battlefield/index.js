@@ -35,7 +35,20 @@ export function bootBattlefield(mount, state) {
     scene: [BattlefieldScene],
   });
   game.registry.set('initialState', state);
-  game.events.once('ready', subscribeEcho);
+
+  const onReady = () => {
+    subscribeEcho();
+    const scene = game.scene.getScene('battlefield');
+    window.__battlefield = {
+      bus,
+      game,
+      scene,
+      bossHp: () => scene.bossState?.currentHp,
+      bossMaxHp: () => scene.bossState?.maxHp,
+    };
+  };
+  game.events.once('ready', onReady);
+
   return game;
 }
 
