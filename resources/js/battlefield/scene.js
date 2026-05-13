@@ -12,6 +12,14 @@ import {
   TIMINGS,
 } from './config.js';
 import { computeFighterPositions } from './layout.js';
+
+const ACTIVITY_MAX_CHARS = 18;
+function truncateActivity(activity) {
+  if (!activity || activity.length <= ACTIVITY_MAX_CHARS) {
+    return activity ?? '';
+  }
+  return activity.slice(0, ACTIVITY_MAX_CHARS - 1) + '…';
+}
 import { bus } from './bus.js';
 import { spawnProjectile } from './projectile.js';
 import { applyImpact } from './impact.js';
@@ -255,7 +263,7 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   createActivityBubble(x, y, activity) {
-    const text = this.addSharpText(x, y, activity, {
+    const text = this.addSharpText(x, y, truncateActivity(activity), {
       fontFamily: 'monospace',
       fontSize: '7px',
       color: '#f1f5f9',
@@ -273,7 +281,7 @@ export class BattlefieldScene extends Phaser.Scene {
         bg.destroy();
       },
       setActivity: newActivity => {
-        text.setText(newActivity);
+        text.setText(truncateActivity(newActivity));
         bg.width = text.width + 8;
         bg.height = text.height + 4;
       },
