@@ -118,6 +118,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
     bus.on('hit', payload => this.handleHit(payload));
     bus.on('boss-spawned', payload => this.handleBossSpawned(payload));
+    bus.on('boss-killed', () => this.handleBossKilled());
 
     this.charges = new Map();
     bus.on('fighter-charging', payload => this.handleCharging(payload));
@@ -176,6 +177,21 @@ export class BattlefieldScene extends Phaser.Scene {
     this.bossNameText.setText(`BOSS #${payload.boss_number}`);
     this.hpBarFill.width = HP_BAR.width;
     this.hpText.setText(`${payload.max_hp} / ${payload.max_hp}`);
+  }
+
+  handleBossKilled() {
+    if (!this.bossSprite) {
+      return;
+    }
+    this.tweens.add({
+      targets: this.bossSprite,
+      scale: 0,
+      alpha: 0,
+      angle: 360,
+      duration: TIMINGS.bossKilledMs,
+      ease: 'Quad.easeIn',
+    });
+    this.cameras.main.flash(400, 255, 255, 255);
   }
 
   handleCharging(payload) {
