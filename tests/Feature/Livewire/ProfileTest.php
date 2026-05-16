@@ -7,6 +7,16 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
+test('profile shows a link to the battlefield page', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('Battlefield', escape: false)
+        ->assertSee('href="'.route('battlefield').'"', escape: false);
+});
+
 test('profile shows the plain token once when redirected from oauth', function () {
     $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
     $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);

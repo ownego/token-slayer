@@ -42,3 +42,9 @@ test('battlefield mount carries data-battlefield-state for projectile destinatio
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('data-battlefield-state');
 });
+
+test('battlefield shows a link back to the profile page', function () {
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('href="'.route('profile').'"')
+        ->assertSee('Profile');
+});

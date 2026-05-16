@@ -17,6 +17,13 @@
         class="absolute inset-0"
     ></div>
 
+    <a
+        href="{{ route('profile') }}"
+        class="absolute left-3 top-3 z-10 rounded bg-slate-800/80 px-3 py-2 font-mono text-xs text-amber-300 ring-1 ring-amber-400/40"
+    >
+        Profile
+    </a>
+
     <div
         x-data="battlefieldLeaderboardOverlay()"
         x-init="init()"
