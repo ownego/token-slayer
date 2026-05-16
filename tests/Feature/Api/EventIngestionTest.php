@@ -2,6 +2,7 @@
 
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
+use App\Events\FighterIdled;
 use App\Events\HitDealt;
 use App\Models\Boss;
 use App\Models\Event;
@@ -94,6 +95,52 @@ test('Stop event still applies damage when a broadcast listener throws', functio
         ->assertCreated();
 
     expect(Boss::sole()->current_hp)->toBe(900_000);
+});
+
+test('Stop event with no tokens still broadcasts FighterIdled to clear charging state', function () {
+    Illuminate\Support\Facades\Event::fake([FighterIdled::class, HitDealt::class]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-empty',
+            'tokens' => 0,
+        ])
+        ->assertCreated();
+
+    Illuminate\Support\Facades\Event::assertDispatched(FighterIdled::class, function ($e) {
+        return $e->user->is($this->user);
+    });
+    Illuminate\Support\Facades\Event::assertNotDispatched(HitDealt::class);
+});
+
+test('Stop event retries the transcript read until the assistant entry lands', function () {
+    Illuminate\Support\Facades\Event::fake([HitDealt::class]);
+
+    $transcript = tempnam(sys_get_temp_dir(), 'transcript-race-');
+    // At the instant the Stop hook would have fired, only the user prompt
+    // is on disk; the assistant entry lands a moment later.
+    file_put_contents($transcript, json_encode([
+        'type' => 'user', 'message' => ['content' => [['type' => 'text', 'text' => 'go']]],
+    ]));
+
+    $reader = $this->mock(App\Services\TranscriptReader::class);
+    $reader->shouldReceive('latestTurnOutputTokens')
+        ->times(2)
+        ->andReturnValues([0, 75_000]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-race',
+            'transcript_path' => $transcript,
+        ])
+        ->assertCreated();
+
+    expect(Boss::sole()->current_hp)->toBe(925_000);
+    Illuminate\Support\Facades\Event::assertDispatched(HitDealt::class);
+
+    @unlink($transcript);
 });
 
 test('Stop event killing the boss broadcasts BossKilled then BossSpawned', function () {

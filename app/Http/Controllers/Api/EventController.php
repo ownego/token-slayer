@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
 use App\Events\FighterCharging;
+use App\Events\FighterIdled;
 use App\Events\FighterJoined;
 use App\Events\HitDealt;
 use App\Http\Controllers\Controller;
@@ -58,18 +59,24 @@ class EventController extends Controller
             $this->dispatchSafely(new FighterJoined($user));
         }
 
-        if ($eventType === 'stop' && $tokens > 0) {
-            $result = $this->damage->apply($user, $tokens);
+        if ($eventType === 'stop') {
+            if ($tokens > 0) {
+                $result = $this->damage->apply($user, $tokens);
 
-            foreach ($result->killedBosses as $killed) {
-                $this->dispatchSafely(new BossKilled($killed, $user));
+                foreach ($result->killedBosses as $killed) {
+                    $this->dispatchSafely(new BossKilled($killed, $user));
+                }
+
+                if (! empty($result->killedBosses)) {
+                    $this->dispatchSafely(new BossSpawned($result->boss));
+                }
+
+                $this->dispatchSafely(new HitDealt($user, $tokens, $result->boss));
+            } else {
+                // Nothing to damage with — still clear the charging visual
+                // so the fighter doesn't stay stuck mid-charge.
+                $this->dispatchSafely(new FighterIdled($user));
             }
-
-            if (! empty($result->killedBosses)) {
-                $this->dispatchSafely(new BossSpawned($result->boss));
-            }
-
-            $this->dispatchSafely(new HitDealt($user, $tokens, $result->boss));
         }
 
         return response()->json(['ok' => true], 201);
@@ -128,7 +135,20 @@ class EventController extends Controller
             return 0;
         }
 
-        return $this->transcripts->latestTurnOutputTokens($path);
+        // The transcript file is sometimes still being flushed at the
+        // instant the Stop hook fires, so the latest assistant entry
+        // hasn't landed yet. Retry briefly to ride out the race.
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $tokens = $this->transcripts->latestTurnOutputTokens($path);
+            if ($tokens > 0) {
+                return $tokens;
+            }
+            if ($attempt < 2) {
+                usleep(100_000);
+            }
+        }
+
+        return 0;
     }
 
     /**
