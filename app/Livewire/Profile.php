@@ -32,12 +32,8 @@ class Profile extends Component
                 'baseUrl' => url('/api/events').'?provider=codex',
             ])->render(),
             'installUrl' => route('install-script'),
-            'combinedCommand' => $this->plainToken
-                ? 'curl -fsSL '.route('install-script')." | AIORG_TOKEN={$this->plainToken} sh"
-                : null,
-            'tokenSaveCommand' => $this->plainToken
-                ? "mkdir -p ~/.config/aiorg && printf '%s' '{$this->plainToken}' > ~/.config/aiorg/token && chmod 600 ~/.config/aiorg/token"
-                : null,
+            'combinedCommand' => 'curl -fsSL '.route('install-script').' | AIORG_TOKEN='.($this->plainToken ?? '<your-token>').' sh',
+            'tokenSaveCommand' => "mkdir -p ~/.config/aiorg && printf '%s' '".($this->plainToken ?? '<your-token>')."' > ~/.config/aiorg/token && chmod 600 ~/.config/aiorg/token",
         ]);
     }
 }

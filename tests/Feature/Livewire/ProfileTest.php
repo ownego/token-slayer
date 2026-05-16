@@ -27,7 +27,7 @@ test('profile surfaces a curl-pipe-sh installer pointed at the install.sh route'
         ->assertSee(route('install-script'));
 });
 
-test('profile shows a combined install command that installs hooks and the token in one shot', function () {
+test('profile bakes the fresh plain token into the combined install command', function () {
     $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
     $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
 
@@ -36,13 +36,14 @@ test('profile shows a combined install command that installs hooks and the token
         ->assertSee('curl -fsSL '.route('install-script').' | AIORG_TOKEN=plain-abc sh', escape: false);
 });
 
-test('profile hides the token-bearing command when no fresh token is in session', function () {
+test('profile still shows the AIORG_TOKEN command shape with a placeholder when no fresh token is in session', function () {
     $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
     $this->actingAs($user);
 
     $this->get('/profile')
         ->assertOk()
-        ->assertDontSee('AIORG_TOKEN=');
+        ->assertSee('AIORG_TOKEN=&lt;your-token&gt; sh', escape: false)
+        ->assertDontSee('plain-abc');
 });
 
 test('manual hook config shows a step that writes the token to the config file', function () {

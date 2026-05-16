@@ -8,17 +8,19 @@
     </header>
 
     <section class="border rounded p-4">
-        <h2 class="font-semibold mb-2">Hook setup</h2>
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="font-semibold">Hook setup</h2>
+            <button wire:click="regenerate" class="px-3 py-1 bg-red-600 text-white rounded text-sm">Regenerate token</button>
+        </div>
         @if ($plainToken)
+            <p class="text-sm text-gray-500 mb-1">Your token (shown once):</p>
             <code class="block bg-gray-100 p-2 rounded select-all">{{ $plainToken }}</code>
-            <p class="text-sm text-gray-500 mt-2">Shown once. The command below installs the Claude Code + Codex CLI hooks and saves this token to <code>~/.config/aiorg/token</code> in one step. Safe to re-run on rotation.</p>
-            <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $combinedCommand }}</pre>
+            <p class="text-sm text-gray-500 mt-3">The command below installs the Claude Code + Codex CLI hooks and saves this token to <code>~/.config/aiorg/token</code> in one step. Safe to re-run on rotation.</p>
         @else
-            <p class="text-sm mb-2">Installs hooks into <code>~/.claude/settings.json</code> and <code>~/.codex/config.toml</code>. Regenerate first if you also need a new token — that gives you a single command that does both.</p>
-            <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">curl -fsSL {{ $installUrl }} | sh</pre>
+            <p class="text-sm text-gray-500 mb-2">Installs Claude Code + Codex CLI hooks and saves your token to <code>~/.config/aiorg/token</code> in one step. Click <em>Regenerate token</em> above to bake a fresh token into the command, or substitute your existing token below.</p>
         @endif
+        <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $combinedCommand }}</pre>
         <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $installUrl }}" class="underline">{{ $installUrl }}</a></p>
-        <button wire:click="regenerate" class="mt-3 px-3 py-1 bg-red-600 text-white rounded">Regenerate token</button>
     </section>
 
     <details class="border rounded p-4">
@@ -26,11 +28,7 @@
         <div class="mt-3 space-y-3">
             <div>
                 <p class="text-sm mb-1">1. Save your token to <code>~/.config/aiorg/token</code> (the snippets below read it at runtime):</p>
-                @if ($tokenSaveCommand)
-                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $tokenSaveCommand }}</pre>
-                @else
-                    <p class="text-xs text-gray-500">Regenerate above to reveal a token, then come back for the save command.</p>
-                @endif
+                <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $tokenSaveCommand }}</pre>
             </div>
             <div>
                 <p class="text-sm mb-1">2. Paste into <code>~/.claude/settings.json</code> under the top level:</p>
