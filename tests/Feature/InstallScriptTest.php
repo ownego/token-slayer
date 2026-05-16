@@ -1,5 +1,7 @@
 <?php
 
+beforeEach(fn () => config(['app.hook_namespace' => 'aiorg']));
+
 test('install.sh is publicly accessible as a shell script', function () {
     $response = $this->get('/install');
 
@@ -42,4 +44,18 @@ test('install.sh saves AIORG_TOKEN to the token file when present', function () 
         ->toContain('${AIORG_TOKEN:-}')
         ->toContain('printf \'%s\' "$AIORG_TOKEN"')
         ->toContain('chmod 600 "$TOKEN_FILE"');
+});
+
+test('install.sh uses the configured hook namespace in paths, env var, and markers', function () {
+    config(['app.hook_namespace' => 'acme']);
+
+    $script = $this->get('/install')->getContent();
+
+    expect($script)
+        ->toContain('~/.config/acme/token')
+        ->toContain('${ACME_TOKEN:-}')
+        ->toContain('# >>> acme hooks')
+        ->toContain('# <<< acme hooks')
+        ->not->toContain('aiorg')
+        ->not->toContain('AIORG_TOKEN');
 });

@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Str;
+
 return [
 
     /*
@@ -14,6 +16,24 @@ return [
     */
 
     'name' => env('APP_NAME', 'Laravel'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Hook Namespace
+    |--------------------------------------------------------------------------
+    |
+    | Identifier baked into the Claude/Codex hook installer: the config
+    | directory (~/.config/<ns>/token), the env var used by the combined
+    | installer (<NS>_TOKEN), and the marker comments delimiting the
+    | namespace block in the user's Codex config.
+    |
+    | Must be a valid shell identifier (letters, digits, underscores).
+    | Defaults to the slugified APP_NAME so renaming the app renames
+    | the hook surface too.
+    |
+    */
+
+    'hook_namespace' => env('HOOK_NAMESPACE', Str::slug(env('APP_NAME', 'token-slayer'), '_')),
 
     /*
     |--------------------------------------------------------------------------

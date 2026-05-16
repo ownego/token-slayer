@@ -23,17 +23,25 @@ class Profile extends Component
 
     public function render()
     {
+        $namespace = config('app.hook_namespace');
+        $envVar = strtoupper($namespace).'_TOKEN';
+        $tokenValue = $this->plainToken ?? '<your-token>';
+        $tokenPath = "~/.config/{$namespace}/token";
+
         return view('livewire.profile', [
             'user' => auth()->user(),
             'claudeSnippet' => view('partials.claude-snippet', [
                 'baseUrl' => url('/api/events'),
+                'namespace' => $namespace,
             ])->render(),
             'codexSnippet' => view('partials.codex-snippet', [
                 'baseUrl' => url('/api/events').'?provider=codex',
+                'namespace' => $namespace,
             ])->render(),
             'installUrl' => route('install-script'),
-            'combinedCommand' => 'curl -fsSL '.route('install-script').' | AIORG_TOKEN='.($this->plainToken ?? '<your-token>').' sh',
-            'tokenSaveCommand' => "mkdir -p ~/.config/aiorg && printf '%s' '".($this->plainToken ?? '<your-token>')."' > ~/.config/aiorg/token && chmod 600 ~/.config/aiorg/token",
+            'combinedCommand' => 'curl -fsSL '.route('install-script')." | {$envVar}={$tokenValue} sh",
+            'tokenSaveCommand' => "mkdir -p ~/.config/{$namespace} && printf '%s' '{$tokenValue}' > {$tokenPath} && chmod 600 {$tokenPath}",
+            'tokenPath' => $tokenPath,
         ]);
     }
 }

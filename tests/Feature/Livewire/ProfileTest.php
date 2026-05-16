@@ -7,6 +7,8 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
+beforeEach(fn () => config(['app.hook_namespace' => 'aiorg']));
+
 test('profile shows a link to the battlefield page', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
@@ -64,6 +66,19 @@ test('manual hook config shows a step that writes the token to the config file',
         ->assertOk()
         ->assertSee("printf '%s' 'plain-abc' > ~/.config/aiorg/token")
         ->assertSee('chmod 600 ~/.config/aiorg/token');
+});
+
+test('profile reflects the configured hook namespace in displayed paths and the install command', function () {
+    config(['app.hook_namespace' => 'acme']);
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
+    $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('curl -fsSL '.route('install-script').' | ACME_TOKEN=plain-abc sh', escape: false)
+        ->assertSee('~/.config/acme/token')
+        ->assertDontSee('aiorg')
+        ->assertDontSee('AIORG_TOKEN');
 });
 
 test('regenerate replaces the hook token', function () {

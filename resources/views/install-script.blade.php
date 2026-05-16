@@ -1,19 +1,24 @@
+@php
+    $envVar = strtoupper($namespace).'_TOKEN';
+    $envCheck = '${'.$envVar.':-}';
+    $envRead = '"$'.$envVar.'"';
+@endphp
 {!! '#!/bin/sh' !!}
-# aiorg hook installer
+# {{ $namespace }} hook installer
 # Installs Claude Code + Codex CLI hooks that POST to {{ $baseUrl }}.
-# Hooks read the token at runtime from ~/.config/aiorg/token.
+# Hooks read the token at runtime from ~/.config/{{ $namespace }}/token.
 #
-# Pass AIORG_TOKEN=<token> in the environment to save the token in the
-# same run, e.g. `curl -fsSL ... | AIORG_TOKEN=xxx sh`. Otherwise the
+# Pass {{ $envVar }}=<token> in the environment to save the token in the
+# same run, e.g. `curl -fsSL ... | {{ $envVar }}=xxx sh`. Otherwise the
 # token must be written separately.
 #
-# Re-running this script is safe — existing aiorg hook blocks are
+# Re-running this script is safe — existing {{ $namespace }} hook blocks are
 # replaced, other settings in your config files are preserved.
 
 set -e
 
-CLAUDE_CMD="curl -s --max-time 3 -X POST '{{ $baseUrl }}' -H 'Authorization: Bearer '\$(cat ~/.config/aiorg/token) -H 'Content-Type: application/json' -d @- >/dev/null 2>&1 &"
-CODEX_CMD="curl -s --max-time 3 -X POST '{{ $baseUrl }}?provider=codex' -H 'Authorization: Bearer '\$(cat ~/.config/aiorg/token) -H 'Content-Type: application/json' -d @- >/dev/null 2>&1 &"
+CLAUDE_CMD="curl -s --max-time 3 -X POST '{{ $baseUrl }}' -H 'Authorization: Bearer '\$(cat ~/.config/{{ $namespace }}/token) -H 'Content-Type: application/json' -d @- >/dev/null 2>&1 &"
+CODEX_CMD="curl -s --max-time 3 -X POST '{{ $baseUrl }}?provider=codex' -H 'Authorization: Bearer '\$(cat ~/.config/{{ $namespace }}/token) -H 'Content-Type: application/json' -d @- >/dev/null 2>&1 &"
 
 PY=$(command -v python3 || command -v python || true)
 if [ -z "$PY" ]; then
@@ -22,13 +27,13 @@ if [ -z "$PY" ]; then
 fi
 
 # Ensure token directory exists.
-mkdir -p "$HOME/.config/aiorg"
+mkdir -p "$HOME/.config/{{ $namespace }}"
 
-# If AIORG_TOKEN was passed, save it now so a single command does both
+# If {{ $envVar }} was passed, save it now so a single command does both
 # hook setup and token install.
-if [ -n "${AIORG_TOKEN:-}" ]; then
-    TOKEN_FILE="$HOME/.config/aiorg/token"
-    printf '%s' "$AIORG_TOKEN" > "$TOKEN_FILE"
+if [ -n "{!! $envCheck !!}" ]; then
+    TOKEN_FILE="$HOME/.config/{{ $namespace }}/token"
+    printf '%s' {!! $envRead !!} > "$TOKEN_FILE"
     chmod 600 "$TOKEN_FILE"
     echo "saved token -> $TOKEN_FILE"
 fi
@@ -62,21 +67,22 @@ PY
 
 echo "installed Claude Code hooks -> $SETTINGS"
 
-# --- Codex CLI: rewrite the aiorg block in ~/.codex/config.toml ---
+# --- Codex CLI: rewrite the {{ $namespace }} block in ~/.codex/config.toml ---
 mkdir -p "$HOME/.codex"
 CODEX_CONFIG="$HOME/.codex/config.toml"
 touch "$CODEX_CONFIG"
 
-# Remove any previous aiorg block (between markers) so we can append a fresh one.
-"$PY" - "$CODEX_CONFIG" <<'PY'
-import sys, re
+# Remove any previous {{ $namespace }} block (between markers) so we can append a fresh one.
+NAMESPACE="{{ $namespace }}" "$PY" - "$CODEX_CONFIG" <<'PY'
+import os, sys, re
 
 path = sys.argv[1]
+ns = re.escape(os.environ["NAMESPACE"])
 with open(path) as f:
     text = f.read()
 
 text = re.sub(
-    r"(?ms)^# >>> aiorg hooks\n.*?^# <<< aiorg hooks\n?",
+    rf"(?ms)^# >>> {ns} hooks\n.*?^# <<< {ns} hooks\n?",
     "",
     text,
 )
@@ -86,7 +92,7 @@ with open(path, "w") as f:
 PY
 
 cat >> "$CODEX_CONFIG" <<EOF
-# >>> aiorg hooks
+# >>> {{ $namespace }} hooks
 [[hooks]]
 event = "session_start"
 command = "$CODEX_CMD"
@@ -94,12 +100,12 @@ command = "$CODEX_CMD"
 [[hooks]]
 event = "stop"
 command = "$CODEX_CMD"
-# <<< aiorg hooks
+# <<< {{ $namespace }} hooks
 EOF
 
 echo "installed Codex CLI hooks -> $CODEX_CONFIG"
 
-if [ -z "${AIORG_TOKEN:-}" ] && [ ! -s "$HOME/.config/aiorg/token" ]; then
+if [ -z "{!! $envCheck !!}" ] && [ ! -s "$HOME/.config/{{ $namespace }}/token" ]; then
     echo ""
-    echo "Next: save your token from the profile page into ~/.config/aiorg/token."
+    echo "Next: save your token from the profile page into ~/.config/{{ $namespace }}/token."
 fi

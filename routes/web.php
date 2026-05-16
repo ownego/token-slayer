@@ -19,7 +19,10 @@ Route::get('/auth/slack/callback', [SlackController::class, 'callback']);
 Route::get('/profile', fn () => view('profile'))->middleware('auth')->name('profile');
 
 Route::get('/install', fn () => response(
-    view('install-script', ['baseUrl' => url('/api/events')])->render(),
+    view('install-script', [
+        'baseUrl' => url('/api/events'),
+        'namespace' => config('app.hook_namespace'),
+    ])->render(),
     200,
     ['Content-Type' => 'text/x-shellscript; charset=utf-8'],
 ))->name('install-script');
