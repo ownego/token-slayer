@@ -1,0 +1,36 @@
+x-app: &app
+  build:
+    context: .
+    target: staging
+  env_file:
+    - .env
+  environment:
+    SSL_MODE: off
+    PHP_OPCACHE_ENABLE: 1
+  extra_hosts:
+    # So DB_HOST=host.docker.internal works against an external Postgres on the host.
+    - "host.docker.internal:host-gateway"
+  networks:
+    - aiorg
+  restart: unless-stopped
+
+services:
+  php:
+    <<: *app
+    # Bound to loopback so only host cloudflared (or local debugging) can reach it.
+    # Cloudflare Tunnel route: app.<your-domain> -> http://localhost:${APP_PORT}
+    ports:
+      - '127.0.0.1:${APP_PORT:-8000}:8080'
+
+  reverb:
+    <<: *app
+    # docker-compose.yml only mounts source for `php`; re-declare here for reverb.
+    volumes:
+      - .:/var/www/html/
+    # Cloudflare Tunnel route: ws.<your-domain> -> http://localhost:${REVERB_PORT}
+    ports:
+      - '127.0.0.1:${REVERB_PORT:-8080}:8080'
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+
+networks:
+  aiorg:

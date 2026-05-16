@@ -1,0 +1,57 @@
+services:
+  php:
+    build:
+      context: .
+      target: development
+      args:
+        USER_ID: ${SPIN_USER_ID:-1000}
+        GROUP_ID: ${SPIN_GROUP_ID:-1000}
+    ports:
+      - '${APP_PORT:-8000}:8080'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - development
+    depends_on:
+      - pgsql
+
+  reverb:
+    build:
+      context: .
+      target: development
+      args:
+        USER_ID: ${SPIN_USER_ID:-1000}
+        GROUP_ID: ${SPIN_GROUP_ID:-1000}
+    volumes:
+      - .:/var/www/html/
+    ports:
+      - '${REVERB_PORT:-8080}:8080'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - development
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+
+  pgsql:
+    image: postgres:18
+    ports:
+      - '${FORWARD_DB_PORT:-5432}:5432'
+    environment:
+      PGPASSWORD: '${DB_PASSWORD:-secret}'
+      POSTGRES_DB: '${DB_DATABASE:-aiorg}'
+      POSTGRES_USER: '${DB_USERNAME:-aiorg}'
+      POSTGRES_PASSWORD: '${DB_PASSWORD:-secret}'
+    volumes:
+      - pgsql:/var/lib/postgresql/data
+    networks:
+      - development
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-q', '-d', '${DB_DATABASE:-aiorg}', '-U', '${DB_USERNAME:-aiorg}']
+      retries: 3
+      timeout: 5s
+
+networks:
+  development:
+
+volumes:
+  pgsql:
