@@ -18,7 +18,7 @@ services:
   php:
     <<: *app
     # Bound to loopback so only host cloudflared (or local debugging) can reach it.
-    # Cloudflare Tunnel route: app.<your-domain> -> http://localhost:${APP_PORT}
+    # Cloudflare Tunnel: app.<your-domain> (no path) -> http://localhost:${APP_PORT}
     ports:
       - '127.0.0.1:${APP_PORT:-8000}:8080'
 
@@ -27,9 +27,13 @@ services:
     # docker-compose.yml only mounts source for `php`; re-declare here for reverb.
     volumes:
       - .:/var/www/html/
-    # Cloudflare Tunnel route: ws.<your-domain> -> http://localhost:${REVERB_PORT}
+    # Cloudflare Tunnel: app.<your-domain> Path=^/app/ -> http://localhost:${REVERB_HOST_PORT}
+    # (Same hostname as the app; avoids two-level subdomain SSL issue.)
+    # REVERB_HOST_PORT is the *host loopback* port cloudflared connects to;
+    # REVERB_PORT is the container-internal port Laravel publishes to over
+    # the Docker network (must match the --port flag on reverb:start).
     ports:
-      - '127.0.0.1:${REVERB_PORT:-8080}:8080'
+      - '127.0.0.1:${REVERB_HOST_PORT:-8080}:8080'
     command: php artisan reverb:start --host=0.0.0.0 --port=8080
 
 networks:
