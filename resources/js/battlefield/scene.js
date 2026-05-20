@@ -467,7 +467,7 @@ export class BattlefieldScene extends Phaser.Scene {
     sprite.setMask(maskShape.createGeometryMask());
     const handle = options.showHandle === false
       ? null
-      : this.addSharpText(pos.x, pos.y + radius + 4, fighter.handle ?? '', {
+      : this.addSharpText(pos.x, pos.y + radius + 9, fighter.handle ?? '', {
         fontFamily: 'monospace',
         fontSize: '8px',
         color: '#fbbf24',
