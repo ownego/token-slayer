@@ -63,6 +63,19 @@ export function createLeaderboard(scene) {
   }
 
   return {
+    seed(entries) {
+      fighters.clear();
+      for (const entry of entries ?? []) {
+        if (entry.damage <= 0) {
+          continue;
+        }
+        fighters.set(entry.userId, {
+          damage: entry.damage,
+          handle: entry.handle ?? '',
+        });
+      }
+      render();
+    },
     onHit(userId, damage, handle) {
       if (damage <= 0) {
         return;

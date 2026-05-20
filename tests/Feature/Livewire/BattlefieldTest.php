@@ -2,6 +2,7 @@
 
 use App\Livewire\Battlefield;
 use App\Models\Boss;
+use App\Models\Event;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -47,4 +48,28 @@ test('battlefield shows a link back to the profile page', function () {
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('href="'.route('profile').'"')
         ->assertSee('Profile');
+});
+
+test('battlefield seeds leaderboard with per-fighter damage for the current boss', function () {
+    $previousBoss = Boss::factory()->defeated()->create(['number' => 6]);
+    $boss = Boss::factory()->create(['number' => 7]);
+    $alice = User::factory()->create(['slack_handle' => 'alice', 'last_event_at' => now()->subMinute()]);
+    $bob = User::factory()->create(['slack_handle' => 'bob', 'last_event_at' => now()->subMinute()]);
+
+    Event::factory()->create(['user_id' => $alice->id, 'boss_id' => $boss->id, 'tokens' => 1_200]);
+    Event::factory()->create(['user_id' => $alice->id, 'boss_id' => $boss->id, 'tokens' => 800]);
+    Event::factory()->create(['user_id' => $bob->id, 'boss_id' => $boss->id, 'tokens' => 500]);
+    // Damage on a previous boss must not leak into the current leaderboard.
+    Event::factory()->create(['user_id' => $alice->id, 'boss_id' => $previousBoss->id, 'tokens' => 9_999]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;userId&quot;:'.$alice->id.',&quot;handle&quot;:&quot;alice&quot;,&quot;damage&quot;:2000')
+        ->assertSeeHtml('&quot;userId&quot;:'.$bob->id.',&quot;handle&quot;:&quot;bob&quot;,&quot;damage&quot;:500');
+});
+
+test('battlefield leaderboard payload is empty when no damage logged for the current boss', function () {
+    Boss::factory()->create();
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;leaderboard&quot;:[]');
 });

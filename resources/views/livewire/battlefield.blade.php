@@ -13,6 +13,7 @@
                 'handle' => $f->slack_handle,
                 'avatarUrl' => route('avatar', $f),
             ])->values(),
+            'leaderboard' => $this->leaderboardForCurrentBoss(),
         ]) }}"
         class="absolute inset-0"
     ></div>
