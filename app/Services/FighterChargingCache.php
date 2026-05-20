@@ -8,7 +8,7 @@ class FighterChargingCache
 {
     public function __construct(private CacheRepository $cache) {}
 
-    public function put(int $userId, ?string $activity): void
+    public function put(int $userId, string $activity): void
     {
         $this->cache->put(
             $this->key($userId),
@@ -27,7 +27,7 @@ class FighterChargingCache
 
     /**
      * @param  array<int, int>  $userIds
-     * @return array<int, array{activity: ?string, started_at: string}|null>
+     * @return array<int, array{activity: string, started_at: string}|null>
      */
     public function many(array $userIds): array
     {

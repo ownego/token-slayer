@@ -114,7 +114,7 @@ test('hit from a user not in the fighter row still applies damage', function () 
     $page->assertNoJavaScriptErrors();
 });
 
-test('fighter with cached charging activity renders the charge on initial load', function () {
+test('fighter with cached charging activity registers a charge on initial load', function () {
     ensureChrome();
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
     $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);

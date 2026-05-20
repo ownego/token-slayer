@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\Cache;
 
 beforeEach(function () {
     Cache::flush();
-    config(['game.idle_minutes' => 30]);
 });
 
 test('put stores the activity and started_at under the per-user key', function () {
