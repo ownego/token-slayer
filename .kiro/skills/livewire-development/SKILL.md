@@ -22,13 +22,13 @@ Use `search-docs` for detailed Livewire 4 patterns and documentation.
 
 # Creates: resources/views/components/⚡create-post.blade.php
 
-php artisan make:livewire create-post
+spin exec php php artisan make:livewire create-post
 
 # Page component (SFC - Full Page in v4)
 
 # Creates: resources/views/pages/⚡create-post.blade.php
 
-php artisan make:livewire pages::create-post
+spin exec php php artisan make:livewire pages::create-post
 
 # Multi-file component (MFC)
 
@@ -36,22 +36,22 @@ php artisan make:livewire pages::create-post
 
 #          resources/views/components/⚡create-post/create-post.blade.php
 
-php artisan make:livewire create-post --mfc
+spin exec php php artisan make:livewire create-post --mfc
 
 # Class-based component (v3 style)
 
 # Creates: app/Livewire/CreatePost.php AND resources/views/livewire/create-post.blade.php
 
-php artisan make:livewire create-post --class
+spin exec php php artisan make:livewire create-post --class
 
 # With namespace
 
-php artisan make:livewire Posts/CreatePost
+spin exec php php artisan make:livewire Posts/CreatePost
 ```
 
 ### Converting Between Formats
 
-Use `php artisan livewire:convert create-post` to convert between single-file, multi-file, and class-based formats.
+Use `spin exec php php artisan livewire:convert create-post` to convert between single-file, multi-file, and class-based formats.
 
 ### Choosing a Component Format
 

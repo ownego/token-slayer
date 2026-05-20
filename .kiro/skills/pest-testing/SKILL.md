@@ -16,13 +16,13 @@ Use `search-docs` for detailed Pest 4 patterns and documentation.
 
 ### Creating Tests
 
-All tests must be written using Pest. Use `php artisan make:test --pest {name}`.
+All tests must be written using Pest. Use `spin exec php php artisan make:test --pest {name}`.
 
 The `{name}` argument should include only the path and test name, but should not include the test suite.
-- Incorrect: `php artisan make:test --pest Feature/SomeFeatureTest` will generate `tests/Feature/Feature/SomeFeatureTest.php`
-- Correct: `php artisan make:test --pest SomeControllerTest` will generate `tests/Feature/SomeControllerTest.php`
-- Incorrect: `php artisan make:test --pest --unit Unit/SomeServiceTest` will generate `tests/Unit/Unit/SomeServiceTest.php`
-- Correct: `php artisan make:test --pest --unit SomeServiceTest` will generate `tests/Unit/SomeServiceTest.php`
+- Incorrect: `spin exec php php artisan make:test --pest Feature/SomeFeatureTest` will generate `tests/Feature/Feature/SomeFeatureTest.php`
+- Correct: `spin exec php php artisan make:test --pest SomeControllerTest` will generate `tests/Feature/SomeControllerTest.php`
+- Incorrect: `spin exec php php artisan make:test --pest --unit Unit/SomeServiceTest` will generate `tests/Unit/Unit/SomeServiceTest.php`
+- Correct: `spin exec php php artisan make:test --pest --unit SomeServiceTest` will generate `tests/Unit/SomeServiceTest.php`
 
 ### Test Organization
 
@@ -43,9 +43,9 @@ it('is true', function () {
 
 ### Running Tests
 
-- Run minimal tests with filter before finalizing: `php artisan test --compact --filter=testName`.
-- Run all tests: `php artisan test --compact`.
-- Run file: `php artisan test --compact tests/Feature/ExampleTest.php`.
+- Run minimal tests with filter before finalizing: `spin exec php php artisan test --compact --filter=testName`.
+- Run all tests: `spin exec php php artisan test --compact`.
+- Run file: `spin exec php php artisan test --compact tests/Feature/ExampleTest.php`.
 
 ## Assertions
 
