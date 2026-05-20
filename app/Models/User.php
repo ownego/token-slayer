@@ -45,4 +45,9 @@ class User extends Authenticatable
             'last_event_at' => 'datetime',
         ];
     }
+
+    public function displayHandle(): string
+    {
+        return $this->slack_handle ?: ($this->name ?: '#'.$this->id);
+    }
 }

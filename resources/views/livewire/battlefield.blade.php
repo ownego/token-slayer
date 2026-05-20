@@ -10,7 +10,7 @@
             ],
             'fighters' => $fighters->map(fn ($f) => [
                 'id' => $f->id,
-                'handle' => $f->slack_handle,
+                'handle' => $f->displayHandle(),
                 'avatarUrl' => route('avatar', $f),
             ])->values(),
             'leaderboard' => $this->leaderboardForCurrentBoss(),

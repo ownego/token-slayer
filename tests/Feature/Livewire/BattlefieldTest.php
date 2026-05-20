@@ -73,3 +73,21 @@ test('battlefield leaderboard payload is empty when no damage logged for the cur
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('&quot;leaderboard&quot;:[]');
 });
+
+test('battlefield payloads fall back to user name when slack_handle is null', function () {
+    $boss = Boss::factory()->create();
+    $user = User::factory()->create([
+        'name' => 'Trung',
+        'slack_handle' => null,
+        'last_event_at' => now()->subMinute(),
+    ]);
+    Event::factory()->create([
+        'user_id' => $user->id,
+        'boss_id' => $boss->id,
+        'tokens' => 750,
+    ]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;userId&quot;:'.$user->id.',&quot;handle&quot;:&quot;Trung&quot;,&quot;damage&quot;:750')
+        ->assertSeeHtml('&quot;id&quot;:'.$user->id.',&quot;handle&quot;:&quot;Trung&quot;');
+});
