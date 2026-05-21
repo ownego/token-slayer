@@ -1,0 +1,66 @@
+{
+  "name": "aiorg",
+  "displayName": "aiorg",
+  "description": "Watch the aiorg battlefield, manage Claude Code hooks, and stay signed in to aiorg without leaving VSCode.",
+  "version": "0.1.0",
+  "publisher": "aiorg",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiorg",
+          "title": "aiorg",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiorg": [
+        {
+          "id": "aiorg.battlefield",
+          "name": "Battlefield",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "aiorg.signIn", "title": "aiorg: Sign in with Slack" },
+      { "command": "aiorg.signOut", "title": "aiorg: Sign out" },
+      { "command": "aiorg.installHooks", "title": "aiorg: Install Claude Code hooks" },
+      { "command": "aiorg.uninstallHooks", "title": "aiorg: Uninstall Claude Code hooks" },
+      { "command": "aiorg.openBattlefield", "title": "aiorg: Open battlefield" }
+    ],
+    "configuration": {
+      "title": "aiorg",
+      "properties": {
+        "aiorg.serverUrl": {
+          "type": "string",
+          "default": "https://aiorg.app",
+          "description": "Base URL of the aiorg server. Override for local dev (e.g. http://localhost:8000)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js",
+    "watch": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.5.0",
+    "@vscode/vsce": "^2.24.0"
+  }
+}
