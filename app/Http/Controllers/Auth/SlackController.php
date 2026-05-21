@@ -26,52 +26,43 @@ class SlackController extends Controller
     {
         $slack = Socialite::driver('slack')->user();
 
-        $user = User::where('slack_user_id', $slack->getId())->first();
+        $existing = User::where('slack_user_id', $slack->getId())->first();
 
-        if ($user === null) {
-            $plainToken = Str::random(48);
-
-            $user = User::create([
-                'slack_user_id' => $slack->getId(),
-                'name' => $slack->getName() ?? $slack->getNickname(),
-                'email' => $slack->getEmail() ?? $slack->getId().'@slack.local',
-                'slack_handle' => $slack->getNickname(),
-                'display_name' => $slack->getName(),
-                'avatar_url' => $slack->getAvatar(),
-                'hook_token' => hash('sha256', $plainToken),
-            ]);
-
-            session()->put('hook_token_plain', $plainToken);
-            auth()->login($user);
-
-            if ($ide = $this->consumeIdeFlow()) {
-                return $this->redirectToIde($user, $ide['state']);
-            }
-
-            return redirect()->route('profile');
-        }
-
-        $user->update([
+        $attributes = [
             'name' => $slack->getName() ?? $slack->getNickname(),
             'email' => $slack->getEmail() ?? $slack->getId().'@slack.local',
             'slack_handle' => $slack->getNickname(),
             'display_name' => $slack->getName(),
             'avatar_url' => $slack->getAvatar(),
-        ]);
+        ];
+
+        if ($existing === null) {
+            $plainToken = Str::random(48);
+
+            $user = User::create([
+                ...$attributes,
+                'slack_user_id' => $slack->getId(),
+                'hook_token' => hash('sha256', $plainToken),
+            ]);
+
+            session()->put('hook_token_plain', $plainToken);
+            $defaultRoute = 'profile';
+        } else {
+            $existing->update($attributes);
+            $user = $existing;
+            $defaultRoute = 'battlefield';
+        }
 
         auth()->login($user);
 
-        if ($ide = $this->consumeIdeFlow()) {
-            return $this->redirectToIde($user, $ide['state']);
+        if (($ideState = $this->consumeIdeFlowState()) !== null) {
+            return $this->redirectToIde($user, $ideState);
         }
 
-        return redirect()->route('battlefield');
+        return redirect()->route($defaultRoute);
     }
 
-    /**
-     * @return array{state: string}|null
-     */
-    private function consumeIdeFlow(): ?array
+    private function consumeIdeFlowState(): ?string
     {
         $ide = session()->pull('ide_oauth');
 
@@ -79,7 +70,7 @@ class SlackController extends Controller
             return null;
         }
 
-        return ['state' => $ide['state']];
+        return $ide['state'];
     }
 
     private function redirectToIde(User $user, string $state): RedirectResponse
