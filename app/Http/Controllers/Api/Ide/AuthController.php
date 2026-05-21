@@ -10,6 +10,13 @@ use Illuminate\Http\Response;
 
 class AuthController extends Controller
 {
+    /**
+     * Paths the IDE webview is allowed to deep-link into via a signed URL.
+     *
+     * @var list<string>
+     */
+    private const ALLOWED_SESSION_PATHS = ['/battlefield', '/profile', '/history'];
+
     public function exchange(Request $request): JsonResponse|Response
     {
         $data = $request->validate([
@@ -45,18 +52,15 @@ class AuthController extends Controller
             'path' => ['required', 'string'],
         ]);
 
-        $parsed = parse_url($data['path']);
-        $path = $parsed['path'] ?? '';
-        $query = $parsed['query'] ?? '';
+        $pathOnly = parse_url($data['path'], PHP_URL_PATH) ?? '';
 
-        $allowedPaths = ['/battlefield', '/profile', '/history'];
-        if (! in_array($path, $allowedPaths, true)) {
+        if (! in_array($pathOnly, self::ALLOWED_SESSION_PATHS, true)) {
             return response()->json(['error' => 'path_not_allowed'], 422);
         }
 
         [$plain] = IdeAccessToken::issueSessionUrl($request->user(), $data['path'], 30);
 
-        $separator = $query === '' ? '?' : '&';
+        $separator = str_contains($data['path'], '?') ? '&' : '?';
 
         return response()->json([
             'url' => url($data['path']).$separator.'_t='.$plain,

@@ -32,19 +32,12 @@ class EstablishIdeSession
 
         $consumed = IdeAccessToken::consumeSessionUrl($token);
 
-        if ($consumed !== null) {
-            auth()->login($consumed['user']);
-
-            $cleanPath = strtok($consumed['redirectPath'], '?');
-            $cleanQuery = parse_url($consumed['redirectPath'], PHP_URL_QUERY);
-
-            $location = $cleanQuery
-                ? url($cleanPath).'?'.$cleanQuery
-                : url($cleanPath);
-
-            return redirect()->to($location);
+        if ($consumed === null) {
+            return $next($request);
         }
 
-        return $next($request);
+        auth()->login($consumed['user']);
+
+        return redirect()->to(url($consumed['redirectPath']));
     }
 }
