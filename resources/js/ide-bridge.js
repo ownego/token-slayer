@@ -28,6 +28,22 @@ function postToHost(message) {
     }
 }
 
+function mapPusherState(state) {
+    // Pusher states: initialized, connecting, connected, unavailable, failed, disconnected
+    switch (state) {
+        case 'connected':
+            return 'connected';
+        case 'disconnected':
+        case 'failed':
+            return 'disconnected';
+        case 'unavailable':
+        case 'connecting':
+        case 'initialized':
+        default:
+            return 'reconnecting';
+    }
+}
+
 function start() {
     if (!window.Echo) {
         setTimeout(start, 50);
@@ -37,11 +53,14 @@ function start() {
     const me = currentUserId();
     const channel = window.Echo.channel('battlefield');
 
-    const connector = window.Echo.connector?.pusher?.connection;
-    if (connector) {
-        connector.bind('connected', () => postToHost({ type: 'connection-state', state: 'connected' }));
-        connector.bind('disconnected', () => postToHost({ type: 'connection-state', state: 'disconnected' }));
-        connector.bind('connecting', () => postToHost({ type: 'connection-state', state: 'reconnecting' }));
+    const connection = window.Echo.connector?.pusher?.connection;
+    if (connection) {
+        connection.bind('state_change', (states) => {
+            postToHost({ type: 'connection-state', state: mapPusherState(states.current) });
+        });
+        // Pusher may have transitioned to 'connected' before this bind runs;
+        // post the current state once so the host doesn't stay on 'connecting'.
+        postToHost({ type: 'connection-state', state: mapPusherState(connection.state) });
     }
 
     channel.listen('.HitDealt', (p) => {
@@ -93,7 +112,11 @@ function start() {
         });
     });
 
-    postToHost({ type: 'connection-state', state: 'connecting' });
+    // If the connector isn't available, the host stays on its previous state
+    // (typically 'connecting' from the templates' initial render).
+    if (!connection) {
+        postToHost({ type: 'connection-state', state: 'connecting' });
+    }
 }
 
 if (document.readyState === 'loading') {
