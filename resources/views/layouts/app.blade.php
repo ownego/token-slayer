@@ -9,6 +9,9 @@
     <title>{{ config('app.name') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @if ($embed)
+        @auth
+            <meta name="aiorg-user-id" content="{{ auth()->id() }}">
+        @endauth
         @vite('resources/js/ide-bridge.js')
     @endif
     @livewireStyles
