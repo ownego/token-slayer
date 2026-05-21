@@ -45,7 +45,10 @@ export function iframeWrapperHtml(nonce: string, signedUrl: string, serverOrigin
 <html><head>
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; frame-src ${serverOrigin}; script-src 'nonce-${nonce}'; style-src 'unsafe-inline';">
-  <style>html,body,iframe{margin:0;padding:0;border:0;width:100%;height:100%}</style>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100vh; width: 100%; overflow: hidden; background: #0f172a; }
+    iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  </style>
 </head><body>
   <iframe id="aiorg" src="${escapeHtml(signedUrl)}"></iframe>
   <script nonce="${nonce}">

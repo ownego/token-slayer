@@ -8,14 +8,19 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * When a request carries `?_t=<one_shot>`, validate it, log the user in for
- * the session, and 302-redirect to the same URL without the token query
- * parameter. The iframe in the VSCode webview lands on the clean URL with
- * a working session cookie.
+ * Handles two IDE-embed concerns on web requests:
  *
- * Silently no-ops (without logging in) for invalid/expired tokens — the
- * request still proceeds so public routes like /battlefield remain
- * reachable. Auth-protected routes will redirect to login as today.
+ * 1. When a request carries `?_t=<one_shot>`, validate it, log the user in
+ *    for the session, and 302-redirect to the same URL without the token
+ *    query parameter. The iframe in the VSCode webview lands on the clean
+ *    URL with a working session cookie.
+ * 2. When a request carries `?embed=ide`, strip the upstream
+ *    `X-Frame-Options: SAMEORIGIN` header so the page can be hosted inside
+ *    the VSCode webview iframe. Replaces it with a CSP frame-ancestors
+ *    directive that whitelists the VSCode webview origins.
+ *
+ * Invalid/expired one-shot tokens silently no-op (the request still
+ * proceeds so public routes like /battlefield remain reachable).
  */
 class EstablishIdeSession
 {
@@ -26,18 +31,34 @@ class EstablishIdeSession
     {
         $token = $request->query('_t');
 
-        if (! is_string($token) || $token === '') {
-            return $next($request);
+        if (is_string($token) && $token !== '') {
+            $consumed = IdeAccessToken::consumeSessionUrl($token);
+
+            if ($consumed !== null) {
+                auth()->login($consumed['user']);
+
+                return $this->relaxFramingFor(
+                    $request,
+                    redirect()->to(url($consumed['redirectPath'])),
+                );
+            }
         }
 
-        $consumed = IdeAccessToken::consumeSessionUrl($token);
+        return $this->relaxFramingFor($request, $next($request));
+    }
 
-        if ($consumed === null) {
-            return $next($request);
+    private function relaxFramingFor(Request $request, Response $response): Response
+    {
+        if ($request->query('embed') !== 'ide') {
+            return $response;
         }
 
-        auth()->login($consumed['user']);
+        $response->headers->remove('X-Frame-Options');
+        $response->headers->set(
+            'Content-Security-Policy',
+            "frame-ancestors 'self' vscode-webview: https://*.vscode-cdn.net",
+        );
 
-        return redirect()->to(url($consumed['redirectPath']));
+        return $response;
     }
 }
