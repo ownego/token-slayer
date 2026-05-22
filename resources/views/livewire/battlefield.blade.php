@@ -19,12 +19,14 @@
         class="absolute inset-0"
     ></div>
 
-    <a
-        href="{{ route('profile') }}"
-        class="absolute left-3 top-3 z-10 rounded bg-slate-800/80 px-3 py-2 font-mono text-xs text-amber-300 ring-1 ring-amber-400/40"
-    >
-        Profile
-    </a>
+    @unless (request('embed') === 'ide')
+        <a
+            href="{{ route('profile') }}"
+            class="absolute left-3 top-3 z-10 rounded bg-slate-800/80 px-3 py-2 font-mono text-xs text-amber-300 ring-1 ring-amber-400/40"
+        >
+            Profile
+        </a>
+    @endunless
 
     <div
         x-data="battlefieldLeaderboardOverlay()"
@@ -79,12 +81,6 @@
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const mount = document.getElementById('battlefield-mount');
-            const state = JSON.parse(mount.dataset.battlefieldState);
-            window.bootBattlefield(mount, state);
-        });
-
         window.battlefieldLeaderboardOverlay = function () {
             return {
                 open: false,
@@ -118,4 +114,21 @@
             };
         };
     </script>
+
+    @script
+    <script>
+        (() => {
+            const mount = document.getElementById('battlefield-mount');
+            if (!mount) {
+                return;
+            }
+            if (window.__battlefield?.game) {
+                window.__battlefield.game.destroy(true);
+                window.__battlefield = null;
+            }
+            const state = JSON.parse(mount.dataset.battlefieldState);
+            window.bootBattlefield(mount, state);
+        })();
+    </script>
+    @endscript
 </div>

@@ -12,13 +12,13 @@ const ECHO_EVENT_MAP = {
   FighterIdled: 'fighter-idled',
 };
 
-let echoChannel = null;
+const ECHO_RETRY_INTERVAL_MS = 200;
+const ECHO_RETRY_TIMEOUT_MS = 10_000;
 
-function subscribeEcho() {
-  if (!window.Echo) {
-    console.warn('[battlefield] window.Echo not available; events will not be received');
-    return;
-  }
+let echoChannel = null;
+let echoRetryInterval = null;
+
+function attachEchoListeners() {
   if (echoChannel) {
     for (const evt of Object.keys(ECHO_EVENT_MAP)) {
       echoChannel.stopListening('.' + evt);
@@ -30,8 +30,64 @@ function subscribeEcho() {
   }
 }
 
+function subscribeEcho() {
+  if (window.Echo) {
+    attachEchoListeners();
+    return;
+  }
+  if (echoRetryInterval) {
+    return;
+  }
+  const start = Date.now();
+  echoRetryInterval = setInterval(() => {
+    if (window.Echo) {
+      clearInterval(echoRetryInterval);
+      echoRetryInterval = null;
+      attachEchoListeners();
+    } else if (Date.now() - start > ECHO_RETRY_TIMEOUT_MS) {
+      clearInterval(echoRetryInterval);
+      echoRetryInterval = null;
+      console.warn('[battlefield] window.Echo not available after retries; events will not be received');
+    }
+  }, ECHO_RETRY_INTERVAL_MS);
+}
+
 export function detectMode() {
   return window.innerWidth < window.innerHeight ? 'portrait' : 'landscape';
+}
+
+function snapshotState(currentState, scene) {
+  if (!scene) {
+    return currentState;
+  }
+  const next = { ...currentState };
+  if (scene.bossState) {
+    next.boss = {
+      number: scene.bossState.number,
+      name: scene.bossState.name,
+      currentHp: scene.bossState.currentHp,
+      maxHp: scene.bossState.maxHp,
+    };
+  }
+  if (scene.leaderboard) {
+    next.leaderboard = scene.leaderboard.getRanked().map(([userId, damage, handle]) => ({
+      userId,
+      damage,
+      handle,
+    }));
+  }
+  if (scene.fighters?.size > 0) {
+    next.fighters = [...scene.fighters.values()].map(f => {
+      const charge = scene.charges.get(f.id);
+      return {
+        id: f.id,
+        handle: f.handleText,
+        avatarUrl: f.avatarUrl,
+        charging: charge ? { activity: charge.activity ?? '' } : null,
+      };
+    });
+  }
+  return next;
 }
 
 function bootGame(mount, state, mode) {
@@ -67,7 +123,8 @@ function bootGame(mount, state, mode) {
 
 export function bootBattlefield(mount, state) {
   let currentMode = detectMode();
-  let currentGame = bootGame(mount, state, currentMode);
+  let currentState = state;
+  let currentGame = bootGame(mount, currentState, currentMode);
   let pending = null;
 
   const onResize = () => {
@@ -78,8 +135,10 @@ export function bootBattlefield(mount, state) {
         return;
       }
       currentMode = next;
+      const oldScene = currentGame.scene.getScene('battlefield');
+      currentState = snapshotState(currentState, oldScene);
       currentGame.destroy(true);
-      currentGame = bootGame(mount, state, currentMode);
+      currentGame = bootGame(mount, currentState, currentMode);
     }, 200);
   };
 
