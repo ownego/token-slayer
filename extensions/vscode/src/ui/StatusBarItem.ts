@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
 import type { AuthService } from '../auth/AuthService';
-import type { BattlefieldPanel } from '../webview/BattlefieldPanel';
+import type { BridgeMessage } from '../bridge/schema';
+
+export interface BridgeEventSource {
+  onBridgeEvent(listener: (m: BridgeMessage) => void): () => void;
+}
 
 interface StatusState {
   signedIn: boolean;
@@ -14,7 +18,7 @@ interface StatusState {
 export function registerStatusBarItem(
   context: vscode.ExtensionContext,
   auth: AuthService,
-  panel: BattlefieldPanel,
+  ...sources: BridgeEventSource[]
 ): void {
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   context.subscriptions.push(item);
@@ -51,7 +55,7 @@ export function registerStatusBarItem(
     refresh();
   });
 
-  panel.onBridgeEvent((m) => {
+  const onBridgeMessage = (m: BridgeMessage): void => {
     switch (m.type) {
       case 'connection-state':
         state.connection = m.state;
@@ -84,7 +88,11 @@ export function registerStatusBarItem(
         return;
     }
     refresh();
-  });
+  };
+
+  for (const source of sources) {
+    source.onBridgeEvent(onBridgeMessage);
+  }
 
   void auth.isSignedIn().then((signedIn) => {
     state.signedIn = signedIn;
