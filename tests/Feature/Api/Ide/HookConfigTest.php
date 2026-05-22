@@ -7,7 +7,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 test('returns namespace and per-event URLs', function () {
-    config()->set('app.hook_namespace', 'aiorg');
+    config()->set('app.hook_namespace', 'token_slayer');
 
     $user = User::factory()->create();
     [$plain] = IdeAccessToken::issueBearer($user);
@@ -23,7 +23,7 @@ test('returns namespace and per-event URLs', function () {
             ],
         ]);
 
-    expect($response->json('namespace'))->toBe('aiorg');
+    expect($response->json('namespace'))->toBe('token_slayer');
     expect($response->json('eventsUrl'))->toBe(url('/api/events'));
 
     $eventNames = collect($response->json('events'))->pluck('name')->all();

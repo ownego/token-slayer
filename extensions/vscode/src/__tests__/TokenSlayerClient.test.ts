@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AiorgClient, type ClientDeps } from '../api/AiorgClient';
+import { TokenSlayerClient, type ClientDeps } from '../api/TokenSlayerClient';
 
 function makeDeps(overrides: Partial<ClientDeps> = {}): ClientDeps {
   return {
@@ -11,7 +11,7 @@ function makeDeps(overrides: Partial<ClientDeps> = {}): ClientDeps {
   };
 }
 
-describe('AiorgClient', () => {
+describe('TokenSlayerClient', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('attaches bearer and parses JSON on 2xx', async () => {
@@ -19,7 +19,7 @@ describe('AiorgClient', () => {
       new Response(JSON.stringify({ user: { id: 1 } }), { status: 200 }),
     );
     const deps = makeDeps({ fetch });
-    const client = new AiorgClient(deps);
+    const client = new TokenSlayerClient(deps);
 
     const result = await client.get<{ user: { id: number } }>('/api/ide/me');
 
@@ -37,7 +37,7 @@ describe('AiorgClient', () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: 'token_invalid_or_expired' }), { status: 410 }),
     );
-    const client = new AiorgClient(makeDeps({ fetch }));
+    const client = new TokenSlayerClient(makeDeps({ fetch }));
 
     await expect(client.post('/api/ide/auth/exchange', { token: 'x', state: 'y' }))
       .rejects.toMatchObject({ status: 410 });
@@ -46,7 +46,7 @@ describe('AiorgClient', () => {
   it('fires onUnauthorized once on 401 and rethrows', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response('', { status: 401 }));
     const onUnauthorized = vi.fn();
-    const client = new AiorgClient(makeDeps({ fetch, onUnauthorized }));
+    const client = new TokenSlayerClient(makeDeps({ fetch, onUnauthorized }));
 
     await expect(client.get('/api/ide/me')).rejects.toMatchObject({ status: 401 });
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
@@ -55,7 +55,7 @@ describe('AiorgClient', () => {
   it('skips bearer when token is absent and endpoint is unauthenticated', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
     const deps = makeDeps({ fetch, getToken: vi.fn().mockResolvedValue(null) });
-    const client = new AiorgClient(deps);
+    const client = new TokenSlayerClient(deps);
 
     await client.post('/api/ide/auth/exchange', { token: 't', state: 's' }, { authenticated: false });
 

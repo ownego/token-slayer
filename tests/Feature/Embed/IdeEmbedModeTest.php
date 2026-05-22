@@ -34,7 +34,7 @@ test('battlefield with embed=ide includes the bridge script for guests too, but 
         ->toContain('data-ide-embed="true"')
         ->toContain('ide-bridge')
         ->toContain('content="guest"')
-        ->not->toContain('aiorg-user-id');
+        ->not->toContain('token-slayer-user-id');
 });
 
 test('embed=ide strips X-Frame-Options and sets a webview-friendly frame-ancestors CSP', function () {
@@ -51,4 +51,20 @@ test('non-embed requests do not inject the embed CSP', function () {
 
     $csp = $response->headers->get('Content-Security-Policy');
     expect($csp === null || ! str_contains($csp, 'vscode-webview'))->toBeTrue();
+});
+
+test('battlefield with embed=ide hides the Profile link so the iframe cannot blank itself out', function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->get('/battlefield?embed=ide')->assertOk();
+
+    expect($response->getContent())->not->toContain('href="'.route('profile').'"');
+});
+
+test('battlefield without embed still renders the Profile link for normal web users', function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->get('/battlefield')->assertOk();
+
+    expect($response->getContent())->toContain('href="'.route('profile').'"');
 });

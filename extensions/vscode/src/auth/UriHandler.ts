@@ -32,7 +32,7 @@ export class AuthUriHandler implements vscode.UriHandler {
       await this.onAuth(payload);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      void vscode.window.showErrorMessage(`aiorg: sign-in link invalid (${message})`);
+      void vscode.window.showErrorMessage(`token-slayer: sign-in link invalid (${message})`);
     }
   }
 }

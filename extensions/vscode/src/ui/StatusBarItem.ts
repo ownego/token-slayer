@@ -34,7 +34,7 @@ export function registerStatusBarItem(
   const refresh = () => {
     item.text = iconFor(state);
     item.backgroundColor = backgroundFor(state, warnBg, errorBg);
-    item.command = state.signedIn ? 'aiorg.openBattlefield' : 'aiorg.signIn';
+    item.command = state.signedIn ? 'token-slayer.openBattlefield' : 'token-slayer.signIn';
     item.tooltip = buildTooltip(state);
     item.show();
   };
@@ -116,11 +116,11 @@ function buildTooltip(s: StatusState): vscode.MarkdownString {
   md.supportThemeIcons = true;
 
   // Header
-  md.appendMarkdown(`#### aiorg &nbsp;&nbsp; ${statusBadge(s)}\n\n`);
+  md.appendMarkdown(`#### token-slayer &nbsp;&nbsp; ${statusBadge(s)}\n\n`);
 
   if (!s.signedIn) {
     md.appendMarkdown('Sign in with Slack to see live boss and fighter data, get hit notifications, and install Claude Code hooks.\n\n');
-    md.appendMarkdown('[$(sign-in) &nbsp; Sign in with Slack &nbsp;](command:aiorg.signIn)');
+    md.appendMarkdown('[$(sign-in) &nbsp; Sign in with Slack &nbsp;](command:token-slayer.signIn)');
     return md;
   }
 
@@ -167,9 +167,10 @@ function buildTooltip(s: StatusState): vscode.MarkdownString {
   }
 
   md.appendMarkdown('---\n\n');
-  md.appendMarkdown('[$(rocket) Open](command:aiorg.openBattlefield) &nbsp; · &nbsp; ');
-  md.appendMarkdown('[$(tools) Install hooks](command:aiorg.installHooks) &nbsp; · &nbsp; ');
-  md.appendMarkdown('[$(sign-out) Sign out](command:aiorg.signOut)');
+  md.appendMarkdown('[$(rocket) Open](command:token-slayer.openBattlefield) &nbsp; · &nbsp; ');
+  md.appendMarkdown('[$(account) Profile](command:token-slayer.openProfile) &nbsp; · &nbsp; ');
+  md.appendMarkdown('[$(tools) Install hooks](command:token-slayer.installHooks) &nbsp; · &nbsp; ');
+  md.appendMarkdown('[$(sign-out) Sign out](command:token-slayer.signOut)');
   return md;
 }
 

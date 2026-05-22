@@ -1,12 +1,12 @@
-# aiorg VSCode extension
+# token-slayer VSCode extension
 
-Companion to the [aiorg](https://github.com/aiorg) battlefield: sign in
+Companion to the [token-slayer](https://github.com/token-slayer) battlefield: sign in
 with Slack, watch the battlefield inside a sidebar webview, get hit/boss
 notifications, and install Claude Code hooks — all without leaving the
 editor.
 
 See `docs/plans/2026-05-21-ide-frontend-embed-design.md` and the
-corresponding implementation plan in the aiorg repo for the architecture
+corresponding implementation plan in the token-slayer repo for the architecture
 details.
 
 ## Build

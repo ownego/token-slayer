@@ -1,6 +1,6 @@
 <?php
 
-beforeEach(fn () => config(['app.hook_namespace' => 'aiorg']));
+beforeEach(fn () => config(['app.hook_namespace' => 'token_slayer']));
 
 test('install.sh is publicly accessible as a shell script', function () {
     $response = $this->get('/install');
@@ -15,7 +15,7 @@ test('install.sh embeds the events URL and points the hook command at the local 
     expect($script)
         ->toContain('#!/bin/sh')
         ->toContain(url('/api/events'))
-        ->toContain('TOKEN_FILE="$HOME/.config/aiorg/token"')
+        ->toContain('TOKEN_FILE="$HOME/.config/token_slayer/token"')
         ->toContain('Bearer $(cat "$TOKEN_FILE")');
 });
 
@@ -23,7 +23,7 @@ test('install.sh drops a hook helper script that enriches Stop events with trans
     $script = $this->get('/install')->getContent();
 
     expect($script)
-        ->toContain('HELPER="$HOME/.config/aiorg/send-hook.sh"')
+        ->toContain('HELPER="$HOME/.config/token_slayer/send-hook.sh"')
         ->toContain("cat > \"\$HELPER\" <<'HOOK_SH'")
         ->toContain('chmod +x "$HELPER"')
         ->toContain('transcript_path')
@@ -46,16 +46,16 @@ test('install.sh writes to claude settings and codex config and uses idempotent 
     expect($script)
         ->toContain('$HOME/.claude/settings.json')
         ->toContain('$HOME/.codex/config.toml')
-        ->toContain('# >>> aiorg hooks')
-        ->toContain('# <<< aiorg hooks');
+        ->toContain('# >>> token_slayer hooks')
+        ->toContain('# <<< token_slayer hooks');
 });
 
-test('install.sh saves AIORG_TOKEN to the token file when present', function () {
+test('install.sh saves TOKEN_SLAYER_TOKEN to the token file when present', function () {
     $script = $this->get('/install')->getContent();
 
     expect($script)
-        ->toContain('${AIORG_TOKEN:-}')
-        ->toContain('printf \'%s\' "$AIORG_TOKEN"')
+        ->toContain('${TOKEN_SLAYER_TOKEN:-}')
+        ->toContain('printf \'%s\' "$TOKEN_SLAYER_TOKEN"')
         ->toContain('chmod 600 "$TOKEN_FILE"');
 });
 
@@ -69,6 +69,6 @@ test('install.sh uses the configured hook namespace in paths, env var, and marke
         ->toContain('${ACME_TOKEN:-}')
         ->toContain('# >>> acme hooks')
         ->toContain('# <<< acme hooks')
-        ->not->toContain('aiorg')
-        ->not->toContain('AIORG_TOKEN');
+        ->not->toContain('token_slayer')
+        ->not->toContain('TOKEN_SLAYER_TOKEN');
 });

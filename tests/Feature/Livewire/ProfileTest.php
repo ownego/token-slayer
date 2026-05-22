@@ -7,7 +7,7 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
-beforeEach(fn () => config(['app.hook_namespace' => 'aiorg']));
+beforeEach(fn () => config(['app.hook_namespace' => 'token_slayer']));
 
 test('profile redirects guests to the slack login route', function () {
     $this->get('/profile')->assertRedirect(route('slack.login'));
@@ -49,16 +49,16 @@ test('profile bakes the fresh plain token into the combined install command', fu
 
     $this->get('/profile')
         ->assertOk()
-        ->assertSee('curl -fsSL '.route('install-script').' | AIORG_TOKEN=plain-abc sh', escape: false);
+        ->assertSee('curl -fsSL '.route('install-script').' | TOKEN_SLAYER_TOKEN=plain-abc sh', escape: false);
 });
 
-test('profile still shows the AIORG_TOKEN command shape with a placeholder when no fresh token is in session', function () {
+test('profile still shows the TOKEN_SLAYER_TOKEN command shape with a placeholder when no fresh token is in session', function () {
     $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
     $this->actingAs($user);
 
     $this->get('/profile')
         ->assertOk()
-        ->assertSee('AIORG_TOKEN=&lt;your-token&gt; sh', escape: false)
+        ->assertSee('TOKEN_SLAYER_TOKEN=&lt;your-token&gt; sh', escape: false)
         ->assertDontSee('plain-abc');
 });
 
@@ -68,8 +68,8 @@ test('manual hook config shows a step that writes the token to the config file',
 
     $this->get('/profile')
         ->assertOk()
-        ->assertSee("printf '%s' 'plain-abc' > ~/.config/aiorg/token")
-        ->assertSee('chmod 600 ~/.config/aiorg/token');
+        ->assertSee("printf '%s' 'plain-abc' > ~/.config/token_slayer/token")
+        ->assertSee('chmod 600 ~/.config/token_slayer/token');
 });
 
 test('profile reflects the configured hook namespace in displayed paths and the install command', function () {
@@ -81,8 +81,8 @@ test('profile reflects the configured hook namespace in displayed paths and the 
         ->assertOk()
         ->assertSee('curl -fsSL '.route('install-script').' | ACME_TOKEN=plain-abc sh', escape: false)
         ->assertSee('~/.config/acme/token')
-        ->assertDontSee('aiorg')
-        ->assertDontSee('AIORG_TOKEN');
+        ->assertDontSee('token_slayer')
+        ->assertDontSee('TOKEN_SLAYER_TOKEN');
 });
 
 test('regenerate replaces the hook token', function () {

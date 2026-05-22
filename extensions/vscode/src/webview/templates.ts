@@ -4,7 +4,7 @@ export function signedOutHtml(nonce: string): string {
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 </head><body style="font-family:sans-serif;padding:1rem;color:var(--vscode-foreground)">
-  <h2>aiorg</h2>
+  <h2>token-slayer</h2>
   <p>Sign in with Slack to see your battlefield, get hit notifications, and install Claude Code hooks.</p>
   <button id="signin" style="padding:.5rem 1rem">Sign in with Slack</button>
   <script nonce="${nonce}">
@@ -30,7 +30,7 @@ export function errorHtml(nonce: string, message: string): string {
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 </head><body style="font-family:sans-serif;padding:1rem;color:var(--vscode-foreground)">
-  <h3>Couldn't load aiorg</h3>
+  <h3>Couldn't load token-slayer</h3>
   <p style="color:var(--vscode-errorForeground)">${escapeHtml(message)}</p>
   <button id="retry">Retry</button>
   <script nonce="${nonce}">
@@ -50,11 +50,11 @@ export function iframeWrapperHtml(nonce: string, signedUrl: string, serverOrigin
     iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
   </style>
 </head><body>
-  <iframe id="aiorg" src="${escapeHtml(signedUrl)}"></iframe>
+  <iframe id="token-slayer" src="${escapeHtml(signedUrl)}"></iframe>
   <script nonce="${nonce}">
     const api = acquireVsCodeApi();
     window.addEventListener('message', (event) => {
-      if (event.source !== document.getElementById('aiorg').contentWindow) return;
+      if (event.source !== document.getElementById('token-slayer').contentWindow) return;
       if (event.origin !== '${serverOrigin}') return;
       api.postMessage(event.data);
     });

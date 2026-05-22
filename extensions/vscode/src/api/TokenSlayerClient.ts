@@ -15,7 +15,7 @@ interface RequestOpts {
   authenticated?: boolean;
 }
 
-export class AiorgClient {
+export class TokenSlayerClient {
   constructor(private readonly deps: ClientDeps) {}
 
   get<T = unknown>(path: string, opts: RequestOpts = {}): Promise<T> {

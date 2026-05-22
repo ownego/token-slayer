@@ -1,9 +1,9 @@
 {
-  "name": "aiorg",
-  "displayName": "aiorg",
-  "description": "Watch the aiorg battlefield, manage Claude Code hooks, and stay signed in to aiorg without leaving VSCode.",
+  "name": "token-slayer",
+  "displayName": "token-slayer",
+  "description": "Watch the token-slayer battlefield, manage Claude Code hooks, and stay signed in to token-slayer without leaving VSCode.",
   "version": "0.1.0",
-  "publisher": "aiorg",
+  "publisher": "token-slayer",
   "private": true,
   "engines": {
     "vscode": "^1.85.0"
@@ -15,35 +15,36 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "aiorg",
-          "title": "aiorg",
+          "id": "token-slayer",
+          "title": "token-slayer",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "aiorg": [
+      "token-slayer": [
         {
-          "id": "aiorg.battlefield",
+          "id": "token-slayer.battlefield",
           "name": "Battlefield",
           "type": "webview"
         }
       ]
     },
     "commands": [
-      { "command": "aiorg.signIn", "title": "aiorg: Sign in with Slack" },
-      { "command": "aiorg.signOut", "title": "aiorg: Sign out" },
-      { "command": "aiorg.installHooks", "title": "aiorg: Install Claude Code hooks" },
-      { "command": "aiorg.uninstallHooks", "title": "aiorg: Uninstall Claude Code hooks" },
-      { "command": "aiorg.openBattlefield", "title": "aiorg: Open battlefield" }
+      { "command": "token-slayer.signIn", "title": "token-slayer: Sign in with Slack" },
+      { "command": "token-slayer.signOut", "title": "token-slayer: Sign out" },
+      { "command": "token-slayer.installHooks", "title": "token-slayer: Install Claude Code hooks" },
+      { "command": "token-slayer.uninstallHooks", "title": "token-slayer: Uninstall Claude Code hooks" },
+      { "command": "token-slayer.openBattlefield", "title": "token-slayer: Open battlefield" },
+      { "command": "token-slayer.openProfile", "title": "token-slayer: Open profile" }
     ],
     "configuration": {
-      "title": "aiorg",
+      "title": "token-slayer",
       "properties": {
-        "aiorg.serverUrl": {
+        "token-slayer.serverUrl": {
           "type": "string",
-          "default": "https://aiorg.app",
-          "description": "Base URL of the aiorg server. Override for local dev (e.g. http://localhost:8000)."
+          "default": "https://token-slayer.app",
+          "description": "Base URL of the token-slayer server. Override for local dev (e.g. http://localhost:8000)."
         }
       }
     }

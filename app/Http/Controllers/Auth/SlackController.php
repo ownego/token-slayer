@@ -77,7 +77,7 @@ class SlackController extends Controller
     {
         [$plain] = IdeAccessToken::issueOneTime($user, $state, 120);
 
-        $url = 'vscode://aiorg.aiorg/auth?'.http_build_query([
+        $url = 'vscode://token-slayer.token-slayer/auth?'.http_build_query([
             'token' => $plain,
             'state' => $state,
         ]);

@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import { AiorgClient } from './api/AiorgClient';
+import { TokenSlayerClient } from './api/TokenSlayerClient';
 import { AuthService } from './auth/AuthService';
 import { AuthUriHandler } from './auth/UriHandler';
 import { registerInstallHooks } from './commands/installHooks';
 import { registerOpenBattlefield } from './commands/openBattlefield';
+import { registerOpenProfile } from './commands/openProfile';
 import { registerSignIn } from './commands/signIn';
 import { registerSignOut } from './commands/signOut';
 import { registerUninstallHooks } from './commands/uninstallHooks';
@@ -18,7 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Forward-declare so the client can call back into auth on 401.
   let authRef: AuthService | null = null;
 
-  const client = new AiorgClient({
+  const client = new TokenSlayerClient({
     serverUrl,
     getToken: () => (authRef ? authRef.getToken() : Promise.resolve(null)),
     onUnauthorized: () => { void authRef?.handleUnauthorized(); },
@@ -46,7 +47,7 @@ export function activate(context: vscode.ExtensionContext): void {
       // .focus auto-commands aren't always exposed in older VSCode builds;
       // fall back to focusing the activity bar container.
       try {
-        await vscode.commands.executeCommand('workbench.view.extension.aiorg');
+        await vscode.commands.executeCommand('workbench.view.extension.token-slayer');
       } catch {
         // ignore — the user can open the sidebar manually.
       }
@@ -60,7 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerUriHandler(
       new AuthUriHandler(async (payload) => {
         await auth.completeSignIn(payload);
-        void vscode.window.showInformationMessage('aiorg: signed in.');
+        void vscode.window.showInformationMessage('token-slayer: signed in.');
         void revealPanel();
       }),
     ),
@@ -69,6 +70,7 @@ export function activate(context: vscode.ExtensionContext): void {
   registerSignIn(context, auth);
   registerSignOut(context, auth);
   registerOpenBattlefield(context);
+  registerOpenProfile(context, client);
   registerInstallHooks(context, client);
   registerUninstallHooks(context, client);
   registerStatusBarItem(context, auth, panel);

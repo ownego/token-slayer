@@ -1,6 +1,6 @@
-import type { AiorgClient } from '../api/AiorgClient';
+import type { TokenSlayerClient } from '../api/TokenSlayerClient';
 
-const BEARER_KEY = 'aiorg.bearer';
+const BEARER_KEY = 'token-slayer.bearer';
 
 export interface AuthState {
   signedIn: boolean;
@@ -14,7 +14,7 @@ interface SecretStorageLike {
 
 export interface AuthServiceDeps {
   secrets: SecretStorageLike;
-  client: AiorgClient;
+  client: TokenSlayerClient;
   openBrowser: (url: string) => Promise<void>;
   serverUrl: string;
 }

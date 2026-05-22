@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { AuthService } from '../auth/AuthService';
-import type { AiorgClient } from '../api/AiorgClient';
+import type { TokenSlayerClient } from '../api/TokenSlayerClient';
 import { parseBridgeMessage, type BridgeMessage } from '../bridge/schema';
 import {
   errorHtml,
@@ -11,14 +11,14 @@ import {
 } from './templates';
 
 export class BattlefieldPanel implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'aiorg.battlefield';
+  public static readonly viewType = 'token-slayer.battlefield';
 
   private view: vscode.WebviewView | null = null;
   private bridgeListeners = new Set<(m: BridgeMessage) => void>();
 
   constructor(
     private readonly auth: AuthService,
-    private readonly client: AiorgClient,
+    private readonly client: TokenSlayerClient,
     private readonly serverUrl: string,
   ) {
     auth.onAuthChanged(() => { void this.refresh(); });
@@ -47,7 +47,7 @@ export class BattlefieldPanel implements vscode.WebviewViewProvider {
     if (typeof raw === 'object' && raw !== null) {
       const m = raw as { type?: string };
       if (m.type === 'sign-in-requested') {
-        void vscode.commands.executeCommand('aiorg.signIn');
+        void vscode.commands.executeCommand('token-slayer.signIn');
         return;
       }
       if (m.type === 'retry-requested') {

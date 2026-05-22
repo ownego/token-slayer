@@ -16,17 +16,17 @@ export function registerNotifications(
         if (now - lastHitAt < HIT_THROTTLE_MS) return;
         lastHitAt = now;
         void vscode.window.showInformationMessage(
-          `aiorg: you hit for ${m.damage.toLocaleString()} (boss ${m.bossHpAfter.toLocaleString()}/${m.bossMaxHp.toLocaleString()})`,
+          `token-slayer: you hit for ${m.damage.toLocaleString()} (boss ${m.bossHpAfter.toLocaleString()}/${m.bossMaxHp.toLocaleString()})`,
         );
         return;
       }
       case 'boss-defeated':
         void vscode.window.showInformationMessage(
-          `aiorg: boss defeated${m.killerHandle ? ` by @${m.killerHandle}` : ''}`,
+          `token-slayer: boss defeated${m.killerHandle ? ` by @${m.killerHandle}` : ''}`,
         );
         return;
       case 'boss-spawned':
-        void vscode.window.showInformationMessage(`aiorg: new boss spawned — ${m.name}`);
+        void vscode.window.showInformationMessage(`token-slayer: new boss spawned — ${m.name}`);
         return;
       default:
         return;

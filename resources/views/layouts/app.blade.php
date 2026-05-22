@@ -10,9 +10,9 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @if ($embed)
         @auth
-            <meta name="aiorg-user-id" content="{{ auth()->id() }}">
+            <meta name="token-slayer-user-id" content="{{ auth()->id() }}">
         @endauth
-        <meta name="aiorg-embed-auth" content="{{ auth()->check() ? 'authed' : 'guest' }}">
+        <meta name="token-slayer-embed-auth" content="{{ auth()->check() ? 'authed' : 'guest' }}">
         @vite('resources/js/ide-bridge.js')
     @endif
     @livewireStyles

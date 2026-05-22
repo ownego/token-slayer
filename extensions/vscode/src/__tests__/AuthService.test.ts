@@ -69,13 +69,13 @@ describe('AuthService', () => {
 
     await auth.completeSignIn({ token: 't', state });
 
-    expect(secrets.store).toHaveBeenCalledWith('aiorg.bearer', 'B');
+    expect(secrets.store).toHaveBeenCalledWith('token-slayer.bearer', 'B');
     expect(last).toEqual({ signedIn: true });
   });
 
   it('getToken returns the persisted bearer', async () => {
     const secrets = new FakeSecretStorage();
-    await secrets.store('aiorg.bearer', 'existing');
+    await secrets.store('token-slayer.bearer', 'existing');
     const auth = new AuthService({
       secrets: secrets as any,
       client: makeClient(),
@@ -88,7 +88,7 @@ describe('AuthService', () => {
 
   it('signOut clears storage and fires onAuthChanged(signedOut)', async () => {
     const secrets = new FakeSecretStorage();
-    await secrets.store('aiorg.bearer', 'existing');
+    await secrets.store('token-slayer.bearer', 'existing');
     const client = makeClient();
     const auth = new AuthService({
       secrets: secrets as any,
@@ -103,13 +103,13 @@ describe('AuthService', () => {
     await auth.signOut();
 
     expect(client.post).toHaveBeenCalledWith('/api/ide/auth/revoke', {});
-    expect(await secrets.get('aiorg.bearer')).toBeUndefined();
+    expect(await secrets.get('token-slayer.bearer')).toBeUndefined();
     expect(last).toEqual({ signedIn: false });
   });
 
   it('handleUnauthorized clears bearer and fires signedOut', async () => {
     const secrets = new FakeSecretStorage();
-    await secrets.store('aiorg.bearer', 'existing');
+    await secrets.store('token-slayer.bearer', 'existing');
     const auth = new AuthService({
       secrets: secrets as any,
       client: makeClient(),
@@ -122,7 +122,7 @@ describe('AuthService', () => {
 
     await auth.handleUnauthorized();
 
-    expect(await secrets.get('aiorg.bearer')).toBeUndefined();
+    expect(await secrets.get('token-slayer.bearer')).toBeUndefined();
     expect(last).toEqual({ signedIn: false });
   });
 });

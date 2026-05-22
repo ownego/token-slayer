@@ -12,22 +12,22 @@
 import { shouldForwardToHost, packHit } from './ide-bridge-internal.js';
 
 function currentUserId() {
-    const meta = document.querySelector('meta[name="aiorg-user-id"]');
+    const meta = document.querySelector('meta[name="token-slayer-user-id"]');
     return meta ? Number(meta.getAttribute('content')) : null;
 }
 
 function postToHost(message) {
     if (!shouldForwardToHost(message, typeof acquireVsCodeApi === 'function', window.parent !== window)) {
-        console.warn('[aiorg-bridge] postToHost dropped (no host)', message);
+        console.warn('[token-slayer-bridge] postToHost dropped (no host)', message);
         return;
     }
     if (typeof acquireVsCodeApi === 'function') {
-        const api = (window.__aiorgVscodeApi ??= acquireVsCodeApi());
+        const api = (window.__tokenSlayerVscodeApi ??= acquireVsCodeApi());
         api.postMessage(message);
-        console.log('[aiorg-bridge] sent via vscode api', message);
+        console.log('[token-slayer-bridge] sent via vscode api', message);
     } else if (window.parent !== window) {
         window.parent.postMessage(message, '*');
-        console.log('[aiorg-bridge] sent via parent', message);
+        console.log('[token-slayer-bridge] sent via parent', message);
     }
 }
 
@@ -67,21 +67,21 @@ function emitInitialBossSnapshot() {
             yourDamage: Number(ownRow?.damage ?? 0),
         });
     } catch (err) {
-        console.warn('[aiorg-bridge] could not parse battlefield-state', err);
+        console.warn('[token-slayer-bridge] could not parse battlefield-state', err);
     }
 }
 
 function start() {
     if (!window.Echo) {
-        if (!window.__aiorgBridgeWaitLogged) {
-            console.log('[aiorg-bridge] waiting for window.Echo');
-            window.__aiorgBridgeWaitLogged = true;
+        if (!window.__tokenSlayerBridgeWaitLogged) {
+            console.log('[token-slayer-bridge] waiting for window.Echo');
+            window.__tokenSlayerBridgeWaitLogged = true;
         }
         setTimeout(start, 50);
         return;
     }
 
-    console.log('[aiorg-bridge] started', {
+    console.log('[token-slayer-bridge] started', {
         userId: currentUserId(),
         hasVscodeApi: typeof acquireVsCodeApi === 'function',
         hasParent: window.parent !== window,
@@ -95,16 +95,16 @@ function start() {
 
     const connection = window.Echo.connector?.pusher?.connection;
     if (connection) {
-        console.log('[aiorg-bridge] initial pusher state:', connection.state);
+        console.log('[token-slayer-bridge] initial pusher state:', connection.state);
         connection.bind('state_change', (states) => {
-            console.log('[aiorg-bridge] pusher state_change:', states);
+            console.log('[token-slayer-bridge] pusher state_change:', states);
             postToHost({ type: 'connection-state', state: mapPusherState(states.current) });
         });
         // Pusher may have transitioned to 'connected' before this bind runs;
         // post the current state once so the host doesn't stay on 'connecting'.
         postToHost({ type: 'connection-state', state: mapPusherState(connection.state) });
     } else {
-        console.warn('[aiorg-bridge] no Pusher connection found at Echo.connector.pusher.connection');
+        console.warn('[token-slayer-bridge] no Pusher connection found at Echo.connector.pusher.connection');
     }
 
     channel.listen('.HitDealt', (p) => {

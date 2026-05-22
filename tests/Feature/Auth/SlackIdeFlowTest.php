@@ -33,7 +33,7 @@ test('callback mints a one-time token and redirects to vscode://', function () {
     $response->assertRedirect();
     $location = $response->headers->get('Location');
 
-    expect($location)->toStartWith('vscode://aiorg.aiorg/auth?');
+    expect($location)->toStartWith('vscode://token-slayer.token-slayer/auth?');
     expect($location)->toContain('state=st');
     expect($location)->toContain('token=');
 

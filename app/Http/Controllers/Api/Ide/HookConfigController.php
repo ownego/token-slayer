@@ -8,14 +8,14 @@ use Illuminate\Http\JsonResponse;
 class HookConfigController extends Controller
 {
     /**
-     * The Claude Code hook events aiorg subscribes to.
+     * The Claude Code hook events token-slayer subscribes to.
      *
      * @var list<string>
      */
     private const EVENT_NAMES = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
 
     /**
-     * Single source of truth for which Claude Code hook events aiorg cares
+     * Single source of truth for which Claude Code hook events token-slayer cares
      * about and what command to wire them to. Consumed by the IDE extension's
      * HookManager. The /install shell script can adopt this later (out of
      * scope for v1).

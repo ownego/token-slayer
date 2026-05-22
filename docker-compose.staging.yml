@@ -11,7 +11,7 @@ x-app: &app
     # So DB_HOST=host.docker.internal works against an external Postgres on the host.
     - "host.docker.internal:host-gateway"
   networks:
-    - aiorg
+    - token-slayer
   restart: unless-stopped
 
 services:
@@ -48,4 +48,4 @@ services:
     command: php artisan schedule:work
 
 networks:
-  aiorg:
+  token-slayer:
