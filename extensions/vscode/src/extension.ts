@@ -35,6 +35,24 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const panel = new BattlefieldPanel(auth, client, serverUrl);
 
+  // The bridge that updates the status bar only runs inside the webview
+  // iframe — and the iframe doesn't load until the sidebar view is opened
+  // at least once. Focusing the view forces VSCode to call
+  // `resolveWebviewView`, which loads the iframe and starts the bridge.
+  const revealPanel = async (): Promise<void> => {
+    try {
+      await vscode.commands.executeCommand(`${BattlefieldPanel.viewType}.focus`);
+    } catch {
+      // .focus auto-commands aren't always exposed in older VSCode builds;
+      // fall back to focusing the activity bar container.
+      try {
+        await vscode.commands.executeCommand('workbench.view.extension.aiorg');
+      } catch {
+        // ignore — the user can open the sidebar manually.
+      }
+    }
+  };
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(BattlefieldPanel.viewType, panel, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -43,6 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
       new AuthUriHandler(async (payload) => {
         await auth.completeSignIn(payload);
         void vscode.window.showInformationMessage('aiorg: signed in.');
+        void revealPanel();
       }),
     ),
   );
@@ -54,6 +73,13 @@ export function activate(context: vscode.ExtensionContext): void {
   registerUninstallHooks(context, client);
   registerStatusBarItem(context, auth, panel);
   registerNotifications(context, panel);
+
+  // If the user is already signed in (bearer persists in SecretStorage
+  // across restarts), reveal the panel on activation so the bridge runs
+  // and the status bar isn't stuck on "connecting…" forever.
+  void auth.isSignedIn().then(async (signedIn) => {
+    if (signedIn) await revealPanel();
+  });
 }
 
 export function deactivate(): void {}
