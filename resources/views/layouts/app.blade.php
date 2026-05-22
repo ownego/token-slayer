@@ -11,8 +11,9 @@
     @if ($embed)
         @auth
             <meta name="aiorg-user-id" content="{{ auth()->id() }}">
-            @vite('resources/js/ide-bridge.js')
         @endauth
+        <meta name="aiorg-embed-auth" content="{{ auth()->check() ? 'authed' : 'guest' }}">
+        @vite('resources/js/ide-bridge.js')
     @endif
     @livewireStyles
 </head>

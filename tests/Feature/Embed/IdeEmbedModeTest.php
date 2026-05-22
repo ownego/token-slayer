@@ -27,12 +27,14 @@ test('battlefield with embed=ide hides chrome and includes the bridge script', f
     expect($response->getContent())->toContain('ide-bridge');
 });
 
-test('battlefield with embed=ide does NOT include bridge script for guests', function () {
+test('battlefield with embed=ide includes the bridge script for guests too, but omits the user-id meta', function () {
     $response = $this->get('/battlefield?embed=ide')->assertOk();
 
     expect($response->getContent())
         ->toContain('data-ide-embed="true"')
-        ->not->toContain('ide-bridge');
+        ->toContain('ide-bridge')
+        ->toContain('content="guest"')
+        ->not->toContain('aiorg-user-id');
 });
 
 test('embed=ide strips X-Frame-Options and sets a webview-friendly frame-ancestors CSP', function () {

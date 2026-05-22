@@ -5,8 +5,9 @@ with Slack, watch the battlefield inside a sidebar webview, get hit/boss
 notifications, and install Claude Code hooks — all without leaving the
 editor.
 
-See [docs/plans/2026-05-21-ide-frontend-embed-design.md](../../docs/plans/2026-05-21-ide-frontend-embed-design.md)
-and the corresponding implementation plan for the architecture details.
+See `docs/plans/2026-05-21-ide-frontend-embed-design.md` and the
+corresponding implementation plan in the aiorg repo for the architecture
+details.
 
 ## Build
 
