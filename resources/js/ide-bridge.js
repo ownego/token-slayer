@@ -18,13 +18,16 @@ function currentUserId() {
 
 function postToHost(message) {
     if (!shouldForwardToHost(message, typeof acquireVsCodeApi === 'function', window.parent !== window)) {
+        console.warn('[aiorg-bridge] postToHost dropped (no host)', message);
         return;
     }
     if (typeof acquireVsCodeApi === 'function') {
         const api = (window.__aiorgVscodeApi ??= acquireVsCodeApi());
         api.postMessage(message);
+        console.log('[aiorg-bridge] sent via vscode api', message);
     } else if (window.parent !== window) {
         window.parent.postMessage(message, '*');
+        console.log('[aiorg-bridge] sent via parent', message);
     }
 }
 
@@ -44,23 +47,64 @@ function mapPusherState(state) {
     }
 }
 
+function emitInitialBossSnapshot() {
+    const mount = document.getElementById('battlefield-mount');
+    const raw = mount?.getAttribute('data-battlefield-state');
+    if (!raw) return;
+    try {
+        const data = JSON.parse(raw);
+        const boss = data && data.boss;
+        if (!boss) return;
+        const me = currentUserId();
+        const leaderboard = Array.isArray(data.leaderboard) ? data.leaderboard : [];
+        const ownRow = me !== null ? leaderboard.find((row) => Number(row.userId) === me) : null;
+        postToHost({
+            type: 'boss-snapshot',
+            bossId: Number(boss.number ?? boss.id ?? 0),
+            name: String(boss.name ?? `Boss ${boss.number ?? ''}`).trim(),
+            maxHp: Number(boss.maxHp ?? boss.max_hp ?? 0),
+            currentHp: Number(boss.currentHp ?? boss.current_hp ?? 0),
+            yourDamage: Number(ownRow?.damage ?? 0),
+        });
+    } catch (err) {
+        console.warn('[aiorg-bridge] could not parse battlefield-state', err);
+    }
+}
+
 function start() {
     if (!window.Echo) {
+        if (!window.__aiorgBridgeWaitLogged) {
+            console.log('[aiorg-bridge] waiting for window.Echo');
+            window.__aiorgBridgeWaitLogged = true;
+        }
         setTimeout(start, 50);
         return;
     }
+
+    console.log('[aiorg-bridge] started', {
+        userId: currentUserId(),
+        hasVscodeApi: typeof acquireVsCodeApi === 'function',
+        hasParent: window.parent !== window,
+        connector: window.Echo.connector?.constructor?.name,
+    });
+
+    emitInitialBossSnapshot();
 
     const me = currentUserId();
     const channel = window.Echo.channel('battlefield');
 
     const connection = window.Echo.connector?.pusher?.connection;
     if (connection) {
+        console.log('[aiorg-bridge] initial pusher state:', connection.state);
         connection.bind('state_change', (states) => {
+            console.log('[aiorg-bridge] pusher state_change:', states);
             postToHost({ type: 'connection-state', state: mapPusherState(states.current) });
         });
         // Pusher may have transitioned to 'connected' before this bind runs;
         // post the current state once so the host doesn't stay on 'connecting'.
         postToHost({ type: 'connection-state', state: mapPusherState(connection.state) });
+    } else {
+        console.warn('[aiorg-bridge] no Pusher connection found at Echo.connector.pusher.connection');
     }
 
     channel.listen('.HitDealt', (p) => {

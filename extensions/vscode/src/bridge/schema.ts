@@ -5,6 +5,7 @@ export type BridgeMessage =
   | { type: 'hit-landed'; userId: number; damage: number; bossId: number; bossHpAfter: number; bossMaxHp: number }
   | { type: 'boss-defeated'; bossId: number; killerUserId: number; killerHandle: string | null }
   | { type: 'boss-spawned'; bossId: number; name: string; maxHp: number }
+  | { type: 'boss-snapshot'; bossId: number; name: string; maxHp: number; currentHp: number; yourDamage: number }
   | { type: 'install-hooks-requested' };
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -47,6 +48,17 @@ export function parseBridgeMessage(input: unknown): BridgeMessage | null {
     case 'boss-spawned':
       if (num(m.bossId) && str(m.name) && num(m.maxHp))
         return { type: 'boss-spawned', bossId: m.bossId, name: m.name, maxHp: m.maxHp };
+      return null;
+    case 'boss-snapshot':
+      if (num(m.bossId) && str(m.name) && num(m.maxHp) && num(m.currentHp) && num(m.yourDamage))
+        return {
+          type: 'boss-snapshot',
+          bossId: m.bossId,
+          name: m.name,
+          maxHp: m.maxHp,
+          currentHp: m.currentHp,
+          yourDamage: m.yourDamage,
+        };
       return null;
     default:
       return null;
