@@ -37,3 +37,16 @@
     transition: transform 300ms ease-in;
     will-change: transform;
 }
+
+/* Portrait-only overlay (leaderboard button on mobile).
+   md:hidden hides it on ≥768px screens, but in portrait mode the
+   in-canvas leaderboard doesn't render at all, so we need to show
+   the overlay regardless of breakpoint in portrait orientation. */
+.bf-portrait-only {
+    display: none;
+}
+@media (orientation: portrait) {
+    .bf-portrait-only {
+        display: block;
+    }
+}

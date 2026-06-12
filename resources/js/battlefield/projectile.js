@@ -40,8 +40,8 @@ function spawnSlash(scene, fromX, fromY, dmgScale, onImpact) {
   ensureSlashTexture(scene);
   const toX     = scene.layout.boss.anchor.x;
   const toY     = scene.layout.boss.anchor.y;
-  const sc      = dmgScale * 1.1;
-  const lift    = 30;
+  const sc      = dmgScale * 2.0;
+  const lift    = 60;
   const dur     = TIMINGS.projectileArcMs * 0.7;
   const flyLeft = fromX > toX;
   const proj    = scene.add.image(fromX, fromY, 'proj-slash').setScale(sc).setDepth(10);
@@ -121,8 +121,8 @@ function spawnShuriken(scene, fromX, fromY, dmgScale, onImpact) {
   ensureShurikenTexture(scene);
   const toX   = scene.layout.boss.anchor.x;
   const toY   = scene.layout.boss.anchor.y;
-  const sc    = dmgScale * 0.9;
-  const lift  = 20;
+  const sc    = dmgScale * 1.8;
+  const lift  = 40;
   const dur   = TIMINGS.projectileArcMs * 0.6;
   const proj  = scene.add.image(fromX, fromY, 'proj-shuriken').setScale(sc).setDepth(10);
   const state = { t: 0 };
@@ -168,8 +168,8 @@ function spawnArrow(scene, fromX, fromY, dmgScale, onImpact) {
   ensureArrowTexture(scene);
   const toX     = scene.layout.boss.anchor.x;
   const toY     = scene.layout.boss.anchor.y;
-  const sc      = dmgScale * 1.0;
-  const lift    = 40;
+  const sc      = dmgScale * 2.0;
+  const lift    = 80;
   const dur     = TIMINGS.projectileArcMs * 0.65;
   const flyLeft = fromX > toX;
   const proj    = scene.add.image(fromX, fromY, 'proj-arrow').setScale(sc).setDepth(10);
@@ -219,8 +219,8 @@ function spawnBlade(scene, fromX, fromY, dmgScale, onImpact) {
   ensureBladeTexture(scene);
   const toX     = scene.layout.boss.anchor.x;
   const toY     = scene.layout.boss.anchor.y;
-  const sc      = dmgScale * 0.7;
-  const lift    = 18;
+  const sc      = dmgScale * 1.4;
+  const lift    = 36;
   const dur     = TIMINGS.projectileArcMs * 0.65;
   const flyLeft = fromX > toX;
   const blade   = scene.add.image(fromX, fromY, 'proj-blade').setScale(sc).setDepth(10);

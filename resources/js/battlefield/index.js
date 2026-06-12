@@ -89,31 +89,87 @@ function bootGame(mount, state, mode) {
   return game;
 }
 
+// Module-level cleanup — removes the previous bootBattlefield's resize listeners.
+let _cleanupResize = null;
+
 export function bootBattlefield(mount, state) {
+  _cleanupResize?.();
+  _cleanupResize = null;
+
   let currentMode = detectMode();
   let currentState = state;
   let currentGame = bootGame(mount, currentState, currentMode);
   let pending = null;
+  let destroyed = false;
 
+  const applyModeChange = (next) => {
+    currentMode = next;
+    const layout = LAYOUTS[next];
+    const scene = currentGame.scene.getScene('battlefield');
+    currentState = snapshotState(currentState, scene);
+    currentGame.scale.resize(layout.logicalWidth, layout.logicalHeight);
+    currentGame.scale.refresh();
+    currentGame.registry.set('mode', next);
+    currentGame.registry.set('initialState', currentState);
+    scene.scene.restart();
+  };
+
+  // Desktop resize: immediately refresh FIT scale so the canvas tracks the
+  // new viewport size in real-time, then check for a mode flip after 300ms.
   const onResize = () => {
+    if (destroyed) return;
+    currentGame.scale.refresh(); // keep canvas CSS in sync immediately
     clearTimeout(pending);
     pending = setTimeout(() => {
+      if (destroyed) return;
+      const next = detectMode();
+      if (next === currentMode) return;
+      showBfLoader();
+      applyModeChange(next);
+    }, 300);
+  };
+
+  // Orientation change: immediately cover the screen so the 300 ms where
+  // Phaser auto-rescales to the wrong aspect ratio is hidden behind the loader.
+  const onOrientationChange = () => {
+    if (destroyed) return;
+    showBfLoader();
+    clearTimeout(pending);
+    pending = setTimeout(() => {
+      if (destroyed) return;
       const next = detectMode();
       if (next === currentMode) {
+        // Spurious event — restore the game, hide loader.
+        hideBfLoader();
         return;
       }
-      currentMode = next;
-      const oldScene = currentGame.scene.getScene('battlefield');
-      currentState = snapshotState(currentState, oldScene);
-      currentGame.destroy(true);
-      currentGame = bootGame(mount, currentState, currentMode);
-    }, 200);
+      applyModeChange(next);
+    }, 300);
   };
 
   window.addEventListener('resize', onResize);
-  window.addEventListener('orientationchange', onResize);
+  window.addEventListener('orientationchange', onOrientationChange);
+
+  _cleanupResize = () => {
+    destroyed = true;
+    clearTimeout(pending);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('orientationchange', onOrientationChange);
+  };
+
+  currentGame.events.once('destroy', () => { _cleanupResize?.(); });
 
   return currentGame;
+}
+
+function showBfLoader() {
+  const el = document.getElementById('bf-loader');
+  if (el) el.style.display = 'flex';
+}
+
+function hideBfLoader() {
+  const el = document.getElementById('bf-loader');
+  if (el) el.style.display = 'none';
 }
 
 window.bootBattlefield = bootBattlefield;

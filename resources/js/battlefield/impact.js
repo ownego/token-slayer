@@ -14,7 +14,7 @@ export function applyImpact(scene, hpAfter) {
   }
   const burst = scene.add
     .sprite(bossAnchor.x, bossAnchor.y, 'explosion')
-    .setScale(2);
+    .setScale(4);
   burst.play('explosion-once').once('animationcomplete', () => burst.destroy());
 
   const boss = scene.bossSprite;
@@ -28,7 +28,7 @@ export function applyImpact(scene, hpAfter) {
     yoyo: true,
     ease: 'Quad.easeOut',
   });
-  boss.setTintFill(0xffffff);
+  boss.setTint(0xffffff);
   scene.time.delayedCall(80, () => boss.clearTint());
 
   scene.cameras.main.shake(
@@ -58,19 +58,19 @@ export function applyImpact(scene, hpAfter) {
 
 function spawnDamagePopup(scene, damage) {
   const bossAnchor = scene.layout.boss.anchor;
-  const jitter = (Math.random() - 0.5) * 30;
+  const jitter = (Math.random() - 0.5) * 60;
   const startX = bossAnchor.x + jitter;
-  const startY = bossAnchor.y - 20;
+  const startY = bossAnchor.y - 40;
   const popup = scene.addSharpText(startX, startY, `-${damage.toLocaleString()}`, {
     fontFamily: 'monospace',
-    fontSize: '10px',
+    fontSize: '20px',
     color: '#fca5a5',
     stroke: '#7f1d1d',
-    strokeThickness: 3,
+    strokeThickness: 5,
   });
   scene.tweens.add({
     targets: popup,
-    y: startY - 40,
+    y: startY - 80,
     alpha: 0,
     duration: 900,
     ease: 'Quad.easeOut',

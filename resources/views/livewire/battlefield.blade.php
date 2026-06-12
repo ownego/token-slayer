@@ -17,8 +17,15 @@
             ])->values(),
             'leaderboard' => $this->leaderboardForCurrentBoss(),
         ]) }}"
-        class="absolute inset-0"
-    ></div>
+        class="fixed inset-0" style="background-color:#020617"
+    >
+        <div id="bf-loader" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:none">
+            <div style="width:180px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden">
+                <div id="bf-loader-bar" style="height:100%;width:0%;background:#60a5fa;border-radius:2px;transition:width 0.2s ease"></div>
+            </div>
+            <span style="font-family:monospace;font-size:12px;color:#475569;letter-spacing:0.05em">Loading arena…</span>
+        </div>
+    </div>
 
     @unless (request('embed') === 'ide')
         <a
@@ -32,7 +39,7 @@
     <div
         x-data="battlefieldLeaderboardOverlay()"
         x-init="init()"
-        class="md:hidden"
+        class="bf-portrait-only"
     >
         <button
             type="button"

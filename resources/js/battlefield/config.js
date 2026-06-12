@@ -4,9 +4,6 @@ export const BOSS_TYPES = [
   { key: 'boss-ghost',        file: '/assets/battlefield/bosses/ghost.png',        frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 3, scale: 4   },
   { key: 'boss-skeleton',     file: '/assets/battlefield/bosses/skeleton.png',     frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 3, scale: 4   },
   { key: 'boss-slime',        file: '/assets/battlefield/bosses/slime.png',        frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 4, scale: 4   },
-  // shadow.png rows 1-4 are the rise-from-the-ground animation; the standing idle loop is the last row
-  { key: 'boss-shadow',       file: '/assets/battlefield/bosses/shadow.png',       frameWidth: 80,  frameHeight: 70,  idleStart: 16, idleEnd: 19, scale: 2  },
-  { key: 'boss-gnu',          file: '/assets/battlefield/bosses/gnu.png',          frameWidth: 120, frameHeight: 100, idleStart: 0, idleEnd: 4, scale: 1.5 },
 ];
 
 export const FIGHTER_TYPES = [
@@ -64,8 +61,8 @@ export const LAYOUTS = {
   portrait: {
     logicalWidth: 540,
     logicalHeight: 960,
-    boss: { anchor: { x: 270, y: 220 }, scale: 5, name: { x: 270, y: 100 } },
-    hpBar: { x: 270, y: 350, width: 280, height: 12 },
+    boss: { anchor: { x: 270, y: 310 }, scale: 5, name: { x: 270, y: 200 } },
+    hpBar: { x: 270, y: 430, width: 280, height: 12 },
     fighters: { rowXRange: [50, 490], rowY: 820, perRowMax: 10 },
   },
 };

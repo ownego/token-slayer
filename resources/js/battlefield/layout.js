@@ -9,7 +9,7 @@ export function computeFighterPositions(count, [minX, maxX], topY, perRow = 14, 
     const rowCount = Math.min(perRow, count - rowStart);
     const idxInRow = i - rowStart;
     const x = rowCount === 1
-      ? (minX + maxX) / 2
+      ? minX + (maxX - minX) * 0.3
       : minX + ((maxX - minX) / (rowCount - 1)) * idxInRow;
     const y = topY + row * rowSpacing;
     positions.push({ x, y });

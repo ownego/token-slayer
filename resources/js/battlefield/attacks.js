@@ -24,8 +24,7 @@ function runDash(scene, fighter, { dashDist, runDur, returnDur, scalePeak = 1.1 
   if (fighter.body) {
     fighter.body.setTexture(fighter.ftype.key + '-run');
     fighter.body.play(fighter.ftype.key + '-run');
-    const base = fighter.ftype.baseFlipX ?? false;
-    fighter.body.setFlipX((towardBoss < 0) !== base);
+    fighter.body.setFlipX((towardBoss < 0) !== (fighter.ftype.baseFlipX ?? false));
   }
 
   scene.tweens.add({
@@ -60,31 +59,90 @@ function runDash(scene, fighter, { dashDist, runDur, returnDur, scalePeak = 1.1 
  * Draw a glowing arc at (cx, cy) pointing toward the boss.
  * colOuter / colInner are hex colours for the glow and core line.
  */
-function swingArc(scene, fighter, cx, cy, { isKillShot, colOuter, colInner, delay = 0 }) {
+function swingArc(scene, fighter, cx, cy, { isKillShot, colOuter, colInner, delay = 0, onImpact = null }) {
   const toX       = scene.layout.boss.anchor.x;
   const toY       = scene.layout.boss.anchor.y;
   const baseAngle = Math.atan2(toY - cy, toX - cx);
-  const r         = fighter.displaySize * (isKillShot ? 0.6 : 0.42);
-  const arcSpan   = isKillShot ? Math.PI * 0.9 : Math.PI * 0.6;
-  const lineW     = isKillShot ? 6 : 4;
+  const r         = fighter.displaySize * (isKillShot ? 0.44 * 1.25 : 0.44);
+  const arcSpan   = Math.PI * (isKillShot ? 1.05 * 1.15 : 1.05);
   const startA    = baseAngle - arcSpan / 2;
   const endA      = baseAngle + arcSpan / 2;
+  const maxThick  = r * (isKillShot ? 0.38 * 1.15 : 0.38);
+  const STEPS     = 24;
+  const dx        = toX - cx;
+  const dy        = toY - cy;
 
+  // Crescent via fillTriangle — thick belly, sharp tips, convex toward boss.
+  function drawCrescent(g, outerR, thick, fillColor, fillAlpha) {
+    g.fillStyle(fillColor, fillAlpha);
+    const t = outerR / r;
+    for (let i = 0; i < STEPS; i++) {
+      const t1 = i / STEPS, t2 = (i + 1) / STEPS;
+      const a1 = startA + (endA - startA) * t1;
+      const a2 = startA + (endA - startA) * t2;
+      const rI1 = outerR - thick * t * Math.sin(t1 * Math.PI);
+      const rI2 = outerR - thick * t * Math.sin(t2 * Math.PI);
+      const ox1 = Math.cos(a1) * outerR, oy1 = Math.sin(a1) * outerR;
+      const ox2 = Math.cos(a2) * outerR, oy2 = Math.sin(a2) * outerR;
+      const ix1 = Math.cos(a1) * rI1,    iy1 = Math.sin(a1) * rI1;
+      const ix2 = Math.cos(a2) * rI2,    iy2 = Math.sin(a2) * rI2;
+      g.fillTriangle(ox1, oy1, ox2, oy2, ix1, iy1);
+      g.fillTriangle(ox2, oy2, ix2, iy2, ix1, iy1);
+    }
+  }
+
+  function drawBlade(g, outerR) {
+    drawCrescent(g, outerR * 1.12, maxThick * 1.2, colOuter,  0.25);
+    drawCrescent(g, outerR,        maxThick,        colInner,  0.95);
+    drawCrescent(g, outerR * 0.97, maxThick * 0.35, 0xffffff,  0.75);
+  }
+
+  // Ghost trail
+  const trailCount = isKillShot ? 4 : 3;
+  for (let i = 0; i < trailCount; i++) {
+    const ghostR = r * (0.28 + i * 0.22);
+    const ghostG = scene.add.graphics().setDepth(3).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+    ghostG.x = cx; ghostG.y = cy;
+    drawBlade(ghostG, ghostR);
+    scene.time.delayedCall(delay + i * 18, () => {
+      scene.tweens.add({
+        targets: ghostG, alpha: 0.45, duration: 25, ease: 'Power2.easeOut',
+        onComplete: () => scene.tweens.add({
+          targets: ghostG, alpha: 0, duration: isKillShot ? 220 : 150, ease: 'Power2.easeIn',
+          onComplete: () => ghostG.destroy(),
+        }),
+      });
+    });
+  }
+
+  // Main blade: grow at fighter position then fly through boss
   const g = scene.add.graphics().setDepth(3).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
-  g.lineStyle(lineW + 4, colOuter, 0.35);
-  g.beginPath(); g.arc(cx, cy, r, startA, endA, false); g.strokePath();
-  g.lineStyle(lineW, colInner, 1.0);
-  g.beginPath(); g.arc(cx, cy, r, startA, endA, false); g.strokePath();
-  g.lineStyle(Math.max(1, lineW - 2), 0xffffff, 0.8);
-  g.beginPath(); g.arc(cx, cy, r * 0.92, startA + arcSpan * 0.1, endA - arcSpan * 0.1, false); g.strokePath();
+  g.x = cx; g.y = cy;
+  drawBlade(g, r);
+  g.setScale(0.08);
 
-  scene.time.delayedCall(delay, () => {
+  scene.time.delayedCall(delay + trailCount * 18, () => {
     scene.tweens.add({
-      targets: g, alpha: isKillShot ? 1.0 : 0.85, duration: 55, ease: 'Power3.easeOut',
+      targets: g, scaleX: 1, scaleY: 1,
+      alpha: isKillShot ? 1.0 : 0.9,
+      duration: isKillShot ? 360 : 300, ease: 'Power3.easeOut',
       onComplete: () => {
         scene.tweens.add({
-          targets: g, alpha: 0, duration: isKillShot ? 280 : 180, ease: 'Power2.easeIn',
-          onComplete: () => g.destroy(),
+          targets: g,
+          x: cx + dx * 1.0,
+          y: cy + dy * 1.0,
+          scaleX: isKillShot ? 1.3 : 1.1,
+          scaleY: isKillShot ? 1.3 : 1.1,
+          alpha: isKillShot ? 1.0 : 0.85,
+          duration: isKillShot ? 380 : 320, ease: 'Power2.easeIn',
+          onComplete: () => {
+            onImpact?.();
+            scene.tweens.add({
+              targets: g, alpha: 0, scaleX: 1.6, scaleY: 1.6,
+              duration: 120, ease: 'Power2.easeOut',
+              onComplete: () => g.destroy(),
+            });
+          },
         });
       },
     });
@@ -128,7 +186,7 @@ export const ATTACK_HANDLERS = {
       const cy = dashY - fighter.displaySize * 0.15;
 
       swingArc(scene, fighter, cx, cy, {
-        isKillShot, colOuter: 0xffffff, colInner: 0x93c5fd,
+        isKillShot, colOuter: 0xffffff, colInner: 0x93c5fd, onImpact,
       });
       slashBurst(scene, fighter, cx, dashY - fighter.displaySize * 0.25, {
         isKillShot, tints: [0xffffff, 0xbfdbfe, 0x93c5fd, 0x60a5fa],
@@ -141,7 +199,6 @@ export const ATTACK_HANDLERS = {
         duration: isKillShot ? 80 : 60,
         ease: 'Power3.easeIn',
       });
-      spawnProjectile(scene, cx, dashY, 'slash', damage, maxHp, onImpact, fighter.sprite.scaleX);
     });
   },
 

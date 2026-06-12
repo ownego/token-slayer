@@ -37,31 +37,31 @@ export class BattlefieldScene extends Phaser.Scene {
 
   preload() {
     for (const ft of FIGHTER_TYPES) {
-      this.load.spritesheet(ft.key + '-idle', ft.idleFile, { frameWidth: ft.frameWidth, frameHeight: ft.frameHeight });
-      this.load.spritesheet(ft.key + '-run',  ft.runFile,  { frameWidth: ft.runFrameWidth ?? ft.frameWidth, frameHeight: ft.frameHeight });
+      if (!this.textures.exists(ft.key + '-idle'))
+        this.load.spritesheet(ft.key + '-idle', ft.idleFile, { frameWidth: ft.frameWidth, frameHeight: ft.frameHeight });
+      if (!this.textures.exists(ft.key + '-run'))
+        this.load.spritesheet(ft.key + '-run',  ft.runFile,  { frameWidth: ft.runFrameWidth ?? ft.frameWidth, frameHeight: ft.frameHeight });
     }
     for (const boss of BOSS_TYPES) {
-      this.load.spritesheet(boss.key, boss.file, {
-        frameWidth: boss.frameWidth,
-        frameHeight: boss.frameHeight,
-      });
+      if (!this.textures.exists(boss.key))
+        this.load.spritesheet(boss.key, boss.file, { frameWidth: boss.frameWidth, frameHeight: boss.frameHeight });
     }
-    this.load.spritesheet('fireball', '/assets/battlefield/fx/fireball.png', {
-      frameWidth: 16,
-      frameHeight: 16,
-    });
-    this.load.spritesheet('explosion', '/assets/battlefield/fx/explosion.png', {
-      frameWidth: 32,
-      frameHeight: 32,
-    });
+    if (!this.textures.exists('fireball'))
+      this.load.spritesheet('fireball', '/assets/battlefield/fx/fireball.png', { frameWidth: 16, frameHeight: 16 });
+    if (!this.textures.exists('explosion'))
+      this.load.spritesheet('explosion', '/assets/battlefield/fx/explosion.png', { frameWidth: 32, frameHeight: 32 });
+    const loaderBar = document.getElementById('bf-loader-bar');
+    const loader    = document.getElementById('bf-loader');
+    this.load.on('progress', v => { if (loaderBar) loaderBar.style.width = Math.round(v * 100) + '%'; });
     this.load.on('complete', () => {
+      if (loader) loader.style.display = 'none';
       const pixelArtKeys = [...BOSS_TYPES.filter(b => b.pixelArt !== false).map(b => b.key), 'fireball', 'explosion'];
       for (const key of pixelArtKeys) {
         this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
+      // Fighter sheets are high-res (256px frames) drawn well below native
+      // size — default LINEAR filtering keeps them smooth, NEAREST would alias.
       for (const ft of FIGHTER_TYPES) {
-        this.textures.get(ft.key + '-idle').setFilter(Phaser.Textures.FilterMode.NEAREST);
-        this.textures.get(ft.key + '-run').setFilter(Phaser.Textures.FilterMode.NEAREST);
         if (!this.anims.exists(ft.key + '-idle')) {
           this.anims.create({
             key: ft.key + '-idle',
@@ -91,26 +91,72 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   ensureBossIdleAnim(textureKey) {
-    const animKey = `${textureKey}-idle`;
-    if (!this.anims.exists(animKey)) {
-      const bossType = BOSS_TYPES.find(b => b.key === textureKey);
+    const bossType = BOSS_TYPES.find(b => b.key === textureKey);
+    const idleKey = `${textureKey}-idle`;
+    if (!this.anims.exists(idleKey)) {
       this.anims.create({
-        key: animKey,
+        key: idleKey,
         frames: this.anims.generateFrameNumbers(textureKey, { start: bossType?.idleStart ?? 0, end: bossType?.idleEnd ?? 3 }),
         frameRate: 6,
         repeat: -1,
       });
     }
-    return animKey;
+    if (bossType?.spawnStart != null && !this.anims.exists(`${textureKey}-spawn`)) {
+      this.anims.create({
+        key: `${textureKey}-spawn`,
+        frames: this.anims.generateFrameNumbers(textureKey, { start: bossType.spawnStart, end: bossType.spawnEnd }),
+        frameRate: bossType.spawnFrameRate ?? 8,
+        repeat: 0,
+      });
+    }
+    if (bossType?.attackStart != null && !this.anims.exists(`${textureKey}-attack`)) {
+      this.anims.create({
+        key: `${textureKey}-attack`,
+        frames: this.anims.generateFrameNumbers(textureKey, { start: bossType.attackStart, end: bossType.attackEnd }),
+        frameRate: bossType.attackFrameRate ?? 8,
+        repeat: 0,
+      });
+    }
+    if (bossType?.moveStart != null && !this.anims.exists(`${textureKey}-move`)) {
+      this.anims.create({
+        key: `${textureKey}-move`,
+        frames: this.anims.generateFrameNumbers(textureKey, { start: bossType.moveStart, end: bossType.moveEnd }),
+        frameRate: bossType.moveFrameRate ?? 8,
+        yoyo: bossType.moveYoyo ?? false,
+        repeat: -1,
+      });
+    }
+    return idleKey;
+  }
+
+  playBossReact() {
+    if (!this.bossSprite?.active) return;
+    const key = this.bossSprite.texture?.key;
+    const attackKey = `${key}-attack`;
+    if (!this.anims.exists(attackKey)) return;
+    this.bossSprite.play(attackKey);
+    this.bossSprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!this.bossSprite?.active) return;
+      const resumeKey = this.anims.exists(`${key}-move`) ? `${key}-move` : `${key}-idle`;
+      this.bossSprite.play(resumeKey);
+    });
   }
 
   startBossPatrol() {
-    const range = 60;
+    const range = 120;
     const sprite = this.bossSprite;
+    const anchorY = this.layout.boss.anchor.y;
     const leftX = this.layout.boss.anchor.x - range / 2;
     const rightX = this.layout.boss.anchor.x + range / 2;
     sprite.x = leftX;
     sprite.setFlipX(true);
+    const bossType = BOSS_TYPES.find(b => b.key === sprite.texture?.key);
+    const moveKey = `${sprite.texture?.key}-move`;
+    if (this.anims.exists(moveKey) && sprite.anims.currentAnim?.key !== moveKey) {
+      const anim = this.anims.get(moveKey);
+      // Start from last frame so yoyo begins by sinking — avoids jump from idle (frame 19) to move start (frame 4)
+      sprite.play({ key: moveKey, startFrame: anim ? anim.frames.length - 1 : 0 });
+    }
     this.tweens.add({
       targets: sprite,
       x: rightX,
@@ -121,6 +167,18 @@ export class BattlefieldScene extends Phaser.Scene {
       onYoyo: () => sprite.setFlipX(false),
       onRepeat: () => sprite.setFlipX(true),
     });
+    if (bossType?.float) {
+      const { amplitude, duration } = bossType.float;
+      sprite.y = anchorY;
+      this.tweens.add({
+        targets: sprite,
+        y: anchorY - amplitude,
+        duration,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: -1,
+      });
+    }
   }
 
   create() {
@@ -142,6 +200,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.bossSprite = this.add
       .sprite(L.boss.anchor.x, L.boss.anchor.y, initialKey)
       .setScale(initialType.scale)
+      .setDepth(5)
       .play(initialAnim);
     this.startBossPatrol();
 
@@ -149,7 +208,7 @@ export class BattlefieldScene extends Phaser.Scene {
       fontFamily: 'monospace',
       fontSize: '28px',
       color: '#ffffff',
-    });
+    }).setDepth(5);
 
     this.hpBarBg = this.add
       .rectangle(L.hpBar.x, L.hpBar.y, L.hpBar.width, L.hpBar.height, 0x334155)
@@ -284,6 +343,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const onImpact = () => {
       this.leaderboard?.onHit(payload.user_id, payload.damage, payload.slack_handle);
       applyImpact(this, payload.boss_hp_after);
+      if (!isKillShot) this.time.delayedCall(90, () => this.playBossReact());
     };
     if (fighter) {
       const attackType = fighter.ftype?.attackType ?? 'blast';
@@ -351,18 +411,37 @@ export class BattlefieldScene extends Phaser.Scene {
 
     const bossType = this.bossTypeFor(payload.boss_number);
     const textureKey = bossType.key;
-    const animKey = this.ensureBossIdleAnim(textureKey);
-    this.bossSprite = this.add
-      .sprite(L.boss.anchor.x, -40, textureKey)
-      .setScale(bossType.scale)
-      .play(animKey);
-    this.tweens.add({
-      targets: this.bossSprite,
-      y: L.boss.anchor.y,
-      duration: TIMINGS.bossSpawnMs,
-      ease: 'Bounce.easeOut',
-      onComplete: () => this.startBossPatrol(),
-    });
+    const idleKey = this.ensureBossIdleAnim(textureKey);
+    const spawnKey = `${textureKey}-spawn`;
+
+    if (this.anims.exists(spawnKey)) {
+      // Shadow: rise from ground in place — no drop tween
+      this.bossSprite = this.add
+        .sprite(L.boss.anchor.x, L.boss.anchor.y, textureKey)
+        .setScale(bossType.scale)
+        .setDepth(5)
+        .play(spawnKey);
+      this.bossSprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        if (this.bossSprite?.active) {
+          this.bossSprite.play(idleKey);
+          this.startBossPatrol();
+        }
+      });
+    } else {
+      // Other bosses: drop from above with bounce
+      this.bossSprite = this.add
+        .sprite(L.boss.anchor.x, -40, textureKey)
+        .setScale(bossType.scale)
+        .setDepth(5)
+        .play(idleKey);
+      this.tweens.add({
+        targets: this.bossSprite,
+        y: L.boss.anchor.y,
+        duration: TIMINGS.bossSpawnMs,
+        ease: 'Bounce.easeOut',
+        onComplete: () => this.startBossPatrol(),
+      });
+    }
 
     this.bossState = {
       currentHp: payload.max_hp,
@@ -411,6 +490,14 @@ export class BattlefieldScene extends Phaser.Scene {
     if (!payload || payload.user_id == null) {
       return;
     }
+    if (!this.fighters.has(payload.user_id)) {
+      this.handleFighterJoined({
+        user_id: payload.user_id,
+        slack_handle: payload.slack_handle,
+        avatar_url: payload.avatar_url,
+        character: payload.character ?? null,
+      });
+    }
     const fighter = this.fighters.get(payload.user_id);
     if (!fighter) {
       return;
@@ -431,46 +518,48 @@ export class BattlefieldScene extends Phaser.Scene {
         (fighter.pos.x > this.layout.boss.anchor.x) !== (fighter.ftype?.baseFlipX ?? false),
       );
     }
-    const footY   = chargeFootY(fighter.pos.y, fighter.displaySize);
-    const fireColors = chargeParticleColors(fighter.ftype);
-    const runRight   = fighter.pos.x <= this.layout.boss.anchor.x;
-    const trailX     = runRight ? -1 : 1;
-    const backX      = fighter.pos.x + trailX * fighter.displaySize * 0.25;
-    const sxMin      = trailX > 0 ? 40  : -170;
-    const sxMax      = trailX > 0 ? 170 : -40;
-    const baseAngle  = runRight ? 228 : 312;
-    const ps         = fighter.displaySize * 0.018; // scale tỉ lệ với displaySize
-    const emitter = this.add.particles(backX, footY, 'spark', {
-      tint: { onEmit: () => Phaser.Math.RND.pick(fireColors) },
-      rotate: { min: baseAngle - 18, max: baseAngle + 18 },
-      scale: { start: ps, end: 0 },
-      alpha: { start: 0.5, end: 0 },
-      speedX: { min: sxMin, max: sxMax },
-      speedY: { min: -320, max: -100 },
-      lifespan: { min: 300, max: 550 },
-      frequency: 20,
-      quantity: 3,
-      gravityY: 90,
-      blendMode: Phaser.BlendModes.ADD,
-    });
-    const embers = this.add.particles(backX, footY, 'spark', {
-      tint: { onEmit: () => Phaser.Math.RND.pick(fireColors) },
-      rotate: { min: baseAngle - 30, max: baseAngle + 30 },
-      scale: { start: ps * 0.55, end: 0 },
-      alpha: { start: 0.4, end: 0 },
-      speedX: { min: Math.round(sxMin * 1.3), max: Math.round(sxMax * 1.3) },
-      speedY: { min: -260, max: -70 },
-      lifespan: { min: 280, max: 520 },
-      frequency: 25,
-      quantity: 2,
-      gravityY: 70,
-      blendMode: Phaser.BlendModes.ADD,
-    });
+    const localFootY = chargeFootY(0, fighter.displaySize) + Math.round(fighter.displaySize * 0.22);
+    const { emitter, embers } = this.spawnChargeEmitters(fighter.ftype, 0, localFootY, fighter.displaySize);
+    fighter.sprite.addAt(embers, 0);
+    fighter.sprite.addAt(emitter, 0);
     const entry = { emitter, embers, bubble: null, activity: payload.activity ?? '' };
     if (this.fightersAllowBubbles()) {
       this.updateActivityBubble(entry, fighter, payload.activity);
     }
     this.charges.set(payload.user_id, entry);
+  }
+
+  spawnChargeEmitters(ftype, posX, footY, displaySize) {
+    const fireColors = chargeParticleColors(ftype);
+    const ps = displaySize * 0.018;
+    // Symmetric spread from both sides of feet — depth 0 so sprite renders on top
+    const emitter = this.add.particles(posX, footY, 'spark', {
+      tint: { onEmit: () => Phaser.Math.RND.pick(fireColors) },
+      rotate: { min: 0, max: 360 },
+      scale: { start: ps, end: 0 },
+      alpha: { start: 0.55, end: 0 },
+      speedX: { min: -180, max: 180 },
+      speedY: { min: -90, max: 20 },
+      lifespan: { min: 280, max: 480 },
+      frequency: 22,
+      quantity: 3,
+      gravityY: 80,
+      blendMode: Phaser.BlendModes.ADD,
+    });
+    const embers = this.add.particles(posX, footY, 'spark', {
+      tint: { onEmit: () => Phaser.Math.RND.pick(fireColors) },
+      rotate: { min: 0, max: 360 },
+      scale: { start: ps * 0.5, end: 0 },
+      alpha: { start: 0.4, end: 0 },
+      speedX: { min: -240, max: 240 },
+      speedY: { min: -60, max: 30 },
+      lifespan: { min: 200, max: 400 },
+      frequency: 28,
+      quantity: 2,
+      gravityY: 60,
+      blendMode: Phaser.BlendModes.ADD,
+    });
+    return { emitter, embers };
   }
 
   fightersAllowBubbles() {
@@ -621,9 +710,10 @@ export class BattlefieldScene extends Phaser.Scene {
 
       const charge = this.charges.get(userId);
       if (charge) {
-        const newFootY = chargeFootY(target.y, newSize);
-        charge.emitter.setPosition(target.x, newFootY);
-        charge.embers?.setPosition(target.x, newFootY);
+        // Emitters are inside the container — use local coords (container center = 0,0)
+        const newLocalFootY = chargeFootY(0, newSize) + Math.round(newSize * 0.22);
+        charge.emitter.setPosition(0, newLocalFootY);
+        charge.embers?.setPosition(0, newLocalFootY);
         if (charge.bubble) {
           charge.bubble.moveTo(target.x, target.y - (newSize / 2 + 28));
         }
@@ -753,7 +843,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const scale = size / ftype.frameHeight;
     const legH  = Math.round(ftype.frameHeight * 0.35 * scale);
 
-    const container = this.add.container(pos.x, pos.y);
+    const container = this.add.container(pos.x, pos.y).setDepth(2);
 
     // Body sprite — starts in idle animation (waiting state)
     const body = this.add.sprite(0, 0, ftype.key + '-idle').setScale(scale);
