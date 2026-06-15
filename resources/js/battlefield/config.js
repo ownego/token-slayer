@@ -8,7 +8,7 @@ export const BOSS_TYPES = [
 
 export const FIGHTER_TYPES = [
   {
-    key: 'soldier', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    key: 'soldier', attackType: 'slash', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/soldier-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/soldier-walk.png',   frames: 8, rate: 10 },
@@ -17,7 +17,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'knight', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    key: 'knight', attackType: 'blade', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/knight-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/knight-walk.png',   frames: 8, rate: 10 },
@@ -26,7 +26,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'swordsman', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    key: 'swordsman', attackType: 'slash', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/swordsman-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/swordsman-walk.png',   frames: 8, rate: 10 },
@@ -35,7 +35,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'axeman', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    key: 'axeman', attackType: 'slash', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/axeman-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/axeman-walk.png',   frames: 8, rate: 10 },
@@ -44,7 +44,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'orc', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    key: 'orc', attackType: 'slash', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/orc-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/orc-walk.png',   frames: 8, rate: 10 },
@@ -53,7 +53,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'armored-orc', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    key: 'armored-orc', attackType: 'blade', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/armored-orc-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/armored-orc-walk.png',   frames: 8, rate: 10 },
@@ -62,7 +62,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'elite-orc', attackType: 'blast', frameWidth: 100, frameHeight: 100,
+    key: 'elite-orc', attackType: 'blast', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/elite-orc-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/elite-orc-walk.png',   frames: 8, rate: 10 },
@@ -71,7 +71,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'skeleton', attackType: 'shuriken', frameWidth: 100, frameHeight: 100,
+    key: 'skeleton', attackType: 'shuriken', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/skeleton-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/skeleton-walk.png',   frames: 8, rate: 10 },
@@ -80,7 +80,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'armored-skeleton', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    key: 'armored-skeleton', attackType: 'blade', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/armored-skeleton-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/armored-skeleton-walk.png',   frames: 8, rate: 10 },
@@ -89,7 +89,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'slime', attackType: 'blast', frameWidth: 100, frameHeight: 100,
+    key: 'slime', attackType: 'blast', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/slime-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/slime-walk.png',   frames: 6, rate: 10 },
@@ -98,7 +98,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'archer', attackType: 'arrow', frameWidth: 100, frameHeight: 100,
+    key: 'archer', attackType: 'arrow', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/archer-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/archer-walk.png',   frames: 8, rate: 10 },
@@ -107,7 +107,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'werewolf', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    key: 'werewolf', attackType: 'slash', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/werewolf-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/werewolf-walk.png',   frames: 8, rate: 10 },
@@ -116,7 +116,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'werebear', attackType: 'blast', frameWidth: 100, frameHeight: 100,
+    key: 'werebear', attackType: 'blast', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/werebear-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/werebear-walk.png',   frames: 8, rate: 10 },
@@ -125,7 +125,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'orc-rider', attackType: 'arrow', frameWidth: 100, frameHeight: 100,
+    key: 'orc-rider', attackType: 'arrow', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/orc-rider-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/orc-rider-walk.png',   frames: 8, rate: 10 },
@@ -134,7 +134,7 @@ export const FIGHTER_TYPES = [
     },
   },
   {
-    key: 'greatsword-skeleton', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    key: 'greatsword-skeleton', attackType: 'blade', frameWidth: 400, frameHeight: 400,
     animations: {
       idle:   { file: '/assets/battlefield/fighters/greatsword-skeleton-idle.png',   frames: 6, rate: 8  },
       walk:   { file: '/assets/battlefield/fighters/greatsword-skeleton-walk.png',   frames: 9, rate: 10 },

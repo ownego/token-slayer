@@ -7,6 +7,13 @@ import { applyImpact } from './impact.js';
 import { createLeaderboard, showMvpCard } from './leaderboard.js';
 import { formatHp } from './format.js';
 
+// Tiny RPG sprites upscaled 4× — frames are now 400×400
+// Visible character occupied rows 38-56 in the original 100px frame → 152-224 at 4×
+const SPRITE_CHAR_HEIGHT = 72;   // (56 - 38) × 4
+const SPRITE_HALF_FRAME  = 200;  // 400 / 2
+const SPRITE_CHAR_TOP    = 152;  // 38 × 4
+const SPRITE_CHAR_BOT    = 224;  // 56 × 4
+
 const ACTIVITY_MAX_CHARS = 18;
 function truncateActivity(activity) {
   if (!activity || activity.length <= ACTIVITY_MAX_CHARS) {
@@ -546,9 +553,10 @@ export class BattlefieldScene extends Phaser.Scene {
       fighter.body.setFlipX(fighter.pos.x > this.layout.boss.anchor.x);
       fighter.body.play(fighter.ftype.key + '-walk');
     }
-    const ring = this.createChargingRing(fighter);
+    const ring  = this.createChargingRing(fighter);
+    const trail = this.createChargingTrail(fighter);
     fighter.sprite.addAt(ring, 0);
-    const entry = { ring, bubble: null, activity: payload.activity ?? '' };
+    const entry = { ring, trail, bubble: null, activity: payload.activity ?? '' };
     if (this.fightersAllowBubbles()) {
       this.updateActivityBubble(entry, fighter, payload.activity);
     }
@@ -556,21 +564,45 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   createChargingRing(fighter) {
-    const r = Math.round(fighter.displaySize * 0.52);
+    // Ring sits around the avatar face bubble — radius just outside the 28px circle
+    const avatarRelY = fighter.head?.y ?? 0;
+    const r = 19;  // avatar radius is 14 (28px / 2), ring extends 5px beyond
     const g = this.add.graphics();
-    g.lineStyle(2, 0x4ade80, 1);
+    g.lineStyle(2, 0x22d3ee, 1);
     g.strokeCircle(0, 0, r);
+    g.setPosition(0, avatarRelY);
     this.tweens.add({
       targets: g,
-      alpha: { from: 0.9, to: 0.2 },
-      scaleX: { from: 1.0, to: 1.08 },
-      scaleY: { from: 1.0, to: 1.08 },
+      alpha: { from: 0.9, to: 0.15 },
+      scaleX: { from: 1.0, to: 1.18 },
+      scaleY: { from: 1.0, to: 1.18 },
       duration: TIMINGS.chargeRingPulseMs,
       ease: 'Sine.easeInOut',
       yoyo: true,
       repeat: -1,
     });
     return g;
+  }
+
+  createChargingTrail(fighter) {
+    // Particles drift opposite to boss direction — visual speed trail while walking in place
+    const charBot    = Math.round(fighter.displaySize / 3);  // char bottom from container center
+    const towardBoss = fighter.pos.x <= this.layout.boss.anchor.x ? 1 : -1;
+    const emitX      = fighter.pos.x - towardBoss * Math.round(fighter.displaySize * 0.18);
+    const emitY      = fighter.pos.y + charBot - Math.round(fighter.displaySize * 0.12);
+    const emitter    = this.add.particles(emitX, emitY, 'spark', {
+      tint:      { onEmit: () => Phaser.Math.RND.pick([0x4ade80, 0x86efac, 0xa3e635, 0xffffff]) },
+      scale:     { start: 0.5, end: 0 },
+      alpha:     { start: 0.65, end: 0 },
+      speedX:    { min: -towardBoss * 80, max: -towardBoss * 20 },
+      speedY:    { min: -10, max: 22 },
+      lifespan:  { min: 130, max: 230 },
+      frequency: 45,
+      quantity:  2,
+      blendMode: Phaser.BlendModes.ADD,
+    });
+    emitter.setDepth(1);
+    return emitter;
   }
 
   fightersAllowBubbles() {
@@ -589,7 +621,7 @@ export class BattlefieldScene extends Phaser.Scene {
       entry.bubble.setActivity(activity);
       return;
     }
-    const bubbleY = fighter.pos.y - (fighter.displaySize / 2 + 28);
+    const bubbleY = fighter.pos.y - fighter.displaySize - 10;
     entry.bubble = this.createActivityBubble(fighter.pos.x, bubbleY, activity);
   }
 
@@ -638,7 +670,17 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     if (entry.ring?.scene) {
       this.tweens.killTweensOf(entry.ring);
-      entry.ring.destroy();
+      const ring = entry.ring;
+      this.tweens.add({
+        targets: ring,
+        alpha: 0,
+        duration: 200,
+        onComplete: () => { if (ring.scene) ring.destroy(); },
+      });
+    }
+    if (entry.trail?.scene) {
+      entry.trail.stop();
+      this.time.delayedCall(250, () => { if (entry.trail?.scene) entry.trail.destroy(); });
     }
     if (entry.bubble) {
       entry.bubble.destroy();
@@ -724,8 +766,21 @@ export class BattlefieldScene extends Phaser.Scene {
           charge.ring = this.createChargingRing(entry);
           entry.sprite.addAt(charge.ring, 0);
         }
+        // Trail is world-space — rebuild on size change, reposition otherwise
+        if (sizeChanged && charge.trail?.scene) {
+          charge.trail.stop();
+          charge.trail.destroy();
+          charge.trail = this.createChargingTrail(entry);
+        } else if (charge.trail?.scene) {
+          const tb = entry.pos.x <= this.layout.boss.anchor.x ? 1 : -1;
+          const cb = Math.round(entry.displaySize / 3);
+          charge.trail.setPosition(
+            target.x - tb * Math.round(entry.displaySize * 0.18),
+            target.y + cb - Math.round(entry.displaySize * 0.12),
+          );
+        }
         if (charge.bubble) {
-          charge.bubble.moveTo(target.x, target.y - (newSize / 2 + 28));
+          charge.bubble.moveTo(target.x, target.y - newSize - 10);
         }
       }
     }
@@ -850,18 +905,20 @@ export class BattlefieldScene extends Phaser.Scene {
     const ftypeKey = fighter.character ?? null;
     const ftype = (ftypeKey && FIGHTER_TYPES.find(ft => ft.key === ftypeKey))
       ?? FIGHTER_TYPES[Math.abs(Number(fighter.id) || 0) % FIGHTER_TYPES.length];
-    const scale = size / ftype.frameHeight;
-    const legH  = Math.round(ftype.frameHeight * 0.35 * scale);
+    // Scale so the visible character (18px of the 100px frame) fills `size` logical px
+    const scale  = size / SPRITE_CHAR_HEIGHT;
+    const legH   = Math.round((SPRITE_CHAR_BOT - SPRITE_HALF_FRAME) * scale);
+    const avatarY = -Math.round((SPRITE_HALF_FRAME - SPRITE_CHAR_TOP) * scale) - 14;
 
     const container = this.add.container(pos.x, pos.y).setDepth(2);
 
     // Body sprite — starts in idle animation (waiting state)
     const body = this.add.sprite(0, 0, ftype.key + '-idle').setScale(scale);
-    body.play(ftype.key + '-idle');
+    const idleAnim = this.anims.get(ftype.key + '-idle');
+    if (idleAnim?.frames?.length) {
+      body.play(ftype.key + '-idle');
+    }
     container.add(body);
-
-    // Avatar bubble floats above the character's head
-    const avatarY = -Math.round((ftype.frameHeight / 2) * scale) - 20;
     const initialKey = this.textures.exists(`fighter-${fighter.id}`)
       ? `fighter-${fighter.id}`
       : this.makeFallbackAvatarTexture(fighter);

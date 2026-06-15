@@ -46,5 +46,5 @@ test('fighterDisplayConfig shows handles only for small rosters', () => {
 
 test('fighterDisplayConfig shrinks fighters as the roster grows (landscape)', () => {
   const sizes = [14, 28, 29].map((n) => fighterDisplayConfig(n, 'landscape').displaySize);
-  expect(sizes).toEqual([120, 96, 60]);
+  expect(sizes).toEqual([90, 72, 54]);
 });

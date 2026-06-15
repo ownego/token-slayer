@@ -46,6 +46,17 @@ function spawnSlash(scene, fromX, fromY, dmgScale, onImpact) {
   const flyLeft = fromX > toX;
   const proj    = scene.add.image(fromX, fromY, 'proj-slash').setScale(sc).setDepth(10);
   if (flyLeft) proj.setFlipX(true);
+  const trail = scene.add.particles(fromX, fromY, 'spark', {
+    tint:      { onEmit: () => Phaser.Math.RND.pick([0x93c5fd, 0xbfdbfe, 0x60a5fa, 0xffffff]) },
+    scale:     { start: sc * 0.38, end: 0 },
+    alpha:     { start: 0.52, end: 0 },
+    speedX:    { min: -18, max: 18 },
+    speedY:    { min: -18, max: 18 },
+    lifespan:  { min: 75, max: 150 },
+    frequency: 18,
+    quantity:  1,
+    blendMode: Phaser.BlendModes.ADD,
+  }).setDepth(9);
   const state   = { t: 0 };
   scene.tweens.add({
     targets: state, t: 1, duration: dur, ease: 'Power2.easeIn',
@@ -54,10 +65,16 @@ function spawnSlash(scene, fromX, fromY, dmgScale, onImpact) {
       const x = fromX + (toX - fromX) * t;
       const y = fromY + (toY - fromY) * t - Math.sin(t * Math.PI) * lift;
       proj.setPosition(x, y);
+      trail.setPosition(x, y);
       const dy = (toY - fromY) - Math.cos(t * Math.PI) * lift * Math.PI;
       proj.rotation = Math.atan2(dy, Math.abs(toX - fromX)) * (flyLeft ? -1 : 1);
     },
-    onComplete: () => { proj.destroy(); onImpact?.(); },
+    onComplete: () => {
+      proj.destroy();
+      trail.stop();
+      scene.time.delayedCall(200, () => { if (trail.scene) trail.destroy(); });
+      onImpact?.();
+    },
   });
 }
 
@@ -74,9 +91,20 @@ function spawnBlast(scene, fromX, fromY, dmgScale, onImpact) {
     });
   }
   sprite.play('fireball-loop');
-  const lift = 55;
-  const toX  = scene.layout.boss.anchor.x;
-  const toY  = scene.layout.boss.anchor.y;
+  const lift  = 55;
+  const toX   = scene.layout.boss.anchor.x;
+  const toY   = scene.layout.boss.anchor.y;
+  const trail = scene.add.particles(fromX, fromY, 'spark', {
+    tint:      { onEmit: () => Phaser.Math.RND.pick([0xc026d3, 0x7c3aed, 0xe879f9, 0xfb923c, 0xffffff]) },
+    scale:     { start: 2.8, end: 0 },
+    alpha:     { start: 0.55, end: 0 },
+    speedX:    { min: -28, max: 28 },
+    speedY:    { min: -28, max: 28 },
+    lifespan:  { min: 90, max: 190 },
+    frequency: 16,
+    quantity:  2,
+    blendMode: Phaser.BlendModes.ADD,
+  }).setDepth(9);
   scene.tweens.add({
     targets: sprite, x: toX, y: toY,
     duration: TIMINGS.projectileArcMs, ease: 'Sine.easeIn',
@@ -84,8 +112,14 @@ function spawnBlast(scene, fromX, fromY, dmgScale, onImpact) {
       const t = tween.progress;
       sprite.y = fromY + (toY - fromY) * t - Math.sin(t * Math.PI) * lift;
       sprite.rotation += 0.2;
+      trail.setPosition(sprite.x, sprite.y);
     },
-    onComplete: () => { sprite.destroy(); onImpact?.(); },
+    onComplete: () => {
+      sprite.destroy();
+      trail.stop();
+      scene.time.delayedCall(220, () => { if (trail.scene) trail.destroy(); });
+      onImpact?.();
+    },
   });
 }
 
@@ -125,18 +159,34 @@ function spawnShuriken(scene, fromX, fromY, dmgScale, onImpact) {
   const lift  = 40;
   const dur   = TIMINGS.projectileArcMs * 0.6;
   const proj  = scene.add.image(fromX, fromY, 'proj-shuriken').setScale(sc).setDepth(10);
+  const trail = scene.add.particles(fromX, fromY, 'spark', {
+    tint:      { onEmit: () => Phaser.Math.RND.pick([0xe879f9, 0xf0abfc, 0xd946ef, 0xfdf4ff]) },
+    scale:     { start: sc * 0.55, end: 0 },
+    alpha:     { start: 0.58, end: 0 },
+    speedX:    { min: -22, max: 22 },
+    speedY:    { min: -22, max: 22 },
+    lifespan:  { min: 70, max: 140 },
+    frequency: 20,
+    quantity:  1,
+    blendMode: Phaser.BlendModes.ADD,
+  }).setDepth(9);
   const state = { t: 0 };
   scene.tweens.add({
     targets: state, t: 1, duration: dur, ease: 'Power2.easeIn',
     onUpdate: () => {
       const t = state.t;
-      proj.setPosition(
-        fromX + (toX - fromX) * t,
-        fromY + (toY - fromY) * t - Math.sin(t * Math.PI) * lift,
-      );
+      const x = fromX + (toX - fromX) * t;
+      const y = fromY + (toY - fromY) * t - Math.sin(t * Math.PI) * lift;
+      proj.setPosition(x, y);
+      trail.setPosition(x, y);
       proj.rotation += 0.18;
     },
-    onComplete: () => { proj.destroy(); onImpact?.(); },
+    onComplete: () => {
+      proj.destroy();
+      trail.stop();
+      scene.time.delayedCall(180, () => { if (trail.scene) trail.destroy(); });
+      onImpact?.();
+    },
   });
 }
 
@@ -174,6 +224,17 @@ function spawnArrow(scene, fromX, fromY, dmgScale, onImpact) {
   const flyLeft = fromX > toX;
   const proj    = scene.add.image(fromX, fromY, 'proj-arrow').setScale(sc).setDepth(10);
   if (flyLeft) proj.setFlipX(true);
+  const trail = scene.add.particles(fromX, fromY, 'spark', {
+    tint:      { onEmit: () => Phaser.Math.RND.pick([0xfbbf24, 0xfde68a, 0x86efac, 0xfef9c3]) },
+    scale:     { start: sc * 0.35, end: 0 },
+    alpha:     { start: 0.55, end: 0 },
+    speedX:    { min: -16, max: 16 },
+    speedY:    { min: -16, max: 16 },
+    lifespan:  { min: 80, max: 160 },
+    frequency: 18,
+    quantity:  1,
+    blendMode: Phaser.BlendModes.ADD,
+  }).setDepth(9);
   const state   = { t: 0 };
   scene.tweens.add({
     targets: state, t: 1, duration: dur, ease: 'Power2.easeIn',
@@ -182,10 +243,16 @@ function spawnArrow(scene, fromX, fromY, dmgScale, onImpact) {
       const x = fromX + (toX - fromX) * t;
       const y = fromY + (toY - fromY) * t - Math.sin(t * Math.PI) * lift;
       proj.setPosition(x, y);
+      trail.setPosition(x, y);
       const dy = (toY - fromY) - Math.cos(t * Math.PI) * lift * Math.PI;
       proj.rotation = Math.atan2(dy, Math.abs(toX - fromX)) * (flyLeft ? -1 : 1);
     },
-    onComplete: () => { proj.destroy(); onImpact?.(); },
+    onComplete: () => {
+      proj.destroy();
+      trail.stop();
+      scene.time.delayedCall(200, () => { if (trail.scene) trail.destroy(); });
+      onImpact?.();
+    },
   });
 }
 

@@ -34,20 +34,23 @@ export function rowsNeeded(count, perRow = 14) {
   return Math.max(1, Math.ceil(count / perRow));
 }
 
+// displaySize = target visible character height in logical pixels.
+// Sprites were upscaled 4× (LANCZOS) — char is now 72px in a 400px frame.
+// LINEAR filter at ~1.0–1.5× of 72px keeps them smooth without blur.
 export function fighterDisplayConfig(count, mode = 'landscape') {
   if (mode === 'portrait') {
     // Canvas 540×960. Boss area ends ~430. Fighters fill 430–960.
     if (count <= 8) {
-      return { displaySize: 120, topY: 620, rowSpacing: 130, showHandle: true,  perRow: 8 };
+      return { displaySize: 108, topY: 620, rowSpacing: 130, showHandle: true,  perRow: 8 };
     }
-    return   { displaySize: 96,  topY: 610, rowSpacing: 110, showHandle: false, perRow: 8 };
+    return   { displaySize: 90,  topY: 610, rowSpacing: 110, showHandle: false, perRow: 8 };
   }
   // Canvas 960×540. Boss area ends ~310. HP bar at 300. Fighters fill 320–540.
   if (count <= 14) {
-    return { displaySize: 120, topY: 460, rowSpacing: 130, showHandle: true,  perRow: 14 };
+    return { displaySize: 90,  topY: 460, rowSpacing: 130, showHandle: true,  perRow: 14 };
   }
   if (count <= 28) {
-    return { displaySize: 96,  topY: 380, rowSpacing: 106, showHandle: false, perRow: 14 };
+    return { displaySize: 72,  topY: 380, rowSpacing: 106, showHandle: false, perRow: 14 };
   }
-  return   { displaySize: 60,  topY: 365, rowSpacing: 70,  showHandle: false, perRow: 14 };
+  return   { displaySize: 54,  topY: 365, rowSpacing: 70,  showHandle: false, perRow: 14 };
 }
