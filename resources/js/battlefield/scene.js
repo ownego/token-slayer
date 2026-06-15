@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { BG_COLOR, LAYOUTS, TIMINGS, BOSS_TYPES, FIGHTER_TYPES } from './config.js';
-import { chargeFootY, computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from './layout.js';
+import { computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from './layout.js';
 import { bus } from './bus.js';
 import { ATTACK_HANDLERS } from './attacks.js';
 import { applyImpact } from './impact.js';
@@ -23,13 +23,6 @@ function truncateHandle(handle) {
   return handle.slice(0, HANDLE_MAX_CHARS - 1) + '…';
 }
 
-function chargeParticleColors(ftype) {
-  if (ftype?.key === 'shinobi') {
-    return [0x4c1d95, 0x7c3aed, 0xa855f7, 0xc4b5fd, 0x8b5cf6];
-  }
-  return [0x991100, 0xcc3300, 0xdd6600, 0xee9900, 0xffbb00];
-}
-
 export class BattlefieldScene extends Phaser.Scene {
   constructor() {
     super('battlefield');
@@ -37,10 +30,11 @@ export class BattlefieldScene extends Phaser.Scene {
 
   preload() {
     for (const ft of FIGHTER_TYPES) {
-      if (!this.textures.exists(ft.key + '-idle'))
-        this.load.spritesheet(ft.key + '-idle', ft.idleFile, { frameWidth: ft.frameWidth, frameHeight: ft.frameHeight });
-      if (!this.textures.exists(ft.key + '-run'))
-        this.load.spritesheet(ft.key + '-run',  ft.runFile,  { frameWidth: ft.runFrameWidth ?? ft.frameWidth, frameHeight: ft.frameHeight });
+      for (const [state, anim] of Object.entries(ft.animations)) {
+        const texKey = `${ft.key}-${state}`;
+        if (!this.textures.exists(texKey))
+          this.load.spritesheet(texKey, anim.file, { frameWidth: ft.frameWidth, frameHeight: ft.frameHeight });
+      }
     }
     for (const boss of BOSS_TYPES) {
       if (!this.textures.exists(boss.key))
@@ -59,24 +53,17 @@ export class BattlefieldScene extends Phaser.Scene {
       for (const key of pixelArtKeys) {
         this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
-      // Fighter sheets are high-res (256px frames) drawn well below native
-      // size — default LINEAR filtering keeps them smooth, NEAREST would alias.
       for (const ft of FIGHTER_TYPES) {
-        if (!this.anims.exists(ft.key + '-idle')) {
-          this.anims.create({
-            key: ft.key + '-idle',
-            frames: this.anims.generateFrameNumbers(ft.key + '-idle', { start: 0, end: ft.idleFrames - 1 }),
-            frameRate: 8,
-            repeat: -1,
-          });
-        }
-        if (!this.anims.exists(ft.key + '-run')) {
-          this.anims.create({
-            key: ft.key + '-run',
-            frames: this.anims.generateFrameNumbers(ft.key + '-run', { start: 0, end: ft.runFrames - 1 }),
-            frameRate: 10,
-            repeat: -1,
-          });
+        for (const [state, anim] of Object.entries(ft.animations)) {
+          const animKey = `${ft.key}-${state}`;
+          if (!this.anims.exists(animKey)) {
+            this.anims.create({
+              key: animKey,
+              frames: this.anims.generateFrameNumbers(animKey, { start: 0, end: anim.frames - 1 }),
+              frameRate: anim.rate,
+              repeat: (state === 'idle' || state === 'walk') ? -1 : 0,
+            });
+          }
         }
       }
     });
@@ -357,6 +344,21 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     this.clearCharge(payload.user_id);
     const fighter = this.fighters.get(payload.user_id);
+    if (fighter?.body) {
+      const key = fighter.ftype.key;
+      const flipTowardBoss = fighter.pos.x > this.layout.boss.anchor.x;
+      fighter.animState = 'attack';
+      fighter.body.off(Phaser.Animations.Events.ANIMATION_COMPLETE);
+      fighter.body.setFlipX(flipTowardBoss);
+      fighter.body.play(`${key}-attack`);
+      fighter.body.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        if (!fighter.body?.scene) return;
+        const next = this.charges.has(fighter.id) ? 'walk' : 'idle';
+        fighter.animState = next;
+        fighter.body.setFlipX(next === 'walk' ? flipTowardBoss : false);
+        fighter.body.play(`${key}-${next}`);
+      });
+    }
     const isKillShot = (payload.boss_hp_after ?? 1) <= 0;
     if (payload.damage > 0 && fighter) {
       const prev = this.damageTotals.get(payload.user_id) ?? 0;
@@ -539,56 +541,36 @@ export class BattlefieldScene extends Phaser.Scene {
       }
       return;
     }
-    // Switch to run animation while charging
-    if (fighter.body) {
-      fighter.body.setTexture(fighter.ftype.key + '-run');
-      fighter.body.play(fighter.ftype.key + '-run');
-      fighter.body.setFlipX(
-        (fighter.pos.x > this.layout.boss.anchor.x) !== (fighter.ftype?.baseFlipX ?? false),
-      );
+    if (fighter.body && fighter.animState !== 'attack') {
+      fighter.animState = 'walk';
+      fighter.body.setFlipX(fighter.pos.x > this.layout.boss.anchor.x);
+      fighter.body.play(fighter.ftype.key + '-walk');
     }
-    const localFootY = chargeFootY(0, fighter.displaySize) + Math.round(fighter.displaySize * 0.22);
-    const { emitter, embers } = this.spawnChargeEmitters(fighter.ftype, 0, localFootY, fighter.displaySize);
-    fighter.sprite.addAt(embers, 0);
-    fighter.sprite.addAt(emitter, 0);
-    const entry = { emitter, embers, bubble: null, activity: payload.activity ?? '' };
+    const ring = this.createChargingRing(fighter);
+    fighter.sprite.addAt(ring, 0);
+    const entry = { ring, bubble: null, activity: payload.activity ?? '' };
     if (this.fightersAllowBubbles()) {
       this.updateActivityBubble(entry, fighter, payload.activity);
     }
     this.charges.set(payload.user_id, entry);
   }
 
-  spawnChargeEmitters(ftype, posX, footY, displaySize) {
-    const fireColors = chargeParticleColors(ftype);
-    const ps = displaySize * 0.018;
-    // Symmetric spread from both sides of feet — depth 0 so sprite renders on top
-    const emitter = this.add.particles(posX, footY, 'spark', {
-      tint: { onEmit: () => Phaser.Math.RND.pick(fireColors) },
-      rotate: { min: 0, max: 360 },
-      scale: { start: ps, end: 0 },
-      alpha: { start: 0.55, end: 0 },
-      speedX: { min: -180, max: 180 },
-      speedY: { min: -90, max: 20 },
-      lifespan: { min: 280, max: 480 },
-      frequency: 22,
-      quantity: 3,
-      gravityY: 80,
-      blendMode: Phaser.BlendModes.ADD,
+  createChargingRing(fighter) {
+    const r = Math.round(fighter.displaySize * 0.52);
+    const g = this.add.graphics();
+    g.lineStyle(2, 0x4ade80, 1);
+    g.strokeCircle(0, 0, r);
+    this.tweens.add({
+      targets: g,
+      alpha: { from: 0.9, to: 0.2 },
+      scaleX: { from: 1.0, to: 1.08 },
+      scaleY: { from: 1.0, to: 1.08 },
+      duration: TIMINGS.chargeRingPulseMs,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
     });
-    const embers = this.add.particles(posX, footY, 'spark', {
-      tint: { onEmit: () => Phaser.Math.RND.pick(fireColors) },
-      rotate: { min: 0, max: 360 },
-      scale: { start: ps * 0.5, end: 0 },
-      alpha: { start: 0.4, end: 0 },
-      speedX: { min: -240, max: 240 },
-      speedY: { min: -60, max: 30 },
-      lifespan: { min: 200, max: 400 },
-      frequency: 28,
-      quantity: 2,
-      gravityY: 60,
-      blendMode: Phaser.BlendModes.ADD,
-    });
-    return { emitter, embers };
+    return g;
   }
 
   fightersAllowBubbles() {
@@ -654,24 +636,20 @@ export class BattlefieldScene extends Phaser.Scene {
     if (!entry) {
       return;
     }
-    entry.emitter.stop();
-    entry.embers?.stop();
-    this.time.delayedCall(900, () => {
-      if (entry.emitter?.scene) entry.emitter.destroy();
-      if (entry.embers?.scene) entry.embers.destroy();
-    });
+    if (entry.ring?.scene) {
+      this.tweens.killTweensOf(entry.ring);
+      entry.ring.destroy();
+    }
     if (entry.bubble) {
       entry.bubble.destroy();
       entry.bubble = null;
     }
     this.charges.delete(userId);
-    // Switch back to idle animation
     const fighter = this.fighters.get(userId);
-    if (fighter?.body) {
-      fighter.body.setTexture(fighter.ftype.key + '-idle');
+    if (fighter?.body && fighter.animState !== 'attack') {
+      fighter.animState = 'idle';
+      fighter.body.setFlipX(false);
       fighter.body.play(fighter.ftype.key + '-idle');
-      fighter.body.setFlipX(fighter.ftype.baseFlipX ?? false);
-      fighter.sprite.scaleY = fighter.sprite.scaleX;
     }
   }
 
@@ -739,10 +717,13 @@ export class BattlefieldScene extends Phaser.Scene {
 
       const charge = this.charges.get(userId);
       if (charge) {
-        // Emitters are inside the container — use local coords (container center = 0,0)
-        const newLocalFootY = chargeFootY(0, newSize) + Math.round(newSize * 0.22);
-        charge.emitter.setPosition(0, newLocalFootY);
-        charge.embers?.setPosition(0, newLocalFootY);
+        // Ring is inside the container at (0,0) — rebuild if size changed
+        if (sizeChanged && charge.ring?.scene) {
+          this.tweens.killTweensOf(charge.ring);
+          charge.ring.destroy();
+          charge.ring = this.createChargingRing(entry);
+          entry.sprite.addAt(charge.ring, 0);
+        }
         if (charge.bubble) {
           charge.bubble.moveTo(target.x, target.y - (newSize / 2 + 28));
         }
@@ -877,17 +858,14 @@ export class BattlefieldScene extends Phaser.Scene {
     // Body sprite — starts in idle animation (waiting state)
     const body = this.add.sprite(0, 0, ftype.key + '-idle').setScale(scale);
     body.play(ftype.key + '-idle');
-    if (ftype.baseFlipX) body.setFlipX(true);
     container.add(body);
 
-    // Avatar overlay on face area (circular pre-baked texture)
-    const avatarSize = Math.round(ftype.headSize * scale);
-    const headOffsetX = Math.round(ftype.headX * scale);
-    const headOffsetY = Math.round(ftype.headY * scale);
+    // Avatar bubble floats above the character's head
+    const avatarY = -Math.round((ftype.frameHeight / 2) * scale) - 20;
     const initialKey = this.textures.exists(`fighter-${fighter.id}`)
       ? `fighter-${fighter.id}`
       : this.makeFallbackAvatarTexture(fighter);
-    const head = this.add.image(headOffsetX, headOffsetY, initialKey).setDisplaySize(avatarSize, avatarSize);
+    const head = this.add.image(0, avatarY, initialKey).setDisplaySize(28, 28);
     container.add(head);
 
     // Handle label (world-space)
@@ -913,11 +891,12 @@ export class BattlefieldScene extends Phaser.Scene {
       legH,
       ftype,
       damageScale: 1,
+      animState: 'idle',
     });
 
     if (initialKey !== `fighter-${fighter.id}`) {
       this.loadAvatarTexture(fighter).then(realKey => {
-        if (head.scene) head.setTexture(realKey).setDisplaySize(avatarSize, avatarSize);
+        if (head.scene) head.setTexture(realKey).setDisplaySize(28, 28);
       }).catch(e => console.warn('[battlefield]', e.message));
     }
   }

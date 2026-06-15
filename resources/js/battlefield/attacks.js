@@ -21,12 +21,6 @@ function runDash(scene, fighter, { dashDist, runDur, returnDur, scalePeak = 1.1 
   const towardBoss = fighter.pos.x <= scene.layout.boss.anchor.x ? 1 : -1;
   const dashX      = fighter.pos.x + towardBoss * dashDist;
 
-  if (fighter.body) {
-    fighter.body.setTexture(fighter.ftype.key + '-run');
-    fighter.body.play(fighter.ftype.key + '-run');
-    fighter.body.setFlipX((towardBoss < 0) !== (fighter.ftype.baseFlipX ?? false));
-  }
-
   scene.tweens.add({
     targets: fighter.sprite,
     x: dashX,
@@ -43,13 +37,6 @@ function runDash(scene, fighter, { dashDist, runDur, returnDur, scalePeak = 1.1 
         scaleX: rest, scaleY: rest, rotation: 0,
         duration: returnDur,
         ease: 'Back.easeOut',
-        onComplete: () => {
-          if (fighter.body) {
-            fighter.body.setTexture(fighter.ftype.key + '-idle');
-            fighter.body.play(fighter.ftype.key + '-idle');
-            fighter.body.setFlipX(fighter.ftype.baseFlipX ?? false);
-          }
-        },
       });
     },
   });
@@ -322,12 +309,6 @@ export const ATTACK_HANDLERS = {
       });
     }
 
-    if (fighter.body) {
-      fighter.body.setTexture(fighter.ftype.key + '-run');
-      fighter.body.play(fighter.ftype.key + '-run');
-      fighter.body.setFlipX((towardBoss < 0) !== (fighter.ftype.baseFlipX ?? false));
-    }
-
     scene.tweens.add({
       targets: fighter.sprite, x: dashX,
       scaleX: sc * 1.08, scaleY: sc * 1.08,
@@ -373,13 +354,6 @@ export const ATTACK_HANDLERS = {
         scene.tweens.add({
           targets: fighter.sprite, x: fx, scaleX: rest, scaleY: rest, rotation: 0,
           duration: returnDur, ease: 'Back.easeOut',
-          onComplete: () => {
-            if (fighter.body) {
-              fighter.body.setTexture(fighter.ftype.key + '-idle');
-              fighter.body.play(fighter.ftype.key + '-idle');
-              fighter.body.setFlipX(fighter.ftype.baseFlipX ?? false);
-            }
-          },
         });
       },
     });
@@ -403,16 +377,10 @@ export const ATTACK_HANDLERS = {
     const retDur  = isKillShot ? 340 : 240;
 
     const bodyScale  = fighter.body?.scaleX ?? sc;
-    const flipX      = (towardBoss < 0) !== (fighter.ftype.baseFlipX ?? false);
+    const flipX      = towardBoss < 0;
     const numGhosts  = isKillShot ? 5 : 4;
     const ghostEvery = dashDur / numGhosts;
     let   ghostCount = 0;
-
-    if (fighter.body) {
-      fighter.body.setTexture(fighter.ftype.key + '-run');
-      fighter.body.play(fighter.ftype.key + '-run');
-      fighter.body.setFlipX(flipX);
-    }
 
     scene.tweens.add({
       targets: fighter.sprite, x: dashX, y: dashY,
@@ -427,7 +395,7 @@ export const ATTACK_HANDLERS = {
           const alpha = 0.55 - ghostCount * 0.08;
           const tint  = ghostCount % 2 === 0 ? 0x4c1d95 : 0x7c3aed;
           ghostCount++;
-          const ghost = scene.add.sprite(curX, curY, fighter.ftype.key + '-run', frame)
+          const ghost = scene.add.sprite(curX, curY, fighter.ftype.key + '-walk', frame)
             .setScale(bodyScale)
             .setFlipX(flipX)
             .setTint(tint)
@@ -480,7 +448,7 @@ export const ATTACK_HANDLERS = {
           scene.time.delayedCall(i * 30 + 55, () => {
             const g2 = scene.add.sprite(ghostX, ghostY, fighter.ftype.key + '-idle', 0)
               .setScale(bodyScale)
-              .setFlipX(fighter.ftype.baseFlipX ?? false)
+              .setFlipX(false)
               .setTint(0x3b0764)
               .setAlpha(0.38)
               .setBlendMode(Phaser.BlendModes.ADD)
@@ -496,13 +464,6 @@ export const ATTACK_HANDLERS = {
         scene.tweens.add({
           targets: fighter.sprite, x: fx, y: fy, scaleX: rest, scaleY: rest, rotation: 0,
           duration: retDur, ease: 'Back.easeOut',
-          onComplete: () => {
-            if (fighter.body) {
-              fighter.body.setTexture(fighter.ftype.key + '-idle');
-              fighter.body.play(fighter.ftype.key + '-idle');
-              fighter.body.setFlipX(fighter.ftype.baseFlipX ?? false);
-            }
-          },
         });
       },
     });
