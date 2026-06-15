@@ -12,26 +12,49 @@ function pngSize(path) {
 }
 
 describe('FIGHTER_TYPES', () => {
-  test('matches the backend fighter keys exactly', () => {
-    expect(FIGHTER_TYPES.map((f) => f.key)).toEqual([
-      'knight', 'redhat', 'ninjagirl', 'adventurer', 'shinobi',
-    ]);
-  });
-
-  test('every idle and run spritesheet exists on disk', () => {
+  test('each entry has the unified multi-file schema shape', () => {
     for (const f of FIGHTER_TYPES) {
-      expect(existsSync(publicFile(f.idleFile)), `${f.key} idle: ${f.idleFile}`).toBe(true);
-      expect(existsSync(publicFile(f.runFile)), `${f.key} run: ${f.runFile}`).toBe(true);
+      expect(typeof f.key, f.key).toBe('string');
+      expect(typeof f.attackType, f.key).toBe('string');
+      expect(f.frameWidth, f.key).toBeGreaterThan(0);
+      expect(f.frameHeight, f.key).toBeGreaterThan(0);
+      for (const state of ['idle', 'walk', 'attack', 'death']) {
+        const anim = f.animations?.[state];
+        expect(anim, `${f.key}.animations.${state}`).toBeDefined();
+        expect(typeof anim.file, `${f.key}.animations.${state}.file`).toBe('string');
+        expect(anim.frames, `${f.key}.animations.${state}.frames`).toBeGreaterThan(0);
+        expect(anim.rate, `${f.key}.animations.${state}.rate`).toBeGreaterThan(0);
+      }
+      expect(f.idleFile, `${f.key} must not have legacy idleFile`).toBeUndefined();
+      expect(f.runFile, `${f.key} must not have legacy runFile`).toBeUndefined();
     }
   });
 
-  test('frame configs are sane', () => {
+  test('matches the backend FighterCharacter enum keys in order', () => {
+    expect(FIGHTER_TYPES.map((f) => f.key)).toEqual([
+      'soldier', 'knight', 'swordsman', 'axeman', 'orc',
+      'armored-orc', 'elite-orc', 'skeleton', 'armored-skeleton', 'slime',
+      'archer', 'werewolf', 'werebear', 'orc-rider', 'greatsword-skeleton',
+    ]);
+  });
+
+  test('every spritesheet file exists on disk', () => {
     for (const f of FIGHTER_TYPES) {
-      expect(f.frameWidth, f.key).toBeGreaterThan(0);
-      expect(f.frameHeight, f.key).toBeGreaterThan(0);
-      expect(f.idleFrames, f.key).toBeGreaterThan(0);
-      expect(f.runFrames, f.key).toBeGreaterThan(0);
-      expect(typeof f.attackType, f.key).toBe('string');
+      for (const [state, anim] of Object.entries(f.animations)) {
+        expect(existsSync(publicFile(anim.file)), `${f.key}.${state}: ${anim.file}`).toBe(true);
+      }
+    }
+  });
+
+  test('spritesheet dimensions match frame config', () => {
+    for (const f of FIGHTER_TYPES) {
+      for (const [state, anim] of Object.entries(f.animations)) {
+        const { width, height } = pngSize(publicFile(anim.file));
+        expect(width % f.frameWidth, `${f.key}.${state}: width not divisible by frameWidth`).toBe(0);
+        expect(height, `${f.key}.${state}: height should equal frameHeight`).toBe(f.frameHeight);
+        const cols = width / f.frameWidth;
+        expect(anim.frames, `${f.key}.${state}: frames exceeds sheet columns`).toBeLessThanOrEqual(cols);
+      }
     }
   });
 });

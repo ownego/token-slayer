@@ -6,13 +6,12 @@ Pixel art from **Warped: Super Grotto Escape Collection** by **Ansimuz**.
 - License: **CC0 1.0 Universal** (public domain)
 - Mirror used for download: https://github.com/thanhnld0912/Super-Grotto-Escape
 
-Fighter character sprites from **Game Art 2D freebies** (License: **CC0 1.0 Universal**):
+Fighter character sprites from **Tiny RPG Character Asset Pack v1.03** by **Zerie**:
 
-- The Knight: https://www.gameart2d.com/the-knight-free-sprites.html
-- Red Hat Boy: https://www.gameart2d.com/red-hat-boy-free-sprites.html
-- Ninja Girl: https://www.gameart2d.com/ninja-girl---free-sprites.html
-- Adventurer Girl: https://www.gameart2d.com/adventurer-girl---free-sprites.html
-- Ninja Adventure (shinobi): https://www.gameart2d.com/ninja-adventure---free-sprites.html
+- Page: https://zerie.itch.io/tiny-rpg-character-asset-pack
+- License: **CC0 1.0 Universal** (public domain)
+- Characters used: Soldier, Knight, Swordsman, Axeman, Orc, Armored Orc, Elite Orc, Skeleton, Armored Skeleton, Slime, Archer, Werewolf, Werebear, Orc Rider, Greatsword Skeleton
+- All sheets are 100×100 px per frame with separate files per animation state (idle/walk/attack/death)
 
 The `shadow.png` and `gnu.png` bosses are CC0 sprite sheets whose source
 pages were not recorded at download time.

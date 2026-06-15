@@ -8,45 +8,139 @@ export const BOSS_TYPES = [
 
 export const FIGHTER_TYPES = [
   {
-    key: 'knight', attackType: 'slash',
-    idleFile: '/assets/battlefield/fighters/knight-idle.png',
-    runFile:  '/assets/battlefield/fighters/knight-run.png',
-    frameWidth: 212, frameHeight: 256,
-    idleFrames: 10, runFrames: 10,
-    headX: -7, headY: -81, headSize: 120,
+    key: 'soldier', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/soldier-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/soldier-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/soldier-attack.png', frames: 6, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/soldier-death.png',  frames: 4, rate: 6  },
+    },
   },
   {
-    key: 'redhat', attackType: 'blast',
-    idleFile: '/assets/battlefield/fighters/redhat-idle.png',
-    runFile:  '/assets/battlefield/fighters/redhat-run.png',
-    frameWidth: 300, frameHeight: 256,
-    idleFrames: 10, runFrames: 8,
-    headX: 0, headY: -80, headSize: 120,
+    key: 'knight', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/knight-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/knight-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/knight-attack.png', frames: 7, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/knight-death.png',  frames: 4, rate: 6  },
+    },
   },
   {
-    key: 'ninjagirl', attackType: 'shuriken',
-    idleFile: '/assets/battlefield/fighters/ninjagirl-idle.png',
-    runFile:  '/assets/battlefield/fighters/ninjagirl-run.png',
-    frameWidth: 148, runFrameWidth: 185, frameHeight: 256,
-    idleFrames: 10, runFrames: 10,
-    headX: 0, headY: -82, headSize: 140,
+    key: 'swordsman', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/swordsman-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/swordsman-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/swordsman-attack.png', frames: 7, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/swordsman-death.png',  frames: 4, rate: 6  },
+    },
   },
   {
-    key: 'adventurer', attackType: 'arrow',
-    idleFile: '/assets/battlefield/fighters/adventurer-idle.png',
-    runFile:  '/assets/battlefield/fighters/adventurer-run.png',
-    frameWidth: 302, frameHeight: 256,
-    idleFrames: 10, runFrames: 8,
-    headX: -23, headY: -78, headSize: 130,
+    key: 'axeman', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/axeman-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/axeman-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/axeman-attack.png', frames: 9, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/axeman-death.png',  frames: 4, rate: 6  },
+    },
   },
   {
-    key: 'shinobi', attackType: 'blade',
-    idleFile: '/assets/battlefield/fighters/ninja-idle.png',
-    runFile:  '/assets/battlefield/fighters/ninja-run.png',
-    frameWidth: 135, runFrameWidth: 202, frameHeight: 256,
-    idleFrames: 10, runFrames: 10,
-    headX: 0, headY: -80, headSize: 128,
-    baseFlipX: true,
+    key: 'orc', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/orc-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/orc-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/orc-attack.png', frames: 6, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/orc-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'armored-orc', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/armored-orc-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/armored-orc-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/armored-orc-attack.png', frames: 7, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/armored-orc-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'elite-orc', attackType: 'blast', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/elite-orc-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/elite-orc-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/elite-orc-attack.png', frames: 7, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/elite-orc-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'skeleton', attackType: 'shuriken', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/skeleton-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/skeleton-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/skeleton-attack.png', frames: 6, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/skeleton-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'armored-skeleton', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/armored-skeleton-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/armored-skeleton-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/armored-skeleton-attack.png', frames: 8, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/armored-skeleton-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'slime', attackType: 'blast', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/slime-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/slime-walk.png',   frames: 6, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/slime-attack.png', frames: 6, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/slime-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'archer', attackType: 'arrow', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/archer-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/archer-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/archer-attack.png', frames: 9, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/archer-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'werewolf', attackType: 'slash', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/werewolf-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/werewolf-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/werewolf-attack.png', frames: 9, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/werewolf-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'werebear', attackType: 'blast', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/werebear-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/werebear-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/werebear-attack.png', frames: 9, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/werebear-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'orc-rider', attackType: 'arrow', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/orc-rider-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/orc-rider-walk.png',   frames: 8, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/orc-rider-attack.png', frames: 8, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/orc-rider-death.png',  frames: 4, rate: 6  },
+    },
+  },
+  {
+    key: 'greatsword-skeleton', attackType: 'blade', frameWidth: 100, frameHeight: 100,
+    animations: {
+      idle:   { file: '/assets/battlefield/fighters/greatsword-skeleton-idle.png',   frames: 6, rate: 8  },
+      walk:   { file: '/assets/battlefield/fighters/greatsword-skeleton-walk.png',   frames: 9, rate: 10 },
+      attack: { file: '/assets/battlefield/fighters/greatsword-skeleton-attack.png', frames: 9, rate: 12 },
+      death:  { file: '/assets/battlefield/fighters/greatsword-skeleton-death.png',  frames: 4, rate: 6  },
+    },
   },
 ];
 
@@ -55,14 +149,14 @@ export const LAYOUTS = {
     logicalWidth: 960,
     logicalHeight: 540,
     boss: { anchor: { x: 480, y: 180 }, scale: 4, name: { x: 480, y: 100 } },
-    hpBar: { x: 480, y: 300, width: 200, height: 12 },
+    hpBar: { x: 480, y: 300, width: 200, height: 16 },
     fighters: { rowXRange: [80, 880], rowY: 460, perRowMax: 14 },
   },
   portrait: {
     logicalWidth: 540,
     logicalHeight: 960,
     boss: { anchor: { x: 270, y: 310 }, scale: 5, name: { x: 270, y: 200 } },
-    hpBar: { x: 270, y: 430, width: 280, height: 12 },
+    hpBar: { x: 270, y: 430, width: 280, height: 16 },
     fighters: { rowXRange: [50, 490], rowY: 820, perRowMax: 10 },
   },
 };
