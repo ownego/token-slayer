@@ -41,16 +41,16 @@ export function fighterDisplayConfig(count, mode = 'landscape') {
   if (mode === 'portrait') {
     // Canvas 540×960. Boss area ends ~430. Fighters fill 430–960.
     if (count <= 8) {
-      return { displaySize: 108, topY: 620, rowSpacing: 130, showHandle: true,  perRow: 8 };
+      return { displaySize: 54, topY: 620, rowSpacing: 70, showHandle: true,  perRow: 8 };
     }
-    return   { displaySize: 90,  topY: 610, rowSpacing: 110, showHandle: false, perRow: 8 };
+    return   { displaySize: 45, topY: 610, rowSpacing: 55, showHandle: false, perRow: 8 };
   }
-  // Canvas 960×540. Boss area ends ~310. HP bar at 300. Fighters fill 320–540.
+  // Canvas 960×540. Boss area ends ~310. HP bar at 300. Fighters fill 340–540.
   if (count <= 14) {
-    return { displaySize: 90,  topY: 460, rowSpacing: 130, showHandle: true,  perRow: 14 };
+    return { displaySize: 45, topY: 490, rowSpacing: 65, showHandle: true,  perRow: 14 };
   }
   if (count <= 28) {
-    return { displaySize: 72,  topY: 380, rowSpacing: 106, showHandle: false, perRow: 14 };
+    return { displaySize: 36, topY: 440, rowSpacing: 53, showHandle: false, perRow: 14 };
   }
-  return   { displaySize: 54,  topY: 365, rowSpacing: 70,  showHandle: false, perRow: 14 };
+  return   { displaySize: 27, topY: 425, rowSpacing: 35, showHandle: false, perRow: 14 };
 }
