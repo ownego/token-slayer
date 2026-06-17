@@ -49,7 +49,7 @@ class User extends Authenticatable
 
     public function displayHandle(): string
     {
-        return $this->display_name ?: ($this->slack_handle ?: ($this->name ?: ('#'.$this->id)));
+        return $this->slack_handle ?: ($this->display_name ?: ($this->name ?: ('#'.$this->id)));
     }
 
     public function characterForBoss(?int $bossId): string

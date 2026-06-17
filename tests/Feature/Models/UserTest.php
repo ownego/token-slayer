@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\FighterCharacter;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -15,14 +16,14 @@ test('user factory creates a slack-linked user with a hashed hook token', functi
         ->and(strlen($user->hook_token))->toBeGreaterThan(40);
 });
 
-test('displayHandle prefers display_name over slack_handle', function () {
-    $user = User::factory()->create(['display_name' => 'Alice', 'slack_handle' => 'alice.smith']);
-    expect($user->displayHandle())->toBe('Alice');
+test('displayHandle prefers slack_handle over display_name', function () {
+    $user = User::factory()->create(['slack_handle' => 'alice.smith', 'display_name' => 'Alice']);
+    expect($user->displayHandle())->toBe('alice.smith');
 });
 
-test('displayHandle falls back to slack_handle when display_name is null', function () {
-    $user = User::factory()->create(['display_name' => null, 'slack_handle' => 'alice.smith']);
-    expect($user->displayHandle())->toBe('alice.smith');
+test('displayHandle falls back to display_name when slack_handle is null', function () {
+    $user = User::factory()->create(['slack_handle' => null, 'display_name' => 'Alice']);
+    expect($user->displayHandle())->toBe('Alice');
 });
 
 test('displayHandle falls back to name when display_name and slack_handle are null', function () {
@@ -37,7 +38,7 @@ test('displayHandle falls back to #id when display_name, slack_handle, and name 
 
 test('characterForBoss assigns a fighter deterministically from user and boss ids', function () {
     $user = User::factory()->create();
-    $cases = App\Enums\FighterCharacter::cases();
+    $cases = FighterCharacter::cases();
     $expected = $cases[($user->id + 7) % count($cases)];
 
     expect($user->characterForBoss(7))->toBe($expected->value)

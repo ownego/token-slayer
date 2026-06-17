@@ -1095,7 +1095,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const avSize    = avatarPx(size);
     const fontPx    = handleFontPx(size);
     const maxChars  = Math.max(8, Math.round(size * 0.22));
-    const displayName = fighter.display_name || fighter.handle || fighter.slack_handle || '';
+    const displayName = fighter.handle || fighter.slack_handle || fighter.display_name || '';
 
     const container = this.add.container(pos.x, pos.y).setDepth(2);
 
