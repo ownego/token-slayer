@@ -8,7 +8,6 @@
 /.codex
 /.cursor/
 /docs/
-!/docs/superpowers/
 /.idea
 /.nova
 /.phpunit.cache
