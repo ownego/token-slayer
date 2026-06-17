@@ -59,3 +59,28 @@ test('FighterJoined broadcasts the character assigned for the given boss', funct
         'character' => $user->characterForBoss($boss->id),
     ])->and($withoutBoss->broadcastWith()['character'])->toBe($user->characterForBoss(null));
 });
+
+test('FighterJoined payload includes display_name and avatar_url', function () {
+    $user = User::factory()->create(['display_name' => 'Alice']);
+    $boss = Boss::factory()->create();
+
+    $payload = (new FighterJoined($user, $boss))->broadcastWith();
+
+    expect($payload)->toHaveKey('display_name', 'Alice')
+        ->and($payload)->toHaveKey('avatar_url')
+        ->and($payload['avatar_url'])->toStartWith('http');
+});
+
+test('FighterCharging broadcasts character for the given boss', function () {
+    $user = User::factory()->create();
+    $boss = Boss::factory()->create();
+
+    $withBoss = new FighterCharging($user, 'thinking…', $boss);
+    $withoutBoss = new FighterCharging($user, '$ npm install');
+
+    expect($withBoss->broadcastWith())->toMatchArray([
+        'user_id'   => $user->id,
+        'character' => $user->characterForBoss($boss->id),
+        'activity'  => 'thinking…',
+    ])->and($withoutBoss->broadcastWith()['character'])->toBe($user->characterForBoss(null));
+});

@@ -30,3 +30,13 @@ test('state endpoint assigns each fighter a character for the alive boss', funct
     $fighter = collect($body['fighters'])->firstWhere('id', $user->id);
     expect($fighter['character'])->toBe($user->characterForBoss($boss->id));
 });
+
+test('state endpoint includes display_name for each fighter', function () {
+    Boss::factory()->create();
+    $user = User::factory()->create(['last_event_at' => now(), 'display_name' => 'Alice']);
+
+    $body = $this->getJson('/api/state')->assertOk()->json();
+
+    $fighter = collect($body['fighters'])->firstWhere('id', $user->id);
+    expect($fighter)->toHaveKey('display_name', 'Alice');
+});

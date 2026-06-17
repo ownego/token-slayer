@@ -2,6 +2,7 @@
 
 namespace App\Events;
 
+use App\Models\Boss;
 use App\Models\User;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -12,7 +13,7 @@ class FighterCharging implements ShouldBroadcastNow
 {
     use Dispatchable, SerializesModels;
 
-    public function __construct(public User $user, public ?string $activity = null) {}
+    public function __construct(public User $user, public ?string $activity = null, public ?Boss $boss = null) {}
 
     /**
      * @return array<int, Channel>
@@ -36,7 +37,7 @@ class FighterCharging implements ShouldBroadcastNow
             'user_id' => $this->user->id,
             'slack_handle' => $this->user->displayHandle(),
             'avatar_url' => $this->user->avatar_url,
-            'character' => $this->user->character,
+            'character' => $this->user->characterForBoss($this->boss?->id),
             'activity' => $this->activity,
         ];
     }

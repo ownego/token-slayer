@@ -39,13 +39,13 @@ class EventController extends Controller
 
         if ($eventType === 'user-prompt-submit') {
             $this->chargingCache->put($user->id, 'thinking…');
-            $this->dispatchSafely(new FighterCharging($user, 'thinking…'));
+            $this->dispatchSafely(new FighterCharging($user, 'thinking…', $this->aliveBoss()));
         }
 
         if ($eventType === 'pre-tool-use') {
             $activity = $this->summarizeToolUse($payload);
             $this->chargingCache->put($user->id, $activity);
-            $this->dispatchSafely(new FighterCharging($user, $activity));
+            $this->dispatchSafely(new FighterCharging($user, $activity, $this->aliveBoss()));
         }
 
         if ($eventType === 'session-start') {
