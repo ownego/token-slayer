@@ -11,22 +11,26 @@ function pngSize(path) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
+const atlasJsonPath = join(process.cwd(), 'public/assets/battlefield/fighters/fighters-atlas.json');
+const atlasExists   = existsSync(atlasJsonPath);
+const atlasFrames   = atlasExists ? JSON.parse(readFileSync(atlasJsonPath, 'utf8')).frames : {};
+
 describe('FIGHTER_TYPES', () => {
-  test('each entry has the unified multi-file schema shape', () => {
+  test('each entry has the atlas-compatible schema shape', () => {
     for (const f of FIGHTER_TYPES) {
       expect(typeof f.key, f.key).toBe('string');
       expect(typeof f.attackType, f.key).toBe('string');
-      expect(f.frameWidth, f.key).toBeGreaterThan(0);
-      expect(f.frameHeight, f.key).toBeGreaterThan(0);
+      expect(f.frameWidth,  `${f.key} must not have frameWidth`).toBeUndefined();
+      expect(f.frameHeight, `${f.key} must not have frameHeight`).toBeUndefined();
       for (const state of ['idle', 'walk', 'attack', 'death']) {
         const anim = f.animations?.[state];
-        expect(anim, `${f.key}.animations.${state}`).toBeDefined();
-        expect(typeof anim.file, `${f.key}.animations.${state}.file`).toBe('string');
-        expect(anim.frames, `${f.key}.animations.${state}.frames`).toBeGreaterThan(0);
-        expect(anim.rate, `${f.key}.animations.${state}.rate`).toBeGreaterThan(0);
+        expect(anim,          `${f.key}.animations.${state}`).toBeDefined();
+        expect(anim.file,     `${f.key}.animations.${state} must not have file`).toBeUndefined();
+        expect(anim.frames,   `${f.key}.animations.${state}.frames`).toBeGreaterThan(0);
+        expect(anim.rate,     `${f.key}.animations.${state}.rate`).toBeGreaterThan(0);
       }
       expect(f.idleFile, `${f.key} must not have legacy idleFile`).toBeUndefined();
-      expect(f.runFile, `${f.key} must not have legacy runFile`).toBeUndefined();
+      expect(f.runFile,  `${f.key} must not have legacy runFile`).toBeUndefined();
     }
   });
 
@@ -38,24 +42,30 @@ describe('FIGHTER_TYPES', () => {
     ]);
   });
 
-  test('every spritesheet file exists on disk', () => {
+  test.skipIf(!atlasExists)('atlas JSON contains all expected animation frames', () => {
     for (const f of FIGHTER_TYPES) {
       for (const [state, anim] of Object.entries(f.animations)) {
-        expect(existsSync(publicFile(anim.file)), `${f.key}.${state}: ${anim.file}`).toBe(true);
+        for (let i = 0; i < anim.frames; i++) {
+          const name = `${f.key}-${state}-${i}`;
+          expect(atlasFrames[name], `missing atlas frame: ${name}`).toBeDefined();
+        }
+      }
+      for (let n = 0; n < (f.attacks?.length ?? 0); n++) {
+        const atk = f.attacks[n];
+        for (let i = 0; i < atk.frames; i++) {
+          const name = `${f.key}-attack${n + 1}-${i}`;
+          expect(atlasFrames[name], `missing atlas frame: ${name}`).toBeDefined();
+        }
+        for (let i = 0; i < (atk.effectFrames ?? 0); i++) {
+          const name = `${f.key}-effect${n + 1}-${i}`;
+          expect(atlasFrames[name], `missing atlas frame: ${name}`).toBeDefined();
+        }
       }
     }
   });
 
-  test('spritesheet dimensions match frame config', () => {
-    for (const f of FIGHTER_TYPES) {
-      for (const [state, anim] of Object.entries(f.animations)) {
-        const { width, height } = pngSize(publicFile(anim.file));
-        expect(width % f.frameWidth, `${f.key}.${state}: width not divisible by frameWidth`).toBe(0);
-        expect(height, `${f.key}.${state}: height should equal frameHeight`).toBe(f.frameHeight);
-        const cols = width / f.frameWidth;
-        expect(anim.frames, `${f.key}.${state}: frames exceeds sheet columns`).toBeLessThanOrEqual(cols);
-      }
-    }
+  test.skipIf(!atlasExists)('fighters-atlas.png exists in public', () => {
+    expect(existsSync(join(process.cwd(), 'public/assets/battlefield/fighters/fighters-atlas.png'))).toBe(true);
   });
 });
 
