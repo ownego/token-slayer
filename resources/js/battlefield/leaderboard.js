@@ -91,6 +91,16 @@ export function createLeaderboard(scene) {
       fighters.clear();
       render();
     },
+    damageFor(userId) {
+      return fighters.get(userId)?.damage ?? 0;
+    },
+    rankOf(userId) {
+      if (!fighters.has(userId)) {
+        return null;
+      }
+      const index = ranked().findIndex(([id]) => id === userId);
+      return index === -1 ? null : index + 1;
+    },
     getRanked() {
       return ranked().map(([userId, entry]) => [
         userId,

@@ -231,6 +231,9 @@ export class BattlefieldScene extends Phaser.Scene {
     spawnProjectile(this, fromX, fromY, () => {
       this.leaderboard?.onHit(payload.user_id, payload.damage, payload.slack_handle);
       applyImpact(this, payload.boss_hp_after);
+      if (this.hoveredUserId === payload.user_id) {
+        this.showFighterTooltip(payload.user_id);
+      }
     });
   }
 
@@ -359,10 +362,14 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     if (entry.bubble) {
       entry.bubble.setActivity(activity);
-      return;
+    } else {
+      const bubbleY = fighter.pos.y - (fighter.displaySize / 2 + 14);
+      entry.bubble = this.createActivityBubble(fighter.pos.x, bubbleY, activity);
     }
-    const bubbleY = fighter.pos.y - (fighter.displaySize / 2 + 14);
-    entry.bubble = this.createActivityBubble(fighter.pos.x, bubbleY, activity);
+    // The hover tooltip takes priority over the activity bubble.
+    if (this.hoveredUserId === fighter.id) {
+      entry.bubble.setVisible(false);
+    }
   }
 
   createActivityBubble(x, y, activity) {
@@ -393,7 +400,106 @@ export class BattlefieldScene extends Phaser.Scene {
         bg.x = newX;
         bg.y = newY;
       },
+      setVisible: visible => {
+        text.setVisible(visible);
+        bg.setVisible(visible);
+      },
     };
+  }
+
+  showFighterTooltip(userId) {
+    const fighter = this.fighters.get(userId);
+    if (!fighter) {
+      return;
+    }
+    const tokens = this.leaderboard?.damageFor(userId) ?? 0;
+    const rank = this.leaderboard?.rankOf(userId) ?? null;
+    const handle = fighter.handleText || `#${userId}`;
+    const rankPrefix = rank ? `#${rank} ` : '';
+    const content = `${rankPrefix}${handle} · ${tokens.toLocaleString()} tokens`;
+
+    if (!this.tooltip) {
+      this.tooltip = this.createFighterTooltip(content);
+    } else {
+      this.tooltip.setContent(content);
+    }
+
+    const margin = 4;
+    const halfW = this.tooltip.width() / 2;
+    const halfH = this.tooltip.height() / 2;
+    const x = Phaser.Math.Clamp(
+      fighter.pos.x,
+      halfW + margin,
+      this.layout.logicalWidth - halfW - margin,
+    );
+    const aboveY = fighter.pos.y - (fighter.displaySize / 2 + 12);
+    // Flip below the avatar when the tooltip would clip past the top edge.
+    const y = aboveY - halfH < margin
+      ? fighter.pos.y + (fighter.displaySize / 2 + 12)
+      : aboveY;
+
+    this.tooltip.moveTo(x, y);
+    this.tooltip.setVisible(true);
+    this.hoveredUserId = userId;
+
+    // Hide the "thinking" activity bubble so it doesn't collide with the tooltip.
+    const charge = this.charges.get(userId);
+    if (charge?.bubble) {
+      charge.bubble.setVisible(false);
+    }
+  }
+
+  hideFighterTooltip(userId) {
+    if (userId != null && this.hoveredUserId !== userId) {
+      return;
+    }
+    const previous = this.hoveredUserId;
+    this.hoveredUserId = null;
+    if (this.tooltip) {
+      this.tooltip.setVisible(false);
+    }
+    // Restore the activity bubble the tooltip was covering, if still charging.
+    if (previous != null) {
+      const charge = this.charges.get(previous);
+      if (charge?.bubble) {
+        charge.bubble.setVisible(true);
+      }
+    }
+  }
+
+  createFighterTooltip(content) {
+    const text = this.addSharpText(0, 0, content, {
+      fontFamily: 'monospace',
+      fontSize: '8px',
+      color: '#fde68a',
+      padding: { left: 4, right: 4, top: 2, bottom: 2 },
+    });
+    const bg = this.add
+      .rectangle(0, 0, text.width + 10, text.height + 6, 0x0f172a, 0.96)
+      .setOrigin(0.5)
+      .setStrokeStyle(1, 0xfbbf24, 0.9);
+    bg.setDepth(300);
+    text.setDepth(301);
+    const tooltip = {
+      setContent: newContent => {
+        text.setText(newContent);
+        bg.setSize(text.width + 10, text.height + 6);
+      },
+      moveTo: (x, y) => {
+        text.x = x;
+        text.y = y;
+        bg.x = x;
+        bg.y = y;
+      },
+      setVisible: visible => {
+        text.setVisible(visible);
+        bg.setVisible(visible);
+      },
+      width: () => bg.width,
+      height: () => bg.height,
+    };
+    tooltip.setVisible(false);
+    return tooltip;
   }
 
   handleIdled(payload) {
@@ -508,6 +614,10 @@ export class BattlefieldScene extends Phaser.Scene {
         }
       }
     }
+
+    if (this.hoveredUserId != null) {
+      this.showFighterTooltip(this.hoveredUserId);
+    }
   }
 
   loadAvatarTexture(fighter) {
@@ -621,6 +731,9 @@ export class BattlefieldScene extends Phaser.Scene {
     const maskShape = this.make.graphics({ x: pos.x, y: pos.y, add: false });
     maskShape.fillCircle(0, 0, radius);
     sprite.setMask(maskShape.createGeometryMask());
+    sprite.setInteractive({ useHandCursor: true });
+    sprite.on('pointerover', () => this.showFighterTooltip(fighter.id));
+    sprite.on('pointerout', () => this.hideFighterTooltip(fighter.id));
     const handle = options.showHandle === false
       ? null
       : this.addSharpText(pos.x, pos.y + radius + 9, truncateHandle(fighter.handle), {
