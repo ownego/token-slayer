@@ -73,23 +73,13 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   preload() {
-    for (const ft of FIGHTER_TYPES) {
-      for (const [state, anim] of Object.entries(ft.animations)) {
-        const texKey = `${ft.key}-${state}`;
-        if (!this.textures.exists(texKey))
-          this.load.spritesheet(texKey, anim.file, { frameWidth: ft.frameWidth, frameHeight: ft.frameHeight });
-      }
-      for (let i = 0; i < (ft.attacks?.length ?? 0); i++) {
-        const atk = ft.attacks[i];
-        const atkKey = `${ft.key}-attack${i + 1}`;
-        if (!this.textures.exists(atkKey))
-          this.load.spritesheet(atkKey, atk.file, { frameWidth: ft.frameWidth, frameHeight: ft.frameHeight });
-        if (atk.effect) {
-          const effKey = `${ft.key}-effect${i + 1}`;
-          if (!this.textures.exists(effKey))
-            this.load.spritesheet(effKey, atk.effect, { frameWidth: ft.frameWidth, frameHeight: ft.frameHeight });
-        }
-      }
+    // Single atlas covers all 138 fighter strips
+    if (!this.textures.exists('fighters')) {
+      this.load.atlas(
+        'fighters',
+        '/assets/battlefield/fighters/fighters-atlas.png',
+        '/assets/battlefield/fighters/fighters-atlas.json',
+      );
     }
     for (const boss of BOSS_TYPES) {
       if (!this.textures.exists(boss.key))
@@ -108,14 +98,19 @@ export class BattlefieldScene extends Phaser.Scene {
       for (const key of pixelArtKeys) {
         this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
+      // Fighter atlas: NEAREST filter + register all animations from named frames
+      this.textures.get('fighters')?.setFilter(Phaser.Textures.FilterMode.NEAREST);
       for (const ft of FIGHTER_TYPES) {
         for (const [state, anim] of Object.entries(ft.animations)) {
           const animKey = `${ft.key}-${state}`;
-          this.textures.get(animKey)?.setFilter(Phaser.Textures.FilterMode.NEAREST);
           if (!this.anims.exists(animKey)) {
             this.anims.create({
               key: animKey,
-              frames: this.anims.generateFrameNumbers(animKey, { start: 0, end: anim.frames - 1 }),
+              frames: this.anims.generateFrameNames('fighters', {
+                prefix: `${ft.key}-${state}-`,
+                start: 0,
+                end: anim.frames - 1,
+              }),
               frameRate: anim.rate,
               repeat: (state === 'idle' || state === 'walk') ? -1 : 0,
             });
@@ -124,16 +119,30 @@ export class BattlefieldScene extends Phaser.Scene {
         for (let i = 0; i < (ft.attacks?.length ?? 0); i++) {
           const atk = ft.attacks[i];
           const atkKey = `${ft.key}-attack${i + 1}`;
-          this.textures.get(atkKey)?.setFilter(Phaser.Textures.FilterMode.NEAREST);
+          const effKey = `${ft.key}-effect${i + 1}`;
           if (!this.anims.exists(atkKey)) {
-            this.anims.create({ key: atkKey, frames: this.anims.generateFrameNumbers(atkKey, { start: 0, end: atk.frames - 1 }), frameRate: atk.rate, repeat: 0 });
+            this.anims.create({
+              key: atkKey,
+              frames: this.anims.generateFrameNames('fighters', {
+                prefix: `${ft.key}-attack${i + 1}-`,
+                start: 0,
+                end: atk.frames - 1,
+              }),
+              frameRate: atk.rate,
+              repeat: 0,
+            });
           }
-          if (atk.effect) {
-            const effKey = `${ft.key}-effect${i + 1}`;
-            this.textures.get(effKey)?.setFilter(Phaser.Textures.FilterMode.NEAREST);
-            if (!this.anims.exists(effKey)) {
-              this.anims.create({ key: effKey, frames: this.anims.generateFrameNumbers(effKey, { start: 0, end: atk.effectFrames - 1 }), frameRate: atk.rate, repeat: 0 });
-            }
+          if (atk.effectFrames && !this.anims.exists(effKey)) {
+            this.anims.create({
+              key: effKey,
+              frames: this.anims.generateFrameNames('fighters', {
+                prefix: `${ft.key}-effect${i + 1}-`,
+                start: 0,
+                end: atk.effectFrames - 1,
+              }),
+              frameRate: atk.rate,
+              repeat: 0,
+            });
           }
         }
       }
@@ -454,10 +463,10 @@ export class BattlefieldScene extends Phaser.Scene {
     if (fighter) {
       const attackType = fighter.ftype?.attackType ?? 'blast';
       const handler = ATTACK_HANDLERS[attackType] ?? ATTACK_HANDLERS.blast;
-      const effKey = (pickIdx >= 0 && attacks?.[pickIdx]?.effect) ? `${key}-effect${pickIdx + 1}` : null;
+      const effKey = (pickIdx >= 0 && attacks?.[pickIdx]?.effectFrames) ? `${key}-effect${pickIdx + 1}` : null;
       const onEffect = effKey ? (x, y) => {
         if (!fighter.body?.scene) return;
-        const eff = this.add.sprite(x, y, effKey)
+        const eff = this.add.sprite(x, y, 'fighters', `${effKey}-0`)
           .setScale(fighter.sprite.scaleX * fighter.body.scaleX)
           .setFlipX(flipTowardBoss)
           .setBlendMode(Phaser.BlendModes.ADD)
@@ -795,9 +804,7 @@ export class BattlefieldScene extends Phaser.Scene {
     if (!payload || payload.user_id == null) {
       return;
     }
-    const userId = payload.user_id;
-    this.clearCharge(userId);
-    this.removeFighter(userId);
+    this.clearCharge(payload.user_id);
   }
 
   removeFighter(userId) {
@@ -1091,7 +1098,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const container = this.add.container(pos.x, pos.y).setDepth(2);
 
     // Body sprite — starts in idle animation (waiting state)
-    const body = this.add.sprite(0, 0, ftype.key + '-idle').setScale(scale);
+    const body = this.add.sprite(0, 0, 'fighters', `${ftype.key}-idle-0`).setScale(scale);
     const idleAnim = this.anims.get(ftype.key + '-idle');
     if (idleAnim?.frames?.length) {
       body.play(ftype.key + '-idle');
