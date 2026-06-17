@@ -37,7 +37,7 @@ class RecapDataCollector
             ->groupBy('user_id')
             ->orderByDesc('damage')
             ->limit($window->topN())
-            ->with('user:id,name,slack_handle')
+            ->with('user:id,name,slack_handle,display_name')
             ->get()
             ->map(fn (Event $row) => new RecapFighter(
                 user: $row->user,

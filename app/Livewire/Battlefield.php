@@ -37,7 +37,7 @@ class Battlefield extends Component
             ->select('user_id', DB::raw('SUM(tokens) as damage'))
             ->groupBy('user_id')
             ->orderByDesc('damage')
-            ->with('user:id,name,slack_handle')
+            ->with('user:id,name,slack_handle,display_name')
             ->get()
             ->map(fn (Event $row) => [
                 'userId' => (int) $row->user_id,

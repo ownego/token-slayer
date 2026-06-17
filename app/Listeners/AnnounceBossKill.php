@@ -57,7 +57,7 @@ class AnnounceBossKill implements ShouldQueue
             ->groupBy('user_id')
             ->orderByDesc('damage')
             ->limit(3)
-            ->with('user:id,name,slack_handle')
+            ->with('user:id,name,slack_handle,display_name')
             ->get()
             ->map(fn (Event $row) => (object) [
                 'user' => $row->user,
