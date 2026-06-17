@@ -266,7 +266,7 @@ function emitPortrait(fighters) {
   })));
 }
 
-function makeMethods(fighters, scene, render) {
+export function makeMethods(fighters, scene, render) {
   return {
     seed(entries) {
       fighters.clear();
