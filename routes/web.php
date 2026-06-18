@@ -22,10 +22,20 @@ Route::get('/install', fn () => response(
     view('install-script', [
         'baseUrl' => url('/api/events'),
         'namespace' => config('app.hook_namespace'),
+        'watcherUrl' => route('cowork-watcher'),
     ])->render(),
     200,
     ['Content-Type' => 'text/x-shellscript; charset=utf-8'],
 ))->name('install-script');
+
+Route::get('/cowork-watcher.py', fn () => response(
+    view('cowork-watcher', [
+        'eventsUrl' => url('/api/events').'?provider=cowork',
+        'namespace' => config('app.hook_namespace'),
+    ])->render(),
+    200,
+    ['Content-Type' => 'text/x-python; charset=utf-8'],
+))->name('cowork-watcher');
 
 Route::get('/tracker.user.js', fn () => response(
     view('userscript', [

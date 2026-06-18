@@ -229,3 +229,19 @@ test('Stop event from the claude.ai tracker records the claude-ai provider and d
         ->session_id->toBe('conv-uuid-1')
         ->and(Boss::sole()->current_hp)->toBe(950_000);
 });
+
+test('Stop event from the cowork watcher records the cowork provider and damages the boss', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events?provider=cowork', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'cowork-task-1',
+            'tokens' => 40_000,
+        ])
+        ->assertCreated();
+
+    expect(Event::sole())
+        ->provider->toBe('cowork')
+        ->tokens->toBe(40_000)
+        ->session_id->toBe('cowork-task-1')
+        ->and(Boss::sole()->current_hp)->toBe(960_000);
+});
