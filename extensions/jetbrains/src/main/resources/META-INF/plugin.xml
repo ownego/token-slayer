@@ -16,6 +16,7 @@
         <applicationConfigurable parentId="tools" instance="app.tokenslayer.settings.TokenSlayerConfigurable"
                                  id="app.tokenslayer.settings" displayName="token-slayer"/>
         <notificationGroup id="token-slayer" displayType="BALLOON"/>
+        <jbProtocolCommand implementation="app.tokenslayer.auth.AuthProtocolHandler"/>
     </extensions>
 
     <actions>
