@@ -22,6 +22,8 @@ dependencies {
     }
     implementation("com.google.code.gson:gson:2.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testImplementation(kotlin("test"))
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 intellijPlatform {
