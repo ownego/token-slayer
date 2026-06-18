@@ -105,3 +105,26 @@ test('manual hook config shows Antigravity configuration', function () {
         ->assertSee('~/.gemini/config/hooks.json')
         ->assertSee('PROVIDER=antigravity');
 });
+
+test('profile offers three independent install tracks', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('Claude chat')                              // track 1: browser/Desktop
+        ->assertSee(route('userscript'))                        // userscript install link
+        ->assertSee('CLI')                                      // track 1: CLIs
+        ->assertSee(route('install-script'))
+        ->assertSee('Claude Cowork')                            // track 3: cowork
+        ->assertSee(route('cowork-install-script'));
+});
+
+test('profile bakes the token into the standalone cowork install command', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
+    $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('curl -fsSL '.route('cowork-install-script').' | TOKEN_SLAYER_TOKEN=plain-abc sh', escape: false);
+});

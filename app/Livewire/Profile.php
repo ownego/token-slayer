@@ -43,8 +43,10 @@ class Profile extends Component
                 'namespace' => $namespace,
             ])->render(),
             'installUrl' => route('install-script'),
+            'coworkInstallUrl' => route('cowork-install-script'),
             'userscriptUrl' => route('userscript'),
             'combinedCommand' => 'curl -fsSL '.route('install-script')." | {$envVar}={$tokenValue} sh",
+            'coworkCommand' => 'curl -fsSL '.route('cowork-install-script')." | {$envVar}={$tokenValue} sh",
             'tokenSaveCommand' => "mkdir -p ~/.config/{$namespace} && printf '%s' '{$tokenValue}' > {$tokenPath} && chmod 600 {$tokenPath}",
             'tokenPath' => $tokenPath,
         ]);

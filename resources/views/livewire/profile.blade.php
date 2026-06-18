@@ -8,51 +8,83 @@
         <a href="{{ route('battlefield') }}" class="px-3 py-2 bg-slate-800/80 text-white rounded text-sm font-mono">Battlefield →</a>
     </header>
 
+    {{-- Shared token: every track below uses this same hook token. --}}
     <section class="border rounded p-4">
         <div class="flex items-center justify-between mb-3">
-            <h2 class="font-semibold">Hook setup</h2>
+            <h2 class="font-semibold">Your hook token</h2>
             <button wire:click="regenerate" class="px-3 py-1 bg-red-600 text-white rounded text-sm">Regenerate token</button>
         </div>
         @if ($plainToken)
-            <p class="text-sm text-gray-500 mb-1">Your token (shown once):</p>
+            <p class="text-sm text-gray-500 mb-1">Your token (shown once — copy it now):</p>
             <code class="block bg-gray-100 p-2 rounded select-all">{{ $plainToken }}</code>
-            <p class="text-sm text-gray-500 mt-3">The command below installs the Claude Code, Codex, and Antigravity CLI hooks and saves this token to <code>{{ $tokenPath }}</code> in one step. Safe to re-run on rotation.</p>
         @else
-            <p class="text-sm text-gray-500 mb-2">Installs Claude Code, Codex, and Antigravity CLI hooks and saves your token to <code>{{ $tokenPath }}</code> in one step. Click <em>Regenerate token</em> above to bake a fresh token into the command, or substitute your existing token below.</p>
+            <p class="text-sm text-gray-500">Click <em>Regenerate token</em> to create a fresh token. It's saved to <code>{{ $tokenPath }}</code> by the installers below, or you can paste it when asked.</p>
         @endif
+    </section>
+
+    <p class="text-sm text-gray-500">
+        <span class="font-semibold text-gray-700">Pick how you use Claude</span> — install only what you need. The three tracks are independent.
+    </p>
+
+    {{-- Track 1: terminal CLIs. --}}
+    <section class="border rounded p-4">
+        <div class="flex items-center gap-2 mb-1">
+            <h2 class="font-semibold">1 · CLI</h2>
+            <span class="text-xs bg-sky-100 text-sky-700 rounded px-2 py-0.5">Claude Code · Codex · Antigravity</span>
+        </div>
+        <p class="text-sm text-gray-500 mb-3">For developers using the CLI agents. Installs the hooks and saves your token to <code>{{ $tokenPath }}</code> in one step. Safe to re-run on rotation.</p>
         <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $combinedCommand }}</pre>
         <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $installUrl }}" class="underline">{{ $installUrl }}</a></p>
+
+        <details class="mt-3">
+            <summary class="text-sm font-medium cursor-pointer text-gray-600">Manual hook config (if you'd rather copy by hand)</summary>
+            <div class="mt-3 space-y-3">
+                <div>
+                    <p class="text-sm mb-1">1. Save your token to <code>{{ $tokenPath }}</code> (the snippets below read it at runtime):</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $tokenSaveCommand }}</pre>
+                </div>
+                <div>
+                    <p class="text-sm mb-1">2. Paste into <code>~/.claude/settings.json</code> under the top level:</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $claudeSnippet }}</pre>
+                </div>
+                <div>
+                    <p class="text-sm mb-1">3. Append to <code>~/.codex/config.toml</code>:</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $codexSnippet }}</pre>
+                </div>
+                <div>
+                    <p class="text-sm mb-1">4. Paste/merge into your global <code>~/.gemini/config/hooks.json</code> or project-level <code>.agents/hooks.json</code>:</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $antigravitySnippet }}</pre>
+                </div>
+            </div>
+        </details>
     </section>
 
+    {{-- Track 2: browser / Desktop chat (no terminal). --}}
     <section class="border rounded p-4">
-        <h2 class="font-semibold mb-2">Track claude.ai &amp; Claude Desktop</h2>
-        <p class="text-sm text-gray-500 mb-2">Counts your claude.ai chats as boss damage (estimated from reply length). Claude Desktop chats sync to your account, so they're picked up too whenever claude.ai is open in this browser.</p>
-        <ol class="text-sm text-gray-500 list-decimal ml-5 space-y-1">
+        <div class="flex items-center gap-2 mb-1">
+            <h2 class="font-semibold">2 · Claude chat</h2>
+            <span class="text-xs bg-emerald-100 text-emerald-700 rounded px-2 py-0.5">browser &amp; Desktop</span>
+        </div>
+        <p class="text-sm text-gray-500 mb-3">For anyone chatting on <a href="https://claude.ai" target="_blank" rel="noopener" class="underline">claude.ai</a> or in the Claude Desktop app (e.g. marketing). No terminal needed. Counts your chats as boss damage (estimated from reply length).</p>
+        <ol class="text-sm text-gray-600 list-decimal ml-5 space-y-1.5">
             <li>Install <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener" class="underline">Tampermonkey</a> (or Violentmonkey) in your browser.</li>
+            <li><span class="font-medium">Chrome 138+ only:</span> open <code>chrome://extensions</code> → Tampermonkey → <em>Details</em> → turn on <span class="font-medium">Allow user scripts</span>. Without this the tracker installs but never runs.</li>
             <li><a href="{{ $userscriptUrl }}" class="underline">Install the tracker userscript</a> — your userscript manager will prompt you.</li>
-            <li>Open <a href="https://claude.ai" target="_blank" rel="noopener" class="underline">claude.ai</a> — the script asks once for your hook token (the same token as above; regenerate if you don't have it saved).</li>
+            <li>Open <a href="https://claude.ai" target="_blank" rel="noopener" class="underline">claude.ai</a> and paste your token when asked (once).</li>
         </ol>
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-3">
+            <span class="font-medium">Note:</span> Claude Desktop chats are tracked only while <a href="https://claude.ai" target="_blank" rel="noopener" class="underline">claude.ai</a> is open in this browser (picked up on the userscript's ~5-min sync, not in real time).
+        </p>
     </section>
 
-    <details class="border rounded p-4">
-        <summary class="font-semibold cursor-pointer">Manual hook config (if you'd rather copy by hand)</summary>
-        <div class="mt-3 space-y-3">
-            <div>
-                <p class="text-sm mb-1">1. Save your token to <code>{{ $tokenPath }}</code> (the snippets below read it at runtime):</p>
-                <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $tokenSaveCommand }}</pre>
-            </div>
-            <div>
-                <p class="text-sm mb-1">2. Paste into <code>~/.claude/settings.json</code> under the top level:</p>
-                <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $claudeSnippet }}</pre>
-            </div>
-            <div>
-                <p class="text-sm mb-1">3. Append to <code>~/.codex/config.toml</code>:</p>
-                <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $codexSnippet }}</pre>
-            </div>
-            <div>
-                <p class="text-sm mb-1">4. Paste/merge into your global <code>~/.gemini/config/hooks.json</code> or project-level <code>.agents/hooks.json</code>:</p>
-                <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $antigravitySnippet }}</pre>
-            </div>
+    {{-- Track 3: Cowork background watcher. --}}
+    <section class="border rounded p-4">
+        <div class="flex items-center gap-2 mb-1">
+            <h2 class="font-semibold">3 · Claude Cowork</h2>
+            <span class="text-xs bg-violet-100 text-violet-700 rounded px-2 py-0.5">background · no browser</span>
         </div>
-    </details>
+        <p class="text-sm text-gray-500 mb-3">For Claude Cowork agent tasks. A small watcher reads Cowork transcripts every 2 minutes and reports exact token usage — no browser, no terminal hooks. macOS &amp; Linux.</p>
+        <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $coworkCommand }}</pre>
+        <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $coworkInstallUrl }}" class="underline">{{ $coworkInstallUrl }}</a></p>
+    </section>
 </div>

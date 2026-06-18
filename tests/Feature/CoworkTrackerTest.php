@@ -53,22 +53,42 @@ test('cowork watcher reads the token from the shared hook token file', function 
     expect($script)->toContain('~/.config/token_slayer/token');
 });
 
-test('install.sh downloads the cowork watcher and schedules it on macOS and Linux', function () {
-    $script = $this->get('/install')->getContent();
+test('install-cowork is a standalone shell installer that schedules the watcher', function () {
+    $response = $this->get('/install-cowork');
 
+    $response->assertOk();
+    expect($response->headers->get('Content-Type'))->toStartWith('text/x-shellscript');
+
+    $script = $response->getContent();
     expect($script)
+        ->toContain('#!/bin/sh')
         ->toContain('cowork-watcher.py')
         ->toContain(route('cowork-watcher'))
         ->toContain('LaunchAgents/token_slayer.cowork.plist')  // macOS launchd
         ->toContain('token_slayer-cowork.timer')               // Linux systemd
-        ->toContain('# token_slayer-cowork');                  // Linux cron fallback
+        ->toContain('# token_slayer-cowork')                   // Linux cron fallback
+        ->toContain('${TOKEN_SLAYER_TOKEN:-}');                // saves token like /install
+});
+
+test('install-cowork does not install terminal hooks', function () {
+    $script = $this->get('/install-cowork')->getContent();
+
+    // Cowork is independent: no Claude Code / Codex / Antigravity hook wiring.
+    expect($script)
+        ->not->toContain('.claude/settings.json')
+        ->not->toContain('.codex/config.toml')
+        ->not->toContain('.gemini/config/hooks.json');
+});
+
+test('the main install.sh no longer bundles the cowork watcher', function () {
+    expect($this->get('/install')->getContent())->not->toContain('cowork-watcher.py');
 });
 
 test('cowork artifacts use the configured hook namespace', function () {
     config(['app.hook_namespace' => 'acme']);
 
     $watcher = $this->get('/cowork-watcher.py')->getContent();
-    $install = $this->get('/install')->getContent();
+    $install = $this->get('/install-cowork')->getContent();
 
     expect($watcher)->toContain('~/.config/acme/token')
         ->and($watcher)->toContain('provider=cowork')
