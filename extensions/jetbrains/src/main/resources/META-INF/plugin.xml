@@ -11,10 +11,11 @@
 
     <extensions defaultExtensionPointName="com.intellij">
         <!-- registered in later tasks: toolWindow, statusBarWidgetFactory,
-             applicationService, notificationGroup,
+             applicationService,
              postStartupActivity -->
         <applicationConfigurable parentId="tools" instance="app.tokenslayer.settings.TokenSlayerConfigurable"
                                  id="app.tokenslayer.settings" displayName="token-slayer"/>
+        <notificationGroup id="token-slayer" displayType="BALLOON"/>
     </extensions>
 
     <actions>
