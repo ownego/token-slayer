@@ -10,7 +10,9 @@
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionPointName="com.intellij">
-        <!-- registered in later tasks: toolWindow, statusBarWidgetFactory -->
+        <toolWindow id="token-slayer" anchor="right" icon="/META-INF/pluginIcon.svg"
+                    factoryClass="app.tokenslayer.ui.BattlefieldToolWindowFactory"/>
+        <!-- registered in later tasks: statusBarWidgetFactory -->
         <applicationService serviceImplementation="app.tokenslayer.TokenSlayerService"/>
         <postStartupActivity implementation="app.tokenslayer.TokenSlayerStartup"/>
         <applicationConfigurable parentId="tools" instance="app.tokenslayer.settings.TokenSlayerConfigurable"
