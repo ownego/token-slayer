@@ -16,7 +16,11 @@ class SlackController extends Controller
     public function redirect(Request $request): SymfonyRedirectResponse
     {
         if ($request->query('return') === 'ide' && is_string($state = $request->query('state'))) {
-            session()->put('ide_oauth', ['state' => $state]);
+            $client = $request->query('client');
+            session()->put('ide_oauth', [
+                'state' => $state,
+                'client' => is_string($client) ? $client : 'vscode',
+            ]);
         }
 
         return Socialite::driver('slack')->redirect();
@@ -55,14 +59,17 @@ class SlackController extends Controller
 
         auth()->login($user);
 
-        if (($ideState = $this->consumeIdeFlowState()) !== null) {
-            return $this->redirectToIde($user, $ideState);
+        if (($ide = $this->consumeIdeFlowState()) !== null) {
+            return $this->redirectToIde($user, $ide['state'], $ide['client']);
         }
 
         return redirect()->route($defaultRoute);
     }
 
-    private function consumeIdeFlowState(): ?string
+    /**
+     * @return array{state: string, client: string}|null
+     */
+    private function consumeIdeFlowState(): ?array
     {
         $ide = session()->pull('ide_oauth');
 
@@ -70,17 +77,21 @@ class SlackController extends Controller
             return null;
         }
 
-        return $ide['state'];
+        return [
+            'state' => $ide['state'],
+            'client' => is_string($ide['client'] ?? null) ? $ide['client'] : 'vscode',
+        ];
     }
 
-    private function redirectToIde(User $user, string $state): RedirectResponse
+    private function redirectToIde(User $user, string $state, string $client): RedirectResponse
     {
         [$plain] = IdeAccessToken::issueOneTime($user, $state, 120);
 
-        $url = 'vscode://token-slayer.token-slayer/auth?'.http_build_query([
-            'token' => $plain,
-            'state' => $state,
-        ]);
+        $query = http_build_query(['token' => $plain, 'state' => $state]);
+
+        $url = $client === 'jetbrains'
+            ? "jetbrains://php-storm/token-slayer?{$query}"
+            : "vscode://token-slayer.token-slayer/auth?{$query}";
 
         return redirect()->away($url);
     }
