@@ -73,7 +73,7 @@
             <li>Open <a href="https://claude.ai" target="_blank" rel="noopener" class="underline">claude.ai</a> and paste your token when asked (once).</li>
         </ol>
         <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-3">
-            <span class="font-medium">Note:</span> Claude Desktop chats are tracked only while <a href="https://claude.ai" target="_blank" rel="noopener" class="underline">claude.ai</a> is open in this browser (picked up on the userscript's ~5-min sync, not in real time).
+            <span class="font-medium">Note:</span> Claude Desktop chats are tracked only while <a href="https://claude.ai" target="_blank" rel="noopener" class="underline">claude.ai</a> is open in this browser (picked up on the userscript's ~1-min sync). Chats in the browser tab itself register within seconds.
         </p>
     </section>
 

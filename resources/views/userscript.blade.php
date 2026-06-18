@@ -16,7 +16,7 @@
     'use strict';
 
     const EVENTS_URL = '{{ $eventsUrl }}';
-    const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+    const SYNC_INTERVAL_MS = 60 * 1000;
     const CONVERSATION_LIMIT = 20;
     const MAX_SEEN = 5000;
 
