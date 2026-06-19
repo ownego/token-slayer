@@ -1,8 +1,0 @@
-# Keep the repo light: raw sprite sheets are delivered via rsync on deploy,
-# NOT committed to git. Only the small packed atlas the app loads at runtime
-# is tracked. Any large PNG dropped here is ignored automatically — no LFS,
-# nothing for the team to install.
-*
-!.gitignore
-!fighters-atlas.png
-!fighters-atlas.json
