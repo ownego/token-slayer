@@ -89,6 +89,9 @@ class SlackController extends Controller
 
         $query = http_build_query(['token' => $plain, 'state' => $state]);
 
+        // The `php-storm` host segment is the PhpStorm product prefix the plugin targets
+        // (sinceBuild 241). The JBProtocolCommand name (`token-slayer`) is product-agnostic;
+        // only this host pins the IDE. Supporting other JetBrains IDEs means varying it.
         $url = $client === 'jetbrains'
             ? "jetbrains://php-storm/token-slayer?{$query}"
             : "vscode://token-slayer.token-slayer/auth?{$query}";

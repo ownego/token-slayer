@@ -13,6 +13,8 @@ iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}<
 <iframe id="ts" src="${esc(signedUrl)}"></iframe>
 <script>
 window.addEventListener('message', function (e) {
+  var f = document.getElementById('ts');
+  if (!f || e.source !== f.contentWindow) return;
   if (e.origin !== '${esc(serverOrigin)}') return;
   if (window.__tokenSlayerRelay) window.__tokenSlayerRelay(JSON.stringify(e.data));
 });

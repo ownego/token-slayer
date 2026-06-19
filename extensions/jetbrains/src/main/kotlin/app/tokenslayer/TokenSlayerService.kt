@@ -10,11 +10,13 @@ import app.tokenslayer.realtime.SnapshotPoller
 import app.tokenslayer.settings.TokenSlayerSettings
 import app.tokenslayer.ui.*
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.util.Alarm
 import com.google.gson.JsonObject
+import java.util.concurrent.CopyOnWriteArraySet
 
 @Service(Service.Level.APP)
 class TokenSlayerService {
@@ -41,21 +43,26 @@ class TokenSlayerService {
         cancel = { alarm.cancelAllRequests() },
     )
 
-    private val statusListeners = mutableSetOf<(StatusState) -> Unit>()
-    private var status = StatusState()
+    private val statusListeners = CopyOnWriteArraySet<(StatusState) -> Unit>()
+    @Volatile private var status = StatusState()
     private val hitThrottle = NotificationThrottle()
 
     init {
         poller.onBridgeEvent { dispatchBridge(it) }
         auth.onAuthChanged { signedIn ->
-            if (signedIn) poller.start() else { poller.stop(); updateStatus { StatusState() } }
+            if (signedIn) startPolling() else { poller.stop(); updateStatus { StatusState() } }
             updateStatus { it.copy(signedIn = signedIn) }
         }
-        if (auth.isSignedIn()) { poller.start(); updateStatus { it.copy(signedIn = true) } }
+        if (auth.isSignedIn()) { startPolling(); updateStatus { it.copy(signedIn = true) } }
     }
 
-    fun addStatusListener(listener: (StatusState) -> Unit) {
-        statusListeners.add(listener); listener(status)
+    /** Kick the poller on the pooled alarm thread so the blocking first tick never runs on the EDT. */
+    private fun startPolling() = alarm.addRequest({ poller.start() }, 0)
+
+    fun addStatusListener(listener: (StatusState) -> Unit): () -> Unit {
+        statusListeners.add(listener)
+        ApplicationManager.getApplication().invokeLater { listener(status) }
+        return { statusListeners.remove(listener) }
     }
 
     fun dispatchBridge(m: BridgeMessage) {
@@ -126,8 +133,10 @@ class TokenSlayerService {
     }
 
     private fun updateStatus(transform: (StatusState) -> StatusState) {
-        status = transform(status)
-        for (l in statusListeners.toList()) { try { l(status) } catch (_: Exception) {} }
+        ApplicationManager.getApplication().invokeLater {
+            status = transform(status)
+            for (l in statusListeners) { try { l(status) } catch (_: Exception) {} }
+        }
     }
 }
 
