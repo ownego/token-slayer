@@ -12,7 +12,8 @@
     <extensions defaultExtensionPointName="com.intellij">
         <toolWindow id="token-slayer" anchor="right" icon="/META-INF/pluginIcon.svg"
                     factoryClass="app.tokenslayer.ui.BattlefieldToolWindowFactory"/>
-        <!-- registered in later tasks: statusBarWidgetFactory -->
+        <statusBarWidgetFactory implementation="app.tokenslayer.ui.TokenSlayerStatusWidgetFactory"
+                                id="token-slayer.status"/>
         <applicationService serviceImplementation="app.tokenslayer.TokenSlayerService"/>
         <postStartupActivity implementation="app.tokenslayer.TokenSlayerStartup"/>
         <applicationConfigurable parentId="tools" instance="app.tokenslayer.settings.TokenSlayerConfigurable"
@@ -22,6 +23,11 @@
     </extensions>
 
     <actions>
-        <!-- registered in Task 13 -->
+        <action id="token-slayer.signIn" class="app.tokenslayer.actions.SignInAction" text="token-slayer: Sign in with Slack"/>
+        <action id="token-slayer.signOut" class="app.tokenslayer.actions.SignOutAction" text="token-slayer: Sign out"/>
+        <action id="token-slayer.installHooks" class="app.tokenslayer.actions.InstallHooksAction" text="token-slayer: Install Claude Code hooks"/>
+        <action id="token-slayer.uninstallHooks" class="app.tokenslayer.actions.UninstallHooksAction" text="token-slayer: Uninstall Claude Code hooks"/>
+        <action id="token-slayer.openBattlefield" class="app.tokenslayer.actions.OpenBattlefieldAction" text="token-slayer: Open battlefield"/>
+        <action id="token-slayer.openProfile" class="app.tokenslayer.actions.OpenProfileAction" text="token-slayer: Open profile"/>
     </actions>
 </idea-plugin>
