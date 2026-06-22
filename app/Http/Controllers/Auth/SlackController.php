@@ -26,7 +26,7 @@ class SlackController extends Controller
             ]);
         }
 
-        return Socialite::driver('slack')->scopes(['users:read'])->redirect();
+        return Socialite::driver('slack')->redirect();
     }
 
     public function callback(): RedirectResponse
