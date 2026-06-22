@@ -266,7 +266,7 @@ function emitPortrait(fighters) {
   })));
 }
 
-function makeMethods(fighters, scene, render) {
+export function makeMethods(fighters, scene, render) {
   return {
     seed(entries) {
       fighters.clear();
@@ -284,6 +284,16 @@ function makeMethods(fighters, scene, render) {
       render();
     },
     reset() { fighters.clear(); render(); },
+    damageFor(userId) {
+      return fighters.get(userId)?.damage ?? 0;
+    },
+    rankOf(userId) {
+      if (!fighters.has(userId)) {
+        return null;
+      }
+      const index = ranked(fighters).findIndex(([id]) => id === userId);
+      return index === -1 ? null : index + 1;
+    },
     getRanked: () => getRankedArray(fighters),
   };
 }

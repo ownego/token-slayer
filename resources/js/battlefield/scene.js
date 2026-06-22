@@ -458,6 +458,9 @@ export class BattlefieldScene extends Phaser.Scene {
     const onImpact = () => {
       this.leaderboard?.onHit(payload.user_id, payload.damage, payload.slack_handle);
       applyImpact(this, payload.boss_hp_after);
+      if (this.hoveredUserId === payload.user_id) {
+        this.showFighterTooltip(payload.user_id);
+      }
       if (!isKillShot) this.time.delayedCall(90, () => this.playBossReact());
     };
     if (fighter) {
@@ -761,12 +764,16 @@ export class BattlefieldScene extends Phaser.Scene {
     }
     if (entry.bubble) {
       entry.bubble.setActivity(activity);
-      return;
+    } else {
+      const bubbleY  = this.activityBubbleY(fighter);
+      const fontPx   = Math.max(9, Math.round(fighter.displaySize * 0.22));
+      const maxChars = Math.max(12, Math.round(fighter.displaySize * 0.35));
+      entry.bubble = this.createActivityBubble(fighter.pos.x, bubbleY, activity, fontPx, maxChars);
     }
-    const bubbleY  = this.activityBubbleY(fighter);
-    const fontPx   = Math.max(9, Math.round(fighter.displaySize * 0.22));
-    const maxChars = Math.max(12, Math.round(fighter.displaySize * 0.35));
-    entry.bubble = this.createActivityBubble(fighter.pos.x, bubbleY, activity, fontPx, maxChars);
+    // The hover tooltip takes priority over the activity bubble.
+    if (this.hoveredUserId === fighter.id) {
+      entry.bubble.setVisible(false);
+    }
   }
 
   createActivityBubble(x, y, activity, fontPx = 14, maxChars = ACTIVITY_MAX_CHARS) {
@@ -797,7 +804,114 @@ export class BattlefieldScene extends Phaser.Scene {
         bg.x = newX;
         bg.y = newY;
       },
+      setVisible: visible => {
+        text.setVisible(visible);
+        bg.setVisible(visible);
+      },
     };
+  }
+
+  showFighterTooltip(userId) {
+    const fighter = this.fighters.get(userId);
+    if (!fighter) {
+      return;
+    }
+    const tokens = this.leaderboard?.damageFor(userId) ?? 0;
+    const rank = this.leaderboard?.rankOf(userId) ?? null;
+    const handle = fighter.handleText || `#${userId}`;
+    const rankPrefix = rank ? `#${rank} ` : '';
+    const content = `${rankPrefix}${handle} · ${tokens.toLocaleString()} tokens`;
+    const fontPx = Math.max(9, Math.round(fighter.displaySize * 0.22));
+
+    if (!this.tooltip) {
+      this.tooltip = this.createFighterTooltip(content, fontPx);
+    } else {
+      this.tooltip.setContent(content, fontPx);
+    }
+
+    const margin = 4;
+    const halfW = this.tooltip.width() / 2;
+    const halfH = this.tooltip.height() / 2;
+    const x = Phaser.Math.Clamp(
+      fighter.pos.x,
+      halfW + margin,
+      this.layout.logicalWidth - halfW - margin,
+    );
+    // Anchor to the same spot as the activity bubble so the tooltip lines up
+    // with (and cleanly replaces) the bubble it covers.
+    const aboveY = this.activityBubbleY(fighter);
+    const avatarCenterY = fighter.pos.y + (fighter.head?.y ?? 0);
+    const avatarRadius = (fighter.head?.displayHeight ?? fighter.avatarSize ?? fighter.displaySize) / 2;
+    // Flip below the avatar when the tooltip would clip past the top edge.
+    const y = aboveY - halfH < margin
+      ? avatarCenterY + avatarRadius + halfH + 6
+      : aboveY;
+
+    this.tooltip.moveTo(x, y);
+    this.tooltip.setVisible(true);
+    this.hoveredUserId = userId;
+
+    // Hide the "thinking" activity bubble so it doesn't collide with the tooltip.
+    const charge = this.charges.get(userId);
+    if (charge?.bubble) {
+      charge.bubble.setVisible(false);
+    }
+  }
+
+  hideFighterTooltip(userId) {
+    if (userId != null && this.hoveredUserId !== userId) {
+      return;
+    }
+    const previous = this.hoveredUserId;
+    this.hoveredUserId = null;
+    if (this.tooltip) {
+      this.tooltip.setVisible(false);
+    }
+    // Restore the activity bubble the tooltip was covering, if still charging.
+    if (previous != null) {
+      const charge = this.charges.get(previous);
+      if (charge?.bubble) {
+        charge.bubble.setVisible(true);
+      }
+    }
+  }
+
+  createFighterTooltip(content, fontPx = 14) {
+    // Mirror the activity bubble's geometry (font scale, padding, box sizing) so
+    // the tooltip lines up exactly with the bubble it temporarily replaces.
+    const text = this.addSharpText(0, 0, content, {
+      fontFamily: 'monospace',
+      fontSize: `${fontPx}px`,
+      color: '#fde68a',
+      padding: { left: 8, right: 8, top: 4, bottom: 4 },
+    });
+    const bg = this.add
+      .rectangle(0, 0, text.width + 8, text.height + 4, 0x1e293b, 0.96)
+      .setOrigin(0.5)
+      .setStrokeStyle(1, 0xfbbf24, 0.9);
+    bg.setDepth(300);
+    text.setDepth(301);
+    const tooltip = {
+      setContent: (newContent, newFontPx = fontPx) => {
+        text.setFontSize(newFontPx);
+        text.setText(newContent);
+        bg.setSize(text.width + 8, text.height + 4);
+      },
+      moveTo: (x, y) => {
+        text.x = x;
+        text.y = y;
+        bg.x = x;
+        bg.y = y;
+      },
+      setVisible: visible => {
+        text.setVisible(visible);
+        bg.setVisible(visible);
+      },
+      width: () => bg.width,
+      height: () => bg.height,
+    };
+    tooltip.setVisible(false);
+    return tooltip;
   }
 
   handleIdled(payload) {
@@ -973,6 +1087,10 @@ export class BattlefieldScene extends Phaser.Scene {
         }
       }
     }
+
+    if (this.hoveredUserId != null) {
+      this.showFighterTooltip(this.hoveredUserId);
+    }
   }
 
   loadAvatarTexture(fighterId, avatarUrl) {
@@ -1111,6 +1229,9 @@ export class BattlefieldScene extends Phaser.Scene {
       ? `fighter-${fighter.id}`
       : this.makeFallbackAvatarTexture(fighter);
     const head = this.add.image(0, avatarY, initialKey).setDisplaySize(avSize, avSize);
+    head.setInteractive({ useHandCursor: true });
+    head.on('pointerover', () => this.showFighterTooltip(fighter.id));
+    head.on('pointerout', () => this.hideFighterTooltip(fighter.id));
     container.add(head);
 
     // Handle label (world-space)
