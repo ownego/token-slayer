@@ -1,0 +1,33 @@
+<idea-plugin>
+    <id>app.tokenslayer</id>
+    <name>Token Slayer</name>
+    <vendor>token-slayer</vendor>
+    <description><![CDATA[
+        Watch the token-slayer battlefield, manage Claude Code hooks, and stay
+        signed in to token-slayer without leaving your JetBrains IDE.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Token Slayer" anchor="right" icon="/META-INF/pluginIcon.svg"
+                    factoryClass="app.tokenslayer.ui.BattlefieldToolWindowFactory"/>
+        <statusBarWidgetFactory implementation="app.tokenslayer.ui.TokenSlayerStatusWidgetFactory"
+                                id="token-slayer.status"/>
+        <applicationService serviceImplementation="app.tokenslayer.TokenSlayerService"/>
+        <postStartupActivity implementation="app.tokenslayer.TokenSlayerStartup"/>
+        <applicationConfigurable parentId="tools" instance="app.tokenslayer.settings.TokenSlayerConfigurable"
+                                 id="app.tokenslayer.settings" displayName="Token Slayer"/>
+        <notificationGroup id="Token Slayer" displayType="BALLOON"/>
+        <jbProtocolCommand implementation="app.tokenslayer.auth.AuthProtocolHandler"/>
+    </extensions>
+
+    <actions>
+        <action id="token-slayer.signIn" class="app.tokenslayer.actions.SignInAction" text="Token Slayer: Sign in with Slack"/>
+        <action id="token-slayer.signOut" class="app.tokenslayer.actions.SignOutAction" text="Token Slayer: Sign out"/>
+        <action id="token-slayer.installHooks" class="app.tokenslayer.actions.InstallHooksAction" text="Token Slayer: Install Claude Code hooks"/>
+        <action id="token-slayer.uninstallHooks" class="app.tokenslayer.actions.UninstallHooksAction" text="Token Slayer: Uninstall Claude Code hooks"/>
+        <action id="token-slayer.openBattlefield" class="app.tokenslayer.actions.OpenBattlefieldAction" text="Token Slayer: Open battlefield"/>
+        <action id="token-slayer.openProfile" class="app.tokenslayer.actions.OpenProfileAction" text="Token Slayer: Open profile"/>
+    </actions>
+</idea-plugin>

@@ -16,7 +16,13 @@ class SlackController extends Controller
     public function redirect(Request $request): SymfonyRedirectResponse
     {
         if ($request->query('return') === 'ide' && is_string($state = $request->query('state'))) {
-            session()->put('ide_oauth', ['state' => $state]);
+            $client = $request->query('client');
+            $redirect = $request->query('redirect');
+            session()->put('ide_oauth', [
+                'state' => $state,
+                'client' => $client === 'jetbrains' ? 'jetbrains' : 'vscode',
+                'redirect' => is_string($redirect) && $this->isLoopbackUrl($redirect) ? $redirect : null,
+            ]);
         }
 
         return Socialite::driver('slack')->redirect();
@@ -55,14 +61,17 @@ class SlackController extends Controller
 
         auth()->login($user);
 
-        if (($ideState = $this->consumeIdeFlowState()) !== null) {
-            return $this->redirectToIde($user, $ideState);
+        if (($ide = $this->consumeIdeFlowState()) !== null) {
+            return $this->redirectToIde($user, $ide['state'], $ide['client'], $ide['redirect']);
         }
 
         return redirect()->route($defaultRoute);
     }
 
-    private function consumeIdeFlowState(): ?string
+    /**
+     * @return array{state: string, client: string, redirect: string|null}|null
+     */
+    private function consumeIdeFlowState(): ?array
     {
         $ide = session()->pull('ide_oauth');
 
@@ -70,18 +79,45 @@ class SlackController extends Controller
             return null;
         }
 
-        return $ide['state'];
+        return [
+            'state' => $ide['state'],
+            'client' => is_string($ide['client'] ?? null) ? $ide['client'] : 'vscode',
+            'redirect' => is_string($ide['redirect'] ?? null) ? $ide['redirect'] : null,
+        ];
     }
 
-    private function redirectToIde(User $user, string $state): RedirectResponse
+    private function redirectToIde(User $user, string $state, string $client, ?string $redirect = null): RedirectResponse
     {
         [$plain] = IdeAccessToken::issueOneTime($user, $state, 120);
 
-        $url = 'vscode://token-slayer.token-slayer/auth?'.http_build_query([
-            'token' => $plain,
-            'state' => $state,
-        ]);
+        $query = http_build_query(['token' => $plain, 'state' => $state]);
+
+        // Preferred path: a loopback HTTP server inside the IDE. Reliable on every OS and
+        // needs no `jetbrains://`/`vscode://` scheme registration (which is unreliable on Linux).
+        if ($redirect !== null && $this->isLoopbackUrl($redirect)) {
+            $separator = str_contains($redirect, '?') ? '&' : '?';
+
+            return redirect()->away($redirect.$separator.$query);
+        }
+
+        // Fallback: OS deep link. `phpstorm` is the JetBrains URI product prefix for PhpStorm.
+        $url = $client === 'jetbrains'
+            ? "jetbrains://phpstorm/token-slayer?{$query}"
+            : "vscode://token-slayer.token-slayer/auth?{$query}";
 
         return redirect()->away($url);
+    }
+
+    /**
+     * Only allow redirecting back to a loopback address, so the IDE callback URL can't be
+     * abused as an open redirect to an arbitrary host.
+     */
+    private function isLoopbackUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+
+        return is_array($parts)
+            && ($parts['scheme'] ?? null) === 'http'
+            && in_array($parts['host'] ?? null, ['127.0.0.1', 'localhost'], true);
     }
 }
