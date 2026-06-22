@@ -7,6 +7,7 @@ use App\Models\IdeAccessToken;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirectResponse;
@@ -25,20 +26,22 @@ class SlackController extends Controller
             ]);
         }
 
-        return Socialite::driver('slack')->redirect();
+        return Socialite::driver('slack')->scopes(['users:read'])->redirect();
     }
 
     public function callback(): RedirectResponse
     {
         $slack = Socialite::driver('slack')->user();
 
+        $profile = $this->fetchSlackProfile($slack);
+
         $existing = User::where('slack_user_id', $slack->getId())->first();
 
         $attributes = [
             'name' => $slack->getName() ?? $slack->getNickname(),
             'email' => $slack->getEmail() ?? $slack->getId().'@slack.local',
-            'slack_handle' => $slack->getNickname(),
-            'display_name' => $slack->getName(),
+            'slack_handle' => $profile['username'] ?? $slack->getNickname(),
+            'display_name' => $profile['display_name'] ?? $profile['real_name'] ?? $slack->getName(),
             'avatar_url' => $slack->getAvatar(),
         ];
 
@@ -66,6 +69,48 @@ class SlackController extends Controller
         }
 
         return redirect()->route($defaultRoute);
+    }
+
+    /**
+     * Fetch the Slack display name + username via the users.info API.
+     *
+     * "Sign in with Slack" identity scopes only return the real name, so we call
+     * users.info (requires the "users:read" user scope) to read the display name
+     * the team wants to show. Degrades gracefully to nulls when the scope is
+     * missing or the request fails, so login never breaks.
+     *
+     * @return array{username: ?string, display_name: ?string, real_name: ?string}
+     */
+    private function fetchSlackProfile(object $slack): array
+    {
+        $empty = ['username' => null, 'display_name' => null, 'real_name' => null];
+
+        $body = (array) ($slack->accessTokenResponseBody ?? []);
+        $token = data_get($body, 'authed_user.access_token') ?: ($slack->token ?? null);
+
+        if (! is_string($token) || $token === '') {
+            return $empty;
+        }
+
+        try {
+            $response = Http::timeout(5)
+                ->withToken($token)
+                ->get('https://slack.com/api/users.info', ['user' => $slack->getId()]);
+
+            if (! $response->successful() || $response->json('ok') !== true) {
+                return $empty;
+            }
+
+            $user = (array) $response->json('user');
+
+            return [
+                'username' => $user['name'] ?? null,
+                'display_name' => data_get($user, 'profile.display_name') ?: null,
+                'real_name' => data_get($user, 'profile.real_name') ?: null,
+            ];
+        } catch (\Throwable) {
+            return $empty;
+        }
     }
 
     /**

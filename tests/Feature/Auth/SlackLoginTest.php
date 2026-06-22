@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\AbstractProvider;
 
@@ -61,4 +62,40 @@ test('slack callback for returning user keeps hook_token and redirects to battle
         ->and(auth()->id())->toBe($existing->id);
 
     expect(session('hook_token_plain'))->toBeNull();
+});
+
+test('slack callback enriches display name and handle from users.info', function () {
+    Http::preventStrayRequests();
+
+    Http::fake([
+        'slack.com/api/users.info*' => Http::response([
+            'ok' => true,
+            'user' => [
+                'name' => 'chiennv',
+                'profile' => [
+                    'display_name' => 'chiennv',
+                    'real_name' => 'Nguyễn Văn Chiến',
+                ],
+            ],
+        ]),
+    ]);
+
+    $slackUser = Mockery::mock(Laravel\Socialite\Two\User::class);
+    $slackUser->shouldReceive('getId')->andReturn('U777');
+    $slackUser->shouldReceive('getName')->andReturn('Nguyễn Văn Chiến');
+    $slackUser->shouldReceive('getNickname')->andReturn(null);
+    $slackUser->shouldReceive('getEmail')->andReturn('chien@example.com');
+    $slackUser->shouldReceive('getAvatar')->andReturn('https://avatar/chien.png');
+    $slackUser->token = 'xoxp-user-token';
+
+    $provider = Mockery::mock(AbstractProvider::class);
+    $provider->shouldReceive('user')->andReturn($slackUser);
+    Socialite::shouldReceive('driver')->with('slack')->andReturn($provider);
+
+    $this->get('/auth/slack/callback')->assertRedirect('/profile');
+
+    $user = User::sole();
+    expect($user->slack_handle)->toBe('chiennv')
+        ->and($user->display_name)->toBe('chiennv')
+        ->and($user->name)->toBe('Nguyễn Văn Chiến');
 });
