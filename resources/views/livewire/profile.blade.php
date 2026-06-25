@@ -2,8 +2,8 @@
     <header class="flex items-center gap-4">
         <img src="{{ $user->avatar_url }}" class="w-16 h-16 rounded-full">
         <div class="flex-1">
-            <h1 class="text-2xl font-semibold">{{ $user->display_name }}</h1>
-            <p class="text-gray-500">@ {{ $user->slack_handle }}</p>
+            <h1 class="text-2xl font-semibold">{{ $user->name }}</h1>
+            <p class="text-gray-500">{{ $user->display_name }}</p>
         </div>
         <a href="{{ route('battlefield') }}" class="px-3 py-2 bg-slate-800/80 text-white rounded text-sm font-mono">Battlefield →</a>
     </header>

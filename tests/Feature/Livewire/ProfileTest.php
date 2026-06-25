@@ -30,7 +30,7 @@ test('profile shows the plain token once when redirected from oauth', function (
     $this->get('/profile')
         ->assertOk()
         ->assertSee('plain-abc')
-        ->assertSee($user->slack_handle);
+        ->assertSee($user->display_name);
 });
 
 test('profile surfaces a curl-pipe-sh installer pointed at the install.sh route', function () {

@@ -32,6 +32,7 @@ return [
         'client_id' => env('SLACK_OAUTH_CLIENT_ID'),
         'client_secret' => env('SLACK_OAUTH_CLIENT_SECRET'),
         'redirect' => env('SLACK_OAUTH_REDIRECT_URI'),
+        'bot_token' => env('SLACK_BOT_TOKEN'),
     ],
 
     'slack_notifier' => [

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\IdeAccessToken;
 use App\Models\User;
+use App\Services\Slack\SlackProfileFetcher;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -13,6 +14,8 @@ use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirectResponse
 
 class SlackController extends Controller
 {
+    public function __construct(private SlackProfileFetcher $profiles) {}
+
     public function redirect(Request $request): SymfonyRedirectResponse
     {
         if ($request->query('return') === 'ide' && is_string($state = $request->query('state'))) {
@@ -38,7 +41,7 @@ class SlackController extends Controller
             'name' => $slack->getName() ?? $slack->getNickname(),
             'email' => $slack->getEmail() ?? $slack->getId().'@slack.local',
             'slack_handle' => $slack->getNickname(),
-            'display_name' => $slack->getName(),
+            'display_name' => $this->profiles->displayNameFor($slack->getId()) ?? $slack->getName(),
             'avatar_url' => $slack->getAvatar(),
         ];
 
