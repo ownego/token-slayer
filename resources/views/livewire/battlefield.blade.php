@@ -44,7 +44,7 @@
     <div
         x-data="battlefieldDamageHud()"
         x-init="init()"
-        class="absolute bottom-3 left-3 z-10 w-44 border-2 border-amber-400 bg-[#0b1629]/95 px-3 py-2 font-mono backdrop-blur-sm"
+        class="absolute left-3 top-14 z-10 w-44 border-2 border-amber-400 bg-[#0b1629]/95 px-3 py-2 font-mono backdrop-blur-sm"
     >
         {{-- corner rivets --}}
         <span class="pointer-events-none absolute -left-0.5 -top-0.5 h-[5px] w-[5px] bg-amber-400"></span>
