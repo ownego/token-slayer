@@ -41,6 +41,25 @@
     @endunless
 
     <div
+        x-data="battlefieldDamageHud()"
+        x-init="init()"
+        class="absolute right-3 top-12 z-10 flex flex-col items-end gap-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-right backdrop-blur-sm"
+    >
+        <div class="flex items-baseline gap-2">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500">All-time</span>
+            <span class="tabular-nums text-sm font-semibold text-amber-300" x-text="fmt(allTime)"></span>
+        </div>
+        <div class="flex items-baseline gap-2">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500">Monthly</span>
+            <span class="tabular-nums text-xs text-slate-300" x-text="fmt(monthly)"></span>
+        </div>
+        <div class="flex items-baseline gap-2">
+            <span class="text-[10px] uppercase tracking-wide text-slate-500">Daily</span>
+            <span class="tabular-nums text-xs text-slate-300" x-text="fmt(daily)"></span>
+        </div>
+    </div>
+
+    <div
         x-data="battlefieldLeaderboardOverlay()"
         x-init="init()"
         class="bf-portrait-only"
@@ -160,6 +179,44 @@
                         });
                     };
                     tryWire();
+                },
+            };
+        };
+
+        window.battlefieldDamageHud = function () {
+            return {
+                allTime: 0,
+                monthly: 0,
+                daily: 0,
+                init() {
+                    const mount = document.getElementById('battlefield-mount');
+                    if (mount) {
+                        try {
+                            const state = JSON.parse(mount.dataset.battlefieldState);
+                            const g = state.globalDamage || {};
+                            this.allTime = g.allTime || 0;
+                            this.monthly = g.monthly || 0;
+                            this.daily = g.daily || 0;
+                        } catch (e) {
+                            // leave counters at 0 if state is missing/malformed
+                        }
+                    }
+                    const tryWire = () => {
+                        if (!window.__battlefield?.bus) {
+                            setTimeout(tryWire, 50);
+                            return;
+                        }
+                        window.__battlefield.bus.on('hit', payload => {
+                            const dmg = Number(payload?.damage) || 0;
+                            this.allTime += dmg;
+                            this.monthly += dmg;
+                            this.daily += dmg;
+                        });
+                    };
+                    tryWire();
+                },
+                fmt(n) {
+                    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n.toLocaleString();
                 },
             };
         };
