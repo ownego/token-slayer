@@ -1,6 +1,8 @@
 <?php
 
 use App\Livewire\Profile;
+use App\Models\Boss;
+use App\Models\Event;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -127,4 +129,23 @@ test('profile bakes the token into the standalone cowork install command', funct
     $this->get('/profile')
         ->assertOk()
         ->assertSee('curl -fsSL '.route('cowork-install-script').' | TOKEN_SLAYER_TOKEN=plain-abc sh', escape: false);
+});
+
+test('profile shows the players own all-time, monthly, and daily damage totals', function () {
+    $user = User::factory()->create();
+    $other = User::factory()->create();
+    $boss = Boss::factory()->create();
+    $this->actingAs($user);
+
+    Event::factory()->create(['user_id' => $user->id, 'boss_id' => $boss->id, 'tokens' => 100, 'created_at' => now()->subHour()]);
+    Event::factory()->create(['user_id' => $user->id, 'boss_id' => $boss->id, 'tokens' => 25, 'created_at' => now()->subDays(45)]);
+    Event::factory()->create(['user_id' => $other->id, 'boss_id' => $boss->id, 'tokens' => 999, 'created_at' => now()->subHour()]);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('Battlefield stats')
+        ->assertSee('All-time')
+        ->assertSee('125')   // user's all-time (100 + 25), excludes the other player
+        ->assertSee('100')   // user's monthly and daily
+        ->assertDontSee('999');
 });

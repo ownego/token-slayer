@@ -8,6 +8,24 @@
         <a href="{{ route('battlefield') }}" class="px-3 py-2 bg-slate-800/80 text-white rounded text-sm font-mono">Battlefield →</a>
     </header>
 
+    <section class="border rounded p-4">
+        <h2 class="font-semibold mb-3">Battlefield stats</h2>
+        <dl class="grid grid-cols-3 gap-4 text-center">
+            <div>
+                <dt class="text-xs uppercase tracking-wide text-gray-500">All-time</dt>
+                <dd class="text-xl font-mono">{{ number_format($damageTotals['allTime']) }}</dd>
+            </div>
+            <div>
+                <dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt>
+                <dd class="text-xl font-mono">{{ number_format($damageTotals['monthly']) }}</dd>
+            </div>
+            <div>
+                <dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt>
+                <dd class="text-xl font-mono">{{ number_format($damageTotals['daily']) }}</dd>
+            </div>
+        </dl>
+    </section>
+
     {{-- Shared token: every track below uses this same hook token. --}}
     <section class="border rounded p-4">
         <div class="flex items-center justify-between mb-3">
