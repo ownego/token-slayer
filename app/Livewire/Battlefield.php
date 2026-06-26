@@ -6,6 +6,7 @@ use App\Models\Boss;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\BossArena;
+use App\Services\DamageTotals;
 use App\Services\FighterChargingCache;
 use Illuminate\Support\Facades\DB;
 use Livewire\Component;
@@ -45,6 +46,14 @@ class Battlefield extends Component
                 'damage' => (int) $row->damage,
             ])
             ->all();
+    }
+
+    /**
+     * @return array{allTime:int, monthly:int, daily:int}
+     */
+    public function globalDamage(): array
+    {
+        return app(DamageTotals::class)->global();
     }
 
     public function render()

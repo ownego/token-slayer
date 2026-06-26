@@ -16,6 +16,7 @@
                 'charging' => $this->chargingByUser[$f->id] ?? null,
             ])->values(),
             'leaderboard' => $this->leaderboardForCurrentBoss(),
+            'globalDamage' => $this->globalDamage(),
         ]) }}"
         class="fixed inset-0" style="background-color:#020617"
     >
