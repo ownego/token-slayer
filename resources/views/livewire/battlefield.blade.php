@@ -216,7 +216,16 @@
                     tryWire();
                 },
                 fmt(n) {
-                    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n.toLocaleString();
+                    // Mirror the boss HP formatter (resources/js/battlefield/format.js).
+                    const v = Math.max(0, Math.round(n));
+                    const trimZero = s => (s.includes('.') ? s.replace(/\.?0+$/, '') : s);
+                    if (v >= 999_500) {
+                        return trimZero((v / 1_000_000).toFixed(2)) + 'M';
+                    }
+                    if (v >= 1_000) {
+                        return trimZero((v / 1_000).toFixed(1)) + 'K';
+                    }
+                    return String(v);
                 },
             };
         };
