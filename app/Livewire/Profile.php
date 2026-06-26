@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use App\Services\DamageTotals;
 use Illuminate\Support\Str;
 use Livewire\Component;
 
@@ -30,6 +31,7 @@ class Profile extends Component
 
         return view('livewire.profile', [
             'user' => auth()->user(),
+            'damageTotals' => app(DamageTotals::class)->forUser(auth()->user()),
             'claudeSnippet' => view('partials.claude-snippet', [
                 'baseUrl' => url('/api/events'),
                 'namespace' => $namespace,
