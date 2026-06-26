@@ -61,27 +61,40 @@
             .join('');
     }
 
+    // Resolves true only when the report was accepted (2xx). On any failure
+    // the caller leaves the messages uncounted so the same tokens are retried
+    // on the next sync instead of being silently lost.
     function report(tokens, conversationId) {
-        const token = getToken();
-        if (!token) return;
-        GM_xmlhttpRequest({
-            method: 'POST',
-            url: EVENTS_URL,
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json',
-            },
-            data: JSON.stringify({
-                hook_event_name: 'Stop',
-                session_id: conversationId,
-                tokens: tokens,
-            }),
-            onload: function (res) {
-                if (res.status === 401) {
-                    GM_setValue('hook_token', '');
-                    console.warn('[token-slayer] token rejected — you will be asked again on the next sync');
-                }
-            },
+        return new Promise(function (resolve) {
+            const token = getToken();
+            if (!token) {
+                resolve(false);
+                return;
+            }
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: EVENTS_URL,
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json',
+                },
+                data: JSON.stringify({
+                    hook_event_name: 'Stop',
+                    session_id: conversationId,
+                    tokens: tokens,
+                }),
+                onload: function (res) {
+                    if (res.status === 401) {
+                        GM_setValue('hook_token', '');
+                        console.warn('[token-slayer] token rejected — you will be asked again on the next sync');
+                        resolve(false);
+                        return;
+                    }
+                    resolve(res.status >= 200 && res.status < 300);
+                },
+                onerror: function () { resolve(false); },
+                ontimeout: function () { resolve(false); },
+            });
         });
     }
 
@@ -90,7 +103,7 @@
         if (ids.length <= MAX_SEEN) return seen;
         const pruned = {};
         for (const id of ids.slice(ids.length - Math.floor(MAX_SEEN / 2))) {
-            pruned[id] = 1;
+            pruned[id] = seen[id];
         }
         return pruned;
     }
@@ -103,31 +116,61 @@
             const org = await getOrgId();
             const listing = await claudeApi('/api/organizations/' + org + '/chat_conversations?limit=' + CONVERSATION_LIMIT);
             const conversations = Array.isArray(listing) ? listing : (listing.data || []);
-            const seen = GM_getValue('seen_messages', {});
-            const stamps = GM_getValue('conversation_stamps', {});
+            // seen maps an assistant message uuid to the token count already
+            // reported for it. Storing the count (not just a boolean) lets a
+            // streamed reply that grows across syncs report only its new tokens
+            // instead of being permanently frozen at its first partial length.
+            const seen = GM_getValue('seen_messages_v2', {});
+            const stamps = GM_getValue('conversation_stamps_v2', {});
             // First run only baselines: everything already in the account is
             // marked seen without dealing damage, so installing the script
             // doesn't dump months of history onto the boss at once.
-            const baselining = !GM_getValue('baselined', false);
+            const baselining = !GM_getValue('baselined_v2', false);
 
             for (const conversation of conversations) {
                 if (stamps[conversation.uuid] === conversation.updated_at) continue;
 
                 const detail = await claudeApi('/api/organizations/' + org + '/chat_conversations/' + conversation.uuid + '?tree=True&rendering_mode=messages');
                 let tokens = 0;
+                // Collect the new counts so they are only committed to `seen`
+                // once the report for this conversation has been accepted.
+                const counts = [];
                 for (const message of detail.chat_messages || []) {
-                    if (seen[message.uuid]) continue;
-                    seen[message.uuid] = 1;
                     if (message.sender !== 'assistant') continue;
-                    tokens += estimateTokens(messageText(message));
+                    const current = estimateTokens(messageText(message));
+                    const counted = seen[message.uuid] || 0;
+                    const delta = current - counted;
+                    if (delta <= 0) continue;
+                    tokens += delta;
+                    counts.push({ uuid: message.uuid, count: current });
                 }
-                stamps[conversation.uuid] = conversation.updated_at;
-                if (!baselining && tokens > 0) report(tokens, conversation.uuid);
+
+                const commit = function () {
+                    for (const entry of counts) {
+                        seen[entry.uuid] = entry.count;
+                    }
+                    stamps[conversation.uuid] = conversation.updated_at;
+                };
+
+                if (baselining) {
+                    // Mark the existing history seen at its current length
+                    // without dealing damage.
+                    commit();
+                } else if (tokens > 0) {
+                    // Advance the stamp/counts only on a confirmed report so a
+                    // failed send is retried on the next sync, never dropped.
+                    if (await report(tokens, conversation.uuid)) commit();
+                } else {
+                    // The conversation changed (e.g. a new user message) but
+                    // added no assistant tokens — advance the stamp so we don't
+                    // re-fetch it until it changes again.
+                    commit();
+                }
             }
 
-            GM_setValue('seen_messages', pruneSeen(seen));
-            GM_setValue('conversation_stamps', stamps);
-            GM_setValue('baselined', true);
+            GM_setValue('seen_messages_v2', pruneSeen(seen));
+            GM_setValue('conversation_stamps_v2', stamps);
+            GM_setValue('baselined_v2', true);
         } catch (err) {
             console.debug('[token-slayer] sync skipped:', err);
         } finally {
