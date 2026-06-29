@@ -44,7 +44,7 @@
     <div
         x-data="battlefieldDamageHud()"
         x-init="init()"
-        class="absolute left-3 top-14 z-10 w-44 border-2 border-amber-400 bg-[#0b1629]/95 px-3 py-2 font-mono backdrop-blur-sm"
+        class="absolute left-0 top-0 z-10 w-44 border-2 border-amber-400 bg-[#0b1629]/95 px-3 py-2 font-mono backdrop-blur-sm"
     >
         {{-- corner rivets --}}
         <span class="pointer-events-none absolute -left-0.5 -top-0.5 h-[5px] w-[5px] bg-amber-400"></span>
@@ -211,19 +211,44 @@
                             // leave counters at 0 if state is missing/malformed
                         }
                     }
+                    const reposition = () => requestAnimationFrame(() => this.fitToCanvas());
                     const tryWire = () => {
-                        if (!window.__battlefield?.bus) {
+                        const bf = window.__battlefield;
+                        if (!bf?.bus || !bf.game) {
                             setTimeout(tryWire, 50);
                             return;
                         }
-                        window.__battlefield.bus.on('hit', payload => {
+                        bf.bus.on('hit', payload => {
                             const dmg = Number(payload?.damage) || 0;
                             this.allTime += dmg;
                             this.monthly += dmg;
                             this.daily += dmg;
                         });
+                        // Track the Phaser canvas FIT scaling so the HUD grows and
+                        // shrinks exactly like the in-canvas TOP DAMAGE panel.
+                        bf.game.scale.on('resize', reposition);
+                        reposition();
                     };
+                    window.addEventListener('resize', reposition);
+                    window.addEventListener('orientationchange', reposition);
                     tryWire();
+                },
+                fitToCanvas() {
+                    const bf = window.__battlefield;
+                    const canvas = bf?.game?.canvas;
+                    const logicalW = bf?.game?.scale?.gameSize?.width;
+                    if (!canvas || !logicalW) {
+                        return;
+                    }
+                    const rect = canvas.getBoundingClientRect();
+                    const parent = (this.$el.offsetParent || document.body).getBoundingClientRect();
+                    const scale = rect.width / logicalW;
+                    const LOGICAL_X = 12; // mirrors the panel's left inset
+                    const LOGICAL_Y = 56; // sits just below the profile link
+                    this.$el.style.transformOrigin = 'top left';
+                    this.$el.style.left = (rect.left - parent.left + LOGICAL_X * scale) + 'px';
+                    this.$el.style.top = (rect.top - parent.top + LOGICAL_Y * scale) + 'px';
+                    this.$el.style.transform = `scale(${scale})`;
                 },
                 fmt(n) {
                     // Mirror the boss HP formatter (resources/js/battlefield/format.js).
