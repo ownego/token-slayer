@@ -11,6 +11,7 @@ const ECHO_EVENT_MAP = {
   FighterJoined: 'fighter-joined',
   FighterCharging: 'fighter-charging',
   FighterIdled: 'fighter-idled',
+  FighterMoved: 'fighter-moved',
 };
 
 const ECHO_RETRY_INTERVAL_MS = 200;
