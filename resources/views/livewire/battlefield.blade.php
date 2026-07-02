@@ -236,7 +236,8 @@
                 fitToCanvas() {
                     const bf = window.__battlefield;
                     const canvas = bf?.game?.canvas;
-                    const logicalW = bf?.game?.scale?.gameSize?.width;
+                    const gameSize = bf?.game?.scale?.gameSize;
+                    const logicalW = gameSize?.width;
                     if (!canvas || !logicalW) {
                         return;
                     }
@@ -244,7 +245,11 @@
                     const parent = (this.$el.offsetParent || document.body).getBoundingClientRect();
                     const scale = rect.width / logicalW;
                     const LOGICAL_X = 12; // mirrors the panel's left inset
-                    const LOGICAL_Y = 5;  // align top with the TOP DAMAGE panel (PANEL_TOP)
+                    // Landscape aligns the HUD top with the in-canvas TOP DAMAGE
+                    // panel (PANEL_TOP). Portrait hides that panel, so the HUD drops
+                    // below the top-left Profile link instead of colliding with it.
+                    const isPortrait = gameSize.height > logicalW;
+                    const LOGICAL_Y = isPortrait ? 56 : 5;
                     this.$el.style.transformOrigin = 'top left';
                     this.$el.style.left = (rect.left - parent.left + LOGICAL_X * scale) + 'px';
                     this.$el.style.top = (rect.top - parent.top + LOGICAL_Y * scale) + 'px';
