@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); b=$(basename \"$f\"); case \"$b\" in .env|.env.*) case \"$b\" in *.example) ;; *) echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Editing real .env files is blocked. Change .env.example / .env.staging.example instead, or edit the secret manually outside Claude.\"}}';; esac;; esac",
+            "statusMessage": "Checking .env guard"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.php) [ -f \"$f\" ] && vendor/bin/pint \"$f\" >/dev/null 2>&1;; esac; } || true",
+            "statusMessage": "Running Pint"
+          }
+        ]
+      }
+    ]
+  }
+}
