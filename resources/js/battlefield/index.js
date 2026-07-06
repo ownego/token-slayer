@@ -87,7 +87,7 @@ function bootGame(mount, state, mode) {
       bus,
       game,
       scene,
-      mode,
+      get mode() { return game.registry.get('mode'); },
       bossHp: () => scene.bossState?.currentHp,
       bossMaxHp: () => scene.bossState?.maxHp,
     };
@@ -121,8 +121,7 @@ export function bootBattlefield(mount, state) {
     const layout = LAYOUTS[next];
     const scene = currentGame.scene.getScene('battlefield');
     currentState = snapshotState(currentState, scene);
-    currentGame.scale.resize(layout.logicalWidth, layout.logicalHeight);
-    currentGame.scale.refresh();
+    currentGame.scale.setGameSize(layout.logicalWidth, layout.logicalHeight);
     currentGame.registry.set('mode', next);
     currentGame.registry.set('initialState', currentState);
     scene.scene.restart();
