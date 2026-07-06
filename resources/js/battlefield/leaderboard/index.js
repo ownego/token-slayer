@@ -34,7 +34,7 @@ export class Leaderboard {
     this._isPortrait = scene.mode === 'portrait';
 
     const W      = scene.layout.logicalWidth;
-    const panL   = this._isPortrait ? PANEL_PAD : W - PANEL_PAD - PANEL_W;
+    const panL   = W - PANEL_PAD - PANEL_W;
     const panTopY = PANEL_TOP;
 
     const gfx = scene.add.graphics().setDepth(3);

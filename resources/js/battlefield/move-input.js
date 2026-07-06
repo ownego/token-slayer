@@ -1,6 +1,6 @@
 import { Boss } from '@battlefield/boss.js';
 import { AnimState } from '@battlefield/constants.js';
-import { isValidMoveTarget, bypassY, clampMoveTarget } from '@battlefield/move-geometry.js';
+import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel } from '@battlefield/move-geometry.js';
 
 /**
  * Returns the font size in pixels for a fighter handle label.
@@ -11,6 +11,8 @@ import { isValidMoveTarget, bypassY, clampMoveTarget } from '@battlefield/move-g
 function handleFontPx(displaySize) {
   return Math.max(10, Math.round(displaySize * 0.25));
 }
+
+const CLICK_DEBOUNCE_MS = 250;
 
 /** Handles click-to-move input: route planning, chevron animation, ripple effect. */
 export class MoveInput {
@@ -34,6 +36,10 @@ export class MoveInput {
     let debounceTimer = null;
 
     this.scene.input.on('pointerdown', pointer => {
+      if (isInsideLeaderboardPanel(pointer.x, pointer.y, this.scene.layout)) {
+        return;
+      }
+
       // Always show ripple at click point
       this._spawnClickRipple(pointer.x, pointer.y);
 
@@ -41,7 +47,7 @@ export class MoveInput {
       debounceTimer = setTimeout(() => {
         const entry = this.scene.fighters.get(this.scene.currentUserId);
         if (entry?.isStunned) return;
-        const from  = entry?.pos ?? { x: pointer.x, y: pointer.y };
+        const from  = entry?.sprite ? { x: entry.sprite.x, y: entry.sprite.y } : { x: pointer.x, y: pointer.y };
         const route = this._planRoute(from.x, from.y, pointer.x, pointer.y);
         if (!route || route.length === 0) return;
 
@@ -65,11 +71,12 @@ export class MoveInput {
         if (window.Livewire) {
           window.Livewire.dispatch('fighter-move', { x, y });
         }
-      }, 100);
+      }, CLICK_DEBOUNCE_MS);
     });
 
-    this.scene.input.on('pointermove', () => {
-      this.scene.game.canvas.style.cursor = 'pointer';
+    this.scene.input.on('pointermove', pointer => {
+      const overLeaderboard = isInsideLeaderboardPanel(pointer.x, pointer.y, this.scene.layout);
+      this.scene.game.canvas.style.cursor = overLeaderboard ? 'default' : 'pointer';
     });
   }
 
@@ -200,15 +207,15 @@ export class MoveInput {
   /**
    * Returns the move-geometry context for the current user's fighter.
    *
-   * @return {{layout: object, bossType: object, fsize: number, isPortrait: boolean}}
+   * @return {{layout: object, bossType: object, fsize: number}}
    */
   _geometryCtx() {
     const entry = this.scene.currentUserId ? this.scene.fighters.get(this.scene.currentUserId) : null;
+    const fsize = entry ? entry.displaySize * (entry.damageScale ?? 1) : 48;
     return {
       layout: this.scene.layout,
       bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
-      fsize: entry?.displaySize ?? 48,
-      isPortrait: this.scene.mode === 'portrait',
+      fsize,
     };
   }
 
@@ -233,6 +240,17 @@ export class MoveInput {
   }
 
   /**
+   * Returns the nearest reachable point to (px, py), or null if unreachable.
+   *
+   * @param {number} px
+   * @param {number} py
+   * @return {{x: number, y: number}|null}
+   */
+  _snapToValidTarget(px, py) {
+    return snapToValidTarget(px, py, this._geometryCtx());
+  }
+
+  /**
    * Returns a waypoint list from (fromX, fromY) to (toX, toY), routing around blocked zones.
    *
    * @param {number} fromX
@@ -242,23 +260,29 @@ export class MoveInput {
    * @return {Array<{x: number, y: number}>|null}
    */
   _planRoute(fromX, fromY, toX, toY) {
-    const direct = this._clampMoveTarget(fromX, fromY, toX, toY);
-    const directClear = direct
-      && Math.abs(direct.x - toX) < 2
-      && Math.abs(direct.y - toY) < 2;
-
-    if (directClear) {
-      return [{ x: toX, y: toY }];
+    let destX = toX, destY = toY;
+    if (!this._isValidMoveTarget(toX, toY)) {
+      const snapped = this._snapToValidTarget(toX, toY);
+      if (!snapped) {
+        const direct = this._clampMoveTarget(fromX, fromY, toX, toY);
+        return direct ? [direct] : null;
+      }
+      destX = snapped.x;
+      destY = snapped.y;
     }
 
-    // Destination must be reachable by itself for a detour to make sense
-    if (!this._isValidMoveTarget(toX, toY)) {
-      return direct ? [direct] : null;
+    const direct = this._clampMoveTarget(fromX, fromY, destX, destY);
+    const directClear = direct
+      && Math.abs(direct.x - destX) < 2
+      && Math.abs(direct.y - destY) < 2;
+
+    if (directClear) {
+      return [{ x: destX, y: destY }];
     }
 
     const bypassY = this._bypassY();
     const wp1 = { x: fromX, y: bypassY };
-    const wp2 = { x: toX,   y: bypassY };
+    const wp2 = { x: destX, y: bypassY };
 
     // Verify every segment of the detour is clear
     if (this._isValidMoveTarget(wp1.x, wp1.y) && this._isValidMoveTarget(wp2.x, wp2.y)) {
@@ -268,11 +292,11 @@ export class MoveInput {
       };
       if (allClear({ x: fromX, y: fromY }, wp1)
           && allClear(wp1, wp2)
-          && allClear(wp2, { x: toX, y: toY })) {
+          && allClear(wp2, { x: destX, y: destY })) {
         const route = [];
         if (Math.abs(fromY - bypassY) > 5) route.push(wp1);
-        if (Math.abs(fromX - toX)    > 5) route.push(wp2);
-        route.push({ x: toX, y: toY });
+        if (Math.abs(fromX - destX)    > 5) route.push(wp2);
+        route.push({ x: destX, y: destY });
         return route;
       }
     }

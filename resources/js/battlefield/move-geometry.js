@@ -3,6 +3,16 @@ const SPRITE_CHAR_HEIGHT = 18;
 // Kept separate to avoid transitive Phaser import into this pure module; must sync if bubble.js value changes.
 const ACTIVITY_MAX_CHARS = 18;
 
+const DAMAGE_HUD_LEFT = 12;
+const DAMAGE_HUD_Y = 5;
+const DAMAGE_HUD_W = 176;
+const DAMAGE_HUD_H = 130;
+
+const LEADERBOARD_PAD = 4;
+const LEADERBOARD_TOP = 5;
+const LEADERBOARD_W = 240;
+const LEADERBOARD_H = 160;
+
 /**
  * Returns a fighter's vertical extent from feet to the top of its action
  * bubble, in logical px, for the given display size.
@@ -31,21 +41,55 @@ function bossZoneBottom(layout, fsize) {
 }
 
 /**
+ * Returns half the fighter's horizontal footprint (avatar width) in logical
+ * px, for sizing the left/right edge margin. Mirrors fighter/index.js's
+ * avatarPx(): avatar diameter = fsize * 0.85.
+ *
+ * @param {number} fsize
+ * @return {number}
+ */
+function fighterHalfWidthPx(fsize) {
+  return (fsize * 0.85) / 2 + 15;
+}
+
+/**
+ * Returns the fighter's vertical extent from center to the bottom of its
+ * handle label, in logical px, for sizing the bottom edge margin. Mirrors
+ * fighter/index.js's legH ((SPRITE_CHAR_BOT - SPRITE_HALF_FRAME) * scale =
+ * 6 * scale) and handleFontPx().
+ *
+ * @param {number} fsize
+ * @return {number}
+ */
+function fighterDownReachPx(fsize) {
+  const scale = fsize / SPRITE_CHAR_HEIGHT;
+  const legH = Math.round(6 * scale);
+  const fontPx = Math.max(10, Math.round(fsize * 0.25));
+  return legH + fontPx + Math.round(fontPx / 2) + 10;
+}
+
+/**
  * Returns true if (px, py) is a valid move target in logical pixels, given
- * the layout, boss geometry, and fighter size in ctx.
+ * the layout, boss geometry, and fighter size in ctx. Checks edge padding,
+ * the boss/HP-bar column, the TOP DAMAGE leaderboard panel, and the top-left
+ * Damage HUD panel.
  *
  * @param {number} px
  * @param {number} py
- * @param {{layout: object, bossType: object, fsize: number, isPortrait: boolean}} ctx
+ * @param {{layout: object, bossType: object, fsize: number}} ctx
  * @return {boolean}
  */
 export function isValidMoveTarget(px, py, ctx) {
-  const { layout: L, bossType, fsize, isPortrait } = ctx;
+  const { layout: L, bossType, fsize } = ctx;
   const fighterH = fighterReachPx(fsize);
 
-  // Edge padding
-  if (px < L.logicalWidth * 0.03 || px > L.logicalWidth * 0.97) return false;
-  if (py < L.logicalHeight * 0.03 || py > L.logicalHeight * 0.97) return false;
+  // Edge padding — grows with the fighter's own footprint (avatar width,
+  // handle label below the feet) so a bigger/damage-grown fighter can't clip
+  // off-screen in a corner; never smaller than the flat 3% baseline.
+  const halfW      = Math.max(L.logicalWidth * 0.03, fighterHalfWidthPx(fsize));
+  const downReach  = Math.max(L.logicalHeight * 0.03, fighterDownReachPx(fsize));
+  if (px < halfW || px > L.logicalWidth - halfW) return false;
+  if (py < L.logicalHeight * 0.03 || py > L.logicalHeight - downReach) return false;
 
   // 1. Action bubble must stay on-screen — prevents going so high it disappears
   if (py < fighterH + L.logicalHeight * 0.02) return false;
@@ -67,17 +111,40 @@ export function isValidMoveTarget(px, py, ctx) {
     return false;
   }
 
-  // 4. Leaderboard: neither avatar nor action bubble may overlap the panel.
+  // 4. Leaderboard: fixed top-right in both orientations. Neither avatar nor
+  //    action bubble may overlap the panel.
   const fontPx      = Math.max(9, Math.round(fsize * 0.22));
   const bubbleHalfW = Math.ceil(ACTIVITY_MAX_CHARS * fontPx * 0.6 / 2) + 12;
-  const LB_W = 240, LB_H = 160, LB_PAD = 4, LB_TOP = 5;
-  const lbLeft = isPortrait ? LB_PAD : L.logicalWidth - LB_PAD - LB_W;
-  if (px > lbLeft - bubbleHalfW && px < lbLeft + LB_W + bubbleHalfW &&
-      py - fighterH < LB_TOP + LB_H && py > LB_TOP) {
+  const lbLeft = L.logicalWidth - LEADERBOARD_PAD - LEADERBOARD_W;
+  if (px > lbLeft - bubbleHalfW && px < lbLeft + LEADERBOARD_W + bubbleHalfW &&
+      py - fighterH < LEADERBOARD_TOP + LEADERBOARD_H && py > LEADERBOARD_TOP) {
+    return false;
+  }
+
+  // 5. Damage HUD: fixed top-left in both orientations.
+  if (px > DAMAGE_HUD_LEFT - bubbleHalfW && px < DAMAGE_HUD_LEFT + DAMAGE_HUD_W + bubbleHalfW &&
+      py - fighterH < DAMAGE_HUD_Y + DAMAGE_HUD_H && py > DAMAGE_HUD_Y) {
     return false;
   }
 
   return true;
+}
+
+/**
+ * Returns true if (px, py) lands directly on the drawn TOP DAMAGE leaderboard
+ * panel (exact rect, no fighter-reach padding). Used to make clicking the
+ * panel a no-op, the same way clicking the DOM Damage HUD is a no-op because
+ * that element absorbs the click before it reaches the canvas.
+ *
+ * @param {number} px
+ * @param {number} py
+ * @param {object} layout
+ * @return {boolean}
+ */
+export function isInsideLeaderboardPanel(px, py, layout) {
+  const left = layout.logicalWidth - LEADERBOARD_PAD - LEADERBOARD_W;
+  return px >= left && px <= left + LEADERBOARD_W &&
+    py >= LEADERBOARD_TOP && py <= LEADERBOARD_TOP + LEADERBOARD_H;
 }
 
 /**
@@ -102,7 +169,7 @@ export function bypassY(ctx) {
  * @param {number} fromY
  * @param {number} toX
  * @param {number} toY
- * @param {{layout: object, bossType: object, fsize: number, isPortrait: boolean}} ctx
+ * @param {{layout: object, bossType: object, fsize: number}} ctx
  * @return {{x: number, y: number}|null}
  */
 export function clampMoveTarget(fromX, fromY, toX, toY, ctx) {
@@ -124,4 +191,44 @@ export function clampMoveTarget(fromX, fromY, toX, toY, ctx) {
     x: fromX + (toX - fromX) * lo,
     y: fromY + (toY - fromY) * lo,
   };
+}
+
+/**
+ * Returns the nearest reachable point to (px, py) when the point itself falls
+ * outside the valid area. Returns (px, py) unchanged if already valid.
+ *
+ * Two-stage: first clamps into the outer screen-edge rectangle (nearest point
+ * on/in the screen bounds — correct for a plain off-screen/near-edge click);
+ * if that's still blocked by an internal obstacle (boss column, leaderboard,
+ * Damage HUD), walks in from the guaranteed-clear bypassY row at that same x.
+ * Approaching internal obstacles from directly below/above at the same x
+ * (rather than from wherever the mover currently stands) keeps the snapped
+ * point on the same side the player actually aimed for, instead of landing on
+ * whichever obstacle a straight line from the mover's position happens to hit
+ * first. Returns null if even the safe row at that x is unreachable.
+ *
+ * @param {number} px
+ * @param {number} py
+ * @param {{layout: object, bossType: object, fsize: number}} ctx
+ * @return {{x: number, y: number}|null}
+ */
+export function snapToValidTarget(px, py, ctx) {
+  if (isValidMoveTarget(px, py, ctx)) {
+    return { x: px, y: py };
+  }
+  const { layout: L, fsize } = ctx;
+  const halfW     = Math.max(L.logicalWidth * 0.03, fighterHalfWidthPx(fsize));
+  const downReach = Math.max(L.logicalHeight * 0.03, fighterDownReachPx(fsize));
+  const topMin    = Math.max(L.logicalHeight * 0.03, fighterReachPx(fsize) + L.logicalHeight * 0.02);
+  const cx = Math.min(Math.max(px, halfW), L.logicalWidth - halfW);
+  const cy = Math.min(Math.max(py, topMin), L.logicalHeight - downReach);
+  if (isValidMoveTarget(cx, cy, ctx)) {
+    return { x: cx, y: cy };
+  }
+
+  const safeY = bypassY(ctx);
+  if (!isValidMoveTarget(cx, safeY, ctx)) {
+    return null;
+  }
+  return clampMoveTarget(cx, safeY, cx, cy, ctx);
 }

@@ -3,7 +3,7 @@ import { FIGHTER_TYPES, TIMINGS } from '@battlefield/config.js';
 import { computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from '@battlefield/layout.js';
 import { AnimState, AttackType, TextureKey } from '@battlefield/constants.js';
 import { Boss } from '@battlefield/boss.js';
-import { isValidMoveTarget, clampMoveTarget } from '@battlefield/move-geometry.js';
+import { isValidMoveTarget, clampMoveTarget, snapToValidTarget } from '@battlefield/move-geometry.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture } from './avatar.js';
 
 // Tiny RPG sprite geometry constants — do not change without re-measuring the atlas.
@@ -67,13 +67,15 @@ export class Fighter {
       config.perRow,
       config.rowSpacing,
     );
-    const ctx = {
-      layout: L,
-      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
-      fsize: config.displaySize,
-      isPortrait: this.scene.mode === 'portrait',
-    };
+    const bossType = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
+    const damageByUser = new Map(state.damageTotals ?? []);
     state.fighters.forEach((f, i) => {
+      const damageScale = damageScaleMultiplier(damageByUser.get(f.id) ?? 0, this.scene.bossState?.maxHp);
+      const ctx = {
+        layout: L,
+        bossType,
+        fsize: config.displaySize * damageScale,
+      };
       const raw = f.position
         ? { x: f.position.x * L.logicalWidth, y: f.position.y * L.logicalHeight }
         : null;
@@ -246,10 +248,10 @@ export class Fighter {
     const ctx = {
       layout: this.scene.layout,
       bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
-      fsize: entry.displaySize,
-      isPortrait: this.scene.mode === 'portrait',
+      fsize: entry.displaySize * (entry.damageScale ?? 1),
     };
-    const target = clampMoveTarget(entry.sprite.x, entry.sprite.y, raw.x, raw.y, ctx)
+    const snapped = isValidMoveTarget(raw.x, raw.y, ctx) ? raw : snapToValidTarget(raw.x, raw.y, ctx);
+    const target = (snapped && clampMoveTarget(entry.sprite.x, entry.sprite.y, snapped.x, snapped.y, ctx))
       ?? { x: entry.sprite.x, y: entry.sprite.y };
 
     const dx = target.x - entry.sprite.x;
