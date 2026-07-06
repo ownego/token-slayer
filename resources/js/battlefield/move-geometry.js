@@ -1,4 +1,6 @@
 const SPRITE_CHAR_HEIGHT = 18;
+// Local constant mirroring bubble.js's ACTIVITY_MAX_CHARS export.
+// Kept separate to avoid transitive Phaser import into this pure module; must sync if bubble.js value changes.
 const ACTIVITY_MAX_CHARS = 18;
 
 /**
