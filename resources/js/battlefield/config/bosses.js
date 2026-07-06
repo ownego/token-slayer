@@ -2,6 +2,25 @@ export const BG_COLOR = 0x020617;
 
 export const BOSS_TYPES = [
   { key: 'boss-ghost',        file: '/assets/battlefield/bosses/ghost.png?v=100',        frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 3, scale: 4   },
+  {
+    key: 'boss-abyssal-dreadknight',
+    animFiles: {
+      idle:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/idle.png',       frameWidth: 118, frameHeight: 105, count: 6, rate: 8,  loop: true },
+      move:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/walk.png',       frameWidth: 118, frameHeight: 105, count: 6, rate: 10, loop: true },
+      run:        { file: '/assets/battlefield/bosses/abyssal-dreadknight/run.png',        frameWidth: 118, frameHeight: 105, count: 5, rate: 12, loop: true },
+      jump:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/jump.png',       frameWidth: 118, frameHeight: 105, count: 6, rate: 10 },
+      'slash-low':{ file: '/assets/battlefield/bosses/abyssal-dreadknight/slash-low.png',  frameWidth: 172, frameHeight: 105, count: 5, rate: 12 },
+      slam:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/slam.png',       frameWidth: 162, frameHeight: 105, count: 6, rate: 12 },
+      thrust:     { file: '/assets/battlefield/bosses/abyssal-dreadknight/thrust.png',     frameWidth: 168, frameHeight: 105, count: 5, rate: 12 },
+      spin:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/spin.png',       frameWidth: 182, frameHeight: 105, count: 4, rate: 12 },
+      dash:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/dash.png',       frameWidth: 188, frameHeight: 105, count: 3, rate: 14 },
+      hurt:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/hurt.png',       frameWidth: 118, frameHeight: 105, count: 4, rate: 10 },
+      getup:      { file: '/assets/battlefield/bosses/abyssal-dreadknight/getup.png',      frameWidth: 140, frameHeight: 105, count: 6, rate: 10 },
+      'fx-slash': { file: '/assets/battlefield/bosses/abyssal-dreadknight/fx-slash.png',   frameWidth: 120, frameHeight: 77,  count: 3, rate: 12 },
+      'fx-slam':  { file: '/assets/battlefield/bosses/abyssal-dreadknight/fx-slam.png',    frameWidth: 120, frameHeight: 77,  count: 4, rate: 12 },
+    },
+    scale: 1.5,
+  },
   { key: 'boss-skeleton',     file: '/assets/battlefield/bosses/skeleton.png?v=100',     frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 3, scale: 4   },
   { key: 'boss-slime',        file: '/assets/battlefield/bosses/slime.png?v=100',        frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 4, scale: 4   },
   {
@@ -52,24 +71,5 @@ export const BOSS_TYPES = [
     deathFrameRate: 8,
     scale: 1.0,
     pixelArt: false,
-  },
-  {
-    key: 'boss-abyssal-dreadknight',
-    animFiles: {
-      idle:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/idle.png',       frameWidth: 118, frameHeight: 105, count: 6, rate: 8,  loop: true },
-      move:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/walk.png',       frameWidth: 118, frameHeight: 105, count: 6, rate: 10, loop: true },
-      run:        { file: '/assets/battlefield/bosses/abyssal-dreadknight/run.png',        frameWidth: 118, frameHeight: 105, count: 5, rate: 12, loop: true },
-      jump:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/jump.png',       frameWidth: 118, frameHeight: 105, count: 6, rate: 10 },
-      'slash-low':{ file: '/assets/battlefield/bosses/abyssal-dreadknight/slash-low.png',  frameWidth: 172, frameHeight: 105, count: 5, rate: 12 },
-      slam:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/slam.png',       frameWidth: 162, frameHeight: 105, count: 6, rate: 12 },
-      thrust:     { file: '/assets/battlefield/bosses/abyssal-dreadknight/thrust.png',     frameWidth: 168, frameHeight: 105, count: 5, rate: 12 },
-      spin:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/spin.png',       frameWidth: 182, frameHeight: 105, count: 4, rate: 12 },
-      dash:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/dash.png',       frameWidth: 188, frameHeight: 105, count: 3, rate: 14 },
-      hurt:       { file: '/assets/battlefield/bosses/abyssal-dreadknight/hurt.png',       frameWidth: 118, frameHeight: 105, count: 4, rate: 10 },
-      getup:      { file: '/assets/battlefield/bosses/abyssal-dreadknight/getup.png',      frameWidth: 140, frameHeight: 105, count: 6, rate: 10 },
-      'fx-slash': { file: '/assets/battlefield/bosses/abyssal-dreadknight/fx-slash.png',   frameWidth: 120, frameHeight: 77,  count: 3, rate: 12 },
-      'fx-slam':  { file: '/assets/battlefield/bosses/abyssal-dreadknight/fx-slam.png',    frameWidth: 120, frameHeight: 77,  count: 4, rate: 12 },
-    },
-    scale: 1.5,
   },
 ];
