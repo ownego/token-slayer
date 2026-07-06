@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { FIGHTER_TYPES, TIMINGS } from '@battlefield/config.js';
 import { computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from '@battlefield/layout.js';
 import { AnimState, AttackType, TextureKey } from '@battlefield/constants.js';
+import { Boss } from '@battlefield/boss.js';
+import { isValidMoveTarget, clampMoveTarget } from '@battlefield/move-geometry.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture } from './avatar.js';
 
 // Tiny RPG sprite geometry constants — do not change without re-measuring the atlas.
@@ -65,10 +67,17 @@ export class Fighter {
       config.perRow,
       config.rowSpacing,
     );
+    const ctx = {
+      layout: L,
+      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      fsize: config.displaySize,
+      isPortrait: this.scene.mode === 'portrait',
+    };
     state.fighters.forEach((f, i) => {
-      const pos = f.position
+      const raw = f.position
         ? { x: f.position.x * L.logicalWidth, y: f.position.y * L.logicalHeight }
-        : autoPositions[i];
+        : null;
+      const pos = raw && isValidMoveTarget(raw.x, raw.y, ctx) ? raw : autoPositions[i];
       this.addFighter(f, pos, config);
     });
     for (const [userId, damage] of state.damageTotals ?? []) {
@@ -230,10 +239,18 @@ export class Fighter {
       return;
     }
 
-    const target = {
+    const raw = {
       x: payload.x * this.scene.layout.logicalWidth,
       y: payload.y * this.scene.layout.logicalHeight,
     };
+    const ctx = {
+      layout: this.scene.layout,
+      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      fsize: entry.displaySize,
+      isPortrait: this.scene.mode === 'portrait',
+    };
+    const target = clampMoveTarget(entry.sprite.x, entry.sprite.y, raw.x, raw.y, ctx)
+      ?? { x: entry.sprite.x, y: entry.sprite.y };
 
     const dx = target.x - entry.sprite.x;
     const dy = target.y - entry.sprite.y;

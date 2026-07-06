@@ -1,6 +1,19 @@
 import { describe, expect, test, vi } from 'vitest';
 
-vi.mock('phaser', () => ({ default: {} }));
+// Fighter imports Boss (for clamp/validate ctx) which imports Phaser (via leaderboard → bus). Provide minimal stubs.
+vi.mock('phaser', () => ({
+  default: {
+    Events: {
+      EventEmitter: class {
+        on() {}
+        off() {}
+        emit() {}
+        once() {}
+      },
+    },
+    Animations: { Events: { ANIMATION_COMPLETE: 'animationcomplete', ANIMATION_REPEAT: 'animationrepeat' } },
+  },
+}));
 
 import { Fighter } from '@battlefield/fighter.js';
 
