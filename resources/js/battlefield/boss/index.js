@@ -399,7 +399,7 @@ export class Boss {
   /**
    * Handles a boss-spawned event: swaps the sprite, resets HP bar and leaderboard.
    *
-   * @param {{ boss_number: number, max_hp: number, boss_name?: string }} payload
+   * @param {{ boss_number: number, max_hp: number, boss_name?: string, fighters?: Array<{user_id: number|string, character: string}> }} payload
    * @return {void}
    */
   handleBossSpawned(payload) {
@@ -477,6 +477,10 @@ export class Boss {
       f.damageScale = 1;
       this.scene.fighter.tweenToRestScale(f, { duration: 400, ease: 'Quad.easeOut' });
     }
+    // characterForBoss() is deterministic per (user, boss) — every fighter
+    // needs re-skinning to the new boss's assignment, otherwise they keep
+    // showing the previous boss's character until the page is reloaded.
+    this.scene.fighter.updateCharacters(payload.fighters);
   }
 
   /**

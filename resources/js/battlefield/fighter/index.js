@@ -137,6 +137,35 @@ export class Fighter {
   }
 
   /**
+   * Re-skins each listed fighter's sprite to the given character.
+   * characterForBoss() is deterministic per (user, boss), so every existing
+   * fighter needs this when the boss changes — not just newly-joined ones,
+   * which already get their correct character from handleFighterJoined.
+   *
+   * @param {Array<{user_id: number|string, character: string}>} roster
+   * @return {void}
+   */
+  updateCharacters(roster) {
+    for (const { user_id: userId, character } of roster ?? []) {
+      const entry = this.scene.fighters.get(userId);
+      if (!entry || !character || entry.ftype?.key === character) {
+        continue;
+      }
+      const ftype = FIGHTER_TYPES.find(ft => ft.key === character);
+      if (!ftype) {
+        continue;
+      }
+      entry.ftype = ftype;
+      entry.animState = AnimState.IDLE;
+      entry.body.setTexture(TextureKey.FIGHTERS, `${ftype.key}-idle-0`);
+      const idleAnim = this.scene.anims.get(`${ftype.key}-idle`);
+      if (idleAnim?.frames?.length) {
+        entry.body.play(`${ftype.key}-idle`);
+      }
+    }
+  }
+
+  /**
    * Adds a fighter sprite and label to the scene at the given position.
    *
    * @param {{ id: number|string, handle?: string, slack_handle?: string, display_name?: string, character?: string }} fighter
