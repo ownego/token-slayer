@@ -3,15 +3,16 @@ import { BattlefieldScene } from './scene.js';
 import { LAYOUTS, BG_COLOR } from './config.js';
 import { bus } from './bus.js';
 import { snapshotState } from './snapshot.js';
+import { BusEvent, SCENE_KEY } from './constants.js';
 
 const ECHO_EVENT_MAP = {
-  HitDealt: 'hit',
-  BossSpawned: 'boss-spawned',
-  BossKilled: 'boss-killed',
-  FighterJoined: 'fighter-joined',
-  FighterCharging: 'fighter-charging',
-  FighterIdled: 'fighter-idled',
-  FighterMoved: 'fighter-moved',
+  HitDealt:        BusEvent.HIT,
+  BossSpawned:     BusEvent.BOSS_SPAWNED,
+  BossKilled:      BusEvent.BOSS_KILLED,
+  FighterJoined:   BusEvent.FIGHTER_JOINED,
+  FighterCharging: BusEvent.FIGHTER_CHARGING,
+  FighterIdled:    BusEvent.FIGHTER_IDLED,
+  FighterMoved:    BusEvent.FIGHTER_MOVED,
 };
 
 const ECHO_RETRY_INTERVAL_MS = 200;
@@ -54,6 +55,11 @@ function subscribeEcho() {
   }, ECHO_RETRY_INTERVAL_MS);
 }
 
+/**
+ * Returns 'portrait' or 'landscape' based on current viewport dimensions.
+ *
+ * @return {string}
+ */
 export function detectMode() {
   return window.innerWidth < window.innerHeight ? 'portrait' : 'landscape';
 }
@@ -76,7 +82,7 @@ function bootGame(mount, state, mode) {
 
   game.events.once('ready', () => {
     subscribeEcho();
-    const scene = game.scene.getScene('battlefield');
+    const scene = game.scene.getScene(SCENE_KEY);
     window.__battlefield = {
       bus,
       game,
@@ -93,6 +99,13 @@ function bootGame(mount, state, mode) {
 // Module-level cleanup — removes the previous bootBattlefield's resize listeners.
 let _cleanupResize = null;
 
+/**
+ * Boots the Phaser battlefield game and wires up resize/orientation listeners.
+ *
+ * @param {HTMLElement} mount
+ * @param {object} state
+ * @return {Phaser.Game}
+ */
 export function bootBattlefield(mount, state) {
   _cleanupResize?.();
   _cleanupResize = null;
