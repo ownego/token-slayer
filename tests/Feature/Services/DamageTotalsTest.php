@@ -25,6 +25,7 @@ test('global sums damage across rolling daily, monthly, and all-time windows', f
         'allTime' => 137,
         'monthly' => 130,
         'daily' => 100,
+        'hourly' => 0,
     ]);
 });
 
@@ -38,6 +39,7 @@ test('global window boundaries are exclusive of events just outside them', funct
         'allTime' => 16,
         'monthly' => 5,
         'daily' => 0,
+        'hourly' => 0,
     ]);
 });
 
@@ -45,13 +47,14 @@ test('forUser scopes totals to one user', function () {
     $alice = User::factory()->create();
     $bob = User::factory()->create();
 
-    Event::factory()->create(['user_id' => $alice->id, 'boss_id' => $this->boss->id, 'tokens' => 100, 'created_at' => now()->subHour()]);
+    Event::factory()->create(['user_id' => $alice->id, 'boss_id' => $this->boss->id, 'tokens' => 100, 'created_at' => now()->subMinutes(90)]);
     Event::factory()->create(['user_id' => $bob->id, 'boss_id' => $this->boss->id, 'tokens' => 999, 'created_at' => now()->subHour()]);
 
     expect($this->totals->forUser($alice))->toBe([
         'allTime' => 100,
         'monthly' => 100,
         'daily' => 100,
+        'hourly' => 0,
     ]);
 });
 
@@ -69,11 +72,21 @@ test('global is cached so a later event is not reflected until the cache expires
 });
 
 test('totals are zero when no events exist', function () {
-    expect($this->totals->global())->toBe(['allTime' => 0, 'monthly' => 0, 'daily' => 0]);
+    expect($this->totals->global())->toBe(['allTime' => 0, 'monthly' => 0, 'daily' => 0, 'hourly' => 0]);
 });
 
 test('forUser returns zero totals when the user has no events', function () {
     $user = User::factory()->create();
 
-    expect($this->totals->forUser($user))->toBe(['allTime' => 0, 'monthly' => 0, 'daily' => 0]);
+    expect($this->totals->forUser($user))->toBe(['allTime' => 0, 'monthly' => 0, 'daily' => 0, 'hourly' => 0]);
+});
+
+test('hourly window counts only the last hour for global and forUser', function () {
+    $user = User::factory()->create();
+
+    Event::factory()->create(['user_id' => $user->id, 'boss_id' => $this->boss->id, 'tokens' => 40, 'created_at' => now()->subMinutes(30)]); // inside hour
+    Event::factory()->create(['user_id' => $user->id, 'boss_id' => $this->boss->id, 'tokens' => 9, 'created_at' => now()->subHours(2)]);    // outside hour
+
+    expect($this->totals->global()['hourly'])->toBe(40);
+    expect($this->totals->forUser($user)['hourly'])->toBe(40);
 });
