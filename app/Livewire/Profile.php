@@ -32,6 +32,11 @@ class Profile extends Component
         return view('livewire.profile', [
             'user' => auth()->user(),
             'damageTotals' => app(DamageTotals::class)->forUser(auth()->user()),
+            'globalUsage' => app(DamageTotals::class)->global(),
+            'account' => auth()->user()->account,
+            'accountUsage' => auth()->user()->account
+                ? app(DamageTotals::class)->forAccount(auth()->user()->account)
+                : null,
             'claudeSnippet' => view('partials.claude-snippet', [
                 'baseUrl' => url('/api/events'),
                 'namespace' => $namespace,
