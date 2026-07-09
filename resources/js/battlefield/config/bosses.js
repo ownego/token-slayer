@@ -2,6 +2,7 @@ export const BG_COLOR = 0x020617;
 
 export const BOSS_TYPES = [
   { key: 'boss-ghost',        file: '/assets/battlefield/bosses/ghost.png?v=100',        frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 3, scale: 4   },
+  { key: 'boss-skeleton',     file: '/assets/battlefield/bosses/skeleton.png?v=100',     frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 3, scale: 4   },
   {
     key: 'boss-abyssal-dreadknight',
     animFiles: {
@@ -21,7 +22,6 @@ export const BOSS_TYPES = [
     },
     scale: 1.5,
   },
-  { key: 'boss-skeleton',     file: '/assets/battlefield/bosses/skeleton.png?v=100',     frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 3, scale: 4   },
   { key: 'boss-slime',        file: '/assets/battlefield/bosses/slime.png?v=100',        frameWidth: 32,  frameHeight: 32,  idleStart: 0, idleEnd: 4, scale: 4   },
   {
     key: 'boss-flying-demon',
