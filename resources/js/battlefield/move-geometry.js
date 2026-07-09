@@ -232,3 +232,63 @@ export function snapToValidTarget(px, py, ctx) {
   }
   return clampMoveTarget(cx, safeY, cx, cy, ctx);
 }
+
+/**
+ * Returns a waypoint list from (fromX, fromY) to (toX, toY), detouring
+ * through the guaranteed-clear bypassY row when a direct path is blocked
+ * (e.g. by the boss/HP-bar column). Used for both the mover's own locally
+ * animated route and remote fighters' `fighter-moved` echo, so every client
+ * renders the same detour instead of a straight line that clips an obstacle.
+ * Returns null if the destination is entirely unreachable.
+ *
+ * @param {number} fromX
+ * @param {number} fromY
+ * @param {number} toX
+ * @param {number} toY
+ * @param {{layout: object, bossType: object, fsize: number}} ctx
+ * @return {Array<{x: number, y: number}>|null}
+ */
+export function planRoute(fromX, fromY, toX, toY, ctx) {
+  let destX = toX, destY = toY;
+  if (!isValidMoveTarget(toX, toY, ctx)) {
+    const snapped = snapToValidTarget(toX, toY, ctx);
+    if (!snapped) {
+      const direct = clampMoveTarget(fromX, fromY, toX, toY, ctx);
+      return direct ? [direct] : null;
+    }
+    destX = snapped.x;
+    destY = snapped.y;
+  }
+
+  const direct = clampMoveTarget(fromX, fromY, destX, destY, ctx);
+  const directClear = direct
+    && Math.abs(direct.x - destX) < 2
+    && Math.abs(direct.y - destY) < 2;
+
+  if (directClear) {
+    return [{ x: destX, y: destY }];
+  }
+
+  const safeY = bypassY(ctx);
+  const wp1 = { x: fromX, y: safeY };
+  const wp2 = { x: destX, y: safeY };
+
+  // Verify every segment of the detour is clear
+  if (isValidMoveTarget(wp1.x, wp1.y, ctx) && isValidMoveTarget(wp2.x, wp2.y, ctx)) {
+    const allClear = (from, to) => {
+      const r = clampMoveTarget(from.x, from.y, to.x, to.y, ctx);
+      return r && Math.abs(r.x - to.x) < 2 && Math.abs(r.y - to.y) < 2;
+    };
+    if (allClear({ x: fromX, y: fromY }, wp1)
+        && allClear(wp1, wp2)
+        && allClear(wp2, { x: destX, y: destY })) {
+      const route = [];
+      if (Math.abs(fromY - safeY) > 5) route.push(wp1);
+      if (Math.abs(fromX - destX)    > 5) route.push(wp2);
+      route.push({ x: destX, y: destY });
+      return route;
+    }
+  }
+
+  return direct ? [direct] : null;
+}

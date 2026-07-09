@@ -1,6 +1,6 @@
 import { Boss } from '@battlefield/boss.js';
 import { AnimState } from '@battlefield/constants.js';
-import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel } from '@battlefield/move-geometry.js';
+import { isInsideLeaderboardPanel, planRoute } from '@battlefield/move-geometry.js';
 
 /**
  * Returns the font size in pixels for a fighter handle label.
@@ -220,37 +220,6 @@ export class MoveInput {
   }
 
   /**
-   * Returns true if (px, py) is a valid move target in logical pixels.
-   *
-   * @param {number} px
-   * @param {number} py
-   * @return {boolean}
-   */
-  _isValidMoveTarget(px, py) {
-    return isValidMoveTarget(px, py, this._geometryCtx());
-  }
-
-  /**
-   * Returns a Y position guaranteed to clear boss sprite, HP bar, and fighter height.
-   *
-   * @return {number}
-   */
-  _bypassY() {
-    return bypassY(this._geometryCtx());
-  }
-
-  /**
-   * Returns the nearest reachable point to (px, py), or null if unreachable.
-   *
-   * @param {number} px
-   * @param {number} py
-   * @return {{x: number, y: number}|null}
-   */
-  _snapToValidTarget(px, py) {
-    return snapToValidTarget(px, py, this._geometryCtx());
-  }
-
-  /**
    * Returns a waypoint list from (fromX, fromY) to (toX, toY), routing around blocked zones.
    *
    * @param {number} fromX
@@ -260,48 +229,7 @@ export class MoveInput {
    * @return {Array<{x: number, y: number}>|null}
    */
   _planRoute(fromX, fromY, toX, toY) {
-    let destX = toX, destY = toY;
-    if (!this._isValidMoveTarget(toX, toY)) {
-      const snapped = this._snapToValidTarget(toX, toY);
-      if (!snapped) {
-        const direct = this._clampMoveTarget(fromX, fromY, toX, toY);
-        return direct ? [direct] : null;
-      }
-      destX = snapped.x;
-      destY = snapped.y;
-    }
-
-    const direct = this._clampMoveTarget(fromX, fromY, destX, destY);
-    const directClear = direct
-      && Math.abs(direct.x - destX) < 2
-      && Math.abs(direct.y - destY) < 2;
-
-    if (directClear) {
-      return [{ x: destX, y: destY }];
-    }
-
-    const bypassY = this._bypassY();
-    const wp1 = { x: fromX, y: bypassY };
-    const wp2 = { x: destX, y: bypassY };
-
-    // Verify every segment of the detour is clear
-    if (this._isValidMoveTarget(wp1.x, wp1.y) && this._isValidMoveTarget(wp2.x, wp2.y)) {
-      const allClear = (from, to) => {
-        const r = this._clampMoveTarget(from.x, from.y, to.x, to.y);
-        return r && Math.abs(r.x - to.x) < 2 && Math.abs(r.y - to.y) < 2;
-      };
-      if (allClear({ x: fromX, y: fromY }, wp1)
-          && allClear(wp1, wp2)
-          && allClear(wp2, { x: destX, y: destY })) {
-        const route = [];
-        if (Math.abs(fromY - bypassY) > 5) route.push(wp1);
-        if (Math.abs(fromX - destX)    > 5) route.push(wp2);
-        route.push({ x: destX, y: destY });
-        return route;
-      }
-    }
-
-    return direct ? [direct] : null;
+    return planRoute(fromX, fromY, toX, toY, this._geometryCtx());
   }
 
   /**
@@ -405,16 +333,4 @@ export class MoveInput {
     step(0);
   }
 
-  /**
-   * Returns the furthest valid point along the segment from (fromX, fromY) to (toX, toY).
-   *
-   * @param {number} fromX
-   * @param {number} fromY
-   * @param {number} toX
-   * @param {number} toY
-   * @return {{x: number, y: number}|null}
-   */
-  _clampMoveTarget(fromX, fromY, toX, toY) {
-    return clampMoveTarget(fromX, fromY, toX, toY, this._geometryCtx());
-  }
 }

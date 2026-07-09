@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { LAYOUTS } from '@battlefield/config.js';
-import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel } from '@battlefield/move-geometry.js';
+import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute } from '@battlefield/move-geometry.js';
 
 const BOSS_TYPE = { frameWidth: 32, frameHeight: 32, scale: 4 };
 const landscapeCtx = { layout: LAYOUTS.landscape, bossType: BOSS_TYPE, fsize: 48 };
@@ -125,4 +125,25 @@ test('snapToValidTarget clamps a click past BOTH edges (corner) to the nearest b
   expect(result.x).toBeCloseTo(35.4, 0);
   expect(result.y).toBeCloseTo(496, 0);
   expect(isValidMoveTarget(result.x, result.y, landscapeCtx)).toBe(true);
+});
+
+test('planRoute returns a single direct waypoint when the path is clear', () => {
+  const route = planRoute(200, 470, 700, 470, landscapeCtx);
+  expect(route).toHaveLength(1);
+  expect(route[0].x).toBeCloseTo(700, 1);
+  expect(route[0].y).toBeCloseTo(470, 1);
+});
+
+test('planRoute detours through bypassY when a same-height move would otherwise cross the boss column', () => {
+  // Regression: a straight tween from mid-left to mid-right at boss height used to
+  // clamp at the boss's left edge instead of routing around, so remote viewers saw
+  // the fighter stop next to the boss instead of the detour the mover animated locally.
+  const route = planRoute(300, 200, 620, 200, landscapeCtx);
+  expect(route).toHaveLength(3);
+  expect(route[0].x).toBeCloseTo(300, 1);
+  expect(route[0].y).toBeCloseTo(468.5, 1);
+  expect(route[1].x).toBeCloseTo(620, 1);
+  expect(route[1].y).toBeCloseTo(468.5, 1);
+  expect(route[2].x).toBeCloseTo(620, 1);
+  expect(route[2].y).toBeCloseTo(200, 1);
 });

@@ -76,7 +76,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `constants.js` | AnimState, AttackType, TextureKey, BusEvent, SCENE_KEY, BossPhase, DreadknightAttack enums |
 | `config.js` → `config/` | Barrel over `bosses.js` (BOSS_TYPES), `fighters.js` (FIGHTER_TYPES), `layouts.js` (LAYOUTS), `timings.js` (TIMINGS) |
 | `layout.js` | Pure position helpers: computeFighterPositions, fighterDisplayConfig, damageScaleMultiplier, chargeFootY, rowsNeeded |
-| `move-geometry.js` | Pure move-target geometry: isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel — boss/HP-bar column, leaderboard, and Damage HUD exclusion zones (both fixed: leaderboard top-right, Damage HUD top-left, in both orientations); size-aware edge margins |
+| `move-geometry.js` | Pure move-target geometry: isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute — boss/HP-bar column, leaderboard, and Damage HUD exclusion zones (both fixed: leaderboard top-right, Damage HUD top-left, in both orientations); size-aware edge margins. `planRoute` is shared by `move-input.js` (mover's local animation) and `fighter/index.js`'s `handleFighterMoved` (remote echo) so every client renders the same detour |
 | `format.js` | Pure format helpers: formatHp |
 | `snapshot.js` | Snapshot/restore scene state on orientation change |
 | `bus.js` | Tiny event bus for cross-manager communication |

@@ -3,7 +3,7 @@ import { FIGHTER_TYPES, TIMINGS } from '@battlefield/config.js';
 import { computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from '@battlefield/layout.js';
 import { AnimState, AttackType, TextureKey } from '@battlefield/constants.js';
 import { Boss } from '@battlefield/boss.js';
-import { isValidMoveTarget, clampMoveTarget, snapToValidTarget } from '@battlefield/move-geometry.js';
+import { isValidMoveTarget, planRoute } from '@battlefield/move-geometry.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture } from './avatar.js';
 
 // Tiny RPG sprite geometry constants — do not change without re-measuring the atlas.
@@ -279,25 +279,8 @@ export class Fighter {
       bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
       fsize: entry.displaySize * (entry.damageScale ?? 1),
     };
-    const snapped = isValidMoveTarget(raw.x, raw.y, ctx) ? raw : snapToValidTarget(raw.x, raw.y, ctx);
-    const target = (snapped && clampMoveTarget(entry.sprite.x, entry.sprite.y, snapped.x, snapped.y, ctx))
-      ?? { x: entry.sprite.x, y: entry.sprite.y };
-
-    const dx = target.x - entry.sprite.x;
-    const dy = target.y - entry.sprite.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const SPEED_PX_PER_SEC = 300;
-    const duration = Math.max(200, Math.round((dist / SPEED_PX_PER_SEC) * 1000));
-
-    // Flip toward movement direction; fall back to boss-facing when barely horizontal
-    const flipX = dx < -5 ? true : (dx > 5 ? false : target.x > this.scene.layout.boss.anchor.x);
-
-    // Start walk animation (unless mid-attack)
-    if (entry.body && entry.animState !== AnimState.ATTACK && entry.ftype) {
-      entry.animState = AnimState.WALK;
-      entry.body.setFlipX(flipX);
-      entry.body.play(entry.ftype.key + '-walk', true);
-    }
+    const route = planRoute(entry.sprite.x, entry.sprite.y, raw.x, raw.y, ctx)
+      ?? [{ x: entry.sprite.x, y: entry.sprite.y }];
 
     // Kill any in-progress move tweens before starting new ones
     this.scene.tweens.killTweensOf(entry.sprite);
@@ -305,39 +288,81 @@ export class Fighter {
       this.scene.tweens.killTweensOf(entry.handle);
     }
 
-    this.scene.tweens.add({
-      targets: entry.sprite,
-      x: target.x,
-      y: target.y,
-      duration,
-      ease: 'Linear',
-      onComplete: () => {
-        if (entry.body && entry.animState !== AnimState.ATTACK) {
-          const isCharging = this.scene.charges.has(payload.user_id);
-          const next = isCharging ? AnimState.WALK : AnimState.IDLE;
-          entry.animState = next;
-          entry.body.setFlipX(next === AnimState.WALK ? target.x > this.scene.layout.boss.anchor.x : false);
-          entry.body.play(entry.ftype.key + '-' + next, true);
-        }
-        entry.pos = target;
-      },
-    });
+    this._animateMoveRoute(entry, route);
+  }
 
-    if (entry.handle) {
-      const scale  = entry.sprite.scaleX;
-      const fontPx = handleFontPx(entry.displaySize);
+  /**
+   * Tweens a fighter's sprite, handle, and charge trail through the given
+   * waypoint list — mirrors MoveInput's local route animation so remote
+   * viewers see the same detour the mover planned, instead of a straight
+   * line that clips the boss/HP-bar column.
+   *
+   * @param {object} entry
+   * @param {Array<{x: number, y: number}>} route
+   * @return {void}
+   */
+  _animateMoveRoute(entry, route) {
+    const SPEED_PX_PER_SEC = 300;
+
+    const step = (idx) => {
+      if (!entry.sprite?.active || idx >= route.length) {
+        return;
+      }
+      const target = route[idx];
+      const dx = target.x - entry.sprite.x;
+      const dy = target.y - entry.sprite.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const duration = Math.max(200, Math.round((dist / SPEED_PX_PER_SEC) * 1000));
+
+      // Flip toward movement direction; fall back to boss-facing when barely horizontal
+      const flipX = dx < -5 ? true : (dx > 5 ? false : target.x > this.scene.layout.boss.anchor.x);
+
+      // Start walk animation (unless mid-attack)
+      if (entry.body && entry.animState !== AnimState.ATTACK && entry.ftype) {
+        entry.animState = AnimState.WALK;
+        entry.body.setFlipX(flipX);
+        entry.body.play(entry.ftype.key + '-walk', true);
+      }
+
       this.scene.tweens.add({
-        targets: entry.handle,
+        targets: entry.sprite,
         x: target.x,
-        y: target.y + entry.legH * scale + fontPx,
+        y: target.y,
         duration,
         ease: 'Linear',
+        onComplete: () => {
+          if (!entry.sprite?.active) {
+            return;
+          }
+          if (idx === route.length - 1) {
+            entry.pos = target;
+            if (entry.body && entry.animState !== AnimState.ATTACK) {
+              const isCharging = this.scene.charges.has(entry.id);
+              const next = isCharging ? AnimState.WALK : AnimState.IDLE;
+              entry.animState = next;
+              entry.body.setFlipX(next === AnimState.WALK ? target.x > this.scene.layout.boss.anchor.x : false);
+              entry.body.play(entry.ftype.key + '-' + next, true);
+            }
+          }
+          step(idx + 1);
+        },
       });
-    }
 
-    const charge = this.scene.charges.get(payload.user_id);
-    if (charge) {
-      if (charge.trail?.scene) {
+      if (entry.handle) {
+        this.scene.tweens.killTweensOf(entry.handle);
+        const scale  = entry.sprite.scaleX;
+        const fontPx = handleFontPx(entry.displaySize);
+        this.scene.tweens.add({
+          targets: entry.handle,
+          x: target.x,
+          y: target.y + entry.legH * scale + fontPx,
+          duration,
+          ease: 'Linear',
+        });
+      }
+
+      const charge = this.scene.charges.get(entry.id);
+      if (charge?.trail?.scene) {
         this.scene.tweens.killTweensOf(charge.trail);
         const tb = target.x <= this.scene.layout.boss.anchor.x ? 1 : -1;
         const cb = Math.round(entry.displaySize / 3);
@@ -349,7 +374,9 @@ export class Fighter {
           ease: 'Linear',
         });
       }
-    }
+    };
+
+    step(0);
   }
 
   /**
