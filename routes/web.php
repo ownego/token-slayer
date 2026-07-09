@@ -18,6 +18,10 @@ Route::get('/auth/slack/callback', [SlackController::class, 'callback']);
 
 Route::get('/profile', fn () => view('profile'))->middleware('auth')->name('profile');
 
+Route::get('/admin/usage', fn () => view('admin-usage'))
+    ->middleware(['auth', 'can:admin'])
+    ->name('admin.usage');
+
 Route::get('/install', fn () => response(
     view('install-script', [
         'baseUrl' => url('/api/events'),

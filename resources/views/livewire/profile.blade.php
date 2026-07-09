@@ -26,6 +26,42 @@
         </dl>
     </section>
 
+    <section class="border rounded p-4 space-y-4">
+        <h2 class="font-semibold">Usage</h2>
+
+        <div>
+            <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">All users</h3>
+            <dl class="grid grid-cols-3 gap-4 text-center">
+                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Hourly</dt><dd class="text-xl font-mono">{{ number_format($globalUsage['hourly']) }}</dd></div>
+                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt><dd class="text-xl font-mono">{{ number_format($globalUsage['daily']) }}</dd></div>
+                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt><dd class="text-xl font-mono">{{ number_format($globalUsage['monthly']) }}</dd></div>
+            </dl>
+        </div>
+
+        <div>
+            <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">You</h3>
+            <dl class="grid grid-cols-3 gap-4 text-center">
+                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Hourly</dt><dd class="text-xl font-mono">{{ number_format($damageTotals['hourly']) }}</dd></div>
+                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt><dd class="text-xl font-mono">{{ number_format($damageTotals['daily']) }}</dd></div>
+                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt><dd class="text-xl font-mono">{{ number_format($damageTotals['monthly']) }}</dd></div>
+            </dl>
+        </div>
+
+        @if ($account)
+            <div>
+                <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">
+                    My account — {{ $account->email }}
+                    <span class="text-gray-400">({{ $account->plan }}, {{ $account->users()->count() }} members)</span>
+                </h3>
+                <dl class="grid grid-cols-3 gap-4 text-center">
+                    <div><dt class="text-xs uppercase tracking-wide text-gray-500">Hourly</dt><dd class="text-xl font-mono">{{ number_format($accountUsage['hourly']) }}</dd></div>
+                    <div><dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt><dd class="text-xl font-mono">{{ number_format($accountUsage['daily']) }}</dd></div>
+                    <div><dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt><dd class="text-xl font-mono">{{ number_format($accountUsage['monthly']) }}</dd></div>
+                </dl>
+            </div>
+        @endif
+    </section>
+
     {{-- Shared token: every track below uses this same hook token. --}}
     <section class="border rounded p-4">
         <div class="flex items-center justify-between mb-3">

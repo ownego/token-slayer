@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\IdeAccessToken;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Socialite\Facades\Socialite;
@@ -8,9 +7,9 @@ use Laravel\Socialite\Two\User as SocialiteUser;
 
 uses(RefreshDatabase::class);
 
-function fakeSlackUser(): SocialiteUser
+function fakeIdeSlackUser(): SocialiteUser
 {
-    $u = new SocialiteUser();
+    $u = new SocialiteUser;
     $u->map(['id' => 'U1', 'name' => 'Tess', 'nickname' => 'tess', 'email' => 't@x.io', 'avatar' => null]);
 
     return $u;
@@ -18,7 +17,7 @@ function fakeSlackUser(): SocialiteUser
 
 it('redirects to jetbrains deep link when client=jetbrains', function () {
     User::factory()->create(['slack_user_id' => 'U1']);
-    Socialite::shouldReceive('driver->user')->andReturn(fakeSlackUser());
+    Socialite::shouldReceive('driver->user')->andReturn(fakeIdeSlackUser());
 
     session(['ide_oauth' => ['state' => 'STATE123', 'client' => 'jetbrains']]);
 
@@ -32,7 +31,7 @@ it('redirects to jetbrains deep link when client=jetbrains', function () {
 
 it('redirects to the loopback callback when a loopback redirect is provided', function () {
     User::factory()->create(['slack_user_id' => 'U1']);
-    Socialite::shouldReceive('driver->user')->andReturn(fakeSlackUser());
+    Socialite::shouldReceive('driver->user')->andReturn(fakeIdeSlackUser());
 
     session(['ide_oauth' => [
         'state' => 'STATE123',
@@ -66,7 +65,7 @@ it('stores a loopback redirect when valid', function () {
 
 it('still redirects to vscode scheme by default', function () {
     User::factory()->create(['slack_user_id' => 'U1']);
-    Socialite::shouldReceive('driver->user')->andReturn(fakeSlackUser());
+    Socialite::shouldReceive('driver->user')->andReturn(fakeIdeSlackUser());
 
     session(['ide_oauth' => ['state' => 'STATE123']]);
 

@@ -25,6 +25,19 @@ export function createLeaderboard(scene) {
   const fighters = new Map();
   const isPortrait = scene.mode === 'portrait';
 
+  // Mobile (portrait) hides the in-canvas TOP DAMAGE panel — only the HTML
+  // "▸ DAMAGE" HUD is shown there. We still track damage and emit the ranked
+  // array so the Board overlay and victory screen keep working.
+  if (isPortrait) {
+    const render = () => emitPortrait(fighters);
+    return {
+      ...makeMethods(fighters, scene, render),
+      hide() {},
+      show() { render(); },
+      destroy() {},
+    };
+  }
+
   const W = scene.layout.logicalWidth;
   // Landscape: top-right corner.  Portrait: top-left corner (fighters start at y≈540, boss is depth 5 so renders above panel).
   const panL    = isPortrait ? PANEL_PAD : W - PANEL_PAD - PANEL_W;

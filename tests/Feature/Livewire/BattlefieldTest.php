@@ -120,9 +120,9 @@ test('battlefield state carries global damage totals across rolling windows', fu
     $boss = Boss::factory()->create();
     $user = User::factory()->create(['last_event_at' => now()->subMinute()]);
 
-    Event::factory()->create(['user_id' => $user->id, 'boss_id' => $boss->id, 'tokens' => 100, 'created_at' => now()->subHour()]);
+    Event::factory()->create(['user_id' => $user->id, 'boss_id' => $boss->id, 'tokens' => 100, 'created_at' => now()->subMinutes(30)]);
     Event::factory()->create(['user_id' => $user->id, 'boss_id' => $boss->id, 'tokens' => 25, 'created_at' => now()->subDays(45)]);
 
     Livewire::test(Battlefield::class)
-        ->assertSeeHtml('&quot;globalDamage&quot;:{&quot;allTime&quot;:125,&quot;monthly&quot;:100,&quot;daily&quot;:100}');
+        ->assertSeeHtml('&quot;globalDamage&quot;:{&quot;allTime&quot;:125,&quot;monthly&quot;:100,&quot;daily&quot;:100,&quot;hourly&quot;:100}');
 });

@@ -1,6 +1,7 @@
 <?php
 
 use App\Livewire\Profile;
+use App\Models\Account;
 use App\Models\Boss;
 use App\Models\Event;
 use App\Models\User;
@@ -148,4 +149,44 @@ test('profile shows the players own all-time, monthly, and daily damage totals',
         ->assertSee('125')   // user's all-time (100 + 25), excludes the other player
         ->assertSee('100')   // user's monthly and daily
         ->assertDontSee('999');
+});
+
+test('profile shows community and personal usage across hourly, daily, monthly', function () {
+    $user = User::factory()->create();
+    $other = User::factory()->create();
+    $this->actingAs($user);
+
+    Event::factory()->create(['user_id' => $user->id, 'tokens' => 40, 'created_at' => now()->subMinutes(30)]);
+    Event::factory()->create(['user_id' => $other->id, 'tokens' => 60, 'created_at' => now()->subMinutes(30)]);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('All users')
+        ->assertSee('Hourly')
+        ->assertSee(number_format(100)) // community hourly
+        ->assertSee(number_format(40)); // personal hourly
+});
+
+test('profile shows the my-account block when the user has an account', function () {
+    $account = Account::factory()->create(['email' => 'team-rocket@example.com', 'plan' => 'max-20x']);
+    $user = User::factory()->create(['account_id' => $account->id]);
+    User::factory()->create(['account_id' => $account->id]);
+    $this->actingAs($user);
+
+    Event::factory()->create(['user_id' => $user->id, 'tokens' => 55, 'created_at' => now()->subMinutes(10)]);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('team-rocket@example.com')
+        ->assertSee('max-20x')
+        ->assertSee(number_format(55));
+});
+
+test('profile hides the my-account block when the user has no account', function () {
+    $user = User::factory()->create(['account_id' => null]);
+    $this->actingAs($user);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertDontSee('My account');
 });
