@@ -33,6 +33,7 @@ class User extends Authenticatable
         'avatar_url',
         'hook_token',
         'last_event_at',
+        'client_version',
     ];
 
     /**

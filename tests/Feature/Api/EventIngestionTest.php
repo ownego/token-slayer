@@ -6,6 +6,7 @@ use App\Events\FighterCharging;
 use App\Events\FighterIdled;
 use App\Events\FighterJoined;
 use App\Events\HitDealt;
+use App\Models\Account;
 use App\Models\Boss;
 use App\Models\Event;
 use App\Models\User;
@@ -332,4 +333,17 @@ test('Stop event from a single-emit tracker with zero tokens still clears the bu
 
     $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
     expect($entry)->toBeNull();
+});
+
+it('persists attribution columns on events when provided directly', function () {
+    $account = Account::factory()->create(['email' => 'org@ownego.com']);
+    $event = Event::factory()->create([
+        'user_id' => $this->user->id,
+        'account_id' => $account->id,
+        'account_email' => 'org@ownego.com',
+        'account_source' => 'credential',
+    ]);
+
+    expect($event->fresh()->account_id)->toBe($account->id)
+        ->and($event->fresh()->account_source)->toBe('credential');
 });
