@@ -213,3 +213,19 @@ it('shows attribution status from the latest event', function () {
         ->assertSee('mystery@gmail.com')
         ->assertSee('token-slayer update'); // outdated client hint (latest is 3)
 });
+
+it('shows the matched attribution status for an org-uuid verified event with no email', function () {
+    $account = Account::factory()->create(['email' => 'org@ownego.com']);
+    $user = User::factory()->create();
+    Event::factory()->create([
+        'user_id' => $user->id,
+        'account_id' => $account->id,
+        'account_email' => null,
+        'account_source' => 'credential',
+        'account_org_id' => 'org-x',
+    ]);
+
+    Livewire::actingAs($user)->test(Profile::class)
+        ->assertSee('an org account')
+        ->assertSee('org@ownego.com');
+});
