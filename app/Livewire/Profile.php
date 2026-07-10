@@ -2,6 +2,8 @@
 
 namespace App\Livewire;
 
+use App\Models\Event;
+use App\Models\User;
 use App\Services\DamageTotals;
 use Illuminate\Support\Str;
 use Livewire\Component;
@@ -22,6 +24,24 @@ class Profile extends Component
         $this->plainToken = $plain;
     }
 
+    /**
+     * Snapshot of how the user's latest event was attributed, for the status block.
+     *
+     * @param  User  $user  the profile owner whose latest event is being inspected
+     * @return array{event:?Event, clientVersion:?string, latestVersion:string, outdated:bool}
+     */
+    private function attributionStatus(User $user): array
+    {
+        $latestVersion = (string) config('token_slayer.client_version');
+
+        return [
+            'event' => Event::where('user_id', $user->id)->latest('id')->first(),
+            'clientVersion' => $user->client_version,
+            'latestVersion' => $latestVersion,
+            'outdated' => $user->client_version !== $latestVersion,
+        ];
+    }
+
     public function render()
     {
         $namespace = config('app.hook_namespace');
@@ -33,13 +53,8 @@ class Profile extends Component
             'user' => auth()->user(),
             'damageTotals' => app(DamageTotals::class)->forUser(auth()->user()),
             'globalUsage' => app(DamageTotals::class)->global(),
-            // TODO(Task 9): replace this single-account stand-in with the
-            // multi-account `forUserByAccount()` breakdown; kept minimal here
-            // only to survive the `users.account_id` column drop (Task 7).
-            'account' => auth()->user()->accounts->first(),
-            'accountUsage' => auth()->user()->accounts->first()
-                ? app(DamageTotals::class)->forAccount(auth()->user()->accounts->first())
-                : null,
+            'accountRows' => app(DamageTotals::class)->forUserByAccount(auth()->user()),
+            'attribution' => $this->attributionStatus(auth()->user()),
             'claudeSnippet' => view('partials.claude-snippet', [
                 'baseUrl' => url('/api/events'),
                 'namespace' => $namespace,

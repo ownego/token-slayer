@@ -190,3 +190,26 @@ test('profile hides the my-account block when the user has no account', function
         ->assertOk()
         ->assertDontSee('My account');
 });
+
+it('lists every account the user is a member of with their own usage', function () {
+    $user = User::factory()->create();
+    [$a, $b] = Account::factory()->count(2)->create();
+    $user->accounts()->attach([$a->id, $b->id]);
+    Event::factory()->create(['user_id' => $user->id, 'account_id' => $a->id, 'tokens' => 42]);
+
+    Livewire::actingAs($user)->test(Profile::class)
+        ->assertSee($a->email)
+        ->assertSee($b->email);
+});
+
+it('shows attribution status from the latest event', function () {
+    $user = User::factory()->create(['client_version' => '1']);
+    Event::factory()->create([
+        'user_id' => $user->id, 'account_id' => null,
+        'account_email' => 'mystery@gmail.com', 'account_source' => 'auto',
+    ]);
+
+    Livewire::actingAs($user)->test(Profile::class)
+        ->assertSee('mystery@gmail.com')
+        ->assertSee('token-slayer update'); // outdated client hint (latest is 2)
+});
