@@ -74,6 +74,7 @@ class Profile extends Component
             'coworkCommand' => 'curl -fsSL '.route('cowork-install-script')." | {$envVar}={$tokenValue} sh",
             'tokenSaveCommand' => "mkdir -p ~/.config/{$namespace} && printf '%s' '{$tokenValue}' > {$tokenPath} && chmod 600 {$tokenPath}",
             'tokenPath' => $tokenPath,
+            'namespace' => $namespace,
         ]);
     }
 }

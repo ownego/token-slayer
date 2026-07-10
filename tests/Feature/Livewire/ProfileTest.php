@@ -229,3 +229,17 @@ it('shows the matched attribution status for an org-uuid verified event with no 
         ->assertSee('an org account')
         ->assertSee('org@ownego.com');
 });
+
+it('shows a collapsible custom.sh tool catalog reference in the CLI track', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('Customize what your fighter shows')
+        ->assertSee('custom_activity')
+        ->assertSee('~/.config/token_slayer/custom.sh')
+        ->assertSee('mcp__')
+        ->assertSee('CommandLine')
+        ->assertSee('no per-tool events today');
+});

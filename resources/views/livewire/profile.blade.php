@@ -147,6 +147,71 @@
                 </div>
             </div>
         </details>
+
+        <details class="mt-3">
+            <summary class="text-sm font-medium cursor-pointer text-gray-600">Customize what your fighter shows</summary>
+            <div class="mt-3 space-y-3">
+                <p class="text-sm text-gray-600">
+                    By default the charging bubble shows only a privacy-safe tool name — no commands, file paths, or prompts. Create
+                    <code>~/.config/{{ $namespace }}/custom.sh</code> and it will be sourced by every hook call right before the event is sent,
+                    with <code>$BODY</code> (the JSON payload) in scope for you to edit with <code>jq</code>. The installer creates the
+                    <code>~/.config/{{ $namespace }}</code> directory but never touches or overwrites this file, so it survives every install and update.
+                    Set <code>custom_activity</code> in <code>$BODY</code> and the server shows it verbatim instead of its own default label.
+                </p>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-xs text-gray-500 uppercase">
+                            <tr>
+                                <th class="py-2">Provider</th>
+                                <th>Example <code>tool_name</code></th>
+                                <th>Useful <code>tool_input</code> fields</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr>
+                                <td class="py-2 font-medium align-top">Claude Code</td>
+                                <td class="align-top"><code>Bash</code>, <code>Read</code>, <code>Edit</code>, <code>Write</code>, <code>Grep</code>, <code>WebFetch</code>, <code>Task</code></td>
+                                <td class="align-top"><code>command</code>, <code>file_path</code>, <code>pattern</code>, <code>url</code>, <code>description</code></td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">Any provider · MCP tools</td>
+                                <td class="align-top"><code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, e.g. <code>mcp__jira__jira_search_issues</code></td>
+                                <td class="align-top">shape varies per tool; the server name (segment after the first <code>__</code>) is the most reliable thing to key off</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">Antigravity</td>
+                                <td class="align-top"><code>run_command</code>, <code>read_file</code>, <code>write_file</code>, <code>grep_search</code></td>
+                                <td class="align-top"><code>CommandLine</code>, <code>AbsolutePath</code>, <code>TargetFile</code>, <code>Query</code></td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">Codex CLI</td>
+                                <td class="align-top text-gray-400" colspan="2">no per-tool events today — only session start/stop are wired, so there's nothing to key off yet</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">claude.ai / Cowork</td>
+                                <td class="align-top text-gray-400" colspan="2">no tool events — these only ever report a token count on session end</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <p class="text-sm mb-1">Example <code>~/.config/{{ $namespace }}/custom.sh</code>:</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">if command -v jq >/dev/null 2>&1; then
+  BODY=$(printf '%s' "$BODY" | jq -c '
+    if (.hook_event_name // "") == "UserPromptSubmit" then
+      .custom_activity = "🧠 New prompt"
+    elif (.hook_event_name // "") == "PreToolUse" then
+      .custom_activity = ({
+        "Bash": "⚔️ All-In Execute",
+        "Task": ("Agent: " + (.tool_input.description // "subagent"))
+      }[.tool_name] // .tool_name)
+    else . end' 2>/dev/null || printf '%s' "$BODY")
+fi</pre>
+                </div>
+            </div>
+        </details>
     </section>
 
     {{-- Track 2: browser / Desktop chat (no terminal). --}}

@@ -249,3 +249,19 @@ it('bumps the client version to 3 for the org-id beacon rollout', function () {
     expect(config('token_slayer.client_version'))->toBe('3')
         ->and($script)->toContain("CLIENT_VERSION='3'");
 });
+
+it('tips users toward custom.sh to customize what their fighter shows, at the end of a successful install', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('~/.config/token_slayer/custom.sh')
+        ->toContain('customize what your fighter shows')
+        ->toContain('survives every update');
+
+    $tipPosition = strpos($script, 'customize what your fighter shows');
+    $lastHookInstallPosition = strpos($script, 'installed Antigravity CLI hooks');
+
+    expect($tipPosition)->not->toBeFalse()
+        ->and($lastHookInstallPosition)->not->toBeFalse()
+        ->and($tipPosition)->toBeGreaterThan($lastHookInstallPosition);
+});

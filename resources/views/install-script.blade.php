@@ -462,3 +462,6 @@ if [ -z "{!! $envCheck !!}" ] && [ ! -s "$HOME/.config/{{ $namespace }}/token" ]
     echo ""
     echo "Next: save your token from the profile page into ~/.config/{{ $namespace }}/token."
 fi
+
+echo ""
+echo "Tip: create ~/.config/{{ $namespace }}/custom.sh to customize what your fighter shows -- it survives every install and update."
