@@ -170,10 +170,10 @@ test('profile shows community and personal usage across hourly, daily, monthly',
 test('profile shows the my-account block when the user has an account', function () {
     $account = Account::factory()->create(['email' => 'team-rocket@example.com', 'plan' => 'max-20x']);
     $user = User::factory()->create(['account_id' => $account->id]);
-    User::factory()->create(['account_id' => $account->id]);
+    $account->users()->attach([$user->id, User::factory()->create()->id]);
     $this->actingAs($user);
 
-    Event::factory()->create(['user_id' => $user->id, 'tokens' => 55, 'created_at' => now()->subMinutes(10)]);
+    Event::factory()->create(['user_id' => $user->id, 'account_id' => $account->id, 'tokens' => 55, 'created_at' => now()->subMinutes(10)]);
 
     $this->get('/profile')
         ->assertOk()
