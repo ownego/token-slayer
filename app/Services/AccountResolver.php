@@ -7,9 +7,18 @@ use Illuminate\Support\Facades\Cache;
 
 final class AccountResolver
 {
-    /** Cache key of the lowercase-email → account-id map. Invalidated by Account model events. */
+    /**
+     * Cache key of the lowercase-email → account-id map. Invalidated by Account model events.
+     *
+     * @var string
+     */
     public const string CACHE_KEY = 'accounts:email-map';
 
+    /**
+     * How long the email map is cached before a natural refresh.
+     *
+     * @var int
+     */
     private const int CACHE_TTL_SECONDS = 3600;
 
     /**

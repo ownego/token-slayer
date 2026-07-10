@@ -72,10 +72,20 @@ These rules extend the Boost/Laravel defaults above. When they conflict, these w
 
 ## PHP
 
-- Full PHPDoc blocks on every method and property:
-  - Properties: `@var type`
-  - Methods: one-line description + `@param type $name` per parameter + `@return type`
-  - Use `@inheritDoc` when implementing/overriding an interface method
+- Full PHPDoc blocks on every method, property, AND constant — always the 3+ line block form, never the compressed `/** one line */` form:
+  - Properties and constants: multi-line block with a description line, then `@var type` — e.g.:
+    ```php
+    /**
+     * Cache key of the lowercase-email → account-id map.
+     *
+     * @var string
+     */
+    public const string CACHE_KEY = 'accounts:email-map';
+    ```
+    Not `/** Cache key of the map. */` and not a bare undocumented constant.
+  - Methods: description line(s), then `@param type $name` per parameter, then `@return type` (`@return void` included even when the type hint already says `void`).
+  - Use `@inheritDoc` when implementing/overriding an interface method.
+  - Reference: `~/Code/Ownego/bkv/bk-volume-api` (e.g. `app/Objects/Values/SessionToken.php`) is the canonical example of this constant-docblock style — match it.
 - Do NOT rely on Pint to preserve PHPDoc: the stock `laravel` preset strips `@param`/`@return` tags it considers superfluous. A local `pint.json` with `"no_superfluous_phpdoc_tags": false` is the guard (kept per-machine, not committed).
 - Constructor property promotion is used (Laravel 13 style) — unlike some sibling projects, it is allowed here.
 - Exceptions: throw named domain exceptions (`App\Exceptions\...`), never a bare `\Exception`. Name them after the failure, not the layer (`UsageProbeException`, not `ServiceException`).

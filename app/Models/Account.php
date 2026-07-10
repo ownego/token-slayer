@@ -16,13 +16,25 @@ class Account extends Model
     /** @use HasFactory<AccountFactory> */
     use HasFactory;
 
-    /** Account is connected and probeable. */
+    /**
+     * Account is connected and probeable.
+     *
+     * @var string
+     */
     public const string STATUS_ACTIVE = 'active';
 
-    /** Refresh token died — admin must re-run the Connect flow. */
+    /**
+     * Refresh token died — admin must re-run the Connect flow.
+     *
+     * @var string
+     */
     public const string STATUS_NEEDS_REAUTH = 'needs_reauth';
 
-    /** Soft-disabled by admin; prober skips it. */
+    /**
+     * Soft-disabled by admin; prober skips it.
+     *
+     * @var string
+     */
     public const string STATUS_DISABLED = 'disabled';
 
     protected $guarded = [];
@@ -39,6 +51,8 @@ class Account extends Model
 
     /**
      * Keep the resolver's email map in sync with account mutations.
+     *
+     * @return void
      */
     protected static function booted(): void
     {
