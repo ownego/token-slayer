@@ -1,9 +1,13 @@
 {
   "mcpServers": {
     "laravel-boost": {
-      "command": "/usr/bin/php",
+      "command": "spin",
       "args": [
-        "/home/trungld/work/trungld/aiorg/artisan",
+        "exec",
+        "-T",
+        "php",
+        "php",
+        "artisan",
         "boost:mcp"
       ]
     }
