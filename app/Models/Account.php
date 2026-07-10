@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Services\AccountResolver;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Cache;
 
 #[Hidden(['oauth_access_token', 'oauth_refresh_token'])]
 class Account extends Model
@@ -34,6 +36,16 @@ class Account extends Model
     protected $attributes = [
         'status' => self::STATUS_ACTIVE,
     ];
+
+    /**
+     * Keep the resolver's email map in sync with account mutations.
+     */
+    protected static function booted(): void
+    {
+        $flush = fn () => Cache::forget(AccountResolver::CACHE_KEY);
+        static::saved($flush);
+        static::deleted($flush);
+    }
 
     public function users(): HasMany
     {
