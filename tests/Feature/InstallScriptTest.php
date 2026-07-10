@@ -167,6 +167,17 @@ it('warns loudly and points to custom.sh when a hand-modified hook was backed up
         ->toContain('survives every update');
 });
 
+it('reports custom.sh and hook modification status in the token-slayer CLI', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('custom.sh: active')
+        ->toContain('custom.sh: none')
+        ->toContain('send-hook.sh: stock')
+        ->toContain('send-hook.sh: modified')
+        ->toContain('send-hook.sh: unknown');
+});
+
 it('prunes old send-hook.sh backups to the newest 3', function () {
     $script = $this->get(route('install-script'))->content();
 

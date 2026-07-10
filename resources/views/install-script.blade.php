@@ -208,6 +208,9 @@ set -u
 NS_DIR="$HOME/.config/{{ $namespace }}"
 INSTALL_URL='{{ $installUrl }}'
 LATEST='{{ $clientVersion }}'
+
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+
 case "${1:-}" in
   update)
     CURRENT=$(cat "$NS_DIR/version" 2>/dev/null || echo "?")
@@ -222,6 +225,22 @@ case "${1:-}" in
       echo "account: $(jq -r '.email' "$NS_DIR/account.json" 2>/dev/null) (manual)"
     else
       echo "account: resolved automatically per event (credential/auto)"
+    fi
+    if [ -r "$NS_DIR/custom.sh" ]; then
+      echo "custom.sh: active"
+    else
+      echo "custom.sh: none"
+    fi
+    if [ -r "$NS_DIR/.hook-checksum" ]; then
+      CURRENT_SHA=$(sha256 < "$NS_DIR/send-hook.sh" 2>/dev/null)
+      STORED_SHA=$(cat "$NS_DIR/.hook-checksum")
+      if [ "$CURRENT_SHA" = "$STORED_SHA" ]; then
+        echo "send-hook.sh: stock"
+      else
+        echo "send-hook.sh: modified"
+      fi
+    else
+      echo "send-hook.sh: unknown"
     fi
     ;;
   *) echo "usage: token-slayer {update|status}"; exit 1 ;;
