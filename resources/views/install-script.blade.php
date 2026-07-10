@@ -32,7 +32,7 @@ mkdir -p "$HOME/.config/{{ $namespace }}"
 HELPER="$HOME/.config/{{ $namespace }}/send-hook.sh"
 CHECKSUM_FILE="$HOME/.config/{{ $namespace }}/.hook-checksum"
 
-sha256() { sha256sum 2>/dev/null | cut -d' ' -f1 || shasum -a 256 | cut -d' ' -f1; }
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
 
 # If an existing send-hook.sh no longer matches the checksum of the last
 # stock install (or predates checksum tracking entirely), assume the user
@@ -94,7 +94,7 @@ fi
 CLIENT_VERSION='{{ $clientVersion }}'
 NS_DIR="$HOME/.config/{{ $namespace }}"
 
-sha256() { sha256sum 2>/dev/null | cut -d' ' -f1 || shasum -a 256 | cut -d' ' -f1; }
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
 
 current_access_token() {
   # Same lookup order Claude Code uses; hooks inherit CLAUDE_CONFIG_DIR.
