@@ -73,12 +73,126 @@ elif [ "${PROVIDER:-}" = "antigravity" ]; then
   URL="${URL}?provider=antigravity"
 fi
 
+CLIENT_VERSION='{{ $clientVersion }}'
+NS_DIR="$HOME/.config/{{ $namespace }}"
+
+sha256() { sha256sum 2>/dev/null | cut -d' ' -f1 || shasum -a 256 | cut -d' ' -f1; }
+
+current_access_token() {
+  # Same lookup order Claude Code uses; hooks inherit CLAUDE_CONFIG_DIR.
+  for f in "${CLAUDE_CONFIG_DIR:-}/.credentials.json" "$HOME/.claude/.credentials.json"; do
+    [ -r "$f" ] || continue
+    jq -r '.claudeAiOauth.accessToken // ""' "$f" 2>/dev/null && return
+  done
+  if [ "$(uname)" = "Darwin" ]; then
+    security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
+      | jq -r '.claudeAiOauth.accessToken // ""' 2>/dev/null
+  fi
+}
+
+resolve_account() {
+  ACC_EMAIL="" ACC_UUID="" ACC_SOURCE=""
+
+  # 1. Manual override wins unconditionally.
+  if [ -r "$NS_DIR/account.json" ]; then
+    ACC_EMAIL=$(jq -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
+    ACC_UUID=$(jq -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
+    [ -n "$ACC_EMAIL" ] && { ACC_SOURCE="manual"; return; }
+  fi
+
+  # 0. Proxy detect: base URL rerouted -> client cannot know the account. Don't guess.
+  case "${ANTHROPIC_BASE_URL:-}" in
+    ""|*api.anthropic.com*) ;;
+    *) ACC_SOURCE="proxy"; ACC_EMAIL=""; ACC_UUID=""; return ;;
+  esac
+
+  # 2. Credential identity: fingerprint the live token, ask the profile API once per token.
+  TOKEN=$(current_access_token)
+  if [ -n "$TOKEN" ]; then
+    FP=$(printf '%s' "$TOKEN" | sha256)
+    CACHE="$NS_DIR/identity-cache.json"
+    if [ -r "$CACHE" ]; then
+      ACC_EMAIL=$(jq -r --arg fp "$FP" '.[$fp].email // ""' "$CACHE" 2>/dev/null)
+      ACC_UUID=$(jq -r --arg fp "$FP" '.[$fp].uuid // ""' "$CACHE" 2>/dev/null)
+    fi
+    if [ -z "$ACC_EMAIL" ]; then
+      PROFILE=$(curl -sf --max-time 5 "https://api.anthropic.com/api/oauth/profile" \
+        -H "Authorization: Bearer $TOKEN" -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
+      ACC_EMAIL=$(printf '%s' "$PROFILE" | jq -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
+      ACC_UUID=$(printf '%s' "$PROFILE" | jq -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
+      if [ -n "$ACC_EMAIL" ]; then
+        TMP=$(mktemp) && jq --arg fp "$FP" --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
+          '. + {($fp): {email: $e, uuid: $u}}' "$CACHE" 2>/dev/null > "$TMP" \
+          || printf '{"%s":{"email":"%s","uuid":"%s"}}' "$FP" "$ACC_EMAIL" "$ACC_UUID" > "$TMP"
+        mv "$TMP" "$CACHE"
+      fi
+    fi
+    [ -n "$ACC_EMAIL" ] && { ACC_SOURCE="credential"; return; }
+  fi
+
+  # 3. Fallback: oauthAccount (may be stale under external switchers).
+  CJ="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
+  [ -r "$CJ" ] || CJ="$HOME/.claude.json"
+  if [ -r "$CJ" ]; then
+    ACC_EMAIL=$(jq -r '.oauthAccount.emailAddress // ""' "$CJ" 2>/dev/null)
+    ACC_UUID=$(jq -r '.oauthAccount.accountUuid // ""' "$CJ" 2>/dev/null)
+    [ -n "$ACC_EMAIL" ] && ACC_SOURCE="auto"
+  fi
+}
+
+if command -v jq >/dev/null 2>&1; then
+  resolve_account
+  BODY=$(printf '%s' "$BODY" | jq -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
+    --arg s "$ACC_SOURCE" --arg v "$CLIENT_VERSION" \
+    '. + {client_version: $v} + (if $s != "" then {account_source: $s} else {} end)
+       + (if $e != "" then {account_email: $e, account_uuid: $u} else {} end)' \
+    2>/dev/null || printf '%s' "$BODY")
+fi
+
 curl -s --max-time 3 -X POST "$URL" \
   -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
   -H 'Content-Type: application/json' \
   -d "$BODY" >/dev/null 2>&1 &
 HOOK_SH
 chmod +x "$HELPER"
+
+printf '%s' "{{ $clientVersion }}" > "$HOME/.config/{{ $namespace }}/version"
+
+mkdir -p "$HOME/.local/bin"
+cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
+#!/usr/bin/env bash
+set -u
+NS_DIR="$HOME/.config/{{ $namespace }}"
+INSTALL_URL='{{ $installUrl }}'
+LATEST='{{ $clientVersion }}'
+case "${1:-}" in
+  update)
+    CURRENT=$(cat "$NS_DIR/version" 2>/dev/null || echo "?")
+    if [ "$CURRENT" = "$LATEST" ]; then echo "token-slayer: already up to date (v$CURRENT)"; exit 0; fi
+    echo "token-slayer: v$CURRENT -> v$LATEST, re-running installer..."
+    curl -fsSL "$INSTALL_URL" | sh
+    ;;
+  status)
+    echo "client version: $(cat "$NS_DIR/version" 2>/dev/null || echo none) (latest known at install: $LATEST)"
+    [ -s "$NS_DIR/token" ] && echo "hook token: present" || echo "hook token: MISSING"
+    if [ -r "$NS_DIR/account.json" ]; then
+      echo "account: $(jq -r '.email' "$NS_DIR/account.json" 2>/dev/null) (manual)"
+    else
+      echo "account: resolved automatically per event (credential/auto)"
+    fi
+    ;;
+  *) echo "usage: token-slayer {update|status}"; exit 1 ;;
+esac
+CLI_SH
+chmod +x "$HOME/.local/bin/token-slayer"
+
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+       [ -f "$rc" ] && ! grep -q '# token-slayer PATH' "$rc" \
+         && printf '\n# token-slayer PATH\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
+     done ;;
+esac
 
 CLAUDE_CMD="bash $HELPER"
 CODEX_CMD="PROVIDER=codex bash $HELPER"
@@ -98,7 +212,7 @@ mkdir -p "$HOME/.claude"
 SETTINGS="$HOME/.claude/settings.json"
 [ -s "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 
-CLAUDE_CMD="$CLAUDE_CMD" "$PY" - "$SETTINGS" <<'PY'
+CLAUDE_CMD="$CLAUDE_CMD" HOOK_FINGERPRINT="{{ $namespace }}/send-hook.sh" "$PY" - "$SETTINGS" <<'PY'
 import json, os, sys
 
 path = sys.argv[1]
@@ -112,8 +226,12 @@ with open(path) as f:
     data = json.load(f)
 
 data.setdefault("hooks", {})
+fingerprint = os.environ["HOOK_FINGERPRINT"]  # e.g. "{{ $namespace }}/send-hook.sh" not in json.dumps(e) filters out our own stale entries
 for event in events:
-    data["hooks"][event] = [{"hooks": [{"type": "command", "command": cmd}]}]
+    entries = [e for e in data["hooks"].get(event, [])
+               if fingerprint not in json.dumps(e)]
+    entries.append({"hooks": [{"type": "command", "command": cmd}]})
+    data["hooks"][event] = entries
 
 with open(path, "w") as f:
     json.dump(data, f, indent=2)

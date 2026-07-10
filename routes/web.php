@@ -26,6 +26,8 @@ Route::get('/install', fn () => response(
     view('install-script', [
         'baseUrl' => url('/api/events'),
         'namespace' => config('app.hook_namespace'),
+        'clientVersion' => config('token_slayer.client_version'),
+        'installUrl' => route('install-script'),
     ])->render(),
     200,
     ['Content-Type' => 'text/x-shellscript; charset=utf-8'],

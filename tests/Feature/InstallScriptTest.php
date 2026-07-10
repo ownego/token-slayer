@@ -81,3 +81,28 @@ test('install.sh uses the configured hook namespace in paths, env var, and marke
         ->not->toContain('token_slayer')
         ->not->toContain('TOKEN_SLAYER_TOKEN');
 });
+
+it('upserts hooks instead of replacing foreign entries', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('send-hook.sh" not in json.dumps')   // fingerprint filter
+        ->and($script)->not->toContain('data["hooks"][event] = [{');  // old clobbering assignment
+});
+
+it('ships account resolution and version stamping', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('resolve_account')
+        ->and($script)->toContain('account.json')
+        ->and($script)->toContain('identity-cache.json')
+        ->and($script)->toContain('/api/oauth/profile')
+        ->and($script)->toContain('ANTHROPIC_BASE_URL')
+        ->and($script)->toContain(config('token_slayer.client_version'));
+});
+
+it('installs the token-slayer CLI helper with update and status commands', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('.local/bin/token-slayer')
+        ->and($script)->toContain('already up to date');
+});
