@@ -1,3 +1,40 @@
+# token-slayer
+
+Internal gamified token-usage tracker: developers' Claude Code / Codex / claude.ai hook events deal damage to a shared boss on a real-time Phaser battlefield. Laravel 13 · Livewire 4 · Reverb · Phaser 3 · Tailwind 4 · Pest · Vitest.
+
+## Canonical commands
+
+- PHP tests: `spin exec php php artisan test --compact [--filter=…]` (bare `php` targets the WRONG container)
+- Container down? `docker start token-slayer-php-1`
+- JS tests: `npx vitest run [tests/js/<file>.test.js]`
+- Build (required after ANY JS/CSS change): `npm run build`
+- Format: `vendor/bin/pint --dirty --format agent`
+
+## Architecture invariants
+
+- `POST /api/events` is the single write path for usage; `events` rows are append-only — aggregates always derive from them.
+- Broadcast three-name alignment: `broadcastAs()` === `ECHO_EVENT_MAP` key === scene bus key. See `.ai/domain/broadcasting.md`.
+- `snapshotState()` must round-trip with the `data-battlefield-state` boot payload (scene reboots on rotate).
+- Fighter sprite sheets stay `frameWidth: 100` — never upscale.
+- Account attribution is per-event (`events.account_id`), never inferred from user membership.
+
+## Domain docs — read the relevant one before working in that area
+
+| `.ai/domain/` file | Covers |
+|---|---|
+| `battlefield.md` | Phaser scene, sprites, snapshot/teardown invariants |
+| `token-tracking.md` | hook → EventController → damage pipeline, providers, install scripts |
+| `broadcasting.md` | PHP↔JS broadcast contract rules |
+| `accounts.md` | org accounts, attribution chain, quota probing |
+
+## Watch out for
+
+- TDD is mandatory — use the `tdd` skill (failing test first, watch it fail).
+- Commit via the `commit` skill; never commit `docs/superpowers/**`, spec/plan docs, or `pint.json`.
+- `env()` only inside `config/*.php`.
+- The team verifies on staging, not locally — build + deploy before claiming a frontend change works.
+- Detailed rules live in `.ai/guidelines/` (inlined below by Laravel Boost — edit them there, never inside the boost block).
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
