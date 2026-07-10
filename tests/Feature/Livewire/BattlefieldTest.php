@@ -5,6 +5,7 @@ use App\Models\Boss;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\FighterChargingCache;
+use App\Services\FighterPositionCache;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 
@@ -100,6 +101,19 @@ test('battlefield payloads fall back to user name when slack_handle is null', fu
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('&quot;userId&quot;:'.$user->id.',&quot;handle&quot;:&quot;Trung&quot;,&quot;damage&quot;:750')
         ->assertSeeHtml('&quot;id&quot;:'.$user->id.',&quot;handle&quot;:&quot;Trung&quot;');
+});
+
+test('battlefield ships cached position in the data payload', function () {
+    Boss::factory()->create();
+    $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    $idle = User::factory()->create(['last_event_at' => now()->subMinute()]);
+
+    app(FighterPositionCache::class)->put($fighter->id, 0.4, 0.6);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;position&quot;:{&quot;x&quot;:0.4,&quot;y&quot;:0.6}')
+        ->assertSeeHtml('&quot;id&quot;:'.$idle->id)
+        ->assertSeeHtml('&quot;position&quot;:null');
 });
 
 test('battlefield ships cached charging activity in the data payload', function () {

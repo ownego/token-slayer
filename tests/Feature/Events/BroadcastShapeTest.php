@@ -5,6 +5,7 @@ use App\Events\BossSpawned;
 use App\Events\FighterCharging;
 use App\Events\FighterIdled;
 use App\Events\FighterJoined;
+use App\Events\FighterMoved;
 use App\Events\HitDealt;
 use App\Models\Boss;
 use App\Models\User;
@@ -38,6 +39,7 @@ test('every battlefield event broadcasts now on the battlefield channel with a s
         'FighterCharging' => new FighterCharging($user),
         'FighterJoined' => new FighterJoined($user),
         'FighterIdled' => new FighterIdled($user),
+        'FighterMoved' => new FighterMoved($user, 0.5, 0.7),
     ];
 
     foreach ($events as $shortName => $event) {
@@ -83,4 +85,18 @@ test('FighterCharging broadcasts character for the given boss', function () {
         'character' => $user->characterForBoss($boss->id),
         'activity'  => 'thinking…',
     ])->and($withoutBoss->broadcastWith()['character'])->toBe($user->characterForBoss(null));
+});
+
+test('FighterMoved broadcasts on the battlefield channel with expected payload', function () {
+    $user = User::factory()->create();
+    $event = new FighterMoved($user, 0.35, 0.72);
+
+    expect($event)->toBeInstanceOf(ShouldBroadcastNow::class)
+        ->and($event->broadcastOn()[0]->name)->toBe('battlefield')
+        ->and($event->broadcastAs())->toBe('FighterMoved')
+        ->and($event->broadcastWith())->toBe([
+            'user_id' => $user->id,
+            'x' => 0.35,
+            'y' => 0.72,
+        ]);
 });
