@@ -7,7 +7,7 @@ use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\Cache;
 
 #[Hidden(['oauth_access_token', 'oauth_refresh_token'])]
@@ -61,9 +61,14 @@ class Account extends Model
         static::deleted($flush);
     }
 
-    public function users(): HasMany
+    /**
+     * Users who are members of this org account, via the account_user pivot.
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function users(): BelongsToMany
     {
-        return $this->hasMany(User::class);
+        return $this->belongsToMany(User::class)->withTimestamps();
     }
 
     protected static function newFactory(): AccountFactory

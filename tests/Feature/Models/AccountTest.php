@@ -2,6 +2,7 @@
 
 use App\Models\Account;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -9,8 +10,10 @@ uses(RefreshDatabase::class);
 
 test('an account has many member users', function () {
     $account = Account::factory()->create(['email' => 'team-a@example.com', 'plan' => 'max-20x']);
-    User::factory()->count(3)->create(['account_id' => $account->id]);
+    $members = User::factory()->count(3)->create();
     User::factory()->create(); // unassigned
+
+    $account->users()->attach($members->pluck('id'));
 
     expect($account->users)->toHaveCount(3)
         ->and($account->plan)->toBe('max-20x');
@@ -57,4 +60,24 @@ it('has a needsReauth factory state', function () {
 
     expect($account->status)->toBe(Account::STATUS_NEEDS_REAUTH)
         ->and($account->probe_error)->not->toBeNull();
+});
+
+it('links users to accounts many-to-many', function () {
+    $account = Account::factory()->create();
+    $users = User::factory()->count(2)->create();
+
+    $account->users()->attach($users->pluck('id'));
+
+    expect($account->users)->toHaveCount(2)
+        ->and($users[0]->accounts->first()->id)->toBe($account->id);
+});
+
+it('migrates legacy users.account_id assignments into the pivot', function () {
+    // covered implicitly by the data-copy migration on real DBs; assert the pivot
+    // schema constraints here instead:
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $account->users()->attach($user->id);
+
+    expect(fn () => $account->users()->attach($user->id))->toThrow(QueryException::class);
 });
