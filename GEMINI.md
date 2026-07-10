@@ -1,4 +1,112 @@
 <laravel-boost-guidelines>
+=== .ai/architecture rules ===
+
+# Architecture (project-specific)
+
+## Shape of the app
+
+```
+hooks on dev machines ──POST /api/events──▶ EventController
+                                              │  (hook.token middleware = Bearer users.hook_token)
+                                              ├─ Event row (append-only usage ledger)
+                                              ├─ DamageService (boss HP, kills, respawn)
+                                              └─ broadcast events ──Reverb 'battlefield' channel──▶ Phaser scene / Livewire
+```
+
+- `app/Http/Controllers/Api/` — ingestion + IDE endpoints. Controllers stay thin: parse/validate, delegate to `app/Services/`, dispatch broadcasts.
+- `app/Services/` — all business logic (DamageService, DamageTotals, caches, Slack, Recap). New aggregation/probing logic goes here, one class per responsibility.
+- `app/Events/` — broadcastables. The PHP↔JS contract rules live in `.ai/domain/broadcasting.md`; changes there require the `broadcast-reviewer` agent.
+- `app/Livewire/` — page components (Battlefield, Profile, AdminUsage). Admin pages gate on `can:admin` (`users.is_admin`).
+- Routes: `routes/api.php` (hook + IDE), `routes/web.php` (pages + served install scripts), `routes/channels.php` (broadcast auth), `routes/console.php` (schedules).
+- Install scripts are Blade-rendered shell scripts (`resources/views/install-script.blade.php` & friends) served over HTTP — they are code, review them like code, and keep them idempotent (re-running is the upgrade path).
+
+## Rules
+
+- Event rows are append-only; aggregates always derive from `events`, never from mutable counters.
+- Anything cached (`DamageTotals`, charging cache, position cache) documents its TTL and invalidation trigger next to the `Cache::` call.
+- Scheduled work = artisan command + `routes/console.php` schedule entry + `withoutOverlapping()` when it touches external APIs.
+- Don't add new base folders under `app/` without approval; follow the existing layout.
+
+=== .ai/code-style rules ===
+
+# Code Style (project-specific)
+
+These rules extend the Boost/Laravel defaults above. When they conflict, these win.
+
+## PHP
+
+- Full PHPDoc blocks on every method and property:
+  - Properties: `@var type`
+  - Methods: one-line description + `@param type $name` per parameter + `@return type`
+  - Use `@inheritDoc` when implementing/overriding an interface method
+- Do NOT rely on Pint to preserve PHPDoc: the stock `laravel` preset strips `@param`/`@return` tags it considers superfluous. A local `pint.json` with `"no_superfluous_phpdoc_tags": false` is the guard (kept per-machine, not committed).
+- Constructor property promotion is used (Laravel 13 style) — unlike some sibling projects, it is allowed here.
+- Exceptions: throw named domain exceptions (`App\Exceptions\...`), never a bare `\Exception`. Name them after the failure, not the layer (`UsageProbeException`, not `ServiceException`).
+- `env()` is only ever called inside `config/*.php`. App code reads `config('token_slayer.…')`. Cast numerics in the config file, not at call sites.
+- Enum keys in TitleCase; string-backed enums for anything that persists or broadcasts.
+- Descriptive names over short ones: `isRegisteredForDiscounts()`, not `discount()`.
+
+## Comments
+
+- PHP: prefer PHPDoc over inline comments; inline comments only for genuinely non-obvious logic (race workarounds, protocol quirks) — state the constraint, not what the next line does.
+- JavaScript: manager/class public methods get Google-style JSDoc (`@param`/`@returns`); pure/utility functions get a single-line comment at most. Do not apply the PHP DocBlock convention to JS.
+
+## Git
+
+- Commit messages follow the `commit` skill (Angular convention with project scopes).
+- Never commit spec files, implementation plans, or design docs (`docs/superpowers/**`, ad-hoc `*.md` planning files). Agent-config under `.ai/` and `.claude/` IS committed.
+
+=== .ai/frontend rules ===
+
+# Frontend (project-specific)
+
+## Livewire 4 + Alpine
+
+- State lives server-side in the Livewire component; Alpine handles purely client-side interactivity (overlays, toggles, canvas HUD positioning). Don't duplicate server state into Alpine stores.
+- Blade views receive already-shaped data from services — no query building or aggregation in blades or Livewire `render()` beyond delegating to a service.
+- Check `resources/views/livewire/` and `resources/views/partials/` for an existing component before writing a new one.
+
+## Battlefield (Phaser 3)
+
+- All game code lives under `resources/js/battlefield/`. Deep knowledge: `.ai/domain/battlefield.md` and the `battlefield` skill.
+- Decision logic must be extractable: pure functions in their own modules so Vitest can cover them without a Phaser runtime.
+- Fighter sprite sheets are `frameWidth: 100` — never upscale or regenerate sheets at other sizes.
+
+## Build & verification
+
+- Every JS/CSS change needs `npm run build` before it exists anywhere but your editor.
+- The team does not test locally — changes are verified on staging. Build, then deploy per the standing staging workflow (rsync `public/build/`), then verify in the browser there.
+- Tailwind 4 (CSS-first config); prefer existing utility patterns in the blades over new custom CSS.
+
+=== .ai/testing rules ===
+
+# Testing (project-specific)
+
+## TDD is mandatory
+
+Every behavior change starts with a failing test (see the `tdd` skill for the enforced workflow and the source→test path mapping). Write the test, run it, watch it fail for the right reason, then implement.
+
+## PHP (Pest)
+
+- Feature tests by default; unit tests only for pure logic with no framework surface.
+- Test names read as behavior: `it('attributes the event to the matching org account', …)` — given/when/then discipline, not `it('works')`.
+- Use factories (with custom states) for all models; check for an existing state before hand-rolling attributes.
+- Data-driven cases use Pest datasets with named keys, not copy-pasted test bodies.
+- Scope runs tightly: `spin exec php php artisan test --compact --filter=Name` or a filename. Full suite only before finishing a branch.
+- External HTTP (Anthropic OAuth/usage API, Slack) is always faked via `Http::fake`. When the Anthropic integration lands, canonical response fixtures live in `tests/fixtures/anthropic/*.json` — captured from real responses, never hand-invented — with a `fakeAnthropic()` helper in `tests/Pest.php`.
+- Never delete tests without approval.
+
+## JavaScript (Vitest)
+
+- Tests live in `tests/js/*.test.js`; run with `npx vitest run` (or a single file).
+- Phaser code is not directly testable — extract decision logic into pure functions in their own modules (`fighter-movement.js` pattern) and test those. If logic is buried in a scene callback, extraction comes first.
+- The Vitest run includes the `pack-sprites` build step; a sprite-sheet error there is a real failure, not noise.
+
+## Environment gotchas
+
+- `spin exec php` is the only correct PHP entrypoint (bare `php` targets an unrelated container).
+- If `spin exec php` reports `service "php" is not running`: `docker start token-slayer-php-1`, then retry.
+
 === foundation rules ===
 
 # Laravel Boost Guidelines
@@ -101,7 +209,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Always use curly braces for control structures, even for single-line bodies.
 - Use PHP 8 constructor property promotion: `public function __construct(public GitHub $github) { }`. Do not leave empty zero-parameter `__construct()` methods unless the constructor is private.
 - Use explicit return type declarations and type hints for all method parameters: `function isAccessible(User $user, ?string $path = null): bool`
-- Use TitleCase for Enum keys: `FavoritePerson`, `BestLake`, `Monthly`.
+- Follow existing application Enum naming conventions.
 - Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
 - Use array shape type definitions in PHPDoc blocks.
 
