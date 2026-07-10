@@ -63,3 +63,9 @@ it('migrates legacy users.account_id assignments into the pivot', function () {
 
     expect(fn () => $account->users()->attach($user->id))->toThrow(QueryException::class);
 });
+
+it('stores an organization uuid on the account', function (): void {
+    $account = Account::factory()->withOrganizationUuid('7f993a12-f480-45cd-8b99-1e3182d168bf')->create();
+
+    expect($account->fresh()->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf');
+});

@@ -51,4 +51,15 @@ class AccountFactory extends Factory
             'probe_error' => 'refresh token expired',
         ]);
     }
+
+    /**
+     * Assign a fixed Anthropic organization UUID to the account.
+     *
+     * @param  string  $uuid  the organization uuid to set
+     * @return static
+     */
+    public function withOrganizationUuid(string $uuid): static
+    {
+        return $this->state(fn (array $attributes): array => ['organization_uuid' => $uuid]);
+    }
 }
