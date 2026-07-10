@@ -106,3 +106,16 @@ it('installs the token-slayer CLI helper with update and status commands', funct
     expect($script)->toContain('.local/bin/token-slayer')
         ->and($script)->toContain('already up to date');
 });
+
+it('sources the user custom.sh before sending', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('CUSTOM_SH="$HOME/.config/token_slayer/custom.sh"')
+        ->toContain('[ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"');
+
+    $customShPosition = strpos($script, 'CUSTOM_SH="$HOME/.config/token_slayer/custom.sh"');
+    $sendPosition = strpos($script, 'curl -s --max-time 3 -X POST "$URL"');
+
+    expect($customShPosition)->toBeLessThan($sendPosition);
+});

@@ -149,6 +149,9 @@ if command -v jq >/dev/null 2>&1; then
     2>/dev/null || printf '%s' "$BODY")
 fi
 
+CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
+[ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"
+
 curl -s --max-time 3 -X POST "$URL" \
   -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
   -H 'Content-Type: application/json' \
