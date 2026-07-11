@@ -55,6 +55,18 @@ final class CacheKeys
     }
 
     /**
+     * Build the cache key for one account's set of known member user ids —
+     * the ingest recorder's existence guard.
+     *
+     * @param  int  $accountId  the owning account id
+     * @return string
+     */
+    public static function membershipPairs(int $accountId): string
+    {
+        return "account:{$accountId}:membership-pairs";
+    }
+
+    /**
      * Forget the global damage-totals aggregate.
      *
      * @return void
@@ -85,5 +97,16 @@ final class CacheKeys
     {
         Cache::forget(self::trackedMembers($accountId));
         Cache::forget(self::untrackedContributors($accountId));
+    }
+
+    /**
+     * Forget one account's ingest existence-guard set.
+     *
+     * @param  int  $accountId  the account whose pair cache to drop
+     * @return void
+     */
+    public static function forgetMembershipPairs(int $accountId): void
+    {
+        Cache::forget(self::membershipPairs($accountId));
     }
 }
