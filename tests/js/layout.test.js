@@ -4,7 +4,7 @@ import {
   damageScaleMultiplier,
   fighterDisplayConfig,
   rowsNeeded,
-} from '../../resources/js/battlefield/layout.js';
+} from '@battlefield/layout.js';
 
 test('damageScaleMultiplier grows linearly with damage and caps at +40%', () => {
   expect(damageScaleMultiplier(0, 1000)).toBe(1);

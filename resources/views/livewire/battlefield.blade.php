@@ -8,12 +8,14 @@
                 'currentHp' => $boss->current_hp,
                 'maxHp' => $boss->max_hp,
             ],
+            'currentUserId' => auth()->id(),
             'fighters' => $fighters->map(fn ($f) => [
                 'id' => $f->id,
                 'handle' => $f->displayHandle(),
                 'avatarUrl' => route('avatar', $f),
                 'character' => $f->characterForBoss($boss->id),
                 'charging' => $this->chargingByUser[$f->id] ?? null,
+                'position' => $this->positionsByUser[$f->id] ?? null,
             ])->values(),
             'leaderboard' => $this->leaderboardForCurrentBoss(),
             'globalDamage' => $this->globalDamage(),
@@ -44,6 +46,8 @@
     <div
         x-data="battlefieldDamageHud()"
         x-init="init()"
+        x-show="ready"
+        x-cloak
         class="absolute left-0 top-0 z-10 w-44 border-2 border-amber-400 bg-[#0b1629]/95 px-3 py-2 font-mono backdrop-blur-sm"
     >
         {{-- corner rivets --}}
@@ -198,6 +202,7 @@
                 allTime: 0,
                 monthly: 0,
                 daily: 0,
+                ready: false,
                 init() {
                     const mount = document.getElementById('battlefield-mount');
                     if (mount) {
@@ -214,7 +219,9 @@
                     const reposition = () => requestAnimationFrame(() => this.fitToCanvas());
                     const tryWire = () => {
                         const bf = window.__battlefield;
-                        if (!bf?.bus || !bf.game) {
+                        const loaderEl = document.getElementById('bf-loader');
+                        const loaderGone = !loaderEl || loaderEl.style.display === 'none';
+                        if (!bf?.bus || !bf.game || !loaderGone) {
                             setTimeout(tryWire, 50);
                             return;
                         }
@@ -228,6 +235,7 @@
                         // shrinks exactly like the in-canvas TOP DAMAGE panel.
                         bf.game.scale.on('resize', reposition);
                         reposition();
+                        this.ready = true;
                     };
                     window.addEventListener('resize', reposition);
                     window.addEventListener('orientationchange', reposition);

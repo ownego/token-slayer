@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { snapshotState } from '../../resources/js/battlefield/snapshot.js';
+import { snapshotState } from '@battlefield/snapshot.js';
 
 function fakeScene(overrides = {}) {
   return {
@@ -46,4 +46,42 @@ test('preserves active charging state', () => {
   const next = snapshotState({}, scene);
 
   expect(next.fighters[0].charging).toEqual({ activity: '$ npm install' });
+});
+
+test('captures currentUserId from the scene', () => {
+  const next = snapshotState({ currentUserId: null }, fakeScene({ currentUserId: 42 }));
+
+  expect(next.currentUserId).toBe(42);
+});
+
+test('falls back to currentState.currentUserId when scene has none', () => {
+  const next = snapshotState({ currentUserId: 99 }, fakeScene({ currentUserId: undefined }));
+
+  expect(next.currentUserId).toBe(99);
+});
+
+test('normalizes fighter pos to layout dimensions', () => {
+  const scene = fakeScene({
+    layout: { logicalWidth: 800, logicalHeight: 400 },
+    fighters: new Map([
+      [7, { id: 7, handleText: 'alice', avatarUrl: '/avatars/7', ftype: { key: 'ninjagirl' }, pos: { x: 400, y: 200 } }],
+    ]),
+  });
+
+  const next = snapshotState({}, scene);
+
+  expect(next.fighters[0].position).toEqual({ x: 0.5, y: 0.5 });
+});
+
+test('fighter position is null when pos is not set', () => {
+  const scene = fakeScene({
+    layout: { logicalWidth: 800, logicalHeight: 400 },
+    fighters: new Map([
+      [7, { id: 7, handleText: 'alice', avatarUrl: '/avatars/7', ftype: { key: 'ninjagirl' }, pos: null }],
+    ]),
+  });
+
+  const next = snapshotState({}, scene);
+
+  expect(next.fighters[0].position).toBeNull();
 });
