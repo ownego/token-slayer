@@ -114,8 +114,8 @@ class AccountResource extends Resource
                 TextColumn::make('plan')
                     ->badge()
                     ->color('gray'),
-                TextColumn::make('users_count')
-                    ->counts('users')
+                TextColumn::make('tracked_users_count')
+                    ->counts('trackedUsers')
                     ->label('Members')
                     ->sortable(),
                 TextColumn::make('status')

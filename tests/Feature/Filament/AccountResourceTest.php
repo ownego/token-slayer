@@ -56,7 +56,7 @@ it('lists accounts with member count and status badge', function () {
         ->test(ListAccounts::class)
         ->assertOk()
         ->assertCanSeeTableRecords([$account])
-        ->assertTableColumnStateSet('users_count', 2, $account)
+        ->assertTableColumnStateSet('tracked_users_count', 2, $account)
         ->assertTableColumnStateSet('status', AccountStatus::NeedsReauth, $account);
 });
 
