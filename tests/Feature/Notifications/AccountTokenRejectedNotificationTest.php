@@ -29,6 +29,22 @@ test('the slack message carries identity and reason but no token material', func
         ->not->toContain('sk-ant-');
 });
 
+test('each section field uses a real newline, not a literal backslash-n', function () {
+    $account = Account::factory()->needsReauth()->create();
+
+    $message = (new AccountTokenRejectedNotification($account, 'invalid_grant'))
+        ->toSlack(new AnonymousNotifiable);
+
+    $section = collect($message->toArray()['blocks'])->firstWhere('type', 'section');
+
+    expect($section['fields'])->not->toBeEmpty();
+    foreach ($section['fields'] as $field) {
+        expect($field['type'])->toBe('mrkdwn')
+            ->and($field['text'])->toContain("\n")   // a real newline
+            ->and($field['text'])->not->toContain('\n'); // never the literal backslash-n
+    }
+});
+
 test('it delivers on the slack channel', function () {
     $account = Account::factory()->needsReauth()->create();
 

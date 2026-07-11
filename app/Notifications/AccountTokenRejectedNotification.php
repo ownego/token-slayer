@@ -63,10 +63,10 @@ class AccountTokenRejectedNotification extends Notification
             ->headerBlock('⚠️ Account needs re-auth — token rejected')
             ->sectionBlock(function (SectionBlock $block) use ($account, $reason): void {
                 $block->field("*Account*\n{$account->email}")->markdown();
-                $block->field('*Org*\n'.($account->organization_uuid ?? '—'))->markdown();
-                $block->field('*Plan*\n'.($account->plan ?? '—'))->markdown();
+                $block->field("*Org*\n".($account->organization_uuid ?? '—'))->markdown();
+                $block->field("*Plan*\n".($account->plan ?? '—'))->markdown();
                 $block->field("*Reason*\n{$reason}")->markdown();
-                $block->field('*Detected*\n'.now()->toDayDateTimeString())->markdown();
+                $block->field("*Detected*\n".now()->toDayDateTimeString())->markdown();
             })
             ->contextBlock(function (ContextBlock $block) use ($account): void {
                 $block->text("<{$this->adminUrl($account)}|Reconnect in admin →>")->markdown();
