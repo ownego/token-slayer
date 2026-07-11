@@ -25,6 +25,12 @@ These rules extend the Boost/Laravel defaults above. When they conflict, these w
 - Enum keys in TitleCase; string-backed enums for anything that persists or broadcasts.
 - Descriptive names over short ones: `isRegisteredForDiscounts()`, not `discount()`.
 
+## Services & external integrations
+
+- External integrations (Slack, email, third-party APIs) go through a shared, reusable abstraction — never duplicate transport (HTTP call, auth, retry) per feature. When a second consumer of an integration appears, extract the transport into a service under `app/Services/<Integration>/` (and, when it helps, an `app/Contracts/<Integration>/` interface bound in a provider); features depend on the abstraction and only build their payload. Reference sibling `mysbox-api` for the house shape.
+- Slack outbound uses Laravel's Slack notification channel (`laravel/slack-notification-channel`): one `Notification` class per message type in `app/Notifications/`, payload built with the Block Kit `SlackMessage` builder in `toSlack()`, sent via `Notification::route('slack', …)->notify(new XNotification(…))`. Adding a message type = a new Notification class, never new transport code.
+- No `Log::` on normal/production paths in service or integration code. Signal failure with a named domain exception (`App\Exceptions\…`), the `rescue()` helper, or a typed return value — not log-and-continue. Logging is a dev-only aid; gate any diagnostic behind `App::environment('local')`.
+
 ## Comments
 
 - PHP: prefer PHPDoc over inline comments; inline comments only for genuinely non-obvious logic (race workarounds, protocol quirks) — state the constraint, not what the next line does.

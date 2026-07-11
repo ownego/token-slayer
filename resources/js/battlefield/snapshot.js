@@ -24,15 +24,20 @@ export function snapshotState(currentState, scene) {
       handle,
     }));
   }
+  next.currentUserId = scene.currentUserId ?? currentState.currentUserId ?? null;
   if (scene.fighters?.size > 0) {
     next.fighters = [...scene.fighters.values()].map(f => {
       const charge = scene.charges.get(f.id);
+      const pos = f.pos
+        ? { x: f.pos.x / scene.layout.logicalWidth, y: f.pos.y / scene.layout.logicalHeight }
+        : null;
       return {
         id: f.id,
         handle: f.handleText,
         avatarUrl: f.avatarUrl,
         character: f.ftype?.key ?? null,
         charging: charge ? { activity: charge.activity ?? '' } : null,
+        position: pos,
       };
     });
   }

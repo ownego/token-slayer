@@ -185,6 +185,30 @@ test('Stop event killing the boss broadcasts BossKilled then BossSpawned', funct
     Illuminate\Support\Facades\Event::assertDispatched(BossSpawned::class);
 });
 
+test('BossSpawned includes each active fighter\'s character for the new boss', function () {
+    Boss::query()->delete();
+    $oldBoss = Boss::factory()->create(['number' => 1, 'max_hp' => 100, 'current_hp' => 100]);
+    Illuminate\Support\Facades\Event::fake([
+        HitDealt::class,
+        BossKilled::class,
+        BossSpawned::class,
+    ]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', ['hook_event_name' => 'Stop', 'tokens' => 350])
+        ->assertCreated();
+
+    $newBoss = Boss::where('status', 'alive')->orderByDesc('number')->first();
+
+    Illuminate\Support\Facades\Event::assertDispatched(BossSpawned::class, function (BossSpawned $e) use ($oldBoss, $newBoss) {
+        $fighter = collect($e->broadcastWith()['fighters'])->firstWhere('user_id', $this->user->id);
+
+        return $fighter !== null
+            && $fighter['character'] === $this->user->characterForBoss($newBoss->id)
+            && $fighter['character'] !== $this->user->characterForBoss($oldBoss->id);
+    });
+});
+
 test('session-start broadcasts FighterJoined with the character for the alive boss', function () {
     Illuminate\Support\Facades\Event::fake([FighterJoined::class]);
     $boss = Boss::sole();
