@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
+use App\Support\CacheKeys;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -18,7 +19,7 @@ final class DamageTotals
      *
      * @var string
      */
-    public const string CACHE_KEY = 'damage-totals:global';
+    public const string CACHE_KEY = CacheKeys::DAMAGE_TOTALS;
 
     private const CACHE_TTL_SECONDS = 60;
 

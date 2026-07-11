@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AccountStatus;
-use App\Services\AccountResolver;
+use App\Support\CacheKeys;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Facades\Cache;
 
 #[Hidden(['oauth_access_token', 'oauth_refresh_token'])]
 class Account extends Model
@@ -40,8 +39,7 @@ class Account extends Model
     protected static function booted(): void
     {
         $flush = function (): void {
-            Cache::forget(AccountResolver::CACHE_KEY);
-            Cache::forget(AccountResolver::ORG_CACHE_KEY);
+            CacheKeys::forgetAccountMaps();
         };
         static::saved($flush);
         static::deleted($flush);

@@ -4,8 +4,7 @@ namespace App\Services\Attribution;
 
 use App\Models\Account;
 use App\Models\Event;
-use App\Services\DamageTotals;
-use Illuminate\Support\Facades\Cache;
+use App\Support\CacheKeys;
 
 /**
  * Re-attributes unrecognized events (org beacon present, `account_id` null) to
@@ -20,7 +19,7 @@ final class EventAttributionBackfiller
      * Attribute unrecognized events to their matching account. With no
      * argument, every org uuid that has a matching account is backfilled; with
      * an org uuid, only that org (still guarded by a matching account). Forgets
-     * the {@see DamageTotals::CACHE_KEY} aggregate once if any rows changed.
+     * the {@see CacheKeys::forgetDamageTotals()} aggregate once if any rows changed.
      *
      * @param  ?string  $orgUuid  limit to one organization uuid, or null for all matchable orgs
      * @return array<string, int> matched org uuid => number of events attributed (only orgs where rows changed)
@@ -46,7 +45,7 @@ final class EventAttributionBackfiller
         }
 
         if ($attributed !== []) {
-            Cache::forget(DamageTotals::CACHE_KEY);
+            CacheKeys::forgetDamageTotals();
         }
 
         return $attributed;
