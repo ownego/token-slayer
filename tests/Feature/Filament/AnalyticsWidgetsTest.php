@@ -1,5 +1,6 @@
 <?php
 
+use App\Filament\Widgets\AccountQuotaHistoryChart;
 use App\Filament\Widgets\ActivityHeatmap;
 use App\Filament\Widgets\FleetQuotaOverview;
 use App\Filament\Widgets\TokenVolumeChart;
@@ -53,4 +54,8 @@ test('the fleet quota overview widget renders and flags a near-cap account', fun
     Livewire::test(FleetQuotaOverview::class)
         ->assertOk()
         ->assertSee('hot@example.com');
+});
+
+test('the account quota history chart renders without a record set', function () {
+    Livewire::test(AccountQuotaHistoryChart::class)->assertOk();
 });

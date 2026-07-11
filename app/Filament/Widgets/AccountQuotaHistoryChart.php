@@ -37,6 +37,10 @@ class AccountQuotaHistoryChart extends ChartWidget
      */
     protected function getData(): array
     {
+        if ($this->record === null) {
+            return ['datasets' => [], 'labels' => []];
+        }
+
         /** @var Account $account */
         $account = $this->record;
 
