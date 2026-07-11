@@ -48,8 +48,7 @@ return [
     */
 
     'probe' => [
-        'interval_minutes' => (int) env('TOKEN_SLAYER_PROBE_INTERVAL', 5),
-        'refresh_headroom_hours' => 4,
+        'refresh_headroom_hours' => (int) env('TOKEN_SLAYER_PROBE_HEADROOM_HOURS', 4),
     ],
 
     /*

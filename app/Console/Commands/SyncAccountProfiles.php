@@ -36,6 +36,10 @@ class SyncAccountProfiles extends Command
 
         Account::query()
             ->where('status', '!=', AccountStatus::Disabled->value)
+            // Skip NeedsReauth accounts: their access token is known-stale, a
+            // profile call would 401, and clobbering their invalid_grant
+            // probe_error would erase the theft/re-auth signal the prober set.
+            ->where('status', '!=', AccountStatus::NeedsReauth->value)
             ->whereNotNull('oauth_access_token')
             ->get()
             ->each(function (Account $account) use ($syncer, &$synced, &$mismatched, &$errors): void {

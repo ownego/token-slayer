@@ -166,3 +166,20 @@ test('a non-rate-limit usage failure records a safe probe_error', function () {
         ->and($account->probe_error)->not->toBeNull()
         ->and($account->probe_error)->not->toContain('sk-ant');
 });
+
+test('a rate-limited refresh is silent and leaves status and probe_error untouched', function () {
+    fakeAnthropic(['token' => Http::response(['error' => ['type' => 'rate_limited']], 429)]);
+
+    $account = Account::factory()->connected()->create([
+        'oauth_expires_at' => now()->addMinutes(30), // within headroom → triggers refresh
+        'probe_error' => null,
+    ]);
+
+    $result = app(UsageProber::class)->probe($account);
+
+    $account->refresh();
+
+    expect($result)->toBeNull()
+        ->and($account->status)->toBe(AccountStatus::Active)
+        ->and($account->probe_error)->toBeNull();
+});

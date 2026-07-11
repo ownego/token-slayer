@@ -33,7 +33,7 @@ class AccountUsageSnapshotFactory extends Factory
                 'five_hour' => ['utilization' => $util5h, 'resets_at' => now()->addHours(5)->toIso8601String()],
                 'seven_day' => ['utilization' => $util7d, 'resets_at' => now()->addDays(7)->toIso8601String()],
                 'seven_day_sonnet' => ['utilization' => $util7dSonnet],
-                'seven_day_opus_or_included' => ['utilization' => $util7dOi],
+                'seven_day_opus' => ['utilization' => $util7dOi],
             ],
             'created_at' => now(),
         ];

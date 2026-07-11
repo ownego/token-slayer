@@ -117,3 +117,17 @@ test('accounts:sync-profiles is scheduled daily without overlapping', function (
         ->and($event->expression)->toBe('0 0 * * *')
         ->and($event->withoutOverlapping)->toBeTrue();
 });
+
+test('sync skips needs_reauth accounts so their re-auth signal is preserved', function () {
+    fakeAnthropic();
+
+    $account = Account::factory()->needsReauth()->create([
+        'email' => 'ongtung2212002@gmail.com',
+        'probe_error' => 'refresh failed: invalid_grant',
+    ]);
+
+    $this->artisan('accounts:sync-profiles')->assertSuccessful();
+
+    expect($account->refresh()->probe_error)->toBe('refresh failed: invalid_grant');
+    Http::assertNothingSent();
+});

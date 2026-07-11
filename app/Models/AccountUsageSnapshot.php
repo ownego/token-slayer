@@ -28,6 +28,9 @@ class AccountUsageSnapshot extends Model
     public const ?string UPDATED_AT = null;
 
     /**
+     * Snapshots are written only by the prober from trusted parsed values, so
+     * no attribute is mass-assignment guarded.
+     *
      * @var array<int, string>
      */
     protected $guarded = [];

@@ -23,14 +23,6 @@ use Carbon\CarbonImmutable;
 class UsageProber
 {
     /**
-     * Refresh headroom: an access token within this window of its expiry is
-     * refreshed proactively rather than left to fail mid-usage-call.
-     *
-     * @var int
-     */
-    private const int REFRESH_HEADROOM_HOURS = 4;
-
-    /**
      * Build the prober with the OAuth client it delegates all Anthropic HTTP
      * calls to.
      *
@@ -70,7 +62,7 @@ class UsageProber
     private function needsRefresh(Account $account): bool
     {
         return $account->oauth_expires_at === null
-            || $account->oauth_expires_at->lt(now()->addHours(self::REFRESH_HEADROOM_HOURS));
+            || $account->oauth_expires_at->lt(now()->addHours((int) config('token_slayer.probe.refresh_headroom_hours', 4)));
     }
 
     /**
@@ -87,6 +79,12 @@ class UsageProber
         try {
             $token = $this->client->refresh($account->oauth_refresh_token);
         } catch (UsageProbeException $exception) {
+            // A rate-limit is transient and expected — skip silently and retry
+            // next cycle, exactly as a 429 on the usage call is handled.
+            if ($exception->reason === 'rate_limited') {
+                return false;
+            }
+
             if (in_array($exception->reason, ['invalid_grant', 'unauthorized'], true)) {
                 $account->status = AccountStatus::NeedsReauth;
             }

@@ -21,7 +21,10 @@ use Illuminate\Database\QueryException;
 class AccountProfileSyncer
 {
     /**
+     * Build the syncer with the profile API client it delegates to.
+     *
      * @param  AnthropicOAuthClient  $client  the profile API client
+     * @return void
      */
     public function __construct(private AnthropicOAuthClient $client) {}
 
