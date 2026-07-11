@@ -9,7 +9,6 @@ use App\Services\Connect\ConnectDraft;
 use App\Services\Connect\ConnectResolution;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -216,6 +215,8 @@ class AccountConnectService
             'organization_uuid' => $orgUuid,
         ]);
 
+        $this->reconcileIdentity($account, $pending['email'], $name);
+
         $account->name = $name;
         $account->plan = $plan;
         $account->account_uuid = $pending['account_uuid'] ?? $account->account_uuid;
@@ -283,7 +284,7 @@ class AccountConnectService
     private function stashPending(array $token, array $profile, string $email, ?string $orgUuid): ConnectDraft
     {
         $key = $this->generateState();
-        $plan = $profile['organization']['rate_limit_tier'] ?? 'max-20x';
+        $plan = $profile['organization']['organization_type'] ?? 'max-20x';
 
         Cache::put(
             self::PENDING_KEY_PREFIX.$key,
@@ -320,12 +321,46 @@ class AccountConnectService
     {
         $this->writeGrant($account, $token['access_token'], $token['refresh_token'], $token['expires_in']);
         $account->account_uuid = $profile['account']['uuid'] ?? ($token['account']['uuid'] ?? $account->account_uuid);
-        $account->plan = $profile['organization']['rate_limit_tier'] ?? $account->plan;
+        $account->plan = $profile['organization']['organization_type'] ?? $account->plan;
+        $this->reconcileIdentity(
+            $account,
+            $profile['account']['email'] ?? null,
+            $profile['organization']['name'] ?? ($profile['account']['full_name'] ?? null),
+        );
         $account->save();
 
         $this->learnOrganizationUuid($account, $profile['organization']['uuid'] ?? null);
 
         $this->probeBestEffort($account);
+    }
+
+    /**
+     * Reconcile an existing account's human identity fields to the freshly
+     * authorized Claude profile: adopt the profile email when it differs and
+     * no other account already holds it, and fill a blank name from the
+     * profile. Claude is the source of truth for these fields.
+     *
+     * @param  Account  $account  the account being connected/updated
+     * @param  ?string  $email  the authorized profile email
+     * @param  ?string  $name  a display name candidate from the profile
+     * @return void
+     */
+    private function reconcileIdentity(Account $account, ?string $email, ?string $name): void
+    {
+        if ($email !== null && mb_strtolower($email) !== mb_strtolower((string) $account->email)) {
+            $takenByOther = Account::query()
+                ->whereRaw('lower(email) = ?', [mb_strtolower($email)])
+                ->whereKeyNot($account->getKey())
+                ->exists();
+
+            if (! $takenByOther) {
+                $account->email = $email;
+            }
+        }
+
+        if (blank($account->name) && filled($name)) {
+            $account->name = $name;
+        }
     }
 
     /**
@@ -416,8 +451,8 @@ class AccountConnectService
      * Attempt to record the newly-connected account's organization uuid,
      * respecting the `organization_uuid` unique constraint. Mirrors
      * {@see AccountResolver}'s learn-uuid pattern: on a collision (another
-     * account already claims this uuid), the write is skipped and logged
-     * rather than failing the whole connect.
+     * account already claims this uuid), the write is skipped rather than
+     * failing the whole connect.
      *
      * @param  Account  $account  the just-connected account
      * @param  ?string  $organizationUuid  the organization uuid from the profile response, if any
@@ -438,11 +473,6 @@ class AccountConnectService
             // (unique constraint). Skip the write rather than failing the
             // whole connect; the admin can reconcile the duplicate later.
             $account->organization_uuid = $account->getOriginal('organization_uuid');
-
-            Log::warning('Skipped writing organization_uuid after a connect: unique constraint collision.', [
-                'account_id' => $account->id,
-                'attempted_organization_uuid' => $organizationUuid,
-            ]);
         }
     }
 

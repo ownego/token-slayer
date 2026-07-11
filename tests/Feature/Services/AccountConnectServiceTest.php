@@ -47,7 +47,7 @@ test('resolve updates an existing account matched by email and marks it active, 
         ->and($account->oauth_refresh_token)->toBe('sk-ant-ort01-REDACTED')
         ->and($account->account_uuid)->toBe('adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9')
         ->and($account->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
-        ->and($account->plan)->toBe('default_claude_ai')
+        ->and($account->plan)->toBe('claude_pro')
         ->and($account->status)->toBe(AccountStatus::Active)
         ->and($account->last_probed_at)->not->toBeNull();
 
@@ -70,6 +70,37 @@ test('resolve updates an existing account matched by organization uuid when the 
     expect($account->refresh()->oauth_access_token)->toBe('sk-ant-oat01-REDACTED');
 });
 
+test('resolve matched by organization uuid reconciles the stale stored email to the profile email', function () {
+    fakeAnthropic();
+    $account = Account::factory()->create([
+        'email' => 'placeholder@example.com',
+        'organization_uuid' => '7f993a12-f480-45cd-8b99-1e3182d168bf',
+    ]);
+    $started = $this->service->start();
+
+    $this->service->resolve($started['state'], 'pasted-code');
+
+    expect($account->fresh()->email)->toBe('ongtung2212002@gmail.com')
+        ->and($account->fresh()->status)->toBe(AccountStatus::Active);
+});
+
+test('resolve matched by organization uuid does not steal an email already held by another account', function () {
+    fakeAnthropic();
+    $account = Account::factory()->create([
+        'email' => 'placeholder@example.com',
+        'organization_uuid' => '7f993a12-f480-45cd-8b99-1e3182d168bf',
+    ]);
+    Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+    $started = $this->service->start();
+
+    // Pass $account as the expected match to force the org-uuid path directly
+    // (open resolve() would match the other row by email first, never
+    // reaching this row's reconcileIdentity call at all).
+    $this->service->resolve($started['state'], 'pasted-code', $account);
+
+    expect($account->fresh()->email)->toBe('placeholder@example.com');
+});
+
 test('resolve returns a pending draft and stashes token material for a brand-new identity', function () {
     fakeAnthropic();
     $started = $this->service->start();
@@ -79,7 +110,7 @@ test('resolve returns a pending draft and stashes token material for a brand-new
     expect($resolution->isExisting())->toBeFalse()
         ->and($resolution->draft->email)->toBe('ongtung2212002@gmail.com')
         ->and($resolution->draft->orgUuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
-        ->and($resolution->draft->plan)->toBe('default_claude_ai')
+        ->and($resolution->draft->plan)->toBe('claude_pro')
         ->and($resolution->draft->handoffKey)->not->toBeEmpty();
 
     $stashed = Cache::get("account-connect-pending:{$resolution->draft->handoffKey}");

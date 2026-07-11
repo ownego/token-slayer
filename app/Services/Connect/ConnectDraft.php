@@ -17,7 +17,7 @@ final readonly class ConnectDraft
      *
      * @param  string  $email  the authorized account's email (identity)
      * @param  ?string  $orgUuid  the authorized organization uuid, if present
-     * @param  string  $plan  the plan derived from organization.rate_limit_tier
+     * @param  string  $plan  the plan derived from organization.organization_type
      * @param  ?string  $name  a suggested display name (organization name or full name)
      * @param  string  $handoffKey  cache key of the stashed token material for the create step
      * @return void

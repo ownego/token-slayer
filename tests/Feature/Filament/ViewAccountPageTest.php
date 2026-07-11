@@ -5,6 +5,7 @@ use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
@@ -26,4 +27,13 @@ test('a non-admin cannot view an account detail page', function () {
     $this->actingAs($user)
         ->get(ViewAccount::getUrl(['record' => $account->id], panel: 'admin'))
         ->assertForbidden();
+});
+
+test('the account detail page renders an edit header action', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ViewAccount::class, ['record' => $account->getKey()])
+        ->assertActionExists('edit');
 });

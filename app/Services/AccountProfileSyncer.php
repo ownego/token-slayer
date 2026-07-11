@@ -90,7 +90,7 @@ class AccountProfileSyncer
      */
     private function applyProfile(Account $account, array $profile): void
     {
-        $account->plan = $profile['organization']['rate_limit_tier'] ?? $account->plan;
+        $account->plan = $profile['organization']['organization_type'] ?? $account->plan;
         $account->account_uuid = $profile['account']['uuid'] ?? $account->account_uuid;
         $account->organization_uuid = $profile['organization']['uuid'] ?? $account->organization_uuid;
         $account->probe_error = null;

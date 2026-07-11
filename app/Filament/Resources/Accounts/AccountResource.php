@@ -69,18 +69,22 @@ class AccountResource extends Resource
                     ->email()
                     ->required()
                     ->unique(ignoreRecord: true)
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->disabledOn('edit'),
                 TextInput::make('organization_uuid')
                     ->label('Organization UUID')
                     ->helperText('Auto-learned from events; paste manually to attribute switcher users immediately.')
                     ->unique(ignoreRecord: true)
-                    ->maxLength(64),
+                    ->maxLength(64)
+                    ->disabledOn('edit'),
                 TextInput::make('name')
                     ->maxLength(255),
                 TextInput::make('plan')
                     ->required()
                     ->default('max-20x')
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->helperText('From Claude (organization type).')
+                    ->disabledOn('edit'),
                 Select::make('status')
                     ->options(AccountStatus::class)
                     ->required()
