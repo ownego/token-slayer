@@ -1,3 +1,13 @@
+/**
+ * Returns evenly spaced {x, y} positions for count fighters.
+ *
+ * @param {number} count
+ * @param {[number, number]} bounds
+ * @param {number} topY
+ * @param {number} [perRow=14]
+ * @param {number} [rowSpacing=27]
+ * @return {Array<{x: number, y: number}>}
+ */
 export function computeFighterPositions(count, [minX, maxX], topY, perRow = 14, rowSpacing = 27) {
   if (count === 0) {
     return [];
@@ -17,7 +27,13 @@ export function computeFighterPositions(count, [minX, maxX], topY, perRow = 14, 
   return positions;
 }
 
-// Up to +40% bigger for the top contributor
+/**
+ * Returns a scale multiplier (1.0–1.4) based on this fighter's damage share.
+ *
+ * @param {number} damage
+ * @param {number} maxHp
+ * @return {number}
+ */
 export function damageScaleMultiplier(damage, maxHp) {
   if (!maxHp) {
     return 1;
@@ -25,18 +41,35 @@ export function damageScaleMultiplier(damage, maxHp) {
   return 1 + Math.min(damage / maxHp, 1) * 0.4;
 }
 
-// Foot anchor for the charge particle emitters (≈ 0.35 leg height × 0.6)
+/**
+ * Returns the foot-anchor Y for charge particle emitters.
+ *
+ * @param {number} posY
+ * @param {number} displaySize
+ * @return {number}
+ */
 export function chargeFootY(posY, displaySize) {
   return posY + Math.round(displaySize * 0.21);
 }
 
+/**
+ * Returns the number of rows needed to display count fighters.
+ *
+ * @param {number} count
+ * @param {number} [perRow=14]
+ * @return {number}
+ */
 export function rowsNeeded(count, perRow = 14) {
   return Math.max(1, Math.ceil(count / perRow));
 }
 
-// displaySize = target visible character height in logical pixels.
-// Sprites were upscaled 4× (LANCZOS) — char is now 72px in a 400px frame.
-// LINEAR filter at ~1.0–1.5× of 72px keeps them smooth without blur.
+/**
+ * Returns display configuration for fighters based on count and viewport mode.
+ *
+ * @param {number} count
+ * @param {string} [mode='landscape']
+ * @return {{ displaySize: number, topY: number, rowSpacing: number, showHandle: boolean, perRow: number }}
+ */
 export function fighterDisplayConfig(count, mode = 'landscape') {
   if (mode === 'portrait') {
     // Canvas 540×960. Boss area ends ~430. Fighters fill 430–960.
