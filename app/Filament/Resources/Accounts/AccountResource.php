@@ -3,18 +3,23 @@
 namespace App\Filament\Resources\Accounts;
 
 use App\Enums\AccountStatus;
+use App\Exceptions\AccountConnectException;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Filament\Resources\Accounts\RelationManagers\UsersRelationManager;
 use App\Models\Account;
+use App\Services\AccountConnectService;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -116,6 +121,7 @@ class AccountResource extends Resource
                 //
             ])
             ->recordActions([
+                static::connectAction(),
                 EditAction::make(),
                 DeleteAction::make()
                     ->modalDescription('Deleting this account does not rewrite historical events — already-ingested events keep the raw account_email they were stamped with.'),
@@ -125,6 +131,67 @@ class AccountResource extends Resource
                     DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    /**
+     * Build the "Connect" record action: a single-form, two-step PKCE OAuth
+     * grant. Mounting the action starts a fresh {@see AccountConnectService}
+     * attempt and shows the resulting authorize URL (copyable) for the
+     * admin to open; submitting exchanges the pasted callback code for
+     * tokens via {@see AccountConnectService::complete()}, keyed by the
+     * `state` hidden field stashed in the form when the action mounted.
+     *
+     * @return Action
+     */
+    private static function connectAction(): Action
+    {
+        return Action::make('connect')
+            ->label('Connect')
+            ->icon(Heroicon::OutlinedLink)
+            ->modalHeading('Connect Claude account')
+            ->modalDescription('Open the authorize URL, approve access, then paste the code Claude gives you back here.')
+            ->modalSubmitActionLabel('Complete connect')
+            ->fillForm(function (Account $record): array {
+                $started = app(AccountConnectService::class)->start($record);
+
+                return [
+                    'authorize_url' => $started['url'],
+                    'state' => $started['state'],
+                    'code' => '',
+                ];
+            })
+            ->schema([
+                TextInput::make('authorize_url')
+                    ->label('Authorize URL')
+                    ->readOnly()
+                    ->copyable(),
+                Hidden::make('state'),
+                TextInput::make('code')
+                    ->label('Paste the code here')
+                    ->required(),
+            ])
+            ->action(function (array $data): void {
+                try {
+                    app(AccountConnectService::class)->complete($data['state'], $data['code']);
+                } catch (AccountConnectException $exception) {
+                    Notification::make()
+                        ->danger()
+                        ->title('Connect failed')
+                        ->body(match ($exception->reason) {
+                            'connect_email_mismatch' => 'The Claude account you authorized does not match this account\'s email.',
+                            'connect_state_expired' => 'This connect link expired or was already used. Click Connect to start again.',
+                            default => 'Something went wrong completing the connect.',
+                        })
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->success()
+                    ->title('Account connected')
+                    ->send();
+            });
     }
 
     /**

@@ -89,3 +89,57 @@ it('attaches and detaches members through the relation manager', function () {
 
     expect($account->users()->whereKey($user->id)->exists())->toBeFalse();
 });
+
+it('shows the connect action to an admin and mounts a fresh authorize url', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->assertTableActionExists('connect', record: $account)
+        ->mountTableAction('connect', $account)
+        ->assertTableActionDataSet(fn (array $state) => str_starts_with($state['authorize_url'], 'https://claude.com/cai/oauth/authorize')
+            && filled($state['state']));
+});
+
+it('completes the connect action and marks the account active', function () {
+    fakeAnthropic();
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->callTableAction('connect', $account, data: ['code' => 'the-pasted-code'])
+        ->assertNotified();
+
+    expect($account->refresh()->status)->toBe(AccountStatus::Active)
+        ->and($account->oauth_access_token)->not->toBeNull();
+});
+
+it('notifies a friendly error on connect email mismatch and stores nothing', function () {
+    fakeAnthropic();
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create(['email' => 'mismatched@example.com']);
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->callTableAction('connect', $account, data: ['code' => 'the-pasted-code'])
+        ->assertNotified();
+
+    expect($account->refresh()->oauth_access_token)->toBeNull();
+});
+
+it('notifies a friendly error when the connect state has expired', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create();
+
+    $component = Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->mountTableAction('connect', $account)
+        ->setTableActionData(['code' => 'the-pasted-code']);
+
+    Cache::flush();
+
+    $component->callMountedTableAction()
+        ->assertNotified();
+});
