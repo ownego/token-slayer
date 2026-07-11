@@ -90,6 +90,19 @@
                                 <div><dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt><dd class="text-sm font-mono">{{ number_format($row['daily']) }}</dd></div>
                                 <div><dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt><dd class="text-sm font-mono">{{ number_format($row['monthly']) }}</dd></div>
                             </dl>
+                            @if (! is_null($row['util_5h']) || ! is_null($row['util_7d']))
+                                <div class="mt-3 space-y-2">
+                                    @foreach ($quotaBars($row) as $bar)
+                                        <div>
+                                            <div class="flex justify-between text-xs text-gray-500 mb-0.5"><span>{{ $bar['label'] }}</span><span class="font-mono">{{ $bar['pct'] }}%</span></div>
+                                            <div class="h-1.5 bg-gray-200 rounded overflow-hidden"><div class="h-full {{ $bar['band'] }}" style="width: {{ min($bar['pct'], 100) }}%"></div></div>
+                                        </div>
+                                    @endforeach
+                                    @if ($row['lastProbedAt'])
+                                        <p class="text-xs text-gray-400">probed {{ $row['lastProbedAt']->diffForHumans() }}</p>
+                                    @endif
+                                </div>
+                            @endif
                         </div>
                     @endforeach
                 </div>

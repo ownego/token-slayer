@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -211,7 +212,7 @@ final class DamageTotals
      * account the user is a member of plus any they actually burned tokens through.
      *
      * @param  User  $user  the user whose per-account breakdown is being built
-     * @return array<int, array{account_id:int, email:string, name:?string, plan:?string, memberCount:int, isMember:bool, hourly:int, daily:int, monthly:int}>
+     * @return array<int, array{account_id:int, email:string, name:?string, plan:?string, memberCount:int, isMember:bool, util_5h:?int, util_7d:?int, lastProbedAt:?Carbon, hourly:int, daily:int, monthly:int}>
      */
     public function forUserByAccount(User $user): array
     {
@@ -231,6 +232,7 @@ final class DamageTotals
 
         $memberIds = $user->accounts()->pluck('accounts.id');
         $accounts = Account::withCount('users')
+            ->with('latestUsageSnapshot')
             ->whereIn('id', $memberIds->merge($sums->keys())->unique())
             ->orderBy('email')
             ->get();
@@ -242,6 +244,9 @@ final class DamageTotals
             'plan' => $account->plan,
             'memberCount' => $account->users_count,
             'isMember' => $memberIds->contains($account->id),
+            'util_5h' => $account->latestUsageSnapshot?->util_5h,
+            'util_7d' => $account->latestUsageSnapshot?->util_7d,
+            'lastProbedAt' => $account->latestUsageSnapshot?->created_at,
             'hourly' => (int) ($sums[$account->id]->hourly ?? 0),
             'daily' => (int) ($sums[$account->id]->daily ?? 0),
             'monthly' => (int) ($sums[$account->id]->monthly ?? 0),

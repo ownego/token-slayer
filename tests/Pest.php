@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /*
@@ -51,4 +53,32 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Fake the three Anthropic OAuth endpoints (token, usage, profile) with the
+ * real captured fixtures in tests/fixtures/anthropic/, so AnthropicOAuthClient
+ * tests never touch the network. Calls Http::preventStrayRequests() so an
+ * unfaked call fails loudly instead of hitting the real API.
+ *
+ * Pass per-key overrides to simulate failures, e.g.
+ * fakeAnthropic(['token' => Http::response('', 429)]).
+ *
+ * @param  array<string, Response>  $overrides  per-endpoint Http::response() overrides keyed by 'token'|'usage'|'profile'
+ * @return void
+ */
+function fakeAnthropic(array $overrides = []): void
+{
+    Http::preventStrayRequests();
+
+    // Fixture bodies are served as raw JSON text (not decode+re-encode) so
+    // literal float values like utilization: 0.0 survive byte-for-byte —
+    // re-encoding through PHP's json_encode can collapse 0.0 to the int 0.
+    $fixture = fn (string $name): string => file_get_contents(base_path("tests/fixtures/anthropic/{$name}.json"));
+
+    Http::fake([
+        config('token_slayer.anthropic.token_endpoint') => $overrides['token'] ?? Http::response($fixture('token'), 200, ['Content-Type' => 'application/json']),
+        config('token_slayer.anthropic.usage_endpoint') => $overrides['usage'] ?? Http::response($fixture('usage'), 200, ['Content-Type' => 'application/json']),
+        config('token_slayer.anthropic.profile_endpoint') => $overrides['profile'] ?? Http::response($fixture('profile'), 200, ['Content-Type' => 'application/json']),
+    ]);
 }

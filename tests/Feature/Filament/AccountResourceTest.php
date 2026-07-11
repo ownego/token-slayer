@@ -6,6 +6,7 @@ use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Filament\Resources\Accounts\RelationManagers\UsersRelationManager;
 use App\Models\Account;
+use App\Models\AccountUsageSnapshot;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -88,4 +89,101 @@ it('attaches and detaches members through the relation manager', function () {
         ->callTableAction('detach', record: $user);
 
     expect($account->users()->whereKey($user->id)->exists())->toBeFalse();
+});
+
+it('shows the connect action to an admin and mounts a fresh authorize url', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->assertTableActionExists('connect', record: $account)
+        ->mountTableAction('connect', $account)
+        ->assertTableActionDataSet(fn (array $state) => str_starts_with($state['authorize_url'], 'https://claude.com/cai/oauth/authorize')
+            && filled($state['state']));
+});
+
+it('completes the connect action and marks the account active', function () {
+    fakeAnthropic();
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->callTableAction('connect', $account, data: ['code' => 'the-pasted-code'])
+        ->assertNotified();
+
+    expect($account->refresh()->status)->toBe(AccountStatus::Active)
+        ->and($account->oauth_access_token)->not->toBeNull();
+});
+
+it('notifies a friendly error on connect email mismatch and stores nothing', function () {
+    fakeAnthropic();
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create(['email' => 'mismatched@example.com']);
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->callTableAction('connect', $account, data: ['code' => 'the-pasted-code'])
+        ->assertNotified();
+
+    expect($account->refresh()->oauth_access_token)->toBeNull();
+});
+
+it('notifies a friendly error when the connect state has expired', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create();
+
+    $component = Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->mountTableAction('connect', $account)
+        ->setTableActionData(['code' => 'the-pasted-code']);
+
+    Cache::flush();
+
+    $component->callMountedTableAction()
+        ->assertNotified();
+});
+
+it('refreshes usage on demand and records a snapshot', function () {
+    fakeAnthropic();
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->connected()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->callTableAction('refreshNow', $account)
+        ->assertNotified();
+
+    expect($account->usageSnapshots()->count())->toBe(1)
+        ->and($account->refresh()->last_probed_at)->not->toBeNull();
+});
+
+it('disconnects an account by wiping its stored tokens', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->connected()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->callTableAction('disconnect', $account)
+        ->assertNotified();
+
+    $account->refresh();
+
+    expect($account->oauth_access_token)->toBeNull()
+        ->and($account->oauth_refresh_token)->toBeNull()
+        ->and($account->status)->toBe(AccountStatus::NeedsReauth);
+});
+
+it('shows the latest usage utilization in the account table', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_5h' => 12, 'util_7d' => 34, 'created_at' => now()->subMinute(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->assertTableColumnStateSet('latestUsageSnapshot.util_5h', 12, $account)
+        ->assertTableColumnStateSet('latestUsageSnapshot.util_7d', 34, $account);
 });

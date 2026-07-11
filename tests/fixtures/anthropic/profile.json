@@ -1,0 +1,33 @@
+{
+  "account": {
+    "uuid": "adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9",
+    "full_name": "Ong Tung",
+    "display_name": "Ong",
+    "email": "ongtung2212002@gmail.com",
+    "has_claude_max": false,
+    "has_claude_pro": true,
+    "created_at": "2024-07-30T16:09:09.551868Z"
+  },
+  "organization": {
+    "uuid": "7f993a12-f480-45cd-8b99-1e3182d168bf",
+    "name": "ongtung2212002@gmail.com's Organization",
+    "organization_type": "claude_pro",
+    "billing_type": "stripe_subscription",
+    "rate_limit_tier": "default_claude_ai",
+    "seat_tier": null,
+    "has_extra_usage_enabled": false,
+    "subscription_status": "active",
+    "subscription_created_at": "2026-03-13T00:55:38.698232Z",
+    "cc_onboarding_flags": {},
+    "claude_code_trial_ends_at": null,
+    "claude_code_trial_duration_days": null,
+    "payment_auth_hosted_invoice_url": null,
+    "claude_ai_completion_feedback_enabled": true
+  },
+  "application": {
+    "uuid": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+    "name": "Claude Code",
+    "slug": "claude-code"
+  },
+  "enabled_plugins": []
+}
