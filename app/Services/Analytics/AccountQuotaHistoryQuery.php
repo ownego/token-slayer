@@ -12,8 +12,10 @@ use Illuminate\Support\Carbon;
 final class AccountQuotaHistoryQuery
 {
     /**
-     * The quota utilization history for one account within a range, one row
-     * per snapshot ordered oldest-first.
+     * The quota utilization history for one account within a range, bucketed
+     * to one point per hour (the last reading in each hour) and ordered
+     * oldest-first. Hourly buckets keep the 7-day chart readable — the raw
+     * ~5-minute probe cadence produces far too many points.
      *
      * @param  Account  $account  the account whose history is read
      * @param  Carbon  $from  inclusive start
@@ -26,11 +28,13 @@ final class AccountQuotaHistoryQuery
             ->whereBetween('created_at', [$from, $to])
             ->orderBy('created_at')
             ->get(['created_at', 'util_5h', 'util_7d'])
-            ->map(fn ($row): array => [
-                'bucket' => $row->created_at->toDateTimeString(),
-                'util_5h' => $row->util_5h,
-                'util_7d' => $row->util_7d,
+            ->groupBy(fn ($row): string => $row->created_at->format('Y-m-d H:00'))
+            ->map(fn ($hour): array => [
+                'bucket' => $hour->last()->created_at->format('Y-m-d H:00'),
+                'util_5h' => $hour->last()->util_5h,
+                'util_7d' => $hour->last()->util_7d,
             ])
+            ->values()
             ->all();
     }
 }

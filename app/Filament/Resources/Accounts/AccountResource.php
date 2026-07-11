@@ -14,6 +14,7 @@ use App\Services\AccountConnectService;
 use App\Services\UsageProber;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -139,13 +140,15 @@ class AccountResource extends Resource
                 //
             ])
             ->recordActions([
-                static::connectAction(),
-                static::refreshNowAction(),
-                static::disconnectAction(),
-                ViewAction::make(),
-                EditAction::make(),
-                DeleteAction::make()
-                    ->modalDescription('Deleting this account does not rewrite historical events — already-ingested events keep the raw account_email they were stamped with.'),
+                ActionGroup::make([
+                    static::connectAction(),
+                    static::refreshNowAction(),
+                    static::disconnectAction(),
+                    ViewAction::make(),
+                    EditAction::make(),
+                    DeleteAction::make()
+                        ->modalDescription('Deleting this account does not rewrite historical events — already-ingested events keep the raw account_email they were stamped with.'),
+                ]),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
