@@ -146,6 +146,45 @@ test('resolve is single-use: replaying the same state after success fails', func
         ->toThrow(AccountConnectException::class);
 });
 
+test('createFromPending creates a new active account with the edited plan and name', function () {
+    fakeAnthropic();
+    $started = $this->service->start();
+    $draft = $this->service->resolve($started['state'], 'pasted-code')->draft;
+
+    $account = $this->service->createFromPending($draft->handoffKey, 'max-5x', 'Custom Name');
+
+    expect($account->exists)->toBeTrue()
+        ->and($account->email)->toBe('ongtung2212002@gmail.com')
+        ->and($account->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
+        ->and($account->plan)->toBe('max-5x')
+        ->and($account->name)->toBe('Custom Name')
+        ->and($account->oauth_access_token)->toBe('sk-ant-oat01-REDACTED')
+        ->and($account->status)->toBe(AccountStatus::Active)
+        ->and($account->last_probed_at)->not->toBeNull();
+
+    expect(Cache::get("account-connect-pending:{$draft->handoffKey}"))->toBeNull();
+});
+
+test('createFromPending updates an existing row instead of duplicating when a race created it', function () {
+    fakeAnthropic();
+    $started = $this->service->start();
+    $draft = $this->service->resolve($started['state'], 'pasted-code')->draft;
+
+    // Simulate another admin creating the same identity in the meantime.
+    $racer = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+
+    $account = $this->service->createFromPending($draft->handoffKey, 'max-20x', 'Whatever');
+
+    expect($account->id)->toBe($racer->id)
+        ->and(Account::where('email', 'ongtung2212002@gmail.com')->count())->toBe(1)
+        ->and($account->oauth_access_token)->toBe('sk-ant-oat01-REDACTED');
+});
+
+test('createFromPending throws state expired when the handoff key is unknown', function () {
+    expect(fn () => $this->service->createFromPending('no-such-key', 'max-20x', null))
+        ->toThrow(AccountConnectException::class);
+});
+
 test('disconnect wipes the stored grant and marks the account needing re-auth', function () {
     $account = Account::factory()->connected()->create();
 

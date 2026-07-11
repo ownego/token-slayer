@@ -49,7 +49,7 @@ class AccountConnectService
     /**
      * How long a pending connect attempt's PKCE verifier stays cached
      * before it is considered expired. The entry is also single-use: it is
-     * forgotten as soon as {@see complete()} reads it, whether or not the
+     * forgotten as soon as {@see resolve()} reads it, whether or not the
      * exchange that follows succeeds.
      *
      * @var int
@@ -182,6 +182,51 @@ class AccountConnectService
         }
 
         return ConnectResolution::pending($this->stashPending($token, $profile, $email, $orgUuid));
+    }
+
+    /**
+     * Create-and-connect a new account from a stashed pending draft, or —
+     * if the same identity was created between {@see resolve()} and now
+     * (a race) — update that existing row instead of duplicating. Pulls and
+     * single-use invalidates the pending stash, writes the grant with the
+     * admin-confirmed plan and name, flips the account Active, learns its
+     * organization uuid, and best-effort probes it.
+     *
+     * @param  string  $handoffKey  the draft's handoff key from {@see resolve()}
+     * @param  string  $plan  the admin-confirmed plan
+     * @param  ?string  $name  the admin-confirmed display name
+     * @return Account the created or updated, freshly persisted account
+     *
+     * @throws AccountConnectException 'connect_state_expired' when the stash is missing/expired
+     */
+    public function createFromPending(string $handoffKey, string $plan, ?string $name): Account
+    {
+        $cacheKey = self::PENDING_KEY_PREFIX.$handoffKey;
+        $pending = Cache::get($cacheKey);
+        Cache::forget($cacheKey);
+
+        if ($pending === null) {
+            throw new AccountConnectException('connect_state_expired', 'This connect session expired. Start the connect again.');
+        }
+
+        $orgUuid = $pending['organization_uuid'] ?? null;
+
+        $account = $this->findByIdentity($pending['email'], $orgUuid) ?? new Account([
+            'email' => $pending['email'],
+            'organization_uuid' => $orgUuid,
+        ]);
+
+        $account->name = $name;
+        $account->plan = $plan;
+        $account->account_uuid = $pending['account_uuid'] ?? $account->account_uuid;
+        $this->writeGrant($account, $pending['access_token'], $pending['refresh_token'], $pending['expires_in']);
+        $account->save();
+
+        $this->learnOrganizationUuid($account, $orgUuid);
+
+        $this->probeBestEffort($account);
+
+        return $account->refresh();
     }
 
     /**
