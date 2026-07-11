@@ -27,6 +27,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Admin CRUD for org `Account` records: connection details, plan, status,
@@ -111,6 +112,16 @@ class AccountResource extends Resource
                     ->sortable(),
                 TextColumn::make('status')
                     ->badge(),
+                TextColumn::make('latestUsageSnapshot.util_5h')
+                    ->label('5h')
+                    ->badge()
+                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : "{$state}%")
+                    ->color(fn (?int $state): string => static::utilizationColor($state)),
+                TextColumn::make('latestUsageSnapshot.util_7d')
+                    ->label('7d')
+                    ->badge()
+                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : "{$state}%")
+                    ->color(fn (?int $state): string => static::utilizationColor($state)),
                 TextColumn::make('last_probed_at')
                     ->since()
                     ->placeholder('Never')
@@ -257,6 +268,35 @@ class AccountResource extends Resource
                     ->body('Stored tokens wiped. Revoke app access on claude.ai too if the token may be compromised.')
                     ->send();
             });
+    }
+
+    /**
+     * Eager-load the latest usage snapshot so the 5h/7d quota columns don't
+     * trigger a query per row.
+     *
+     * @return Builder<Account>
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with('latestUsageSnapshot');
+    }
+
+    /**
+     * Map a utilization percent to a Filament badge color band: healthy
+     * (&lt;70) success, warming (&lt;90) warning, hot (&ge;90) danger. Unknown
+     * (null) reads as neutral gray.
+     *
+     * @param  ?int  $percent  the utilization percent, or null when unprobed
+     * @return string the Filament color name
+     */
+    private static function utilizationColor(?int $percent): string
+    {
+        return match (true) {
+            $percent === null => 'gray',
+            $percent >= 90 => 'danger',
+            $percent >= 70 => 'warning',
+            default => 'success',
+        };
     }
 
     /**

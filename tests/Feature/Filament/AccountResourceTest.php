@@ -6,6 +6,7 @@ use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Filament\Resources\Accounts\RelationManagers\UsersRelationManager;
 use App\Models\Account;
+use App\Models\AccountUsageSnapshot;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -172,4 +173,17 @@ it('disconnects an account by wiping its stored tokens', function () {
     expect($account->oauth_access_token)->toBeNull()
         ->and($account->oauth_refresh_token)->toBeNull()
         ->and($account->status)->toBe(AccountStatus::NeedsReauth);
+});
+
+it('shows the latest usage utilization in the account table', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_5h' => 12, 'util_7d' => 34, 'created_at' => now()->subMinute(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->assertTableColumnStateSet('latestUsageSnapshot.util_5h', 12, $account)
+        ->assertTableColumnStateSet('latestUsageSnapshot.util_7d', 34, $account);
 });

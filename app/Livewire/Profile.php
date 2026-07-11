@@ -54,6 +54,7 @@ class Profile extends Component
             'damageTotals' => app(DamageTotals::class)->forUser(auth()->user()),
             'globalUsage' => app(DamageTotals::class)->global(),
             'accountRows' => app(DamageTotals::class)->forUserByAccount(auth()->user()),
+            'quotaBars' => fn (array $row): array => $this->quotaBars($row),
             'attribution' => $this->attributionStatus(auth()->user()),
             'claudeSnippet' => view('partials.claude-snippet', [
                 'baseUrl' => url('/api/events'),
@@ -76,5 +77,34 @@ class Profile extends Component
             'tokenPath' => $tokenPath,
             'namespace' => $namespace,
         ]);
+    }
+
+    /**
+     * Shape an account row's 5h/7d utilization into renderable quota-bar
+     * descriptors (label, percent, Tailwind band class), skipping buckets the
+     * account has never been probed for.
+     *
+     * @param  array{util_5h:?int, util_7d:?int}  $row  one account row from DamageTotals::forUserByAccount
+     * @return array<int, array{label:string, pct:int, band:string}>
+     */
+    private function quotaBars(array $row): array
+    {
+        $bars = [];
+
+        foreach (['5h quota' => $row['util_5h'], '7d quota' => $row['util_7d']] as $label => $pct) {
+            if ($pct === null) {
+                continue;
+            }
+
+            $band = match (true) {
+                $pct >= 90 => 'bg-red-500',
+                $pct >= 70 => 'bg-amber-500',
+                default => 'bg-emerald-500',
+            };
+
+            $bars[] = ['label' => $label, 'pct' => $pct, 'band' => $band];
+        }
+
+        return $bars;
     }
 }
