@@ -93,7 +93,7 @@ it('attaches and detaches members through the relation manager', function () {
 
 it('shows the connect action to an admin and mounts a fresh authorize url', function () {
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create();
+    $account = Account::factory()->create(['status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
@@ -106,7 +106,7 @@ it('shows the connect action to an admin and mounts a fresh authorize url', func
 it('completes the connect action and marks the account active', function () {
     fakeAnthropic();
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com', 'status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
@@ -117,10 +117,10 @@ it('completes the connect action and marks the account active', function () {
         ->and($account->oauth_access_token)->not->toBeNull();
 });
 
-it('notifies a friendly error on connect email mismatch and stores nothing', function () {
+it('notifies a friendly error on connect identity mismatch and stores nothing', function () {
     fakeAnthropic();
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create(['email' => 'mismatched@example.com']);
+    $account = Account::factory()->create(['email' => 'mismatched@example.com', 'status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
@@ -132,7 +132,7 @@ it('notifies a friendly error on connect email mismatch and stores nothing', fun
 
 it('notifies a friendly error when the connect state has expired', function () {
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create();
+    $account = Account::factory()->create(['status' => AccountStatus::NeedsReauth]);
 
     $component = Livewire::actingAs($admin)
         ->test(ListAccounts::class)
