@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\FighterCharacter;
+use App\Enums\MembershipStatus;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -70,6 +71,17 @@ class User extends Authenticatable implements FilamentUser
     public function accounts(): BelongsToMany
     {
         return $this->belongsToMany(Account::class)->withTimestamps();
+    }
+
+    /**
+     * The accounts this user is a tracked member of
+     * (`account_user.status = tracked`).
+     *
+     * @return BelongsToMany<Account, $this>
+     */
+    public function trackedAccounts(): BelongsToMany
+    {
+        return $this->accounts()->wherePivot('status', MembershipStatus::Tracked->value);
     }
 
     /**

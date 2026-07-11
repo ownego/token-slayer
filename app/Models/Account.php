@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AccountStatus;
+use App\Enums\MembershipStatus;
 use App\Support\CacheKeys;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -46,13 +47,39 @@ class Account extends Model
     }
 
     /**
-     * Users who are members of this org account, via the account_user pivot.
+     * Every developer linked to this org account via the `account_user`
+     * pivot, of any membership status. Use {@see trackedUsers()} for the
+     * "members" subset.
      *
      * @return BelongsToMany<User, $this>
      */
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)->withTimestamps();
+        return $this->belongsToMany(User::class)
+            ->using(AccountUser::class)
+            ->withPivot('status')
+            ->withTimestamps();
+    }
+
+    /**
+     * The tracked members of this account (`account_user.status = tracked`).
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function trackedUsers(): BelongsToMany
+    {
+        return $this->users()->wherePivot('status', MembershipStatus::Tracked->value);
+    }
+
+    /**
+     * The untracked contributors of this account (`account_user.status =
+     * untracked`) — developers with events here who have not been promoted.
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function untrackedUsers(): BelongsToMany
+    {
+        return $this->users()->wherePivot('status', MembershipStatus::Untracked->value);
     }
 
     /**
