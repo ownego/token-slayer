@@ -36,6 +36,8 @@ final class UsageFilters
     public readonly string $bucket;
 
     /**
+     * Build an immutable filter snapshot and derive the time bucket from the range.
+     *
      * @param  Carbon  $from  inclusive start of the range
      * @param  Carbon  $to  inclusive end of the range
      * @param  ?int  $accountId  narrow to one account, or null for all
@@ -49,7 +51,7 @@ final class UsageFilters
         public readonly ?string $provider,
         public readonly ?int $userId,
     ) {
-        $this->bucket = $from->diffInHours($to) <= self::HOURLY_BUCKET_MAX_HOURS ? 'hour' : 'day';
+        $this->bucket = $from->diffInSeconds($to) <= self::HOURLY_BUCKET_MAX_HOURS * 3600 ? 'hour' : 'day';
     }
 
     /**
@@ -75,7 +77,7 @@ final class UsageFilters
             $to = Carbon::parse($filters['to'] ?? now()->toDateString())->endOfDay();
         }
 
-        $floor = now()->subDays(self::MAX_RANGE_DAYS);
+        $floor = $to->copy()->subDays(self::MAX_RANGE_DAYS);
         if ($from->lessThan($floor)) {
             $from = $floor;
         }

@@ -47,3 +47,9 @@ test('it clamps an over-long custom range to ninety days', function () {
 
     expect($f->from->greaterThanOrEqualTo(now()->subDays(91)))->toBeTrue();
 });
+
+test('a range of exactly 48 hours buckets hourly but just over buckets daily', function () {
+    $from = now();
+    expect((new UsageFilters($from, $from->copy()->addHours(48), null, null, null))->bucket)->toBe('hour')
+        ->and((new UsageFilters($from, $from->copy()->addHours(48)->addSecond(), null, null, null))->bucket)->toBe('day');
+});
