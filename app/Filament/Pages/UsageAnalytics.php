@@ -89,12 +89,12 @@ class UsageAnalytics extends Page
     }
 
     /**
-     * The header widgets rendered above the page body. Widgets registered
-     * by Tasks 8–10.
+     * The widgets rendered below the page body — placed in the footer slot so
+     * the shared filter form renders above them, not beneath.
      *
      * @return array<int, class-string>
      */
-    protected function getHeaderWidgets(): array
+    protected function getFooterWidgets(): array
     {
         return [
             TokenVolumeChart::class,
@@ -103,5 +103,16 @@ class UsageAnalytics extends Page
             ActivityHeatmap::class,
             FleetQuotaOverview::class,
         ];
+    }
+
+    /**
+     * Render the footer widgets in a single column so each widget occupies a
+     * full-width row.
+     *
+     * @return int|array<string, int|null>
+     */
+    public function getFooterWidgetsColumns(): int|array
+    {
+        return 1;
     }
 }

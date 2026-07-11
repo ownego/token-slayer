@@ -22,6 +22,13 @@ class TopUsersLeaderboard extends ChartWidget
     protected ?string $heading = 'Top users';
 
     /**
+     * How many of the page's columns this widget spans (full-width row).
+     *
+     * @var int|string|array<string, int|string|null>
+     */
+    protected int|string|array $columnSpan = 'full';
+
+    /**
      * Maximum number of leaderboard rows to fetch.
      *
      * @var int

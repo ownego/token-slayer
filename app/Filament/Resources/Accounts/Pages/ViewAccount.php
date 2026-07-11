@@ -34,4 +34,15 @@ class ViewAccount extends ViewRecord
             AccountQuotaGauge::class,
         ];
     }
+
+    /**
+     * Render the header widgets in a single column so each occupies a
+     * full-width row.
+     *
+     * @return int|array<string, int|null>
+     */
+    public function getHeaderWidgetsColumns(): int|array
+    {
+        return 1;
+    }
 }

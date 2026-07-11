@@ -23,6 +23,13 @@ class TokenVolumeChart extends ChartWidget
     protected ?string $heading = 'Token volume over time';
 
     /**
+     * How many of the page's columns this widget spans (full-width row).
+     *
+     * @var int|string|array<string, int|string|null>
+     */
+    protected int|string|array $columnSpan = 'full';
+
+    /**
      * Provider slug to line/fill color for the chart datasets.
      *
      * @var array<string, string>

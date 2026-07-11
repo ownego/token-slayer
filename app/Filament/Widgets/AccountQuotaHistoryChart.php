@@ -30,6 +30,13 @@ class AccountQuotaHistoryChart extends ChartWidget
     protected ?string $heading = 'Quota utilization (7 days)';
 
     /**
+     * How many of the page's columns this widget spans (full-width row).
+     *
+     * @var int|string|array<string, int|string|null>
+     */
+    protected int|string|array $columnSpan = 'full';
+
+    /**
      * Build the Chart.js datasets from the account's snapshot history over
      * the last 7 days.
      *
