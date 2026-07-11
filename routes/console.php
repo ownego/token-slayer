@@ -32,3 +32,7 @@ Schedule::command('accounts:probe')
     ->withoutOverlapping();
 
 Schedule::command('accounts:prune-usage-snapshots')->daily();
+
+Schedule::command('accounts:sync-profiles')
+    ->daily()
+    ->withoutOverlapping();
