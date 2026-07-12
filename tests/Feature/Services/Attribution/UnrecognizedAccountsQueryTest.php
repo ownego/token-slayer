@@ -52,10 +52,14 @@ it('orders unrecognized organizations by last seen descending', function () {
     $userB = User::factory()->create();
 
     // org "recent" last event now; org "stale" last event a day ago.
-    Event::factory()->for($userA)->create(['account_id' => null, 'account_org_id' => 'org-stale', 'created_at' => now()->subDay()]);
-    Event::factory()->for($userB)->create(['account_id' => null, 'account_org_id' => 'org-recent', 'created_at' => now()]);
+    // Uuids are chosen so alphabetical order is the OPPOSITE of recency order:
+    // this way a stale COUNT(*)-DESC tie-break (which falls back to something
+    // alphabetical-ish) would produce org-a-stale first, while the real
+    // MAX(created_at) DESC ordering puts org-z-recent first.
+    Event::factory()->for($userA)->create(['account_id' => null, 'account_org_id' => 'org-a-stale', 'created_at' => now()->subDay()]);
+    Event::factory()->for($userB)->create(['account_id' => null, 'account_org_id' => 'org-z-recent', 'created_at' => now()]);
 
     $rows = app(UnrecognizedAccountsQuery::class)->get();
 
-    expect(collect($rows)->pluck('org_uuid')->all())->toBe(['org-recent', 'org-stale']);
+    expect(collect($rows)->pluck('org_uuid')->all())->toBe(['org-z-recent', 'org-a-stale']);
 });
