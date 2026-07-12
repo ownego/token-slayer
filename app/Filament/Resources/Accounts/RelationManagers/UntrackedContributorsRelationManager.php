@@ -64,8 +64,10 @@ class UntrackedContributorsRelationManager extends RelationManager
 
         return $table
             ->columns([
-                TextColumn::make('name')->searchable(),
-                TextColumn::make('slack_handle')->searchable(),
+                TextColumn::make('name')
+                    ->label('User')
+                    ->state(fn (User $record): string => $record->displayHandle())
+                    ->searchable(['name', 'slack_handle', 'display_name']),
                 TextColumn::make('email')->searchable(),
                 TextColumn::make('events')
                     ->label('Events')

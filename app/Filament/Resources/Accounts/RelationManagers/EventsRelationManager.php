@@ -57,10 +57,9 @@ class EventsRelationManager extends RelationManager
                     ->label('When')
                     ->dateTime()
                     ->sortable(),
-                TextColumn::make('user.slack_handle')
+                TextColumn::make('developer')
                     ->label('Developer')
-                    ->formatStateUsing(fn (Event $record): string => $record->user?->displayHandle() ?? '#'.$record->user_id)
-                    ->searchable(),
+                    ->state(fn (Event $record): string => $record->user?->displayHandle() ?? '#'.$record->user_id),
                 TextColumn::make('provider')
                     ->badge()
                     ->color('gray'),
