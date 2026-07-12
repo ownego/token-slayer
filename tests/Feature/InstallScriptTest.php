@@ -273,3 +273,11 @@ it('sends an explicit User-Agent on every Anthropic curl call', function () {
     // Both the beacon and the profile lookup must carry it.
     expect(substr_count($script, '-A "$HOOK_UA"'))->toBeGreaterThanOrEqual(2);
 });
+
+it('retries a transient beacon error after a short self-heal window, not an hour', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('BEACON_ERROR_RETRY_SECS=300');
+    expect($script)->toContain('-le "$BEACON_ERROR_RETRY_SECS"');
+    expect($script)->not->toContain('-le 3600');
+});

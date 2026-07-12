@@ -164,6 +164,7 @@ resolve_account() {
     FP=$(printf '%s' "$TOKEN" | sha256)
     CACHE="$NS_DIR/identity-cache.json"
     NOW=$(date +%s)
+    BEACON_ERROR_RETRY_SECS=300
 
     CACHED_STATUS="" CACHED_CHECKED_AT=0
     if [ -r "$CACHE" ]; then
@@ -186,7 +187,7 @@ resolve_account() {
         ;;
       error)
         # Transient failure: retry only after an hour has passed.
-        [ $((NOW - CACHED_CHECKED_AT)) -le 3600 ] && SHOULD_LOOKUP=0
+        [ $((NOW - CACHED_CHECKED_AT)) -le "$BEACON_ERROR_RETRY_SECS" ] && SHOULD_LOOKUP=0
         ;;
     esac
 
