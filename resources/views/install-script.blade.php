@@ -192,7 +192,28 @@ detector_scan() {
         done
         ;;
       ts_tokens)
-        : # Task 6
+        DETECTOR_WINDOW_SECS=120
+        _af=$(jq -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
+        _tf=$(jq -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
+        [ -n "$_af" ] || continue
+        _now=$(date +%s)
+        _lo=$((_now - DETECTOR_WINDOW_SECS))
+        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+          _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
+          for _f in $_glob; do
+            [ -r "$_f" ] || continue
+            # SAFE rule: one distinct account in the window -> attribute; more -> NULL.
+            _acct=$(jq -rs --arg af "$_af" --arg tf "$_tf" \
+              --argjson lo "$_lo" --argjson hi "$_now" '
+                [ .[] | select((.[$tf] // 0) >= $lo and (.[$tf] // 0) <= $hi) | .[$af] ]
+                | map(select(. != null and . != "")) | unique
+                | if length == 1 then .[0] else "" end' "$_f" 2>/dev/null)
+            if [ -n "$_acct" ]; then
+              ACC_EMAIL="$_acct"; ACC_UUID=""; ACC_ORG_ID=""; ACC_SOURCE="detector"
+              return 0
+            fi
+          done
+        done
         ;;
     esac
   done

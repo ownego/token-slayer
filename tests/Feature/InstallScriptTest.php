@@ -322,3 +322,15 @@ it('bundles a detector-config and scans a proxy log by session id before giving 
     expect(strpos($script, 'detector_scan && return'))
         ->toBeLessThan(strpos($script, 'ACC_SOURCE="proxy"'));
 });
+
+it('attributes a ts_tokens window only when exactly one account served it', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('DETECTOR_WINDOW_SECS=120');
+    // Distinct-account gate: 1 -> attribute, else NULL (the SAFE rule).
+    expect($script)->toContain('unique');
+    expect($script)->toContain('if length == 1');
+    // ts_tokens arm resolves to the detector source, not a guess.
+    expect(strpos($script, 'DETECTOR_WINDOW_SECS'))
+        ->toBeGreaterThan(strpos($script, 'detector_scan()'));
+});
