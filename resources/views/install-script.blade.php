@@ -165,7 +165,8 @@ provider_account() {
 detector_scan() {
   # Generic, data-driven fallback for local proxies. Reads ONLY existing local
   # logs named by detector-config.json; never writes/rotates/deletes them.
-  # Ships the exact `session` join here; `ts_tokens` is added later.
+  # Two join strategies per config entry: exact `session` (match the current
+  # session id) and best-effort `ts_tokens` (SAFE single-account time window).
   _cfg="$NS_DIR/detector-config.json"
   [ -r "$_cfg" ] || return 1
 
