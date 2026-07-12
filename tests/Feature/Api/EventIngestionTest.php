@@ -574,4 +574,5 @@ it('attributes a detector-sourced stop event by account email', function () {
     $event = Event::query()->latest('id')->first();
     expect($event->account_id)->toBe($account->id);
     expect($event->account_source)->toBe('detector');
+    expect($event->account_email)->toBe('detected@ownego.com');
 });

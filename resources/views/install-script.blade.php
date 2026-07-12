@@ -182,8 +182,11 @@ detector_scan() {
           for _f in $_glob; do
             [ -r "$_f" ] || continue
             grep -qF -- "$SESSION_ID" "$_f" 2>/dev/null || continue
-            # This file carries the current session (teamclaude = one file per
-            # request); extract the account beside it via the manager's pattern.
+            # This file carries the current session (teamclaude logs one file per
+            # request), so we trust its first "account:" match. account_pattern must
+            # hold exactly one capture group and no "/" (the sed delimiter). Unlike
+            # the ts_tokens arm this has no distinct-account guard: it rests on the
+            # one-request-per-file assumption -- verify on staging with a real log.
             _acct=$(sed -nE "s/.*$_pat.*/\1/p" "$_f" 2>/dev/null | head -1)
             if [ -n "$_acct" ]; then
               ACC_EMAIL="$_acct"; ACC_UUID=""; ACC_ORG_ID=""; ACC_SOURCE="detector"
@@ -230,7 +233,7 @@ resolve_account() {
   # 0. Account Identity Provider (proxy/switcher declares identity) -- highest signal.
   provider_account && return
 
-  # 1. Manual override wins unconditionally.
+  # 1. Manual override: wins over credential/proxy/auto (a provider still precedes it).
   if [ -r "$NS_DIR/account.json" ]; then
     ACC_EMAIL=$(jq -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
     ACC_UUID=$(jq -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
