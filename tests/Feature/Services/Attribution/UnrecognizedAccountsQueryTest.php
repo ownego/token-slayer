@@ -46,3 +46,16 @@ test('it returns an empty array when every event is attributed or has no beacon'
 
     expect(app(UnrecognizedAccountsQuery::class)->get())->toBe([]);
 });
+
+it('orders unrecognized organizations by last seen descending', function () {
+    $userA = User::factory()->create();
+    $userB = User::factory()->create();
+
+    // org "recent" last event now; org "stale" last event a day ago.
+    Event::factory()->for($userA)->create(['account_id' => null, 'account_org_id' => 'org-stale', 'created_at' => now()->subDay()]);
+    Event::factory()->for($userB)->create(['account_id' => null, 'account_org_id' => 'org-recent', 'created_at' => now()]);
+
+    $rows = app(UnrecognizedAccountsQuery::class)->get();
+
+    expect(collect($rows)->pluck('org_uuid')->all())->toBe(['org-recent', 'org-stale']);
+});

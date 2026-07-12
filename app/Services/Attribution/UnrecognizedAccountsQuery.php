@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\DB;
 final class UnrecognizedAccountsQuery
 {
     /**
-     * One row per distinct unrecognized `account_org_id`, ordered by event
-     * count descending. `account_id`/`account_email` are non-null only when an
+     * One row per distinct unrecognized `account_org_id`, ordered by last
+     * seen descending. `account_id`/`account_email` are non-null only when an
      * `Account` currently carries that `organization_uuid`.
      *
      * @return array<int, array{org_uuid:string, account_id:?int, account_email:?string, events:int, tokens:int, users:int, first_seen:string, last_seen:string}>
@@ -34,7 +34,7 @@ final class UnrecognizedAccountsQuery
             ->selectRaw('COUNT(DISTINCT events.user_id) as users')
             ->selectRaw('MIN(events.created_at) as first_seen')
             ->selectRaw('MAX(events.created_at) as last_seen')
-            ->orderByRaw('COUNT(*) DESC')
+            ->orderByRaw('MAX(events.created_at) DESC')
             ->get()
             ->map(fn ($row): array => [
                 'org_uuid' => $row->org_uuid,
