@@ -36,6 +36,8 @@ A cache hit within the TTL skips the probe call entirely — repeated TUI refres
 | `usage/parser.py` | Header → `UsageSnapshot` |
 | `usage/service.py` | Cache-aware orchestration (TTL check, fetch-or-serve-cached) |
 | `platform/cache.py` | Generic on-disk cache read/write used by `usage/service.py` |
+| `tui/format.py` | Pure bar-width/color/limit-flag/reset-formatting helpers the TUI renders utilization with |
+| `tui/app.py` | Fetches each account's `UsageSnapshot` via `UsageService.get` (concurrent worker threads) and redraws the bars |
 
 ## Key Invariants
 

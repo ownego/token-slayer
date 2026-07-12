@@ -1,10 +1,7 @@
 """`tui` subcommand and the shared TUI launch entrypoint.
 
 `main`'s group callback calls `launch(paths)` directly when invoked with no
-subcommand; the `tui` command below calls the same function explicitly.
-
-TODO(Task 14): replace `launch` with the real Textual `SlayerApp` — this is
-a v1-minimal stub so both call sites have something to invoke."""
+subcommand; the `tui` command below calls the same function explicitly."""
 from __future__ import annotations
 
 import click
@@ -19,10 +16,10 @@ def launch(paths: Paths) -> None:
 
     :param paths: Resolved OS paths for this namespace.
     :return: None
-    :raises click.ClickException: Always, until Task 14 wires the real
-        Textual `SlayerApp` in place of this stub.
     """
-    raise click.ClickException("TUI not yet available")
+    from slayer_cli.tui.app import SlayerApp
+
+    SlayerApp(paths).run()
 
 
 @click.command(name="tui")
