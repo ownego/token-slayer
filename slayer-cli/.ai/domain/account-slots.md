@@ -38,6 +38,7 @@ add --login (PKCE):
 | `accounts/store.py` | Read/write/list slot JSON files, `0600`/`0700` enforcement |
 | `accounts/add.py` | Snapshot and `--login` add flows |
 | `accounts/detect.py` | Resolve current active credential + email for snapshot |
+| `auth/pkce.py` | PKCE challenge/authorize-URL generation + code-for-token exchange, backing `add --login` |
 
 ## Key Invariants
 

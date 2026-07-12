@@ -10,3 +10,6 @@ class CredentialError(SlayerError):
 
 class UsageFetchError(SlayerError):
     """Fetching quota from Anthropic failed."""
+
+class LoginError(SlayerError):
+    """PKCE code exchange with Anthropic's OAuth token endpoint failed."""
