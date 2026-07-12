@@ -2,20 +2,27 @@
 
 namespace App\Filament\Resources\Accounts\RelationManagers;
 
-use Filament\Actions\AttachAction;
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DetachAction;
-use Filament\Actions\DetachBulkAction;
+use App\Enums\MembershipStatus;
+use App\Models\Account;
+use App\Models\User;
+use App\Services\Accounts\AccountMembershipCache;
+use App\Support\CacheKeys;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
 /**
- * Member management for an `Account`: attaches existing `User`s to the
- * `account_user` pivot (searchable by name, Slack handle, or email) and
- * detaches them. Users are never created, edited, or deleted from here —
- * this manages membership only.
+ * The tracked members of an `Account` (`account_user.status = tracked`), with
+ * each member's last event time from the cached {@see AccountMembershipCache}.
+ * Members are promoted from the untracked-contributors tab; here an admin can
+ * demote one ("Remove from tracking"), which flips the pivot status to
+ * untracked (keeping the row, so they reappear under the untracked tab) and
+ * forgets the membership caches.
  */
 class UsersRelationManager extends RelationManager
 {
@@ -24,11 +31,18 @@ class UsersRelationManager extends RelationManager
      *
      * @var string
      */
-    protected static string $relationship = 'users';
+    protected static string $relationship = 'trackedUsers';
 
     /**
-     * No standalone form: membership is managed entirely through the
-     * attach/detach table actions below.
+     * The navigation/tab title for this relation.
+     *
+     * @var string|null
+     */
+    protected static ?string $title = 'Users tracking';
+
+    /**
+     * No standalone form: membership status is managed through the table
+     * actions below.
      *
      * @param  Schema  $schema  The schema being configured by Filament.
      * @return Schema
@@ -39,35 +53,91 @@ class UsersRelationManager extends RelationManager
     }
 
     /**
-     * Build the members table: identity columns plus attach (searchable by
-     * name/slack_handle/email) and detach actions.
+     * Build the members table: identity columns, the cached per-account
+     * last-seen, a Refresh header action, and an ⋯-grouped demote row action.
      *
      * @param  Table  $table  The table being configured by Filament.
      * @return Table
      */
     public function table(Table $table): Table
     {
+        $lastSeen = $this->lastSeen();
+
         return $table
             ->recordTitleAttribute('email')
             ->columns([
-                TextColumn::make('name')
-                    ->searchable(),
-                TextColumn::make('slack_handle')
-                    ->searchable(),
-                TextColumn::make('email')
-                    ->searchable(),
+                TextColumn::make('name')->searchable(),
+                TextColumn::make('slack_handle')->searchable(),
+                TextColumn::make('email')->searchable(),
+                TextColumn::make('last_seen')
+                    ->label('Last seen')
+                    ->state(fn (User $record): ?string => $lastSeen[$record->id] ?? null)
+                    ->dateTime()
+                    ->placeholder('—'),
             ])
             ->headerActions([
-                AttachAction::make()
-                    ->recordSelectSearchColumns(['name', 'slack_handle', 'email']),
+                $this->refreshAction(),
             ])
             ->recordActions([
-                DetachAction::make(),
-            ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    DetachBulkAction::make(),
+                ActionGroup::make([
+                    $this->removeFromTrackingAction(),
                 ]),
             ]);
+    }
+
+    /**
+     * The cached member => last-seen map for this account.
+     *
+     * @return array<int, ?string>
+     */
+    private function lastSeen(): array
+    {
+        /** @var Account $account */
+        $account = $this->getOwnerRecord();
+
+        return app(AccountMembershipCache::class)->trackedLastSeen($account);
+    }
+
+    /**
+     * Build the "Remove from tracking" row action: flips the pivot status to
+     * untracked (keeps the row) and forgets the membership caches.
+     *
+     * @return Action
+     */
+    private function removeFromTrackingAction(): Action
+    {
+        return Action::make('removeFromTracking')
+            ->label('Remove from tracking')
+            ->icon(Heroicon::OutlinedUserMinus)
+            ->requiresConfirmation()
+            ->action(function (User $record): void {
+                /** @var Account $account */
+                $account = $this->getOwnerRecord();
+                $account->trackedUsers()->updateExistingPivot($record->id, [
+                    'status' => MembershipStatus::Untracked->value,
+                ]);
+                CacheKeys::forgetAccountMembership($account->id);
+
+                Notification::make()->success()->title('Removed from tracking')->send();
+            });
+    }
+
+    /**
+     * Build the "Refresh" header action: forgets this account's membership
+     * caches so the tab re-reads from the database.
+     *
+     * @return Action
+     */
+    private function refreshAction(): Action
+    {
+        return Action::make('refresh')
+            ->label('Refresh')
+            ->icon(Heroicon::OutlinedArrowPath)
+            ->color('gray')
+            ->action(function (): void {
+                CacheKeys::forgetAccountMembership($this->getOwnerRecord()->getKey());
+
+                Notification::make()->success()->title('Refreshed from database')->send();
+            });
     }
 }

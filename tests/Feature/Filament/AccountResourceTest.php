@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AccountStatus;
+use App\Enums\MembershipStatus;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
@@ -98,22 +99,18 @@ it('leaves the organization uuid unchanged when an admin attempts to edit it', f
     expect($account->refresh()->organization_uuid)->toBe('original-uuid');
 });
 
-it('attaches and detaches members through the relation manager', function () {
+it('demotes a tracked member to untracked through the relation manager', function () {
     $admin = User::factory()->create(['is_admin' => true]);
     $account = Account::factory()->create();
     $user = User::factory()->create();
+    $account->users()->attach($user, ['status' => MembershipStatus::Tracked->value]);
 
     Livewire::actingAs($admin)
         ->test(UsersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->callTableAction('attach', data: ['recordId' => $user->id]);
+        ->callTableAction('removeFromTracking', record: $user);
 
-    expect($account->users()->whereKey($user->id)->exists())->toBeTrue();
-
-    Livewire::actingAs($admin)
-        ->test(UsersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->callTableAction('detach', record: $user);
-
-    expect($account->users()->whereKey($user->id)->exists())->toBeFalse();
+    expect($account->trackedUsers()->whereKey($user->id)->exists())->toBeFalse();
+    expect($account->untrackedUsers()->whereKey($user->id)->exists())->toBeTrue();
 });
 
 it('shows the connect action to an admin and mounts a fresh authorize url', function () {
