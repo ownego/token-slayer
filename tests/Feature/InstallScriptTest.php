@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\File;
+
 beforeEach(fn () => config(['app.hook_namespace' => 'token_slayer']));
 
 test('install.sh is publicly accessible as a shell script', function () {
@@ -343,4 +345,59 @@ it('reserves the exclude-check hook point between attribution and the POST', fun
     $marker = strpos($script, 'exclude-check hook point (Phase 3)');
     expect($marker)->toBeGreaterThan(strpos($script, 'resolve_account'));
     expect($marker)->toBeLessThan(strpos($script, 'curl -s --max-time 3 -X POST'));
+});
+
+it('sets up a python venv and installs slayer-cli, with a shim that execs the venv module', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('-m venv')
+        ->toContain('/venv/bin/pip')
+        ->toContain('-m slayer_cli')
+        ->toContain('exec env SLAYER_NS')
+        ->toContain('SLAYER_NS=token_slayer')
+        ->toContain('SLAYER_INSTALL_URL=');
+});
+
+it('falls back to the old update/status behavior when the venv is missing, and never blocks on a python failure', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('already up to date')
+        ->toContain('usage: token-slayer {update|status}')
+        ->toContain('venv setup skipped')
+        ->toContain('optional install skipped');
+
+    $execPosition = strpos($script, 'exec env SLAYER_NS');
+    $fallbackPosition = strpos($script, 'already up to date');
+
+    expect($execPosition)->not->toBeFalse()
+        ->and($fallbackPosition)->not->toBeFalse()
+        ->and($execPosition)->toBeLessThan($fallbackPosition);
+});
+
+it('symlinks slayer to the token-slayer shim', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"');
+});
+
+it('404s the slayer-cli wheel route when no wheel has been built', function () {
+    File::delete(storage_path('app/dist/slayer_cli-latest.whl'));
+
+    $response = $this->get('/dist/slayer_cli-latest.whl');
+
+    $response->assertNotFound();
+});
+
+it('streams the slayer-cli wheel as octet-stream when present', function () {
+    File::ensureDirectoryExists(storage_path('app/dist'));
+    File::put(storage_path('app/dist/slayer_cli-latest.whl'), 'dummy-wheel-bytes');
+
+    $response = $this->get('/dist/slayer_cli-latest.whl');
+
+    $response->assertOk();
+    expect($response->headers->get('Content-Type'))->toBe('application/octet-stream');
+
+    File::delete(storage_path('app/dist/slayer_cli-latest.whl'));
 });
