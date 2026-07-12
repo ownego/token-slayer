@@ -281,3 +281,10 @@ it('retries a transient beacon error after a short self-heal window, not an hour
     expect($script)->toContain('-le "$BEACON_ERROR_RETRY_SECS"');
     expect($script)->not->toContain('-le 3600');
 });
+
+it('forces bash for Claude Code hooks so Windows uses Git Bash deterministically', function () {
+    $script = $this->get('/install')->getContent();
+
+    // The Python merge appends the command dict with an explicit shell.
+    expect($script)->toContain('"type": "command", "command": cmd, "shell": "bash"');
+});

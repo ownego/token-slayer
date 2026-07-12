@@ -366,7 +366,7 @@ fingerprint = os.environ["HOOK_FINGERPRINT"]  # e.g. "{{ $namespace }}/send-hook
 for event in events:
     entries = [e for e in data["hooks"].get(event, [])
                if fingerprint not in json.dumps(e)]
-    entries.append({"hooks": [{"type": "command", "command": cmd}]})
+    entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
     data["hooks"][event] = entries
 
 with open(path, "w") as f:
