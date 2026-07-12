@@ -96,6 +96,18 @@ python -m pytest -q
 python -m slayer_cli --help
 ```
 
+## Build & Deploy
+
+To build the wheel distribution for installation on dev machines:
+
+```bash
+./build.sh
+```
+
+This builds the wheel and places it at `storage/app/dist/slayer_cli-latest.whl`. The token-slayer server serves this wheel over HTTP at `/dist/slayer_cli-latest.whl`, allowing `token-slayer update` on dev machines to fetch and install the latest version.
+
+When deploying a new version to staging, ensure the freshly built wheel is included in the rsync to the `tungot` host alongside PHP changes, so the update mechanism picks up the new version.
+
 ## License
 
 Internal — token-slayer suite.
