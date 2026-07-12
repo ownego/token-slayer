@@ -9,6 +9,7 @@ use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Filament\Resources\Accounts\Pages\ViewAccount;
 use App\Filament\Resources\Accounts\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\Accounts\RelationManagers\UntrackedContributorsRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\UsersRelationManager;
 use App\Models\Account;
 use App\Services\AccountConnectService;
@@ -322,6 +323,7 @@ class AccountResource extends Resource
     {
         return [
             UsersRelationManager::class,
+            UntrackedContributorsRelationManager::class,
             EventsRelationManager::class,
         ];
     }
