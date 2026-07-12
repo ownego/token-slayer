@@ -2,8 +2,10 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\ConnectsAccounts;
 use App\Models\User;
 use App\Services\Attribution\EventAttributionBackfiller;
+use App\Services\Attribution\UnattachedUsersQuery;
 use App\Services\Attribution\UnrecognizedAccountsQuery;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -14,12 +16,16 @@ use UnitEnum;
 
 /**
  * Admin page listing Anthropic org uuids that have usage events but matched no
- * `Account` at ingest (`account_id` null, `account_org_id` set). Each org that
- * now has a matching account can be backfilled — the events are re-attributed
- * in place. Access is gated panel-wide by {@see User::canAccessPanel()}.
+ * `Account` at ingest (`account_id` null, `account_org_id` set), plus
+ * developers with no account membership at all. The Accounts tab offers
+ * Connect (via {@see ConnectsAccounts}) for orgs with no matching account yet,
+ * and Backfill for orgs that now have one — the events are re-attributed in
+ * place. Access is gated panel-wide by {@see User::canAccessPanel()}.
  */
 class UnrecognizedAccounts extends Page
 {
+    use ConnectsAccounts;
+
     /**
      * Sidebar navigation icon.
      *
@@ -35,11 +41,34 @@ class UnrecognizedAccounts extends Page
     protected static string|UnitEnum|null $navigationGroup = 'Analytics';
 
     /**
+     * Navigation label + page title (the page manages both unrecognized
+     * organizations and unattached users).
+     *
+     * @var string|null
+     */
+    protected static ?string $navigationLabel = 'Unrecognized';
+
+    /**
+     * The page title.
+     *
+     * @var string|null
+     */
+    protected ?string $heading = 'Unrecognized';
+
+    /**
      * The Blade view rendering the page body.
      *
      * @var string
      */
     protected string $view = 'filament.pages.unrecognized-accounts';
+
+    /**
+     * Which tab is visible: 'accounts' (unrecognized organizations) or 'users'
+     * (developers with no account membership).
+     *
+     * @var string
+     */
+    public string $activeTab = 'accounts';
 
     /**
      * The unrecognized org rows for the Blade view.
@@ -49,6 +78,16 @@ class UnrecognizedAccounts extends Page
     public function rows(): array
     {
         return app(UnrecognizedAccountsQuery::class)->get();
+    }
+
+    /**
+     * The unattached-user rows for the Users tab.
+     *
+     * @return array<int, array{user_id:int, handle:string, email:?string, last_event_at:?string, created_at:?string}>
+     */
+    public function unattachedUsers(): array
+    {
+        return app(UnattachedUsersQuery::class)->get();
     }
 
     /**
