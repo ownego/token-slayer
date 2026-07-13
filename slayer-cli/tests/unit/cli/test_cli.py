@@ -202,3 +202,52 @@ def test_update_without_install_url_prints_guidance(tmp_path, monkeypatch):
     out = CliRunner().invoke(main, ["update"])
     assert out.exit_code == 0
     assert "SLAYER_INSTALL_URL" in out.output
+
+
+def test_setup_pulls_and_reports(tmp_path, monkeypatch):
+    """`setup` reads the hook token, calls `provisioned.pull_and_setup`, and
+    reports the account names it set up without ever printing a token."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.platform.paths import Paths
+
+    p = Paths("token_slayer")
+    p.config_dir.mkdir(parents=True, exist_ok=True)
+    (p.config_dir / "token").write_text("HOOKTOK")
+    import slayer_cli.cli.commands.setup as setup_cmd
+
+    monkeypatch.setattr(setup_cmd.provisioned, "pull_and_setup", lambda paths, tok: ["a@b.com"])
+    from click.testing import CliRunner
+
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["setup"])
+    assert out.exit_code == 0 and "a@b.com" in out.output and "sk-ant" not in out.output
+
+
+def test_setup_without_hook_token_is_clean_error(tmp_path, monkeypatch):
+    """`setup` with no hook token on disk exits non-zero with a clean
+    message, not a traceback."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["setup"])
+    assert out.exit_code != 0
+    assert "Traceback" not in out.output
+
+
+def test_setup_with_no_provisioned_accounts_is_friendly(tmp_path, monkeypatch):
+    """`setup` reports a friendly message when the server has nothing to give."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.platform.paths import Paths
+
+    p = Paths("token_slayer")
+    p.config_dir.mkdir(parents=True, exist_ok=True)
+    (p.config_dir / "token").write_text("HOOKTOK")
+    import slayer_cli.cli.commands.setup as setup_cmd
+
+    monkeypatch.setattr(setup_cmd.provisioned, "pull_and_setup", lambda paths, tok: [])
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["setup"])
+    assert out.exit_code == 0
+    assert "no provisioned accounts" in out.output.lower()
