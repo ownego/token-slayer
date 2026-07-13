@@ -39,6 +39,11 @@ class Paths:
         return self.config_dir / constants.CONFIG_FILE
 
     @property
+    def sessions_dir(self) -> Path:
+        """Runtime session registry directory (per-wrapper state, live PID tracking)."""
+        return self.config_dir / constants.SESSIONS_DIR
+
+    @property
     def _claude_config_dir(self) -> Path:
         cc = os.environ.get("CLAUDE_CONFIG_DIR")
         return Path(cc) if cc else self.home / ".claude"

@@ -9,4 +9,5 @@ USAGE_CACHE_DIR = "usage-cache"
 PROVIDER_DIR = "account-provider"
 ACTIVE_FILE = "active.json"        # <provider>/active.json
 CONFIG_FILE = "config.json"
+SESSIONS_DIR = "runtime/sessions"  # ~/.config/<ns>/runtime/sessions/<pid>.json
 USAGE_TTL_SECONDS = 300
