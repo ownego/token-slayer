@@ -57,12 +57,14 @@ def test_unwrapped_empty_stdin_is_noop(tmp_path, monkeypatch):
     hooks.prompt_submit(io.StringIO(""), io.StringIO())
 
 
-def test_stop_tolerates_empty_stdin(tmp_path, monkeypatch):
-    """Wrapped but empty/garbage stdin must not raise; no signal is written."""
+def test_stop_writes_even_on_empty_stdin(tmp_path, monkeypatch):
+    """Wrapped with empty stdin writes STOPPED signal (presence=event; sessionId is None)."""
     pid = 55
     _env(monkeypatch, tmp_path, pid)
     hooks.stop(io.StringIO(""))
-    assert signals.read(Paths("token_slayer"), pid, signals.STOPPED) is None
+    sig = signals.read(Paths("token_slayer"), pid, signals.STOPPED)
+    assert sig is not None
+    assert sig.get("sessionId") is None
 
 
 def test_rate_limit_classifies(tmp_path, monkeypatch):

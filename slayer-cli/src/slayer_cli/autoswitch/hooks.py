@@ -82,8 +82,6 @@ def session_start(stdin: TextIO, stdout: TextIO) -> None:
     if pid is None:
         return
     data = _read_json(stdin)
-    if not data:
-        return
     payload = {"sessionId": data.get("session_id"), "cwd": data.get("cwd")}
     signals.write(Paths(Paths.current_ns()), pid, signals.SESSION_STARTED, payload)
 
@@ -91,7 +89,8 @@ def session_start(stdin: TextIO, stdout: TextIO) -> None:
 def stop(stdin: TextIO) -> None:
     """Handle the Stop hook: write STOPPED{sessionId}.
 
-    No-op outside a wrapped session.
+    No-op outside a wrapped session. Writes the signal unconditionally — presence
+    of the STOPPED signal is the event, payload may be empty (sessionId is None).
 
     :param stdin: Stream carrying Claude Code's hook JSON payload.
     :return: None
@@ -102,8 +101,6 @@ def stop(stdin: TextIO) -> None:
     if pid is None:
         return
     data = _read_json(stdin)
-    if not data:
-        return
     signals.write(Paths(Paths.current_ns()), pid, signals.STOPPED, {"sessionId": data.get("session_id")})
 
 
