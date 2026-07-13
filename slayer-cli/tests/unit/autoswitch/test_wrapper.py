@@ -108,7 +108,10 @@ def test_run_switches_and_relaunches_with_resume_on_stopped_over_threshold(tmp_p
 
     over_threshold = AccountUsage(
         five_hour=Window(utilization=50.0), seven_day=Window(utilization=100.0), polled_at=2)
-    monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage", lambda token, **kw: over_threshold)
+    # poll-all polls every account: active ("AAA") is over threshold; the
+    # target ("b") polls healthy so the strategy can pick it.
+    monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage",
+                        lambda token, **kw: over_threshold if "AAA" in token else healthy)
 
     switch_calls = []
 
@@ -173,7 +176,10 @@ def test_run_relaunches_current_account_when_switch_fails(tmp_path, monkeypatch,
 
     over_threshold = AccountUsage(
         five_hour=Window(utilization=50.0), seven_day=Window(utilization=100.0), polled_at=2)
-    monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage", lambda token, **kw: over_threshold)
+    # poll-all polls every account: active ("AAA") is over threshold; the
+    # target ("b") polls healthy so the strategy can pick it.
+    monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage",
+                        lambda token, **kw: over_threshold if "AAA" in token else healthy)
 
     def failing_switch_to(store_arg, name, *, paths, force=False):
         raise AccountNotFound(name)
@@ -243,10 +249,10 @@ def test_active_usage_polls_live_grant_not_stale_slot(tmp_path, monkeypatch):
     pid = os.getpid()
     signals.write(paths, pid, signals.STOPPED, {"sessionId": "s1"})
 
-    seen = {}
+    seen = []
 
     def fake_fetch(token, **kw):
-        seen["token"] = token
+        seen.append(token)
         return AccountUsage(five_hour=Window(utilization=5.0), seven_day=Window(utilization=5.0), polled_at=1)
 
     monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage", fake_fetch)
@@ -257,7 +263,8 @@ def test_active_usage_polls_live_grant_not_stale_slot(tmp_path, monkeypatch):
     services = Services(paths=paths, store=store)
     wrapper.run("claude", [], services, spawn=spawn)
 
-    assert seen["token"] == "sk-ant-oat01-LIVE"  # live grant, not the stale slot copy
+    assert "sk-ant-oat01-LIVE" in seen  # active polled via live grant
+    assert "sk-ant-oat01-AAA" not in seen  # never the stale slot copy
 
 
 def test_retry_same_applies_fibonacci_backoff(tmp_path, monkeypatch):
@@ -305,7 +312,8 @@ def test_relaunch_recovers_session_id_from_transcript_when_signal_lacks_it(tmp_p
 
     monkeypatch.setattr("slayer_cli.autoswitch.wrapper.time.sleep", lambda s: None)
     over = AccountUsage(five_hour=Window(utilization=50.0), seven_day=Window(utilization=100.0), polled_at=2)
-    monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage", lambda token, **kw: over)
+    monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage",
+                        lambda token, **kw: over if "AAA" in token else healthy)
     monkeypatch.setattr("slayer_cli.autoswitch.wrapper.switch_to",
                         lambda s, n, *, paths, force=False: s.get(n))
 

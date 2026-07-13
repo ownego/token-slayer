@@ -11,7 +11,6 @@ import sys
 import time
 from typing import Callable
 
-from slayer_cli import credstore
 from slayer_cli.accounts.switch import switch_to
 from slayer_cli.autoswitch import registry, relaunch, signals
 from slayer_cli.autoswitch.decide import Action, decide_action
@@ -21,7 +20,7 @@ from slayer_cli.models.usage_windows import is_over_threshold, now_seconds
 from slayer_cli.strategy.recover import recover_soonest
 from slayer_cli.strategy.select import Candidate
 from slayer_cli.usage import cache as usage_cache
-from slayer_cli.usage import oauth as usage_oauth
+from slayer_cli.usage import poller
 
 __all__ = ["run"]
 
@@ -33,6 +32,10 @@ TERMINATE_TIMEOUT = 10.0
 
 #: Decision signals, checked every poll cycle in `decide_action`'s priority order.
 _DECISION_SIGNALS = (signals.RATE_LIMITED, signals.TURN_FAILED, signals.SWITCH_REQUESTED, signals.STOPPED)
+
+#: Signals that may pick a NEW account (so all candidates' usage must be fresh).
+#: TURN_FAILED is excluded — it retries the same account, never picks.
+_PICK_SIGNALS = (signals.RATE_LIMITED, signals.SWITCH_REQUESTED, signals.STOPPED)
 
 
 def _spawn_env(wrapper_pid: int) -> dict[str, str]:
@@ -59,44 +62,23 @@ def _load_candidates(services) -> tuple[list[Candidate], Candidate | None, dict]
     return candidates, current, cache
 
 
-def _refresh_active_usage(services, cfg: Config) -> tuple[bool, list[Candidate], "Candidate | None", dict]:
-    """Poll the ACTIVE account's usage, persist it to the cache keyed by the
-    slot's identity, then build candidates for every managed slot so strategy
-    sees the freshly-polled cache.
-
-    The token comes from the LIVE credential Claude Code maintains
-    (`credstore.read_active_full`), never the slot's stored copy: Claude
-    self-rotates the access token (~8h) and consumes its single-use refresh
-    token, so the slot copy drifts stale within a long session and would make
-    usage polling — and therefore proactive threshold switching — silently
-    stop after the first rotation. We never refresh the live grant here:
-    Claude owns it, and refreshing would clobber its single-use refresh token.
-    The slot token is used only as a fallback when no live grant exists (e.g.
-    the user is logged out). A failed/empty fetch never crashes the loop —
-    `fetch_usage` returns an empty snapshot, which reads as "not over
-    threshold" (no switch), matching "one bad poll never strands the caller".
+def _active_over_threshold(services, cfg: Config, cache: dict) -> bool:
+    """Whether the active account's cached usage is over its configured threshold.
 
     :param services: the CLI Services bundle (paths + store).
     :param cfg: user behaviour configuration.
-    :return: (active_over_threshold, candidates, current, cache).
+    :param cache: the usage cache (cache-key → AccountUsage).
+    :return: True if the active account is over threshold; False when there is
+        no active account or it has no cached usage.
     """
-    paths = services.paths
     store = services.store
-    candidates, current, cache = _load_candidates(services)
-
     active_name = store.active()
     if not active_name or not store.exists(active_name):
-        return False, candidates, current, cache
-
-    account = store.get(active_name)
-    live = credstore.read_active_full(paths)
-    token = (live or {}).get("accessToken") or account.token
-
-    usage = usage_oauth.fetch_usage(token)
-    cache[usage_cache.cache_key(account)] = usage
-    usage_cache.save_cache(paths, cache)
-    active_over_threshold = is_over_threshold(usage, cfg.thresholds)[0]
-    return active_over_threshold, candidates, current, cache
+        return False
+    usage = cache.get(usage_cache.cache_key(store.get(active_name)))
+    if usage is None:
+        return False
+    return bool(is_over_threshold(usage, cfg.thresholds)[0])
 
 
 def _dir_of(transcript_path: str | None) -> str | None:
@@ -115,10 +97,12 @@ def _poll_once(services, cfg: Config, wrapper_pid: int, session_id: str | None,
     Tracks `SESSION_STARTED`'s session id and transcript directory
     unconditionally (it never itself yields an Action), then looks for a
     decision signal in `decide_action`'s priority order; the first one present
-    is consumed and decided. Only a `STOPPED` signal refreshes the active
-    account's usage first — the other decision signals act immediately on the
-    existing cache. The transcript directory is threaded so a relaunch can
-    recover a missing session id from the newest transcript (see `run`).
+    is consumed and decided. A signal that may pick a new account
+    (`_PICK_SIGNALS`) refreshes usage for ALL candidates first (active via the
+    live grant; non-active safely refreshed, TTL-gated) so the strategy picks a
+    genuinely-available target; other signals act on the existing cache. The
+    transcript directory is threaded so a relaunch can recover a missing
+    session id from the newest transcript (see `run`).
 
     :param services: the CLI Services bundle (paths + store).
     :param cfg: user behaviour configuration.
@@ -144,10 +128,13 @@ def _poll_once(services, cfg: Config, wrapper_pid: int, session_id: str | None,
         if name == signals.STOPPED:
             session_id = payload.get("sessionId") or session_id
             transcript_dir = _dir_of(payload.get("transcriptPath")) or transcript_dir
-            active_over_threshold, candidates, current, cache = _refresh_active_usage(services, cfg)
+
+        candidates, current, _ = _load_candidates(services)
+        if name in _PICK_SIGNALS:
+            cache = poller.refresh_all_usage(services.store, paths, now_seconds())
         else:
-            active_over_threshold = False
-            candidates, current, cache = _load_candidates(services)
+            cache = usage_cache.load_cache(paths)
+        active_over_threshold = _active_over_threshold(services, cfg, cache)
 
         action = decide_action(pending_signal=name, signal_payload=payload, cfg=cfg,
                                 active_over_threshold=active_over_threshold,
