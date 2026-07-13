@@ -10,7 +10,7 @@ class Candidate:
     """An account eligible for selection.
 
     :var name: account name.
-    :var key: usage-cache key.
+    :var key: usage-cache key; MUST equal usage.cache.cache_key(account) for the cache lookup to hit.
     """
     name: str
     key: str

@@ -1,6 +1,5 @@
 """Load/save/set the behaviour config (atomic 0600), merged with defaults."""
 from __future__ import annotations
-import json
 import os
 from slayer_cli.config.model import Config
 from slayer_cli.errors import SlayerError
@@ -22,7 +21,7 @@ def load(paths: Paths) -> Config:
         return Config()
     try:
         return Config.model_validate_json(path.read_text())
-    except (ValueError, Exception):
+    except ValueError:
         return Config()
 
 

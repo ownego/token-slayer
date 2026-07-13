@@ -13,6 +13,8 @@ def cache_key(account: Account) -> str:
     """Return the usage-cache key for `account`: `uuid|org_uuid`, falling back
     to `org_uuid`, then `email`, then `name`.
 
+    CONTRACT: a strategy Candidate for this account MUST be built with key == cache_key(account); a mismatch makes strategy silently see the account as unpolled.
+
     :param account: The account slot.
     :return: A stable cache key string.
     """

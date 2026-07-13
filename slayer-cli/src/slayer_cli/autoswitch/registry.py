@@ -41,11 +41,16 @@ def update_self(paths: Paths, mutate) -> None:
     tmp.replace(path)
 
 def _alive(pid: int) -> bool:
+    """Return whether process `pid` is currently running."""
     try:
         os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 def list(paths: Paths) -> list[Entry]:
     """Return live wrapper entries, pruning (deleting) any whose PID is dead."""
