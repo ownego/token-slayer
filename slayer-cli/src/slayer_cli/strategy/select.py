@@ -2,7 +2,7 @@
 cache, so it is trivially unit-testable. Ported from cux's strategy.go."""
 from __future__ import annotations
 from dataclasses import dataclass
-from slayer_cli.models.usage_windows import AccountUsage, Thresholds, is_over_threshold
+from slayer_cli.models.usage_windows import AccountUsage, Thresholds, Window, is_over_threshold
 
 
 @dataclass(frozen=True)
@@ -27,48 +27,56 @@ class Pick:
     reason: str
 
 
-def _u(cache, key) -> AccountUsage | None:
+def _u(cache: dict[str, AccountUsage], key: str) -> AccountUsage | None:
+    """Return the cached usage for `key`, or None if absent."""
     return cache.get(key)
 
 
-def _util(w) -> float:
+def _util(w: Window | None) -> float:
+    """Return a window's utilization, or 0.0 if the window is missing."""
     return w.utilization if w is not None else 0.0
 
 
-def _five(cache, key) -> float:
+def _five(cache: dict[str, AccountUsage], key: str) -> float:
+    """Return the account's 5h utilization, or 0.0 if unknown."""
     u = _u(cache, key)
     return _util(u.five_hour) if u else 0.0
 
 
-def _seven(cache, key) -> float:
+def _seven(cache: dict[str, AccountUsage], key: str) -> float:
+    """Return the account's 7d utilization, or 0.0 if unknown."""
     u = _u(cache, key)
     return _util(u.seven_day) if u else 0.0
 
 
-def _available(cache, key) -> bool:
+def _available(cache: dict[str, AccountUsage], key: str) -> bool:
+    """Return True unless the account's cached usage marks its token expired."""
     u = _u(cache, key)
     return True if u is None else not u.token_expired
 
 
-def _model_capped(cache, key) -> bool:
+def _model_capped(cache: dict[str, AccountUsage], key: str) -> bool:
+    """Return True if the account's 7d opus or sonnet window is at the hard limit."""
     u = _u(cache, key)
     if u is None:
         return False
     return any(w is not None and w.utilization >= 100 for w in (u.seven_day_opus, u.seven_day_sonnet))
 
 
-def _over(cache, key, thresholds) -> bool:
+def _over(cache: dict[str, AccountUsage], key: str, thresholds: Thresholds) -> bool:
+    """Return True if the account is over its configured threshold."""
     u = _u(cache, key)
     return bool(u and is_over_threshold(u, thresholds)[0])
 
 
-def _caps(thresholds):
+def _caps(thresholds: Thresholds) -> tuple[float, float]:
+    """Return the (5h, 7d) drain-mode caps, falling back to defaults when unconfigured."""
     cap7 = thresholds.seven_day if 0 < thresholds.seven_day < 100 else 95
     cap5 = thresholds.five_hour if 0 < thresholds.five_hour < 100 else 90
     return cap5, cap7
 
 
-def pick_next(kind, order, candidates, current, cache, thresholds) -> Pick | None:
+def pick_next(kind: str, order: list[str], candidates: list["Candidate"], current: "Candidate | None", cache: dict[str, "AccountUsage"], thresholds: "Thresholds") -> "Pick | None":
     """Choose the account to swap to. Returns None in manual mode, when nothing
     has capacity, or when there are no candidates.
 
@@ -88,12 +96,14 @@ def pick_next(kind, order, candidates, current, cache, thresholds) -> Pick | Non
     return _pick_drain(order, others, cache, thresholds)
 
 
-def _eligible(c, cache, thresholds) -> bool:
+def _eligible(c: Candidate, cache: dict[str, AccountUsage], thresholds: Thresholds) -> bool:
+    """Return True if `c` is available, under threshold, and not 7d-capped."""
     return (_available(cache, c.key) and not _over(cache, c.key, thresholds)
             and _seven(cache, c.key) < 100)
 
 
-def _pick_balanced(others, cache, thresholds) -> Pick | None:
+def _pick_balanced(others: list[Candidate], cache: dict[str, AccountUsage], thresholds: Thresholds) -> Pick | None:
+    """Return the eligible candidate with the lowest 7d utilization, or None if none are eligible."""
     pool = [c for c in others if _eligible(c, cache, thresholds)]
     if not pool:
         return None
@@ -101,7 +111,8 @@ def _pick_balanced(others, cache, thresholds) -> Pick | None:
     return Pick(pool[0].name, "balanced: lowest 7d")
 
 
-def _pick_drain(order, others, cache, thresholds) -> Pick | None:
+def _pick_drain(order: list[str], others: list[Candidate], cache: dict[str, AccountUsage], thresholds: Thresholds) -> Pick | None:
+    """Return the first drain-eligible candidate under the drain caps, or None if none have room."""
     cap5, cap7 = _caps(thresholds)
     if order:
         ordered = [c for name in order for c in others if c.name == name]

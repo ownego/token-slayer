@@ -45,3 +45,9 @@ def test_model_capped_sorts_last():
     """A model-capped (opus >= 100) candidate stays eligible but sorts after non-capped ones."""
     cache = {"b": _u(10, 10, opus=100), "c": _u(20, 20)}
     assert pick_next("balanced", [], [A, B, C], A, cache, Thresholds()).name == "c"  # b opus-capped -> last
+
+
+def test_drain_model_capped_still_picked_when_only_option():
+    """A drain pool where the only candidate with room is model-capped is still picked on the 2nd (non-model-clear) pass, rather than stranding the pool with None."""
+    cache = {"b": _u(10, 10, opus=100)}
+    assert pick_next("drain", [], [A, B], A, cache, Thresholds()).name == "b"
