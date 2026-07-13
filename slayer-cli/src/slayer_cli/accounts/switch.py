@@ -16,7 +16,7 @@ from slayer_cli.platform.paths import Paths
 __all__ = ["switch_to", "SwapHistory"]
 
 
-def switch_to(store: AccountStore, name: str, *, paths: Paths) -> Account:
+def switch_to(store: AccountStore, name: str, *, paths: Paths, force: bool = False) -> Account:
     """Make the `name` slot the active Claude account.
 
     Pipeline (each step only runs after the previous one succeeds, so a
@@ -36,6 +36,8 @@ def switch_to(store: AccountStore, name: str, *, paths: Paths) -> Account:
     :param store: Account slot store.
     :param name: Slot name to switch to.
     :param paths: Resolved OS paths for this namespace.
+    :param force: When True, skip the rotation-capture step (recovery when the
+        outgoing slot's live credentials are broken). Defaults to False.
     :return: The `Account` that is now active.
     :raises AccountNotFound: If no slot exists for `name`.
     :raises ValidationError: If `provider.writer.write_active` is invoked
@@ -48,7 +50,8 @@ def switch_to(store: AccountStore, name: str, *, paths: Paths) -> Account:
     # Code may have refreshed its token in place since we last switched to it.
     # Persist the live grant back onto that slot so its refresh token stays
     # valid across this switch (else the slot goes stale and loses self-refresh).
-    if prev and prev != name and store.exists(prev):
+    # When force=True, skip this step entirely (recovery when live creds are broken).
+    if not force and prev and prev != name and store.exists(prev):
         live = credstore.read_active_full(paths)
         if live and live.get("accessToken"):
             outgoing = store.get(prev)

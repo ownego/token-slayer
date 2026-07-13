@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 
@@ -134,3 +135,21 @@ def test_switch_captures_rotated_grant_into_outgoing_slot(tmp_path, monkeypatch)
     a = store.get("a")
     assert a.refresh_token == "sk-ant-ort01-A-ROTATED"
     assert a.token == "sk-ant-oat01-A-ROTATED" and a.expires_at == 9_999
+
+
+def test_force_switch_skips_rotation_capture(tmp_path, monkeypatch):
+    """When `force=True`, switch_to skips the rotation-capture step, allowing
+    a switch even if the outgoing slot's live credentials are corrupted."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("slayer_cli.auth.beacon.resolve_org_uuid", lambda tok: "org-1")
+    p = Paths("token_slayer")
+    store = AccountStore(p)
+    store.add(Account(name="a", org_uuid="org-1", token="sk-ant-oat01-A", added_at=1))
+    store.add(Account(name="b", org_uuid="org-1", token="sk-ant-oat01-B",
+                      refresh_token="sk-ant-ort01-B", expires_at=2, added_at=1))
+    switch_mod.switch_to(store, "a", paths=p)
+    # Corrupt the live creds file; a normal switch would try to capture it.
+    p.claude_credentials_file.write_text("{ not json")
+    acc = switch_mod.switch_to(store, "b", paths=p, force=True)   # must not raise
+    assert acc.name == "b"
