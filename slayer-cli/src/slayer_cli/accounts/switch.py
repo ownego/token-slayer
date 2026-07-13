@@ -57,7 +57,7 @@ def switch_to(store: AccountStore, name: str, *, paths: Paths, force: bool = Fal
             outgoing = store.get(prev)
             store.add(outgoing.model_copy(update={
                 "token": live["accessToken"],
-                "refresh_token": live.get("refreshToken"),
+                "refresh_token": live.get("refreshToken") or outgoing.refresh_token,
                 "expires_at": live.get("expiresAt"),
             }))
 
@@ -71,6 +71,8 @@ def switch_to(store: AccountStore, name: str, *, paths: Paths, force: bool = Fal
 
     # Write the incoming slot as a FULL grant (self-refreshing) when it has a
     # refresh token; otherwise fall back to the legacy null-refresh write.
+    # (A captured live block lacking `expiresAt` would also fall back here,
+    # but Claude reliably sets it, so this is defensive/theoretical.)
     if acc.refresh_token and acc.expires_at:
         credstore.write_active_full(paths, acc.token, acc.refresh_token, acc.expires_at)
     else:

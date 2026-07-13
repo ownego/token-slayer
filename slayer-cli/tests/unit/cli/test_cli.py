@@ -261,7 +261,11 @@ def test_alias_command_sets_and_clears(tmp_path, monkeypatch):
     store.add(Account(name="acc1", email="a@b.com", token="sk-ant-oat01-TESTTOKEN", added_at=1))
     from slayer_cli.cli.main import main
 
-    assert CliRunner().invoke(main, ["alias", "acc1", "work"]).exit_code == 0
+    result1 = CliRunner().invoke(main, ["alias", "acc1", "work"])
+    assert result1.exit_code == 0
+    assert "sk-ant" not in result1.output
     assert store.get("acc1").alias == "work"
-    assert CliRunner().invoke(main, ["alias", "work"]).exit_code == 0   # resolve by alias, then clear
+    result2 = CliRunner().invoke(main, ["alias", "work"])   # resolve by alias, then clear
+    assert result2.exit_code == 0
+    assert "sk-ant" not in result2.output
     assert store.get("acc1").alias is None

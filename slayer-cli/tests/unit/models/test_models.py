@@ -43,4 +43,9 @@ def test_legacy_slot_json_without_new_fields_still_parses():
         "plan": None, "token": "sk-ant-oat01-TESTTOKEN", "added_at": 1, "last_used": None,
     })
     acc = Account.model_validate_json(legacy)
-    assert acc.alias is None and acc.refresh_token is None and acc.expires_at is None
+    assert (
+        acc.alias is None
+        and acc.refresh_token is None
+        and acc.expires_at is None
+        and acc.oauth_account is None
+    )
