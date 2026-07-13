@@ -18,8 +18,6 @@ __all__ = ["command"]
 def command() -> None:
     """Install/refresh the Claude Code hooks via the served install script,
     then install the switcher's own coordination hooks.
-
-    :return: None
     """
     run_install_script()
     hookinstall.install(Paths(Paths.current_ns()))

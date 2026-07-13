@@ -14,8 +14,6 @@ __all__ = ["command"]
 @click.command(name="uninstall-hooks")
 def command() -> None:
     """Remove the switcher's coordination hooks from settings.json.
-
-    :return: None
     """
     hookinstall.uninstall(Paths(Paths.current_ns()))
     click.echo("token-slayer coordination hooks removed.")

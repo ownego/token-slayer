@@ -21,8 +21,6 @@ def command() -> None:
 @command.command(name="session-start")
 def session_start() -> None:
     """Handle the SessionStart hook.
-
-    :return: None
     """
     hooks.session_start(sys.stdin, sys.stdout)
 
@@ -30,8 +28,6 @@ def session_start() -> None:
 @command.command(name="stop")
 def stop() -> None:
     """Handle the Stop hook.
-
-    :return: None
     """
     hooks.stop(sys.stdin)
 
@@ -39,8 +35,6 @@ def stop() -> None:
 @command.command(name="rate-limit")
 def rate_limit() -> None:
     """Handle a failure hook (rate-limit/API-error classification).
-
-    :return: None
     """
     hooks.rate_limit(sys.stdin)
 
@@ -48,7 +42,5 @@ def rate_limit() -> None:
 @command.command(name="prompt-submit")
 def prompt_submit() -> None:
     """Handle the UserPromptSubmit hook (`/switch`, `/ts:` interception).
-
-    :return: None
     """
     hooks.prompt_submit(sys.stdin, sys.stdout)

@@ -20,10 +20,6 @@ def command(services, claude_args: tuple[str, ...]) -> None:
 
     Everything after `--` is passed through to `claude` unchanged, e.g.
     `token-slayer run -- --model opus`.
-
-    :param services: Shared CLI services (paths + account store).
-    :param claude_args: Arguments to forward to `claude` (already split at `--` by Click).
-    :return: None
     """
     claude_bin = shutil.which("claude")
     if claude_bin is None:
