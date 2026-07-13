@@ -66,3 +66,27 @@ def test_pull_raises_clean_error_on_network_failure(tmp_path, monkeypatch):
     client = httpx.Client(base_url="https://ts.example", transport=httpx.MockTransport(handler))
     with pytest.raises(ProvisioningError):
         provisioned.pull_and_setup(p, "TOK", client=client)
+
+
+def test_pull_stores_refresh_and_expiry_in_every_slot(tmp_path, monkeypatch):
+    """Every provisioned slot (not just the active/first one) stores its refresh
+    token + expiry (seconds→ms), so non-active provisioned accounts can
+    self-refresh during auto-switch usage polling."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    p = Paths("token_slayer")
+
+    def handler(req):
+        return httpx.Response(200, json={"accounts": [
+            {"name": "a@x.com", "email": "a@x.com", "org_uuid": "o-a",
+             "access_token": "sk-ant-oat01-A", "refresh_token": "ort01-A", "expires_at": 1_800_000_000},
+            {"name": "b@x.com", "email": "b@x.com", "org_uuid": "o-b",
+             "access_token": "sk-ant-oat01-B", "refresh_token": "ort01-B", "expires_at": 1_700_000_000},
+        ]})
+
+    client = httpx.Client(base_url="https://ts.example", transport=httpx.MockTransport(handler))
+    provisioned.pull_and_setup(p, "TOK", client=client)
+
+    slot_b = json.loads((p.accounts_dir / "b@x.com.json").read_text())
+    assert slot_b["refresh_token"] == "ort01-B"        # non-active slot keeps its refresh token
+    assert slot_b["expires_at"] == 1_700_000_000_000   # seconds → milliseconds

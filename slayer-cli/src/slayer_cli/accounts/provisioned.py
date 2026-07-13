@@ -83,6 +83,9 @@ def pull_and_setup(paths: Paths, hook_token: str, *, client: httpx.Client | None
     store = AccountStore(paths)
     names: list[str] = []
     for index, account_payload in enumerate(accounts):
+        # Server sends expires_at in UNIX seconds; slots (like Claude Code's
+        # credential block) hold it in milliseconds.
+        expires_at_ms = int(account_payload["expires_at"]) * 1000
         account = Account(
             name=account_payload["name"],
             email=account_payload.get("email"),
@@ -90,6 +93,8 @@ def pull_and_setup(paths: Paths, hook_token: str, *, client: httpx.Client | None
             uuid=None,
             plan=None,
             token=account_payload["access_token"],
+            refresh_token=account_payload.get("refresh_token"),
+            expires_at=expires_at_ms,
             added_at=int(time.time()),
             last_used=None,
         )
@@ -99,7 +104,7 @@ def pull_and_setup(paths: Paths, hook_token: str, *, client: httpx.Client | None
                 paths,
                 account_payload["access_token"],
                 account_payload["refresh_token"],
-                int(account_payload["expires_at"]) * 1000,
+                expires_at_ms,
             )
             store.set_active(account.name)
         names.append(account_payload["name"])
