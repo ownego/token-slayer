@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from typing import Callable
 
@@ -149,6 +150,17 @@ def _poll_once(services, cfg: Config, wrapper_pid: int,
     return None, session_id
 
 
+def _mark_swapping(entry: dict, target: str | None) -> None:
+    """Set a registry entry's state to "swapping" against a switch target.
+
+    :param entry: the mutable registry entry dict passed by `update_self`.
+    :param target: the account name being switched to, or None.
+    :return: None
+    """
+    entry["state"] = "swapping"
+    entry["account"] = target
+
+
 def _terminate(proc, *, timeout: float = TERMINATE_TIMEOUT) -> None:
     """Gracefully stop `proc`: `terminate()` then `wait(timeout)`, `kill()` on timeout.
 
@@ -171,6 +183,11 @@ def _apply_action(services, cfg: Config, action: Action) -> None:
     wait for the soonest reset. Updates the session registry's state for
     each.
 
+    A "switch" action's `switch_to` call can raise `SlayerError` (e.g.
+    `AccountNotFound`) — this function does not catch it, so callers must
+    handle the failure (the wrapper's poll loop falls back to relaunching on
+    the current account rather than propagating and stranding the user).
+
     :param services: the CLI Services bundle (paths + store).
     :param cfg: user behaviour configuration.
     :param action: the decided Action.
@@ -178,8 +195,7 @@ def _apply_action(services, cfg: Config, action: Action) -> None:
     """
     paths = services.paths
     if action.kind == "switch":
-        registry.update_self(paths, lambda e: (
-            e.__setitem__("state", "swapping"), e.__setitem__("account", action.target)))
+        registry.update_self(paths, lambda e: _mark_swapping(e, action.target))
         switch_to(services.store, action.target, paths=paths)
     elif action.kind == "retry_same":
         registry.update_self(paths, lambda e: e.__setitem__("state", "retrying"))
@@ -201,8 +217,11 @@ def run(claude_bin: str, argv: list[str], services, *, spawn: Callable = subproc
     non-`none` Action, terminate the child gracefully, apply the action
     (switch / retry-same / wait-for-reset), and relaunch with `--resume`
     (never re-sending the failed turn — `relaunch_argv` resumes the
-    session, it never re-POSTs). Exits when the child quits with no pending
-    action (the user quit `claude`).
+    session, it never re-POSTs). If applying the action raises (e.g. a
+    "switch" target rejected with `AccountNotFound`), a token-free warning is
+    printed to stderr and the wrapper still relaunches on the CURRENT
+    account rather than stranding the user with no running child. Exits when
+    the child quits with no pending action (the user quit `claude`).
 
     :param claude_bin: Absolute path to the `claude` executable.
     :param argv: Arguments to pass to `claude` (already split at the CLI's `--`).
@@ -221,6 +240,12 @@ def run(claude_bin: str, argv: list[str], services, *, spawn: Callable = subproc
 
     while True:
         pending: Action | None = None
+        # This wrapper targets INTERACTIVE `claude` sessions: the Stop hook
+        # fires on turn-end while the child stays alive, so the poll loop
+        # below always gets a chance to observe the signal. A `-p`/single-shot
+        # child that exits immediately after writing a signal can race this
+        # loop and lose that final signal (a known, accepted v1 limitation —
+        # single-shot auto-switch is out of scope).
         while proc.poll() is None:
             pending, session_id = _poll_once(services, cfg, wrapper_pid, session_id)
             if pending is not None:
@@ -231,9 +256,17 @@ def run(claude_bin: str, argv: list[str], services, *, spawn: Callable = subproc
             break  # the child exited on its own — the user quit claude.
 
         _terminate(proc)
-        _apply_action(services, cfg, pending)
+        try:
+            _apply_action(services, cfg, pending)
+        except Exception as exc:
+            # Never strand the user: a failed switch (e.g. AccountNotFound)
+            # still relaunches on the CURRENT account rather than leaving no
+            # child running. `exc` is a SlayerError message and never
+            # contains a token, but nothing token-bearing is interpolated here.
+            print(f"token-slayer: switch failed ({exc}); continuing on the current account", file=sys.stderr)
 
-        argv = relaunch.relaunch_argv(argv, session_id, auto_resume=cfg.auto_resume, auto_message=cfg.auto_message)
+        resume_message = pending.resume_message or cfg.auto_message
+        argv = relaunch.relaunch_argv(argv, session_id, auto_resume=cfg.auto_resume, auto_message=resume_message)
         registry.update_self(paths, lambda e: e.__setitem__("state", "running"))
         proc = spawn([claude_bin, *argv], env=_spawn_env(wrapper_pid))
 

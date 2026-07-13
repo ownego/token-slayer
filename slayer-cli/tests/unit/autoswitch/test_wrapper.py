@@ -16,6 +16,7 @@ from slayer_cli.autoswitch import registry, signals, wrapper
 from slayer_cli.cli.main import Services
 from slayer_cli.config import store as config_store
 from slayer_cli.config.model import Config, StrategyConfig
+from slayer_cli.errors import AccountNotFound
 from slayer_cli.models.account import Account
 from slayer_cli.models.usage_windows import AccountUsage, Window
 from slayer_cli.platform.paths import Paths
@@ -146,6 +147,65 @@ def test_run_switches_and_relaunches_with_resume_on_stopped_over_threshold(tmp_p
         assert "sk-ant" not in joined
     assert "sk-ant" not in captured.out
     assert "sk-ant" not in captured.err
+
+
+def test_run_relaunches_current_account_when_switch_fails(tmp_path, monkeypatch, capsys):
+    """A STOPPED signal decides a switch, but `switch_to` raises
+    `AccountNotFound`: the wrapper must not crash or propagate, must print a
+    token-free warning to stderr, and must relaunch `claude` (a second spawn)
+    on the CURRENT account rather than leaving no child running."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    paths = Paths("token_slayer")
+    store = _setup_accounts(paths)
+
+    cfg = Config(strategy=StrategyConfig(kind="balanced"))
+    config_store.save(paths, cfg)
+
+    # "b" is a healthy switch target in the usage cache.
+    healthy = AccountUsage(five_hour=Window(utilization=5.0), seven_day=Window(utilization=5.0), polled_at=1)
+    usage_cache.save_cache(paths, {usage_cache.cache_key(store.get("b")): healthy})
+
+    pid = os.getpid()
+    signals.write(paths, pid, signals.SESSION_STARTED, {"sessionId": "sess-1", "cwd": str(tmp_path)})
+    signals.write(paths, pid, signals.STOPPED, {"sessionId": "sess-1"})
+
+    monkeypatch.setattr("slayer_cli.credstore.refresh.is_expired", lambda block, **kw: False)
+
+    over_threshold = AccountUsage(
+        five_hour=Window(utilization=50.0), seven_day=Window(utilization=100.0), polled_at=2)
+    monkeypatch.setattr("slayer_cli.usage.oauth.fetch_usage", lambda token, **kw: over_threshold)
+
+    def failing_switch_to(store_arg, name, *, paths, force=False):
+        raise AccountNotFound(name)
+
+    monkeypatch.setattr("slayer_cli.autoswitch.wrapper.switch_to", failing_switch_to)
+
+    proc1 = _FakeProc(auto_exit_after_polls=None)      # stays alive until the wrapper terminates it
+    proc2 = _FakeProc(auto_exit_after_polls=0)         # relaunch exits immediately, no pending action
+    spawn = _fake_spawn([proc1, proc2])
+
+    services = Services(paths=paths, store=store)
+    code = wrapper.run("claude", ["--flag"], services, spawn=spawn)
+
+    assert code == 0
+    assert proc1.terminated is True
+
+    # The wrapper still relaunches — the session continues on the current account.
+    assert len(spawn.calls) == 2
+    relaunch_argv = spawn.calls[1]["argv"]
+    assert "--resume" in relaunch_argv
+    assert "sess-1" in relaunch_argv
+
+    assert registry.list(paths) == []          # cleaned up on exit despite the failure
+    assert signals.read(paths, pid, signals.STOPPED) is None  # consumed
+
+    captured = capsys.readouterr()
+    assert "token-slayer: switch failed" in captured.err
+    assert "sk-ant" not in captured.err
+    assert "sk-ant" not in captured.out
+    for call in spawn.calls:
+        joined = " ".join(str(x) for x in call["argv"]) + " ".join(str(v) for v in call["env"].values())
+        assert "sk-ant" not in joined
 
 
 def test_run_returns_child_exit_code_with_no_pending_action(tmp_path, monkeypatch):
