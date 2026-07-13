@@ -253,6 +253,47 @@ def test_setup_with_no_provisioned_accounts_is_friendly(tmp_path, monkeypatch):
     assert "no provisioned accounts" in out.output.lower()
 
 
+def test_run_resolves_claude_on_path_and_delegates_to_wrapper(tmp_path, monkeypatch):
+    """`run -- <args>` resolves `claude` via PATH, splits argv at `--`, and
+    hands off to `wrapper.run`, exiting with its returned code."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    import shutil
+
+    from slayer_cli.autoswitch import wrapper as wrapper_mod
+    from slayer_cli.cli.main import main
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/claude" if name == "claude" else None)
+
+    captured = {}
+
+    def fake_wrapper_run(claude_bin, argv, services, **kw):
+        captured["claude_bin"] = claude_bin
+        captured["argv"] = argv
+        return 3
+
+    monkeypatch.setattr(wrapper_mod, "run", fake_wrapper_run)
+
+    out = CliRunner().invoke(main, ["run", "--", "--model", "opus"])
+    assert out.exit_code == 3
+    assert captured["claude_bin"] == "/usr/local/bin/claude"
+    assert captured["argv"] == ["--model", "opus"]
+
+
+def test_run_without_claude_on_path_is_clean_error(tmp_path, monkeypatch):
+    """`run` with no `claude` on PATH exits non-zero with a clean message."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    import shutil
+
+    from slayer_cli.cli.main import main
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    out = CliRunner().invoke(main, ["run"])
+    assert out.exit_code != 0
+    assert "Traceback" not in out.output
+    assert "claude" in out.output.lower()
+
+
 def test_alias_command_sets_and_clears(tmp_path, monkeypatch):
     """`alias TARGET NAME` sets an alias (resolving TARGET by slot/alias/
     email); `alias TARGET` with no NAME clears it."""

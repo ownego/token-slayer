@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import click
 
 from slayer_cli.accounts.store import AccountStore
-from slayer_cli.cli.commands import add, alias, config, current, force_switch, hook, install_hooks, remove, setup, sessions, status, switch, tui, uninstall, uninstall_hooks, update
+from slayer_cli.cli.commands import add, alias, config, current, force_switch, hook, install_hooks, remove, run, setup, sessions, status, switch, tui, uninstall, uninstall_hooks, update
 from slayer_cli.cli.commands import list as list_cmd
 from slayer_cli.platform.paths import Paths
 
@@ -60,4 +60,5 @@ main.add_command(uninstall_hooks.command, name="uninstall-hooks")
 main.add_command(hook.command, name="hook")
 main.add_command(setup.command, name="setup")
 main.add_command(uninstall.command, name="uninstall")
+main.add_command(run.command, name="run")
 main.add_command(tui.command, name="tui")
