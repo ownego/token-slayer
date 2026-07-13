@@ -34,3 +34,25 @@ def test_fetch_error_returns_empty_snapshot():
     """Non-200 and non-401 errors return empty (all-None) snapshot."""
     u = oauth.fetch_usage("t", client=_client(lambda r: httpx.Response(500, text="boom")))
     assert u.five_hour is None and u.token_expired is False
+
+
+def test_fetch_non_json_200_returns_empty():
+    """A 200 with a non-JSON body (e.g. a WAF HTML page) → empty snapshot, not a crash."""
+    u = oauth.fetch_usage("t", client=_client(lambda r: httpx.Response(200, text="<html>nope</html>")))
+    assert u.five_hour is None and u.token_expired is False
+
+
+def test_fetch_network_error_returns_empty():
+    """Network errors (e.g. ConnectError) return empty snapshot, not a crash."""
+    def handler(req):
+        raise httpx.ConnectError("boom")
+    u = oauth.fetch_usage("t", client=_client(handler))
+    assert u.five_hour is None and u.token_expired is False
+
+
+def test_fetch_window_missing_utilization_is_none():
+    """A window object present but with no `utilization` key → parsed to None, not a crash."""
+    def handler(req):
+        return httpx.Response(200, json={"five_hour": {"resets_at": 123}})
+    u = oauth.fetch_usage("t", client=_client(handler))
+    assert u.five_hour is None
