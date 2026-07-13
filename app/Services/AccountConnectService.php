@@ -127,6 +127,31 @@ class AccountConnectService
     }
 
     /**
+     * Pull and single-use invalidate the cached PKCE verifier for `$state`,
+     * then exchange `$pastedCode` for a raw token array (token.json shape).
+     *
+     * @param  string  $state  the state returned by {@see start()}
+     * @param  string  $pastedCode  the `code#state` (or bare code) the admin pasted
+     * @return array<string, mixed> the decoded token response
+     *
+     * @throws AccountConnectException when the verifier is missing/expired
+     */
+    public function exchangeForToken(string $state, string $pastedCode): array
+    {
+        $cacheKey = self::CACHE_KEY_PREFIX.$state;
+        $pending = Cache::get($cacheKey);
+        Cache::forget($cacheKey);
+
+        if ($pending === null) {
+            throw new AccountConnectException('connect_state_expired', 'This connect link expired or was already used. Start again.');
+        }
+
+        $code = Str::before($pastedCode, '#');
+
+        return $this->client->exchangeCode($code, $pending['verifier'], $state);
+    }
+
+    /**
      * Resolve a pasted PKCE code into a connect outcome. Pulls and single-use
      * invalidates the cached verifier, exchanges the code, and reads the
      * authorized profile. When `$expected` is given (per-row re-auth), the
@@ -144,17 +169,7 @@ class AccountConnectService
      */
     public function resolve(string $state, string $pastedCode, ?Account $expected = null): ConnectResolution
     {
-        $cacheKey = self::CACHE_KEY_PREFIX.$state;
-        $pending = Cache::get($cacheKey);
-        Cache::forget($cacheKey);
-
-        if ($pending === null) {
-            throw new AccountConnectException('connect_state_expired', 'This connect link expired or was already used. Start again.');
-        }
-
-        $code = Str::before($pastedCode, '#');
-
-        $token = $this->client->exchangeCode($code, $pending['verifier'], $state);
+        $token = $this->exchangeForToken($state, $pastedCode);
         $profile = $this->client->profile($token['access_token']);
 
         $email = $profile['account']['email'] ?? null;
