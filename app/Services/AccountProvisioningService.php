@@ -110,4 +110,32 @@ final class AccountProvisioningService
             ->whereNull('claimed_at')
             ->get();
     }
+
+    /**
+     * Read, return, and consume every claimable grant for a user. For each
+     * claimable pivot the encrypted cache secret is decrypted into its payload;
+     * rows whose cache entry has expired are skipped. A served row is marked
+     * claimed and its cache key forgotten (one-time handoff).
+     *
+     * @param  User  $user  the hook-authenticated user pulling grants
+     * @return array<int, array<string, mixed>> the decoded grant payloads
+     */
+    public function claim(User $user): array
+    {
+        $payloads = [];
+
+        foreach ($this->claimableFor($user) as $pivot) {
+            $key = $this->cacheKey($pivot->user_id, $pivot->account_id);
+            $raw = Cache::get($key);
+            if ($raw === null) {
+                continue; // cache secret expired — nothing to hand off
+            }
+
+            $payloads[] = json_decode(Crypt::decryptString($raw), true);
+            $pivot->forceFill(['claimed_at' => Carbon::now()])->save();
+            Cache::forget($key);
+        }
+
+        return $payloads;
+    }
 }
