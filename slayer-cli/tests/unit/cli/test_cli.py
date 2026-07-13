@@ -148,6 +148,51 @@ def test_status_never_prints_token(tmp_path, monkeypatch):
     assert "logged in: yes" in out.output.lower() or "logged in: yes" in out.output
 
 
+def test_uninstall_yes_runs_teardown_and_prints_summary_without_token(tmp_path, monkeypatch):
+    """`uninstall --yes` skips the prompt, calls teardown.uninstall, and never
+    echoes a token even if a fake summary carried one."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.cli.commands import uninstall as uninstall_cmd
+    from slayer_cli.cli.main import main
+    from slayer_cli.teardown import UninstallSummary
+
+    captured = {}
+
+    def fake_uninstall(paths, *, keep_accounts=False):
+        captured["keep_accounts"] = keep_accounts
+        return UninstallSummary(
+            credential_restored=True,
+            removed=["venv", "shim (token-slayer)", "symlink (slayer)"],
+            kept_accounts=keep_accounts,
+        )
+
+    monkeypatch.setattr(uninstall_cmd.teardown, "uninstall", fake_uninstall)
+
+    out = CliRunner().invoke(main, ["uninstall", "--yes"])
+    assert out.exit_code == 0
+    assert captured["keep_accounts"] is False
+    assert "sk-ant-oat01" not in out.output
+    assert "restored" in out.output.lower()
+
+
+def test_uninstall_declined_confirmation_does_not_run_teardown(tmp_path, monkeypatch):
+    """`uninstall` without --yes, declined at the confirm prompt, exits 0
+    without calling teardown.uninstall."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.cli.commands import uninstall as uninstall_cmd
+    from slayer_cli.cli.main import main
+
+    called = {}
+    monkeypatch.setattr(
+        uninstall_cmd.teardown, "uninstall", lambda *a, **k: called.setdefault("hit", True)
+    )
+
+    out = CliRunner().invoke(main, ["uninstall"], input="n\n")
+    assert out.exit_code == 0
+    assert "hit" not in called
+    assert "aborted" in out.output.lower()
+
+
 def test_update_without_install_url_prints_guidance(tmp_path, monkeypatch):
     """`update` with SLAYER_INSTALL_URL unset prints guidance instead of failing."""
     monkeypatch.setenv("HOME", str(tmp_path))

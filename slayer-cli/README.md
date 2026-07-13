@@ -42,6 +42,9 @@ slayer tui
 
 # Install hooks into Claude Code
 slayer install-hooks
+
+# Uninstall the switcher (restores your original Claude login)
+slayer uninstall
 ```
 
 ### Interactive TUI
@@ -62,6 +65,24 @@ Launches a Textual-based interface where you can:
 slayer --help
 slayer <command> --help
 ```
+
+## Uninstall / Teardown
+
+```bash
+slayer uninstall                # prompts for confirmation
+slayer uninstall --yes          # skip the confirmation prompt
+slayer uninstall --keep-accounts  # remove the switcher but keep your stored account slots
+```
+
+`uninstall` is safe and reversible: it restores your original Claude login
+from the pristine `.slayer-bak` backup that was captured before slayer-cli's
+first switch (Linux/Windows only — macOS keeps the original in the system
+Keychain and is left untouched), then removes the switcher's venv, the
+`token-slayer`/`slayer` shim, the attribution file, and — unless
+`--keep-accounts` is given — your stored account slots, switch state, swap
+history, and usage cache. It never touches the token-slayer event-tracking
+hook (`send-hook.sh`, hook token, detector-config, `custom.sh`, shell-rc
+block) — tearing that down is a separate manual step.
 
 ## Integration with token-slayer
 
