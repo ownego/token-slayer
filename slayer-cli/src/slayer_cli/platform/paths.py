@@ -44,6 +44,11 @@ class Paths:
         return self.config_dir / constants.SESSIONS_DIR
 
     @property
+    def signals_dir(self) -> Path:
+        """PID-namespaced signal file directory for hook↔wrapper communication."""
+        return self.config_dir / constants.SIGNALS_DIR
+
+    @property
     def _claude_config_dir(self) -> Path:
         cc = os.environ.get("CLAUDE_CONFIG_DIR")
         return Path(cc) if cc else self.home / ".claude"
