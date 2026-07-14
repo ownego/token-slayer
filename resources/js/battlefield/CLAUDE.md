@@ -33,6 +33,7 @@ Fighter entry object (lives in `scene.fighters: Map<userId, entry>`):
   isStunned,             // boolean — reserved for movement-lock stun; always false today (stun is visual-only, see boss/stun.js)
   lastStunAt,            // timestamp of last stun (ms) — drives star-orbit effect cooldown only
   waypointMoving,        // boolean — local waypoint animation in progress
+  hasCustomPosition,     // boolean — true once fighter has moved (click-to-move or restored from persisted position); relayoutFighters() must not grid-snap these
   rescaleTween,          // active tween or null
 }
 ```

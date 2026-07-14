@@ -276,6 +276,7 @@ export class MoveInput {
           }
           if (idx === route.length - 1) {
             entry.pos = target;
+            entry.hasCustomPosition = true;
             entry.waypointMoving = false;
             if (entry.body && entry.animState !== AnimState.ATTACK) {
               const isCharging = this.scene.charges.has(entry.id);

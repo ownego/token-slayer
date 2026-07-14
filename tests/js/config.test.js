@@ -114,6 +114,22 @@ describe('BOSS_TYPES', () => {
     }
   });
 
+  test('idle and move anims loop, so startBossPatrol can resume after idling at an endpoint', () => {
+    // startBossPatrol()/idleAtEndpoint() waits for Phaser's ANIMATION_REPEAT event on the
+    // idle anim to know when to resume patrolling. If loop isn't set, boss/index.js's
+    // ensureBossIdleAnim() creates the anim with repeat:0, ANIMATION_REPEAT never fires,
+    // and the boss freezes in place forever after its first stop (see boss-flying-demon regression).
+    for (const b of BOSS_TYPES) {
+      if (!b.animFiles) continue;
+      if (b.animFiles.idle) {
+        expect(b.animFiles.idle.loop, `${b.key}.idle.loop must be true`).toBe(true);
+      }
+      if (b.animFiles.move) {
+        expect(b.animFiles.move.loop, `${b.key}.move.loop must be true`).toBe(true);
+      }
+    }
+  });
+
   test('frame grid matches the actual spritesheet dimensions and idle frames exist', () => {
     for (const b of BOSS_TYPES) {
       if (b.animFiles) {
