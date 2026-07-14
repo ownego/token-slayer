@@ -35,4 +35,9 @@ class Event extends Model
     {
         return $this->belongsTo(Boss::class);
     }
+
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
 }

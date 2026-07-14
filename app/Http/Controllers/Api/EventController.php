@@ -11,6 +11,7 @@ use App\Events\HitDealt;
 use App\Http\Controllers\Controller;
 use App\Models\Boss;
 use App\Models\Event;
+use App\Services\AccountResolver;
 use App\Services\DamageService;
 use App\Services\FighterChargingCache;
 use App\Services\TranscriptReader;
@@ -23,6 +24,7 @@ class EventController extends Controller
         private DamageService $damage,
         private TranscriptReader $transcripts,
         private FighterChargingCache $chargingCache,
+        private AccountResolver $accounts,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -30,20 +32,31 @@ class EventController extends Controller
         $user = $request->user('hook');
         $payload = $request->all();
 
+        $accountEmail = $this->trimmedStringOrNull($payload['account_email'] ?? null);
+        $accountSource = $this->trimmedStringOrNull($payload['account_source'] ?? null);
+        $accountOrgId = $this->trimmedStringOrNull($payload['account_org_id'] ?? null);
+        $accountId = $this->accounts->resolve($accountOrgId, $accountEmail);
+        $clientVersion = $this->trimmedStringOrNull($payload['client_version'] ?? null);
+        $customActivity = $this->trimmedStringOrNull($payload['custom_activity'] ?? null);
+
         $hookName = $payload['hook_event_name'] ?? 'unknown';
         $eventType = $this->normalizeEventType($hookName);
         $provider = $request->query('provider', 'claude-code');
         $tokens = $this->resolveStopTokens($eventType, $payload);
 
-        $user->forceFill(['last_event_at' => now()])->save();
+        $user->forceFill([
+            'last_event_at' => now(),
+            'client_version' => $clientVersion ?? $user->client_version,
+        ])->save();
 
         if ($eventType === 'user-prompt-submit' || $eventType === 'pre-invocation') {
-            $this->chargingCache->put($user->id, 'thinking…');
-            $this->dispatchSafely(new FighterCharging($user, 'thinking…', $this->aliveBoss()));
+            $activity = $this->truncateActivity($customActivity ?? 'thinking…');
+            $this->chargingCache->put($user->id, $activity);
+            $this->dispatchSafely(new FighterCharging($user, $activity, $this->aliveBoss()));
         }
 
         if ($eventType === 'pre-tool-use') {
-            $activity = $this->summarizeToolUse($payload);
+            $activity = $this->truncateActivity($customActivity ?? $this->summarizeToolUse($payload));
             $this->chargingCache->put($user->id, $activity);
             $this->dispatchSafely(new FighterCharging($user, $activity, $this->aliveBoss()));
         }
@@ -67,6 +80,10 @@ class EventController extends Controller
                     'provider' => $provider,
                     'tokens' => $tokens,
                     'session_id' => $payload['session_id'] ?? null,
+                    'account_id' => $accountId,
+                    'account_email' => $accountEmail,
+                    'account_source' => $accountSource,
+                    'account_org_id' => $accountOrgId,
                 ]);
 
                 $result = $this->damage->apply($user, $tokens);
@@ -125,31 +142,52 @@ class EventController extends Controller
     }
 
     /**
-     * Build a short "what is the agent doing" string from a PreToolUse payload.
+     * Build a privacy-safe "what is the agent doing" label from a PreToolUse
+     * payload. Only the tool name is ever surfaced by default — no command
+     * text, file paths, search patterns, or URLs, since the charging bubble
+     * is visible to everyone watching the battlefield. A client-supplied
+     * `custom_activity` payload field always takes priority over this and
+     * is applied by the caller before this method is reached.
      *
      * @param  array<string, mixed>  $payload
      */
     private function summarizeToolUse(array $payload): string
     {
         $tool = (string) ($payload['tool_name'] ?? 'tool');
-        $input = (array) ($payload['tool_input'] ?? []);
 
-        $detail = match ($tool) {
-            'Bash' => '$ '.(string) ($input['command'] ?? ''),
-            'run_command' => '$ '.(string) ($input['CommandLine'] ?? ''),
-            'Read', 'Edit', 'Write', 'NotebookEdit' => $tool.': '.basename((string) ($input['file_path'] ?? '')),
-            'read_file', 'view_file' => $tool.': '.basename((string) ($input['AbsolutePath'] ?? '')),
-            'write_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content' => $tool.': '.basename((string) ($input['TargetFile'] ?? ($input['AbsolutePath'] ?? ''))),
-            'Grep' => 'Grep: '.(string) ($input['pattern'] ?? ''),
-            'grep_search' => 'Grep: '.(string) ($input['Query'] ?? ''),
-            'Glob' => 'Glob: '.(string) ($input['pattern'] ?? ''),
-            'WebFetch' => 'WebFetch: '.(string) ($input['url'] ?? ''),
+        if (str_starts_with($tool, 'mcp__')) {
+            $segments = explode('__', $tool, 3);
+
+            if (($segments[1] ?? '') !== '') {
+                return $this->truncateActivity('MCP: '.$segments[1]);
+            }
+        }
+
+        $label = match ($tool) {
+            'Bash', 'BashOutput', 'KillShell', 'run_command' => 'Bash',
+            'Read', 'read_file', 'view_file' => 'Read file',
+            'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'write_file', 'write_to_file', 'replace_file_content', 'multi_replace_file_content' => 'Edit file',
+            'Grep', 'grep_search', 'Glob' => 'Search',
+            'WebFetch', 'WebSearch' => 'Web',
+            'Task' => 'Agent',
             'TodoWrite' => 'TodoWrite',
-            'Task' => 'Agent: '.(string) ($input['description'] ?? ''),
             default => $tool,
         };
 
-        return mb_strlen($detail) > 40 ? mb_substr($detail, 0, 39).'…' : $detail;
+        return $this->truncateActivity($label);
+    }
+
+    /**
+     * Truncate a charging-bubble activity label to a display-friendly
+     * length, appending an ellipsis when truncation occurs. Applied to both
+     * default tool-name labels and client-supplied `custom_activity` values.
+     *
+     * @param  string  $activity
+     * @return string
+     */
+    private function truncateActivity(string $activity): string
+    {
+        return mb_strlen($activity) > 40 ? mb_substr($activity, 0, 39).'…' : $activity;
     }
 
     /**
@@ -199,5 +237,21 @@ class EventController extends Controller
     private function dispatchSafely(object $event): void
     {
         rescue(fn () => event($event));
+    }
+
+    /**
+     * Normalize an incoming payload string: trimmed non-empty string or null.
+     *
+     * @param  mixed  $value
+     * @return ?string
+     */
+    private function trimmedStringOrNull(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : mb_substr($trimmed, 0, 255);
     }
 }

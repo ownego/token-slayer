@@ -6,6 +6,7 @@ use App\Events\FighterCharging;
 use App\Events\FighterIdled;
 use App\Events\FighterJoined;
 use App\Events\HitDealt;
+use App\Models\Account;
 use App\Models\Boss;
 use App\Models\Event;
 use App\Models\User;
@@ -236,7 +237,7 @@ test('user-prompt-submit caches the fighter activity', function () {
     expect($entry['activity'])->toBe('thinking…');
 });
 
-test('pre-tool-use caches the summarized tool activity', function () {
+test('pre-tool-use caches the privacy-safe default tool name activity', function () {
     $this->withHeader('Authorization', 'Bearer tok')
         ->postJson('/api/events', [
             'hook_event_name' => 'PreToolUse',
@@ -246,7 +247,88 @@ test('pre-tool-use caches the summarized tool activity', function () {
         ->assertCreated();
 
     $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
-    expect($entry['activity'])->toStartWith('$ npm install');
+    expect($entry['activity'])->toBe('Bash');
+});
+
+test('pre-tool-use summarizes an MCP tool name to the server label', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PreToolUse',
+            'tool_name' => 'mcp__jira__jira_search',
+        ])
+        ->assertCreated();
+
+    $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
+    expect($entry['activity'])->toBe('MCP: jira');
+});
+
+test('pre-tool-use falls back to the bare tool name for unrecognized tools', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PreToolUse',
+            'tool_name' => 'SomeCustomTool',
+        ])
+        ->assertCreated();
+
+    $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
+    expect($entry['activity'])->toBe('SomeCustomTool');
+});
+
+test('pre-tool-use uses the client-provided custom_activity over the default tool name', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PreToolUse',
+            'tool_name' => 'Bash',
+            'tool_input' => ['command' => 'npm install'],
+            'custom_activity' => 'installing deps',
+        ])
+        ->assertCreated();
+
+    $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
+    expect($entry['activity'])->toBe('installing deps');
+});
+
+test('pre-tool-use truncates an overlong custom_activity to 40 characters', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PreToolUse',
+            'tool_name' => 'Bash',
+            'custom_activity' => str_repeat('a', 60),
+        ])
+        ->assertCreated();
+
+    $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
+    expect(mb_strlen($entry['activity']))->toBe(40)
+        ->and($entry['activity'])->toEndWith('…');
+});
+
+test('user-prompt-submit uses the client-provided custom_activity over the default thinking label', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'UserPromptSubmit',
+            'session_id' => 'sess-1',
+            'custom_activity' => 'planning refactor',
+        ])
+        ->assertCreated();
+
+    $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
+    expect($entry['activity'])->toBe('planning refactor');
+});
+
+test('custom_activity has no effect on event types other than pre-tool-use and user-prompt-submit', function () {
+    Illuminate\Support\Facades\Event::fake([FighterIdled::class]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-custom-stop',
+            'tokens' => 0,
+            'custom_activity' => 'should be ignored',
+        ])
+        ->assertCreated();
+
+    $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
+    expect($entry)->toBeNull();
 });
 
 test('stop with tokens clears the cached charging entry', function () {
@@ -356,4 +438,103 @@ test('Stop event from a single-emit tracker with zero tokens still clears the bu
 
     $entry = app(FighterChargingCache::class)->many([$this->user->id])[$this->user->id];
     expect($entry)->toBeNull();
+});
+
+it('persists attribution columns on events when provided directly', function () {
+    $account = Account::factory()->create(['email' => 'org@ownego.com']);
+    $event = Event::factory()->create([
+        'user_id' => $this->user->id,
+        'account_id' => $account->id,
+        'account_email' => 'org@ownego.com',
+        'account_source' => 'credential',
+    ]);
+
+    expect($event->fresh()->account_id)->toBe($account->id)
+        ->and($event->fresh()->account_source)->toBe('credential');
+});
+
+it('attributes a stop event to the matching org account', function () {
+    $account = Account::factory()->create(['email' => 'org@ownego.com']);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'tokens' => 500,
+            'account_email' => 'ORG@ownego.com',
+            'account_uuid' => 'uuid-1',
+            'account_source' => 'credential',
+            'client_version' => '2',
+        ])
+        ->assertCreated();
+
+    $event = Event::latest('id')->first();
+    expect($event->account_id)->toBe($account->id)
+        ->and($event->account_email)->toBe('ORG@ownego.com')
+        ->and($event->account_source)->toBe('credential')
+        ->and($this->user->fresh()->client_version)->toBe('2');
+});
+
+it('records unknown account emails with a null account id', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop', 'tokens' => 100,
+            'account_email' => 'personal@gmail.com', 'account_source' => 'auto',
+        ])
+        ->assertCreated();
+
+    $event = Event::latest('id')->first();
+    expect($event->account_id)->toBeNull()
+        ->and($event->account_email)->toBe('personal@gmail.com');
+});
+
+it('accepts legacy payloads with no attribution fields', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop', 'tokens' => 100,
+        ])
+        ->assertCreated();
+
+    $event = Event::latest('id')->first();
+    expect($event->account_id)->toBeNull()
+        ->and($event->account_email)->toBeNull()
+        ->and($this->user->fresh()->client_version)->toBeNull();
+});
+
+it('stores the raw account org id on the event', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop', 'tokens' => 100,
+            'account_org_id' => 'org-raw-x',
+        ])
+        ->assertCreated();
+
+    $event = Event::latest('id')->first();
+    expect($event->account_org_id)->toBe('org-raw-x')
+        ->and($event->account_id)->toBeNull();
+});
+
+it('does not persist custom_activity on the event row', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop', 'tokens' => 100,
+            'custom_activity' => 'reviewing PR',
+        ])
+        ->assertCreated();
+
+    $event = Event::latest('id')->first();
+    expect($event->getAttributes())->not->toHaveKey('custom_activity');
+});
+
+it('attributes the event to the account matching the organization uuid', function () {
+    $account = Account::factory()->withOrganizationUuid('org-match-1')->create();
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop', 'tokens' => 100,
+            'account_org_id' => 'org-match-1',
+        ])
+        ->assertCreated();
+
+    $event = Event::latest('id')->first();
+    expect($event->account_id)->toBe($account->id);
 });

@@ -28,6 +28,6 @@ class AppServiceProvider extends ServiceProvider
             $event->extendSocialite('slack', Provider::class);
         });
 
-        Gate::define('admin', fn (User $user): bool => (bool) $user->is_admin);
+        Gate::define('admin', fn (User $user): bool => $user->isAdministrator());
     }
 }

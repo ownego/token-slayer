@@ -169,11 +169,11 @@ test('profile shows community and personal usage across hourly, daily, monthly',
 
 test('profile shows the my-account block when the user has an account', function () {
     $account = Account::factory()->create(['email' => 'team-rocket@example.com', 'plan' => 'max-20x']);
-    $user = User::factory()->create(['account_id' => $account->id]);
-    User::factory()->create(['account_id' => $account->id]);
+    $user = User::factory()->create();
+    $account->users()->attach([$user->id, User::factory()->create()->id]);
     $this->actingAs($user);
 
-    Event::factory()->create(['user_id' => $user->id, 'tokens' => 55, 'created_at' => now()->subMinutes(10)]);
+    Event::factory()->create(['user_id' => $user->id, 'account_id' => $account->id, 'tokens' => 55, 'created_at' => now()->subMinutes(10)]);
 
     $this->get('/profile')
         ->assertOk()
@@ -183,10 +183,63 @@ test('profile shows the my-account block when the user has an account', function
 });
 
 test('profile hides the my-account block when the user has no account', function () {
-    $user = User::factory()->create(['account_id' => null]);
+    $user = User::factory()->create();
     $this->actingAs($user);
 
     $this->get('/profile')
         ->assertOk()
         ->assertDontSee('My account');
+});
+
+it('lists every account the user is a member of with their own usage', function () {
+    $user = User::factory()->create();
+    [$a, $b] = Account::factory()->count(2)->create();
+    $user->accounts()->attach([$a->id, $b->id]);
+    Event::factory()->create(['user_id' => $user->id, 'account_id' => $a->id, 'tokens' => 42]);
+
+    Livewire::actingAs($user)->test(Profile::class)
+        ->assertSee($a->email)
+        ->assertSee($b->email);
+});
+
+it('shows attribution status from the latest event', function () {
+    $user = User::factory()->create(['client_version' => '1']);
+    Event::factory()->create([
+        'user_id' => $user->id, 'account_id' => null,
+        'account_email' => 'mystery@gmail.com', 'account_source' => 'auto',
+    ]);
+
+    Livewire::actingAs($user)->test(Profile::class)
+        ->assertSee('mystery@gmail.com')
+        ->assertSee('token-slayer update'); // outdated client hint (latest is 3)
+});
+
+it('shows the matched attribution status for an org-uuid verified event with no email', function () {
+    $account = Account::factory()->create(['email' => 'org@ownego.com']);
+    $user = User::factory()->create();
+    Event::factory()->create([
+        'user_id' => $user->id,
+        'account_id' => $account->id,
+        'account_email' => null,
+        'account_source' => 'credential',
+        'account_org_id' => 'org-x',
+    ]);
+
+    Livewire::actingAs($user)->test(Profile::class)
+        ->assertSee('an org account')
+        ->assertSee('org@ownego.com');
+});
+
+it('shows a collapsible custom.sh tool catalog reference in the CLI track', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('Customize what your fighter shows')
+        ->assertSee('custom_activity')
+        ->assertSee('~/.config/token_slayer/custom.sh')
+        ->assertSee('mcp__')
+        ->assertSee('CommandLine')
+        ->assertSee('no per-tool events today');
 });
