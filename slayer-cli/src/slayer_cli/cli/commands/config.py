@@ -8,7 +8,7 @@ from slayer_cli.config import store
 __all__ = ["command"]
 
 
-@click.group(name="config")
+@click.group(name="config", hidden=True)
 @click.pass_obj
 def command(services) -> None:
     """Manage user behaviour configuration (strategy, thresholds, auto-switch rules).

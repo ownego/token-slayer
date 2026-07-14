@@ -14,7 +14,7 @@ from slayer_cli.platform.paths import Paths
 __all__ = ["command"]
 
 
-@click.command(name="install-hooks")
+@click.command(name="install-hooks", hidden=True)
 def command() -> None:
     """Install/refresh the Claude Code hooks via the served install script,
     then install the switcher's own coordination hooks.

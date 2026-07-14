@@ -7,6 +7,7 @@ utilization/reset only, sourced from `Account` and `UsageSnapshot`."""
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import DataTable, Footer, Header
 
@@ -53,7 +54,9 @@ class SlayerApp(App):
         ("G", "cursor_bottom", "Bottom"),
         ("s", "switch_selected", "Switch"),
         ("r", "refresh", "Refresh"),
-        ("c", "cycle_strategy", "Strategy"),
+        # Auto-switch strategy control is hidden pending release (key still
+        # works for verification; not shown in the footer).
+        Binding("c", "cycle_strategy", "Strategy", show=False),
         ("q", "quit", "Quit"),
     ]
 
@@ -87,7 +90,6 @@ class SlayerApp(App):
         :return: None
         """
         self._rebuild_table()
-        self._refresh_strategy_label()
         self._start_refresh()
         self.set_interval(REFRESH_INTERVAL_SECONDS, self._start_refresh)
 

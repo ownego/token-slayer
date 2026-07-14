@@ -72,9 +72,11 @@ async def test_cycle_strategy_key_updates_config_and_label(tmp_path, monkeypatch
     from slayer_cli.config import store as config_store
     from slayer_cli.tui.app import SlayerApp
 
+    # The strategy control is hidden (auto-switch not released): no subtitle on
+    # mount, and the `c` binding is not shown in the footer — but the key still
+    # works, so cycling persists config and shows transient feedback.
     app = SlayerApp(paths)
     async with app.run_test() as pilot:
-        assert "manual" in app.sub_title
         await pilot.press("c")
         assert "balanced" in app.sub_title
         await pilot.press("c")

@@ -11,7 +11,7 @@ from slayer_cli.platform.paths import Paths
 __all__ = ["command"]
 
 
-@click.command(name="uninstall-hooks")
+@click.command(name="uninstall-hooks", hidden=True)
 def command() -> None:
     """Remove the switcher's coordination hooks from settings.json.
     """

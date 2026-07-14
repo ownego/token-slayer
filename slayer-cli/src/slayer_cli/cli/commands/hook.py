@@ -13,7 +13,7 @@ from slayer_cli.autoswitch import hooks
 __all__ = ["command"]
 
 
-@click.group(name="hook")
+@click.group(name="hook", hidden=True)
 def command() -> None:
     """Hook entry points invoked by Claude Code (SessionStart, Stop, failure, prompt-submit)."""
 

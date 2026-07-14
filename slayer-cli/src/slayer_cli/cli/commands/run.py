@@ -12,7 +12,7 @@ from slayer_cli.errors import SlayerError
 __all__ = ["command"]
 
 
-@click.command(name="run", context_settings={"ignore_unknown_options": True})
+@click.command(name="run", context_settings={"ignore_unknown_options": True}, hidden=True)
 @click.argument("claude_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_obj
 def command(services, claude_args: tuple[str, ...]) -> None:

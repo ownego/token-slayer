@@ -8,7 +8,7 @@ from slayer_cli.autoswitch import registry
 __all__ = ["command"]
 
 
-@click.command(name="sessions")
+@click.command(name="sessions", hidden=True)
 @click.pass_obj
 def command(services) -> None:
     """List running wrapper processes with their state, account, and working directory."""
