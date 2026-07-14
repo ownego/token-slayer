@@ -11,6 +11,7 @@ hooks on dev machines ──POST /api/events──▶ EventController
 ```
 
 - `app/Http/Controllers/Api/` — ingestion + IDE endpoints. Controllers stay thin: parse/validate, delegate to `app/Services/`, dispatch broadcasts.
+- Same thin-entrypoint rule applies to **artisan commands, jobs, and Filament actions**: they parse/iterate/delegate/report, and hand non-trivial per-item logic to an `app/Services/` class. Pattern: `ProbeAccountUsage` → `UsageProber`, `SyncAccountProfiles` → `AccountProfileSyncer`, the Connect action → `AccountConnectService`.
 - `app/Services/` — all business logic (DamageService, DamageTotals, caches, Slack, Recap). New aggregation/probing logic goes here, one class per responsibility.
 - `app/Events/` — broadcastables. The PHP↔JS contract rules live in `.ai/domain/broadcasting.md`; changes there require the `broadcast-reviewer` agent.
 - `app/Livewire/` — page components (Battlefield, Profile, AdminUsage). Admin pages gate on `can:admin` (`users.is_admin`).

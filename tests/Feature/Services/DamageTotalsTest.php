@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AccountUsageSnapshot;
 use App\Models\Boss;
 use App\Models\Event;
 use App\Models\User;
@@ -238,4 +239,35 @@ test('forUserByAccount returns rows for accounts the user is a member of or has 
         'daily' => 30,
         'monthly' => 45,
     ]);
+});
+
+test('forUserByAccount carries the latest usage snapshot util for each account', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['email' => 'quota@example.com']);
+    $account->users()->attach($user->id);
+
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_5h' => 10, 'util_7d' => 20, 'created_at' => now()->subHour(),
+    ]);
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_5h' => 42, 'util_7d' => 88, 'created_at' => now()->subMinute(),
+    ]);
+
+    $row = collect($this->totals->forUserByAccount($user))->firstWhere('account_id', $account->id);
+
+    expect($row['util_5h'])->toBe(42)
+        ->and($row['util_7d'])->toBe(88)
+        ->and($row['lastProbedAt'])->not->toBeNull();
+});
+
+test('forUserByAccount leaves util null when the account was never probed', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create();
+    $account->users()->attach($user->id);
+
+    $row = collect($this->totals->forUserByAccount($user))->firstWhere('account_id', $account->id);
+
+    expect($row['util_5h'])->toBeNull()
+        ->and($row['util_7d'])->toBeNull()
+        ->and($row['lastProbedAt'])->toBeNull();
 });

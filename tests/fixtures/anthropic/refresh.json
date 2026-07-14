@@ -1,0 +1,17 @@
+{
+  "token_type": "Bearer",
+  "access_token": "sk-ant-oat01-REDACTED",
+  "expires_in": 28800,
+  "refresh_token": "sk-ant-ort01-REDACTED",
+  "scope": "user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code",
+  "token_uuid": "66d4280a-1be7-4e48-bdc5-b72eedbe2f52",
+  "refresh_token_expires_in": 2546224,
+  "organization": {
+    "uuid": "7f993a12-f480-45cd-8b99-1e3182d168bf",
+    "name": "ongtung2212002@gmail.com's Organization"
+  },
+  "account": {
+    "uuid": "adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9",
+    "email_address": "ongtung2212002@gmail.com"
+  }
+}

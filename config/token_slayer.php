@@ -24,6 +24,11 @@ return [
     | the free usage/profile APIs. The client id is Anthropic's public OAuth
     | client for Claude subscriptions — not a secret.
     |
+    | `user_agent` is load-bearing: platform.claude.com's WAF returns a bare
+    | 429 (no Retry-After) for the default Guzzle/curl/browser User-Agent, so
+    | every request must send a claude-cli-style UA instead. `redirect_uri`
+    | is the manual/paste PKCE callback used by the connect flow.
+    |
     */
 
     'anthropic' => [
@@ -32,6 +37,8 @@ return [
         'usage_endpoint' => 'https://api.anthropic.com/api/oauth/usage',
         'profile_endpoint' => 'https://api.anthropic.com/api/oauth/profile',
         'beta_header' => 'oauth-2025-04-20',
+        'user_agent' => env('ANTHROPIC_USER_AGENT', 'claude-cli/2.1.206 (external, cli)'),
+        'redirect_uri' => env('ANTHROPIC_OAUTH_REDIRECT_URI', 'https://platform.claude.com/oauth/code/callback'),
     ],
 
     /*
@@ -41,8 +48,7 @@ return [
     */
 
     'probe' => [
-        'interval_minutes' => (int) env('TOKEN_SLAYER_PROBE_INTERVAL', 5),
-        'refresh_headroom_hours' => 4,
+        'refresh_headroom_hours' => (int) env('TOKEN_SLAYER_PROBE_HEADROOM_HOURS', 4),
     ],
 
     /*
