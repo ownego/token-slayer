@@ -553,7 +553,10 @@ echo "installed Claude Code hooks -> $SETTINGS"
 # namespace installed (e.g. prod + staging) would have this hook silently
 # refresh the wrong one.
 USAGE_REFRESH_CMD="SLAYER_NS={{ $namespace }} \"\$HOME/.config/{{ $namespace }}/venv/bin/python\" -m slayer_cli hook usage-refresh"
-CLAUDE_CMD="$USAGE_REFRESH_CMD" HOOK_FINGERPRINT="{{ $namespace }}/hook usage-refresh" "$PY" - "$SETTINGS" <<'PY'
+# The fingerprint must be a literal substring of the command above (the
+# dedup filter is a plain substring match, same as send-hook.sh's) --
+# picking anything else silently fails to replace a stale prior entry.
+CLAUDE_CMD="$USAGE_REFRESH_CMD" HOOK_FINGERPRINT="{{ $namespace }}/venv/bin/python" "$PY" - "$SETTINGS" <<'PY'
 import json, os, sys
 
 path = sys.argv[1]

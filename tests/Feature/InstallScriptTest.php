@@ -388,11 +388,20 @@ it('registers an always-on Stop hook that warms the local usage cache, independe
     expect($script)
         ->toContain('-m slayer_cli hook usage-refresh')
         ->toContain('SLAYER_NS=token_slayer "$HOME/.config/token_slayer/venv/bin/python"')
-        ->toContain('HOOK_FINGERPRINT="token_slayer/hook usage-refresh"')
+        ->toContain('HOOK_FINGERPRINT="token_slayer/venv/bin/python"')
         ->toContain('events = ["Stop"]');
 
     // Appended alongside send-hook.sh's own Stop entry, never replacing it.
     expect($script)->not->toContain('data["hooks"][event] = [{');
+
+    // The dedup filter is a plain substring match (`fingerprint not in
+    // json.dumps(e)`) -- a fingerprint that isn't literally contained in
+    // the command it's meant to identify silently fails to replace a stale
+    // entry on re-install, leaving duplicates forever.
+    $fingerprintPos = strpos($script, 'HOOK_FINGERPRINT="token_slayer/venv/bin/python"');
+    $fingerprint = 'token_slayer/venv/bin/python';
+    expect($fingerprintPos)->not->toBeFalse()
+        ->and(str_contains($script, 'SLAYER_NS=token_slayer "$HOME/.config/'.$fingerprint.'"'))->toBeTrue();
 
     // Must be registered AFTER the shim exists (this section runs after it).
     $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
