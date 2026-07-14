@@ -381,15 +381,20 @@ it('registers the current Claude login as a base account slot after installing t
 it('registers an always-on Stop hook that warms the local usage cache, independent of auto-switch', function () {
     $script = $this->get(route('install-script'))->content();
 
+    // Invokes the venv directly with an explicit namespace, like detect-base
+    // -- NOT the shared `$HOME/.local/bin/token-slayer` shim, whose baked-in
+    // namespace is whichever install ran last (would silently refresh the
+    // wrong namespace on a machine with more than one installed).
     expect($script)
-        ->toContain('$HOME/.local/bin/token-slayer hook usage-refresh')
+        ->toContain('-m slayer_cli hook usage-refresh')
+        ->toContain('SLAYER_NS=token_slayer "$HOME/.config/token_slayer/venv/bin/python"')
         ->toContain('HOOK_FINGERPRINT="token_slayer/hook usage-refresh"')
         ->toContain('events = ["Stop"]');
 
     // Appended alongside send-hook.sh's own Stop entry, never replacing it.
     expect($script)->not->toContain('data["hooks"][event] = [{');
 
-    // Must be registered AFTER the shim exists (uses its absolute path).
+    // Must be registered AFTER the shim exists (this section runs after it).
     $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
     $refreshPos = strpos($script, 'hook usage-refresh');
     expect($shimPos)->not->toBeFalse()

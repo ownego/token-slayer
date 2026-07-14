@@ -545,7 +545,14 @@ echo "installed Claude Code hooks -> $SETTINGS"
 # (independent of auto-switch, which stays opt-in via `token-slayer run`) so
 # `token-slayer tui` shows near-real-time quota without waiting on its
 # ticker. Appended alongside send-hook.sh's own Stop entry, not replacing it.
-USAGE_REFRESH_CMD="$HOME/.local/bin/token-slayer hook usage-refresh"
+#
+# Invokes the venv directly with an explicit SLAYER_NS, like `detect-base`
+# above -- NOT the `$HOME/.local/bin/token-slayer` shim. That shim is a
+# single shared file rewritten by every namespace's install (its NS_DIR is
+# whichever namespace installed last), so a machine with more than one
+# namespace installed (e.g. prod + staging) would have this hook silently
+# refresh the wrong one.
+USAGE_REFRESH_CMD="SLAYER_NS={{ $namespace }} \"\$HOME/.config/{{ $namespace }}/venv/bin/python\" -m slayer_cli hook usage-refresh"
 CLAUDE_CMD="$USAGE_REFRESH_CMD" HOOK_FINGERPRINT="{{ $namespace }}/hook usage-refresh" "$PY" - "$SETTINGS" <<'PY'
 import json, os, sys
 
