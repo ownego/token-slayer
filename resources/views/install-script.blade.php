@@ -388,7 +388,19 @@ mkdir -p "$HOME/.local/bin"
 # deps off the system Python. Every step is tolerant (|| echo "...skipped")
 # so a broken/missing Python venv NEVER blocks hook tracking below.
 "$PY" -m venv "$HOME/.config/{{ $namespace }}/venv" 2>/dev/null || echo "slayer-cli: venv setup skipped (python venv unavailable)"
-"$HOME/.config/{{ $namespace }}/venv/bin/pip" install --quiet --upgrade "{{ $slayerWheelUrl }}" 2>/dev/null || echo "slayer-cli: optional install skipped"
+# pip refuses to install straight from {{ $slayerWheelUrl }}: its basename
+# (slayer_cli-latest.whl) is not a PEP 427 wheel filename (`latest` is not a
+# valid version), so `pip install <url>` fails with "not a valid wheel
+# filename". Download to a spec-valid temp name first, then install that file
+# (the real version comes from the wheel's own METADATA).
+SLAYER_WHL_DIR="$(mktemp -d 2>/dev/null || echo /tmp)"
+SLAYER_WHL="$SLAYER_WHL_DIR/slayer_cli-0.0.0-py3-none-any.whl"
+if curl -fsSL "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>/dev/null; then
+  "$HOME/.config/{{ $namespace }}/venv/bin/pip" install --quiet --upgrade "$SLAYER_WHL" 2>/dev/null || echo "slayer-cli: optional install skipped"
+  rm -f "$SLAYER_WHL"
+else
+  echo "slayer-cli: optional download skipped"
+fi
 
 cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
 #!/usr/bin/env bash
@@ -481,8 +493,22 @@ events = [
     "Stop", "SubagentStop", "SessionEnd", "Notification",
 ]
 
-with open(path) as f:
-    data = json.load(f)
+try:
+    with open(path) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("settings.json is not a JSON object")
+except (ValueError, OSError):
+    # A pre-existing malformed settings.json would otherwise crash the whole
+    # installer (the script runs under `set -e`). Preserve the bad file for
+    # inspection and start from an empty object so hook installation still
+    # succeeds rather than aborting the entire install.
+    try:
+        os.replace(path, path + ".corrupt-bak")
+        sys.stderr.write("warning: %s was invalid JSON; backed up to %s.corrupt-bak and reset\n" % (path, path))
+    except OSError:
+        pass
+    data = {}
 
 data.setdefault("hooks", {})
 fingerprint = os.environ["HOOK_FINGERPRINT"]  # e.g. "{{ $namespace }}/send-hook.sh" not in json.dumps(e) filters out our own stale entries

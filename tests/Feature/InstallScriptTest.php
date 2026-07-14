@@ -359,6 +359,32 @@ it('sets up a python venv and installs slayer-cli, with a shim that execs the ve
         ->toContain('SLAYER_INSTALL_URL=');
 });
 
+it('downloads the wheel to a PEP 427-valid temp name before pip-installing (pip rejects slayer_cli-latest.whl)', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // pip refuses `pip install <url ending in slayer_cli-latest.whl>` because
+    // `latest` is not a valid version segment; the script must download first
+    // to a spec-valid filename, then install that local file.
+    expect($script)
+        ->toContain('slayer_cli-0.0.0-py3-none-any.whl')
+        ->toContain('/venv/bin/pip" install --quiet --upgrade "$SLAYER_WHL"');
+
+    // It must NOT pip-install straight from the wheel URL/route anymore.
+    expect($script)->not->toContain('/venv/bin/pip" install --quiet --upgrade "'.route('slayer-wheel').'"');
+});
+
+it('does not let a malformed existing settings.json abort the whole installer', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // The settings.json merge runs under `set -e`; a bare json.load() on a
+    // corrupt file would crash the entire install. It must catch that, back the
+    // bad file up, and continue.
+    expect($script)
+        ->toContain('except (ValueError, OSError):')
+        ->toContain('.corrupt-bak')
+        ->toContain('was invalid JSON');
+});
+
 it('falls back to the old update/status behavior when the venv is missing, and never blocks on a python failure', function () {
     $script = $this->get(route('install-script'))->content();
 
