@@ -35,6 +35,21 @@ automatically registers that login as a base account slot
 (`detect-base`) — the account you're currently using is set up for you
 the moment the install finishes, nothing else to do.
 
+**First run only:** `token-slayer`/`slayer` won't be found in the same
+terminal you just ran the install in — the installer adds `~/.local/bin`
+to `PATH` via `~/.zshrc` (macOS default shell) or `~/.bashrc`, but your
+current shell doesn't reload that automatically. Open a new terminal, or
+run `source ~/.zshrc` / `source ~/.bashrc`.
+
+**macOS:** the first `switch` (or `setup`) pops a Keychain prompt asking
+for your login password/Touch ID — that's macOS asking permission to
+store the credential, not the command hanging; choose *Always Allow* to
+avoid repeat prompts. Also, on a brand-new Mac `python3` may be an Xcode
+stub that triggers its own "Install Command Line Developer Tools?"
+dialog the first time anything actually invokes it — run
+`xcode-select -p` first (empty output means run `xcode-select --install`)
+so the account-switcher venv sets up cleanly.
+
 ## Usage
 
 ### Adding a new personal account

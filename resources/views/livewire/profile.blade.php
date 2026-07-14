@@ -139,6 +139,9 @@
         <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $installUrl }}" class="underline">{{ $installUrl }}</a></p>
         <p class="text-xs text-gray-500 mt-1">Already installed? Run <code>token-slayer update</code>.</p>
         <p class="text-xs text-gray-500 mt-1">The account you're currently logged into is set up for you automatically the moment install finishes — nothing else to do for it.</p>
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2">
+            <span class="font-medium">First time only:</span> <code>token-slayer</code>/<code>slayer</code> won't be found in the terminal you just ran the install in — the installer adds it to your PATH via <code>~/.zshrc</code> (macOS default shell) or <code>~/.bashrc</code>, but your current shell doesn't reload that automatically. Open a new terminal tab, or run <code>source ~/.zshrc</code> (macOS) / <code>source ~/.bashrc</code> (Linux).
+        </p>
 
         <details class="mt-3">
             <summary class="text-sm font-medium cursor-pointer text-gray-600">Manual hook config (if you'd rather copy by hand)</summary>
@@ -234,6 +237,10 @@ fi</pre>
                     The install command above also sets up <code>token-slayer</code>, a small CLI/TUI that manages
                     Claude Code login slots on this machine and keeps attribution pointed at whichever one is active.
                     You only need it if you switch between more than one Claude account.
+                </p>
+                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    <span class="font-medium">macOS:</span> the first <code>token-slayer switch</code> (or <code>setup</code>) will pop up a Keychain prompt asking for your login password/Touch ID — that's macOS asking permission to store the credential, not the command hanging. Choose <em>Always Allow</em> to avoid repeat prompts.
+                    Also, on a brand-new Mac <code>python3</code> may be an Xcode stub that pops its own "Install Command Line Developer Tools?" dialog the first time anything actually runs it — check with <code>xcode-select -p</code> first (empty output → run <code>xcode-select --install</code>) so the account-switcher venv can set up cleanly.
                 </p>
                 <div>
                     <p class="text-sm mb-1">If an admin provisioned an org account for you, pull it and configure Claude Code in one step:</p>
