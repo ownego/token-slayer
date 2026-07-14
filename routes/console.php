@@ -31,8 +31,6 @@ Schedule::command('accounts:probe')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 
-Schedule::command('accounts:prune-usage-snapshots')->daily();
-
 Schedule::command('accounts:sync-profiles')
     ->daily()
     ->withoutOverlapping();
