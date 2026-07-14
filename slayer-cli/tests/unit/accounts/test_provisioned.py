@@ -93,3 +93,29 @@ def test_pull_stores_refresh_and_expiry_in_every_slot(tmp_path, monkeypatch):
     slot_b = json.loads((p.accounts_dir / "b@x.com.json").read_text())
     assert slot_b["refresh_token"] == "ort01-B"        # non-active slot keeps its refresh token
     assert slot_b["expires_at"] == 1_700_000_000_000   # seconds → milliseconds
+
+
+def test_pull_raises_when_the_active_credential_write_does_not_take_effect(tmp_path, monkeypatch):
+    """A real incident: the server recorded a successful claim (`claimed_at`
+    set) but the client's local credential write silently never took effect
+    (a disk/permission quirk, a race with something else touching the file),
+    leaving the user's live Claude session on their old account while
+    `setup` still reported success. Verify the write actually landed —
+    read back the live grant and compare — and raise instead of reporting
+    success when it didn't, rather than silently leaving the account
+    inactive."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    p = Paths("token_slayer")
+
+    def handler(req):
+        return httpx.Response(200, json={"accounts": [
+            {"name": "shared@org.com", "email": "shared@org.com", "org_uuid": "org-1",
+             "access_token": "sk-ant-oat01-TESTTOKEN", "refresh_token": "ort01-REFRESH",
+             "expires_at": 1_800_000_000}]})
+
+    monkeypatch.setattr("slayer_cli.accounts.provisioned.credstore.write_active_full", lambda *a, **k: None)
+
+    client = httpx.Client(base_url="https://ts.example", transport=httpx.MockTransport(handler))
+    with pytest.raises(ProvisioningError):
+        provisioned.pull_and_setup(p, "TOK", client=client)

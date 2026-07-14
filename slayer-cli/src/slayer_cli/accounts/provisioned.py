@@ -107,6 +107,22 @@ def pull_and_setup(paths: Paths, hook_token: str, *, client: httpx.Client | None
                 account_payload["refresh_token"],
                 expires_at_ms,
             )
+            # Read back the live grant we just wrote. A real incident: the
+            # server recorded a successful claim while the client's write
+            # silently never took effect (disk/permission quirk, a race with
+            # something else touching the credential file), leaving the
+            # user's live Claude session on their OLD account while `setup`
+            # still printed success — usage kept getting attributed to
+            # whichever account was active before. Catch that here instead
+            # of reporting success on an account that never actually went
+            # live.
+            live = credstore.read_active_full(paths)
+            if not live or live.get("accessToken") != account_payload["access_token"]:
+                raise ProvisioningError(
+                    "the account was provisioned but writing it as your active Claude "
+                    "credential did not take effect — check that Claude Code isn't "
+                    "running under a different CLAUDE_CONFIG_DIR, then retry `token-slayer setup`."
+                )
             store.set_active(account.name)
             # Point the hook's attribution at this now-active account so its
             # usage is attributed correctly from the first event (not only
