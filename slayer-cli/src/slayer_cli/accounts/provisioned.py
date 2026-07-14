@@ -7,6 +7,7 @@ The server's `GET /api/provisioned` returns `expires_at` as a UNIX
 """
 from __future__ import annotations
 
+import json
 import os
 import time
 
@@ -128,5 +129,24 @@ def pull_and_setup(paths: Paths, hook_token: str, *, client: httpx.Client | None
             # usage is attributed correctly from the first event (not only
             # after a later `switch`).
             attribution.reconcile_active(paths, account)
+            # Read back what the hook will actually see. This is a SEPARATE
+            # write from the credential above (a different file,
+            # account-provider/active.json) and can silently fail on its own
+            # — the TUI only reads state.json (already correct by this
+            # point), so it would show the new account selected even while
+            # every event kept attributing to the previous one. Only checked
+            # when org_uuid is present: a blank org_uuid is the documented
+            # unattributable case (reconcile_active removes active.json and
+            # warns instead of writing it).
+            if account.org_uuid and paths.active_file.is_file():
+                live_provider = json.loads(paths.active_file.read_text())
+            else:
+                live_provider = None
+            if account.org_uuid and (live_provider or {}).get("org_uuid") != account.org_uuid:
+                raise ProvisioningError(
+                    "the account was provisioned and is now your active Claude credential, "
+                    "but attribution (account-provider/active.json) did not update — usage "
+                    "may still attribute to the previous account. Retry `token-slayer setup`."
+                )
         names.append(account_payload["name"])
     return names

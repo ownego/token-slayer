@@ -119,3 +119,31 @@ def test_pull_raises_when_the_active_credential_write_does_not_take_effect(tmp_p
     client = httpx.Client(base_url="https://ts.example", transport=httpx.MockTransport(handler))
     with pytest.raises(ProvisioningError):
         provisioned.pull_and_setup(p, "TOK", client=client)
+
+
+def test_pull_raises_when_attribution_does_not_reflect_the_setup_account(tmp_path, monkeypatch):
+    """A second, independently-failing step in the same real incident: the
+    live credential write can succeed (Claude Code itself now uses the new
+    account) while the SEPARATE attribution write
+    (account-provider/active.json, what the hook actually reads) silently
+    doesn't take effect — leaving every subsequent event attributed to
+    whichever account was active before, even though `setup` printed
+    success and the TUI (which only reads state.json) shows the new
+    account selected."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    p = Paths("token_slayer")
+
+    def handler(req):
+        return httpx.Response(200, json={"accounts": [
+            {"name": "shared@org.com", "email": "shared@org.com", "org_uuid": "org-1",
+             "access_token": "sk-ant-oat01-TESTTOKEN", "refresh_token": "ort01-REFRESH",
+             "expires_at": 1_800_000_000}]})
+
+    # reconcile_active "succeeds" (no exception) but never actually updates
+    # active.json -- simulates the real-world silent no-op.
+    monkeypatch.setattr("slayer_cli.accounts.provisioned.attribution.reconcile_active", lambda *a, **k: None)
+
+    client = httpx.Client(base_url="https://ts.example", transport=httpx.MockTransport(handler))
+    with pytest.raises(ProvisioningError):
+        provisioned.pull_and_setup(p, "TOK", client=client)
