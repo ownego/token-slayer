@@ -13,6 +13,7 @@ import time
 import httpx
 
 from slayer_cli import credstore
+from slayer_cli.accounts import attribution
 from slayer_cli.accounts.store import AccountStore
 from slayer_cli.errors import ProvisioningError
 from slayer_cli.models.account import Account
@@ -107,5 +108,9 @@ def pull_and_setup(paths: Paths, hook_token: str, *, client: httpx.Client | None
                 expires_at_ms,
             )
             store.set_active(account.name)
+            # Point the hook's attribution at this now-active account so its
+            # usage is attributed correctly from the first event (not only
+            # after a later `switch`).
+            attribution.reconcile_active(paths, account)
         names.append(account_payload["name"])
     return names

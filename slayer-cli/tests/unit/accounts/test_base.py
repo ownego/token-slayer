@@ -41,6 +41,10 @@ def test_add_base_adds_and_activates_when_absent(tmp_path, monkeypatch):
     fresh = AccountStore(p)
     assert [a.name for a in fresh.list()] == ["tungot.work@gmail.com"]
     assert fresh.active() == "tungot.work@gmail.com"
+    # attribution reconciled: provider active.json points at the base account
+    import json
+    provider = json.loads(p.active_file.read_text())
+    assert provider["email"] == "tungot.work@gmail.com"
 
 
 def test_add_base_skips_when_identity_already_tracked(tmp_path, monkeypatch):

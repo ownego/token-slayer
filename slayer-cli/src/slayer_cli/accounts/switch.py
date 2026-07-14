@@ -2,11 +2,10 @@
 `.ai/domain/switching.md` for the authoritative pipeline contract."""
 from __future__ import annotations
 import os
-import sys
 import time
 from slayer_cli import credstore
+from slayer_cli.accounts import attribution
 from slayer_cli.auth import beacon
-from slayer_cli.provider import writer as provider_writer
 from slayer_cli.accounts.history import SwapHistory
 from slayer_cli.accounts.store import AccountStore
 from slayer_cli.models.account import Account
@@ -77,22 +76,12 @@ def switch_to(store: AccountStore, name: str, *, paths: Paths, force: bool = Fal
         credstore.write_active_full(paths, acc.token, acc.refresh_token, acc.expires_at)
     else:
         credstore.write_active_token(paths, acc.token)
-    credstore.claude_json.patch_oauth_account(paths, acc.email, acc.uuid, acc.org_uuid)
     store.set_active(name)
     store.touch_last_used(name)
-    if org:
-        provider_writer.write_active(paths, acc)
-    else:
-        # Org unresolvable (network down and never beaconed). Removing any
-        # existing active.json makes the hook degrade to auto/Unrecognized
-        # instead of misattributing this account's usage to the previous
-        # slot's org. The credential switch itself still succeeds.
-        paths.active_file.unlink(missing_ok=True)
-        print(
-            f"warning: attribution unavailable for '{name}' — its organization "
-            "could not be resolved; usage will not be attributed until it is.",
-            file=sys.stderr,
-        )
+    # Reconcile the hook's attribution files (oauthAccount label + provider
+    # active.json). Handles the org-unresolvable case (clears active.json +
+    # warns) so usage is never misattributed to the previous slot's org.
+    attribution.reconcile_active(paths, acc)
     SwapHistory(paths).append(
         SwapHistoryEntry(ts=int(time.time()), from_=prev, to=name, cwd=os.getcwd())
     )

@@ -33,6 +33,9 @@ def test_pull_writes_full_credential_and_upserts_slot(tmp_path, monkeypatch):
     # slot upserted (no token in the returned names)
     assert (p.accounts_dir / "shared@org.com.json").is_file()
     # active credential written with the REAL refresh token
+    # attribution reconciled for the active (first) account: provider file written
+    provider = json.loads((p.active_file).read_text())
+    assert provider["email"] == "shared@org.com" and provider["org_uuid"] == "org-1"
     creds = json.loads(p.claude_credentials_file.read_text())["claudeAiOauth"]
     assert creds["refreshToken"] == "ort01-REFRESH" and creds["accessToken"] == "sk-ant-oat01-TESTTOKEN"
     assert creds["expiresAt"] == 1_800_000_000_000

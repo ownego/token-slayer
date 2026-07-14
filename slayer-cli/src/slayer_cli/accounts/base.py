@@ -6,6 +6,7 @@ call on every (re)install: it is idempotent and identity-deduplicated.
 """
 from __future__ import annotations
 
+from slayer_cli.accounts import attribution
 from slayer_cli.accounts.detect import detect_current
 from slayer_cli.accounts.store import AccountStore
 from slayer_cli.models.account import Account
@@ -67,4 +68,7 @@ def add_base_account(store: AccountStore, paths: Paths) -> tuple[Account | None,
     store.add(account)
     if store.active() is None:
         store.set_active(account.name)
+        # This IS the machine's live login, so point the hook's attribution at
+        # it too — its usage is attributed correctly without a later `switch`.
+        attribution.reconcile_active(paths, account)
     return account, "added"
