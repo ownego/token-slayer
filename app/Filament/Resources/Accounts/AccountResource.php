@@ -14,6 +14,7 @@ use App\Services\AccountConnectService;
 use App\Services\UsageProber;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
@@ -69,18 +70,22 @@ class AccountResource extends Resource
                     ->email()
                     ->required()
                     ->unique(ignoreRecord: true)
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->disabledOn('edit'),
                 TextInput::make('organization_uuid')
                     ->label('Organization UUID')
                     ->helperText('Auto-learned from events; paste manually to attribute switcher users immediately.')
                     ->unique(ignoreRecord: true)
-                    ->maxLength(64),
+                    ->maxLength(64)
+                    ->disabledOn('edit'),
                 TextInput::make('name')
                     ->maxLength(255),
                 TextInput::make('plan')
                     ->required()
                     ->default('max-20x')
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->helperText('From Claude (organization type).')
+                    ->disabledOn('edit'),
                 Select::make('status')
                     ->options(AccountStatus::class)
                     ->required()
@@ -135,13 +140,15 @@ class AccountResource extends Resource
                 //
             ])
             ->recordActions([
-                static::connectAction(),
-                static::refreshNowAction(),
-                static::disconnectAction(),
-                ViewAction::make(),
-                EditAction::make(),
-                DeleteAction::make()
-                    ->modalDescription('Deleting this account does not rewrite historical events — already-ingested events keep the raw account_email they were stamped with.'),
+                ActionGroup::make([
+                    static::connectAction(),
+                    static::refreshNowAction(),
+                    static::disconnectAction(),
+                    ViewAction::make(),
+                    EditAction::make(),
+                    DeleteAction::make()
+                        ->modalDescription('Deleting this account does not rewrite historical events — already-ingested events keep the raw account_email they were stamped with.'),
+                ]),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -151,12 +158,13 @@ class AccountResource extends Resource
     }
 
     /**
-     * Build the "Connect" record action: a single-form, two-step PKCE OAuth
-     * grant. Mounting the action starts a fresh {@see AccountConnectService}
-     * attempt and shows the resulting authorize URL (copyable) for the
-     * admin to open; submitting exchanges the pasted callback code for
-     * tokens via {@see AccountConnectService::complete()}, keyed by the
-     * `state` hidden field stashed in the form when the action mounted.
+     * Build the per-row "Connect" record action, used to re-auth a specific
+     * account. Only shown when the account is not already Active. Mounting
+     * starts a fresh {@see AccountConnectService} attempt and shows the
+     * authorize URL; submitting resolves the pasted code against THIS record
+     * ({@see AccountConnectService::resolve()} with the record as the expected
+     * account), so authorizing a different Claude account is rejected and
+     * writes nothing.
      *
      * @return Action
      */
@@ -165,11 +173,12 @@ class AccountResource extends Resource
         return Action::make('connect')
             ->label('Connect')
             ->icon(Heroicon::OutlinedLink)
-            ->modalHeading('Connect Claude account')
-            ->modalDescription('Open the authorize URL, approve access, then paste the code Claude gives you back here.')
+            ->visible(fn (Account $record): bool => $record->status !== AccountStatus::Active)
+            ->modalHeading('Re-connect Claude account')
+            ->modalDescription('Open the authorize URL, approve access, then paste the code back here. You must authorize the same account this row represents.')
             ->modalSubmitActionLabel('Complete connect')
-            ->fillForm(function (Account $record): array {
-                $started = app(AccountConnectService::class)->start($record);
+            ->fillForm(function (): array {
+                $started = app(AccountConnectService::class)->start();
 
                 return [
                     'authorize_url' => $started['url'],
@@ -187,16 +196,17 @@ class AccountResource extends Resource
                     ->label('Paste the code here')
                     ->required(),
             ])
-            ->action(function (array $data): void {
+            ->action(function (array $data, Account $record): void {
                 try {
-                    app(AccountConnectService::class)->complete($data['state'], $data['code']);
+                    app(AccountConnectService::class)->resolve($data['state'], $data['code'], $record);
                 } catch (AccountConnectException $exception) {
                     Notification::make()
                         ->danger()
                         ->title('Connect failed')
                         ->body(match ($exception->reason) {
-                            'connect_email_mismatch' => 'The Claude account you authorized does not match this account\'s email.',
+                            'connect_identity_mismatch' => 'The Claude account you authorized does not match this account.',
                             'connect_state_expired' => 'This connect link expired or was already used. Click Connect to start again.',
+                            'connect_no_identity' => 'Could not read an email from the authorized Claude account.',
                             default => 'Something went wrong completing the connect.',
                         })
                         ->send();
@@ -206,7 +216,7 @@ class AccountResource extends Resource
 
                 Notification::make()
                     ->success()
-                    ->title('Account connected')
+                    ->title('Account re-connected')
                     ->send();
             });
     }

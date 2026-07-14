@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Accounts\Pages;
 use App\Filament\Resources\Accounts\AccountResource;
 use App\Filament\Widgets\AccountQuotaGauge;
 use App\Filament\Widgets\AccountQuotaHistoryChart;
+use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 
 /**
@@ -20,6 +21,20 @@ class ViewAccount extends ViewRecord
      * @var class-string<AccountResource>
      */
     protected static string $resource = AccountResource::class;
+
+    /**
+     * Header actions rendered above the record view: an Edit button, since
+     * this page otherwise has no way to reach the edit form from the detail
+     * view.
+     *
+     * @return array<int, EditAction>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            EditAction::make(),
+        ];
+    }
 
     /**
      * Header widgets rendered above the record view. Filament injects the

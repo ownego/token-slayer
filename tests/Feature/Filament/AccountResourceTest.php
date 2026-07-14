@@ -60,17 +60,42 @@ it('lists accounts with member count and status badge', function () {
         ->assertTableColumnStateSet('status', AccountStatus::NeedsReauth, $account);
 });
 
-it('lets an admin set the organization uuid when editing an account', function () {
+it('lets an admin set the organization uuid when creating an account', function () {
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create(['organization_uuid' => null]);
+
+    Livewire::actingAs($admin)
+        ->test(CreateAccount::class)
+        ->fillForm(['email' => 'uuid-on-create@ownego.com', 'plan' => 'max-20x', 'organization_uuid' => 'org-12345'])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect(Account::where('email', 'uuid-on-create@ownego.com')->first()->organization_uuid)->toBe('org-12345');
+});
+
+it('makes email, organization uuid, and plan read-only when editing an account', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create();
 
     Livewire::actingAs($admin)
         ->test(EditAccount::class, ['record' => $account->getRouteKey()])
-        ->fillForm(['organization_uuid' => 'org-12345'])
+        ->assertFormFieldDisabled('email')
+        ->assertFormFieldDisabled('organization_uuid')
+        ->assertFormFieldDisabled('plan')
+        ->assertFormFieldEnabled('name')
+        ->assertFormFieldEnabled('status');
+});
+
+it('leaves the organization uuid unchanged when an admin attempts to edit it', function () {
+    $admin = User::factory()->create(['is_admin' => true]);
+    $account = Account::factory()->create(['organization_uuid' => 'original-uuid']);
+
+    Livewire::actingAs($admin)
+        ->test(EditAccount::class, ['record' => $account->getRouteKey()])
+        ->fillForm(['organization_uuid' => 'attempted-change'])
         ->call('save')
         ->assertHasNoFormErrors();
 
-    expect($account->refresh()->organization_uuid)->toBe('org-12345');
+    expect($account->refresh()->organization_uuid)->toBe('original-uuid');
 });
 
 it('attaches and detaches members through the relation manager', function () {
@@ -93,7 +118,7 @@ it('attaches and detaches members through the relation manager', function () {
 
 it('shows the connect action to an admin and mounts a fresh authorize url', function () {
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create();
+    $account = Account::factory()->create(['status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
@@ -106,7 +131,7 @@ it('shows the connect action to an admin and mounts a fresh authorize url', func
 it('completes the connect action and marks the account active', function () {
     fakeAnthropic();
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com', 'status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
@@ -117,10 +142,10 @@ it('completes the connect action and marks the account active', function () {
         ->and($account->oauth_access_token)->not->toBeNull();
 });
 
-it('notifies a friendly error on connect email mismatch and stores nothing', function () {
+it('notifies a friendly error on connect identity mismatch and stores nothing', function () {
     fakeAnthropic();
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create(['email' => 'mismatched@example.com']);
+    $account = Account::factory()->create(['email' => 'mismatched@example.com', 'status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
@@ -132,7 +157,7 @@ it('notifies a friendly error on connect email mismatch and stores nothing', fun
 
 it('notifies a friendly error when the connect state has expired', function () {
     $admin = User::factory()->create(['is_admin' => true]);
-    $account = Account::factory()->create();
+    $account = Account::factory()->create(['status' => AccountStatus::NeedsReauth]);
 
     $component = Livewire::actingAs($admin)
         ->test(ListAccounts::class)
