@@ -73,3 +73,26 @@ def test_add_base_preserves_existing_active(tmp_path, monkeypatch):
     _, status = base_mod.add_base_account(store, p)
     assert status == "added"
     assert AccountStore(p).active() == "other@x.com"  # unchanged
+
+
+def test_add_base_dedups_by_email_even_when_cache_keys_differ(tmp_path, monkeypatch):
+    """A provisioned slot (uuid=None → org-only key) and the detected login
+    (uuid present → uuid|org key) are the SAME account by email; add_base must
+    treat it as 'exists' and NOT overwrite the provisioned slot (which would
+    clobber its refresh token)."""
+    p = _paths(tmp_path, monkeypatch)
+    store = AccountStore(p)
+    # provisioned slot: uuid=None, HAS a refresh token, named by email
+    store.add(Account(name="work@x.com", email="work@x.com", uuid=None, org_uuid="org-1",
+                      plan=None, token="sk-ant-oat01-P", refresh_token="ort01-P",
+                      expires_at=9_000_000_000_000, added_at=1))
+    # detected current login: SAME email, but uuid present and NO refresh token
+    detected = Account(name="work", email="work@x.com", uuid="UUID-W", org_uuid="org-1",
+                       plan=None, token="sk-ant-oat01-D", refresh_token=None, added_at=2)
+    _stub_detect(monkeypatch, detected)
+    account, status = base_mod.add_base_account(store, p)
+    assert status == "exists"
+    # the provisioned slot survives intact — refresh token NOT clobbered
+    kept = AccountStore(p).get("work@x.com")
+    assert kept.refresh_token == "ort01-P"
+    assert len(AccountStore(p).list()) == 1

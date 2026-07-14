@@ -15,6 +15,26 @@ from slayer_cli.usage.cache import cache_key
 __all__ = ["add_base_account"]
 
 
+def _same_account(a: Account, b: Account) -> bool:
+    """Whether two account records describe the same underlying account.
+
+    More lenient than `cache_key` equality on purpose: a provisioned slot
+    (uuid unset → org-only key) and the same account detected from the live
+    login (uuid present → uuid|org key) have DIFFERENT cache keys but are the
+    same account. Matching on uuid or email as well prevents a re-install from
+    overwriting (and clobbering the refresh token of) an existing slot.
+
+    :param a: One account record.
+    :param b: The other account record.
+    :return: True if they are the same account.
+    """
+    if a.uuid and b.uuid and a.uuid == b.uuid:
+        return True
+    if a.email and b.email and a.email.lower() == b.email.lower():
+        return True
+    return cache_key(a) == cache_key(b)
+
+
 def add_base_account(store: AccountStore, paths: Paths) -> tuple[Account | None, str]:
     """Snapshot the machine's active Claude login into a base slot, unless an
     equivalent slot already exists.
@@ -38,9 +58,8 @@ def add_base_account(store: AccountStore, paths: Paths) -> tuple[Account | None,
     if detected is None:
         return None, "none"
 
-    key = cache_key(detected)
     for existing in store.list():
-        if cache_key(existing) == key:
+        if _same_account(existing, detected):
             return existing, "exists"
 
     name = detected.email or detected.name
