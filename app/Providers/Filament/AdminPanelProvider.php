@@ -2,6 +2,11 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Widgets\ActivityHeatmap;
+use App\Filament\Widgets\FleetQuotaOverview;
+use App\Filament\Widgets\TokenVolumeChart;
+use App\Filament\Widgets\TopAccountsLeaderboard;
+use App\Filament\Widgets\TopUsersLeaderboard;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -47,9 +52,13 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
                 AccountWidget::class,
+                FleetQuotaOverview::class,
+                ActivityHeatmap::class,
+                TokenVolumeChart::class,
+                TopUsersLeaderboard::class,
+                TopAccountsLeaderboard::class,
             ])
             ->middleware([
                 EncryptCookies::class,

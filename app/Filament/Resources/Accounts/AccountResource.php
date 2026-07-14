@@ -7,6 +7,7 @@ use App\Exceptions\AccountConnectException;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
+use App\Filament\Resources\Accounts\Pages\ViewAccount;
 use App\Filament\Resources\Accounts\RelationManagers\UsersRelationManager;
 use App\Models\Account;
 use App\Services\AccountConnectService;
@@ -17,6 +18,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -136,6 +138,7 @@ class AccountResource extends Resource
                 static::connectAction(),
                 static::refreshNowAction(),
                 static::disconnectAction(),
+                ViewAction::make(),
                 EditAction::make(),
                 DeleteAction::make()
                     ->modalDescription('Deleting this account does not rewrite historical events — already-ingested events keep the raw account_email they were stamped with.'),
@@ -322,6 +325,7 @@ class AccountResource extends Resource
             'index' => ListAccounts::route('/'),
             'create' => CreateAccount::route('/create'),
             'edit' => EditAccount::route('/{record}/edit'),
+            'view' => ViewAccount::route('/{record}'),
         ];
     }
 }
