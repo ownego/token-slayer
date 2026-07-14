@@ -70,7 +70,10 @@ class User extends Authenticatable implements FilamentUser
      */
     public function accounts(): BelongsToMany
     {
-        return $this->belongsToMany(Account::class)->withTimestamps();
+        return $this->belongsToMany(Account::class)
+            ->using(AccountUser::class)
+            ->withPivot('token_uuid', 'provisioned_at', 'claimed_at', 'revoked_at')
+            ->withTimestamps();
     }
 
     /**

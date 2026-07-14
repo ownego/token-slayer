@@ -22,6 +22,23 @@ def test_list_and_switch(tmp_path, monkeypatch):
     assert out.exit_code == 0 and "oedev" in out.output and "sk-ant-oat01" not in out.output
 
 
+def test_hook_usage_refresh_is_unconditional(monkeypatch, tmp_path):
+    """`hook usage-refresh` always calls the refresh (no TS_WRAPPED gate,
+    unlike the other `hook` subcommands)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("TS_WRAPPED", raising=False)
+    called = {}
+    monkeypatch.setattr(
+        "slayer_cli.cli.commands.hook.stop_refresh.refresh_active_on_stop",
+        lambda paths: called.setdefault("ran", True),
+    )
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["hook", "usage-refresh"], input="{}")
+    assert out.exit_code == 0
+    assert called.get("ran")
+
+
 def test_no_args_would_launch_tui(monkeypatch, tmp_path):
     """With no subcommand, the group callback launches the TUI."""
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -109,6 +126,22 @@ def test_remove_unknown_name_is_clean_error(tmp_path, monkeypatch):
     out = CliRunner().invoke(main, ["remove", "ghost"])
     assert out.exit_code != 0
     assert "Traceback" not in out.output
+
+
+def test_remove_the_active_slot_clears_the_active_pointer(tmp_path, monkeypatch):
+    """`remove <active-slot>` doesn't leave a dangling active pointer -- no
+    account stays marked active once its slot is gone."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.cli.main import main
+
+    store = AccountStore(Paths("token_slayer"))
+    store.add(Account(name="oedev", email="a@b.com", org_uuid="o1", plan=None,
+                       token="sk-ant-oat01-x", added_at=1))
+    store.set_active("oedev")
+
+    out = CliRunner().invoke(main, ["remove", "oedev"])
+    assert out.exit_code == 0
+    assert store.active() is None
 
 
 def test_list_empty_is_friendly(tmp_path, monkeypatch):
@@ -202,3 +235,140 @@ def test_update_without_install_url_prints_guidance(tmp_path, monkeypatch):
     out = CliRunner().invoke(main, ["update"])
     assert out.exit_code == 0
     assert "SLAYER_INSTALL_URL" in out.output
+
+
+def test_setup_pulls_and_reports(tmp_path, monkeypatch):
+    """`setup` reads the hook token, calls `provisioned.pull_and_setup`, and
+    reports the account names it set up without ever printing a token."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.platform.paths import Paths
+
+    p = Paths("token_slayer")
+    p.config_dir.mkdir(parents=True, exist_ok=True)
+    (p.config_dir / "token").write_text("HOOKTOK")
+    import slayer_cli.cli.commands.setup as setup_cmd
+
+    monkeypatch.setattr(setup_cmd.provisioned, "pull_and_setup", lambda paths, tok: ["a@b.com"])
+    from click.testing import CliRunner
+
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["setup"])
+    assert out.exit_code == 0 and "a@b.com" in out.output and "sk-ant" not in out.output
+
+
+def test_setup_without_hook_token_is_clean_error(tmp_path, monkeypatch):
+    """`setup` with no hook token on disk exits non-zero with a clean
+    message, not a traceback."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["setup"])
+    assert out.exit_code != 0
+    assert "Traceback" not in out.output
+
+
+def test_setup_with_no_provisioned_accounts_is_friendly(tmp_path, monkeypatch):
+    """`setup` reports a friendly message when the server has nothing to give."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.platform.paths import Paths
+
+    p = Paths("token_slayer")
+    p.config_dir.mkdir(parents=True, exist_ok=True)
+    (p.config_dir / "token").write_text("HOOKTOK")
+    import slayer_cli.cli.commands.setup as setup_cmd
+
+    monkeypatch.setattr(setup_cmd.provisioned, "pull_and_setup", lambda paths, tok: [])
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["setup"])
+    assert out.exit_code == 0
+    assert "no provisioned accounts" in out.output.lower()
+
+
+def test_run_resolves_claude_on_path_and_delegates_to_wrapper(tmp_path, monkeypatch):
+    """`run -- <args>` resolves `claude` via PATH, splits argv at `--`, and
+    hands off to `wrapper.run`, exiting with its returned code."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    import shutil
+
+    from slayer_cli.autoswitch import wrapper as wrapper_mod
+    from slayer_cli.cli.main import main
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/claude" if name == "claude" else None)
+
+    captured = {}
+
+    def fake_wrapper_run(claude_bin, argv, services, **kw):
+        captured["claude_bin"] = claude_bin
+        captured["argv"] = argv
+        return 3
+
+    monkeypatch.setattr(wrapper_mod, "run", fake_wrapper_run)
+
+    out = CliRunner().invoke(main, ["run", "--", "--model", "opus"])
+    assert out.exit_code == 3
+    assert captured["claude_bin"] == "/usr/local/bin/claude"
+    assert captured["argv"] == ["--model", "opus"]
+
+
+def test_run_without_claude_on_path_is_clean_error(tmp_path, monkeypatch):
+    """`run` with no `claude` on PATH exits non-zero with a clean message."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    import shutil
+
+    from slayer_cli.cli.main import main
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    out = CliRunner().invoke(main, ["run"])
+    assert out.exit_code != 0
+    assert "Traceback" not in out.output
+    assert "claude" in out.output.lower()
+
+
+def test_alias_command_sets_and_clears(tmp_path, monkeypatch):
+    """`alias TARGET NAME` sets an alias (resolving TARGET by slot/alias/
+    email); `alias TARGET` with no NAME clears it."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    store = AccountStore(Paths("token_slayer"))
+    store.add(Account(name="acc1", email="a@b.com", token="sk-ant-oat01-TESTTOKEN", added_at=1))
+    from slayer_cli.cli.main import main
+
+    result1 = CliRunner().invoke(main, ["alias", "acc1", "work"])
+    assert result1.exit_code == 0
+    assert "sk-ant" not in result1.output
+    assert store.get("acc1").alias == "work"
+    result2 = CliRunner().invoke(main, ["alias", "work"])   # resolve by alias, then clear
+    assert result2.exit_code == 0
+    assert "sk-ant" not in result2.output
+    assert store.get("acc1").alias is None
+
+
+def test_detect_base_command_adds_current_login(tmp_path, monkeypatch):
+    """`detect-base` registers the machine's current Claude login as a slot."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.accounts import base as base_mod
+    from slayer_cli.models.account import Account
+
+    detected = Account(name="me", email="me@x.com", uuid="u-1", org_uuid="org-1",
+                       plan=None, token="sk-ant-oat01-CUR", added_at=1)
+    monkeypatch.setattr(base_mod, "detect_current", lambda paths: detected)
+
+    from slayer_cli.cli.main import main
+    out = CliRunner().invoke(main, ["detect-base"])
+    assert out.exit_code == 0
+    assert "me@x.com" in out.output
+    assert "sk-ant" not in out.output
+
+
+def test_detect_base_command_is_friendly_with_no_login(tmp_path, monkeypatch):
+    """`detect-base` with no active login prints a friendly message, not an error."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from slayer_cli.accounts import base as base_mod
+    monkeypatch.setattr(base_mod, "detect_current", lambda paths: None)
+
+    from slayer_cli.cli.main import main
+    out = CliRunner().invoke(main, ["detect-base"])
+    assert out.exit_code == 0
+    assert "No active Claude login" in out.output

@@ -7,11 +7,13 @@ utilization/reset only, sourced from `Account` and `UsageSnapshot`."""
 from __future__ import annotations
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import DataTable, Footer, Header
 
 from slayer_cli.accounts.store import AccountStore
 from slayer_cli.accounts.switch import switch_to
+from slayer_cli.config import store as config_store
 from slayer_cli.errors import SlayerError
 from slayer_cli.models.account import Account
 from slayer_cli.models.usage import UsageSnapshot
@@ -52,6 +54,9 @@ class SlayerApp(App):
         ("G", "cursor_bottom", "Bottom"),
         ("s", "switch_selected", "Switch"),
         ("r", "refresh", "Refresh"),
+        # Auto-switch strategy control is hidden pending release (key still
+        # works for verification; not shown in the footer).
+        Binding("c", "cycle_strategy", "Strategy", show=False),
         ("q", "quit", "Quit"),
     ]
 
@@ -187,31 +192,37 @@ class SlayerApp(App):
     # -- refresh (`r`) ------------------------------------------------------
 
     def action_refresh(self) -> None:
-        """Clear the in-memory usage snapshots and re-fetch every account.
+        """Clear the in-memory usage snapshots and force a LIVE re-fetch of
+        every account (bypasses the usage cache TTL — a manual refresh should
+        fetch fresh data, not re-serve the cached snapshot).
 
         :return: None
         """
         self._snapshots = {}
         self._rebuild_table()
-        self._start_refresh()
+        self._start_refresh(force=True)
 
-    def _start_refresh(self) -> None:
+    def _start_refresh(self, force: bool = False) -> None:
         """Kick off one concurrent, thread-backed usage fetch per account
         so the UI never blocks on network I/O.
 
+        :param force: When True, each fetch bypasses the cache TTL and probes
+            live (used by the manual `r` refresh; the periodic refresh leaves
+            it False so it serves cached snapshots between live probes).
         :return: None
         """
         for account in self._accounts:
-            self.run_worker(lambda acc=account: self._fetch_one(acc), thread=True, exclusive=False)
+            self.run_worker(lambda acc=account: self._fetch_one(acc, force), thread=True, exclusive=False)
 
-    def _fetch_one(self, account: Account) -> None:
+    def _fetch_one(self, account: Account, force: bool = False) -> None:
         """Fetch `account`'s usage (blocking; runs in a worker thread) and
         hand the result back to the UI thread.
 
         :param account: Account slot to fetch quota for.
+        :param force: When True, bypass the cache TTL and probe live.
         :return: None
         """
-        snapshot = self._usage.get(account)
+        snapshot = self._usage.get(account, force=force)
         self.call_from_thread(self._on_usage_ready, account.name, snapshot)
 
     def _on_usage_ready(self, name: str, snapshot: UsageSnapshot) -> None:
@@ -223,3 +234,26 @@ class SlayerApp(App):
         """
         self._snapshots[name] = snapshot
         self._rebuild_table()
+
+    # -- strategy cycling (`c`) ------------------------------------------
+
+    def action_cycle_strategy(self) -> None:
+        """Cycle `strategy.kind` manual->balanced->drain->manual via
+        `config.store`, persist it, and refresh the visible label.
+
+        :return: None
+        """
+        cfg = config_store.load(self._paths)
+        next_kind = config_store.next_strategy_kind(cfg.strategy.kind)
+        cfg = config_store.set_value(cfg, "strategy.kind", next_kind)
+        config_store.save(self._paths, cfg)
+        self._refresh_strategy_label()
+        self.notify(f"Strategy: {next_kind}", timeout=2)
+
+    def _refresh_strategy_label(self) -> None:
+        """Set the Header's subtitle to show the current `strategy.kind`.
+
+        :return: None
+        """
+        cfg = config_store.load(self._paths)
+        self.sub_title = f"strategy: {cfg.strategy.kind}"

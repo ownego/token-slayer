@@ -64,6 +64,28 @@ async def test_switch_key_switches_selected(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_cycle_strategy_key_updates_config_and_label(tmp_path, monkeypatch):
+    paths, _store = _seed_two_accounts(tmp_path, monkeypatch)
+    _stub_switch_credential_writes(monkeypatch)
+    _stub_usage_service(monkeypatch)
+
+    from slayer_cli.config import store as config_store
+    from slayer_cli.tui.app import SlayerApp
+
+    # The strategy control is hidden (auto-switch not released): no subtitle on
+    # mount, and the `c` binding is not shown in the footer — but the key still
+    # works, so cycling persists config and shows transient feedback.
+    app = SlayerApp(paths)
+    async with app.run_test() as pilot:
+        await pilot.press("c")
+        assert "balanced" in app.sub_title
+        await pilot.press("c")
+        assert "drain" in app.sub_title
+
+    assert config_store.load(paths).strategy.kind == "drain"
+
+
+@pytest.mark.anyio
 async def test_quit_key_exits(tmp_path, monkeypatch):
     paths, _store = _seed_two_accounts(tmp_path, monkeypatch)
     _stub_switch_credential_writes(monkeypatch)
@@ -75,3 +97,28 @@ async def test_quit_key_exits(tmp_path, monkeypatch):
     async with app.run_test() as pilot:
         await pilot.press("q")
         assert not app.is_running
+
+
+@pytest.mark.anyio
+async def test_refresh_key_forces_live_fetch(tmp_path, monkeypatch):
+    """Pressing `r` fetches usage with force=True (bypassing the cache TTL);
+    the initial/periodic fetch uses force=False."""
+    paths, _store = _seed_two_accounts(tmp_path, monkeypatch)
+    _stub_switch_credential_writes(monkeypatch)
+
+    forces = []
+    monkeypatch.setattr(
+        UsageService, "get",
+        lambda self, account, force=False: forces.append(force) or UsageSnapshot(
+            five_hour_utilization=0.0, seven_day_utilization=0.0, status="ok"),
+    )
+
+    from slayer_cli.tui.app import SlayerApp
+    app = SlayerApp(paths)
+    async with app.run_test() as pilot:
+        forces.clear()          # drop the on-mount (force=False) fetches
+        await pilot.press("r")
+        await pilot.pause()
+
+    assert forces, "pressing r should trigger fetches"
+    assert all(f is True for f in forces)  # every fetch from `r` is forced

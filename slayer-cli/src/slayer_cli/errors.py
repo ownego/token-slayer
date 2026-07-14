@@ -13,3 +13,6 @@ class UsageFetchError(SlayerError):
 
 class LoginError(SlayerError):
     """PKCE code exchange with Anthropic's OAuth token endpoint failed."""
+
+class ProvisioningError(SlayerError):
+    """Pulling admin-provisioned grants from the token-slayer server failed."""

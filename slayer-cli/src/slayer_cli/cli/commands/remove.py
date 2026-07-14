@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import click
 
+from slayer_cli.accounts.remove import remove_account
 from slayer_cli.errors import SlayerError
 
 __all__ = ["command"]
@@ -14,7 +15,7 @@ __all__ = ["command"]
 def command(services, name: str) -> None:
     """Remove the account slot NAME."""
     try:
-        services.store.remove(name)
+        remove_account(services.store, services.paths, name)
     except SlayerError as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"Removed account slot '{name}'")

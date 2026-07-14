@@ -245,11 +245,14 @@ it('merges account_org_id into the outgoing event body when resolved', function 
     expect($mergeBlock)->toContain('account_org_id');
 });
 
-it('bumps the client version to 4 for the multi-account attribution rollout', function () {
+it('stamps the client version (semver) into the script, UA, and version file', function () {
+    $version = config('token_slayer.client_version');
     $script = $this->get(route('install-script'))->content();
 
-    expect(config('token_slayer.client_version'))->toBe('4')
-        ->and($script)->toContain("CLIENT_VERSION='4'");
+    expect($version)->toBe('1.0.0')
+        ->and($script)->toContain("CLIENT_VERSION='1.0.0'")
+        ->and($script)->toContain('token-slayer-hook/1.0.0')
+        ->and($script)->toContain("LATEST='1.0.0'");
 });
 
 it('tips users toward custom.sh to customize what their fighter shows, at the end of a successful install', function () {
@@ -357,6 +360,85 @@ it('sets up a python venv and installs slayer-cli, with a shim that execs the ve
         ->toContain('exec env SLAYER_NS')
         ->toContain('SLAYER_NS=token_slayer')
         ->toContain('SLAYER_INSTALL_URL=');
+});
+
+it('registers the current Claude login as a base account slot after installing the CLI', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // Best-effort, namespaced, never blocks the install.
+    expect($script)
+        ->toContain('-m slayer_cli detect-base')
+        ->toContain('SLAYER_NS=token_slayer');
+
+    // It must run AFTER the shim is written (needs the venv/package present).
+    $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
+    $detectPos = strpos($script, '-m slayer_cli detect-base');
+    expect($shimPos)->not->toBeFalse()
+        ->and($detectPos)->not->toBeFalse()
+        ->and($shimPos)->toBeLessThan($detectPos);
+});
+
+it('registers an always-on Stop hook that warms the local usage cache, independent of auto-switch', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // Invokes the venv directly with an explicit namespace, like detect-base
+    // -- NOT the shared `$HOME/.local/bin/token-slayer` shim, whose baked-in
+    // namespace is whichever install ran last (would silently refresh the
+    // wrong namespace on a machine with more than one installed).
+    expect($script)
+        ->toContain('-m slayer_cli hook usage-refresh')
+        ->toContain('SLAYER_NS=token_slayer "$HOME/.config/token_slayer/venv/bin/python"')
+        ->toContain('HOOK_FINGERPRINT="token_slayer/venv/bin/python"')
+        ->toContain('events = ["Stop"]');
+
+    // Appended alongside send-hook.sh's own Stop entry, never replacing it.
+    expect($script)->not->toContain('data["hooks"][event] = [{');
+
+    // The dedup filter is a plain substring match (`fingerprint not in
+    // json.dumps(e)`) -- a fingerprint that isn't literally contained in
+    // the command it's meant to identify silently fails to replace a stale
+    // entry on re-install, leaving duplicates forever.
+    $fingerprintPos = strpos($script, 'HOOK_FINGERPRINT="token_slayer/venv/bin/python"');
+    $fingerprint = 'token_slayer/venv/bin/python';
+    expect($fingerprintPos)->not->toBeFalse()
+        ->and(str_contains($script, 'SLAYER_NS=token_slayer "$HOME/.config/'.$fingerprint.'"'))->toBeTrue();
+
+    // Must be registered AFTER the shim exists (this section runs after it).
+    $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
+    $refreshPos = strpos($script, 'hook usage-refresh');
+    expect($shimPos)->not->toBeFalse()
+        ->and($refreshPos)->not->toBeFalse()
+        ->and($shimPos)->toBeLessThan($refreshPos);
+});
+
+it('downloads the wheel to a PEP 427-valid temp name before pip-installing (pip rejects slayer_cli-latest.whl)', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // pip refuses `pip install <url ending in slayer_cli-latest.whl>` because
+    // `latest` is not a valid version segment; the script must download first
+    // to a spec-valid filename, then install that local file.
+    expect($script)
+        ->toContain('slayer_cli-0.0.0-py3-none-any.whl')
+        ->toContain('install --quiet "$SLAYER_WHL"');
+
+    // The served wheel version may be unchanged between builds, so a plain
+    // --upgrade would ship stale code; the package code is force-reinstalled.
+    expect($script)->toContain('install --quiet --force-reinstall --no-deps "$SLAYER_WHL"');
+
+    // It must NOT pip-install straight from the wheel URL/route anymore.
+    expect($script)->not->toContain('pip" install --quiet --upgrade "'.route('slayer-wheel').'"');
+});
+
+it('does not let a malformed existing settings.json abort the whole installer', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // The settings.json merge runs under `set -e`; a bare json.load() on a
+    // corrupt file would crash the entire install. It must catch that, back the
+    // bad file up, and continue.
+    expect($script)
+        ->toContain('except (ValueError, OSError):')
+        ->toContain('.corrupt-bak')
+        ->toContain('was invalid JSON');
 });
 
 it('falls back to the old update/status behavior when the venv is missing, and never blocks on a python failure', function () {

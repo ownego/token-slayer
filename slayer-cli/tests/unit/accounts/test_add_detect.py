@@ -126,3 +126,21 @@ def test_add_via_login_runs_pkce_and_stores_slot_without_stale_claude_json(tmp_p
     assert acc.uuid is None
     assert claude_json_calls == []  # never consults .claude.json (stale post-login)
     assert store.get("newlogin").org_uuid == "org-login"
+
+
+def test_detect_current_captures_refresh_and_expiry_from_full_grant(tmp_path, monkeypatch):
+    """detect_current sources the FULL live grant (access + refresh + expiry) so
+    a base slot built from it can self-refresh, not just the bare access token."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    p = Paths("token_slayer")
+    monkeypatch.setattr(detect_mod.credstore, "read_active_full",
+                        lambda paths: {"accessToken": "sk-ant-oat01-CUR",
+                                       "refreshToken": "ort01-CUR", "expiresAt": 1_800_000_000_000})
+    monkeypatch.setattr(detect_mod.beacon, "resolve_org_uuid", lambda token: "org-x")
+    monkeypatch.setattr(detect_mod.credstore.claude_json, "read_oauth_account",
+                        lambda paths: {"emailAddress": "me@x.com", "accountUuid": "u-1"})
+    acc = detect_mod.detect_current(p)
+    assert acc is not None
+    assert acc.token == "sk-ant-oat01-CUR"
+    assert acc.refresh_token == "ort01-CUR"
+    assert acc.expires_at == 1_800_000_000_000

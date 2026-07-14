@@ -5,6 +5,7 @@ import json
 import os
 import time
 from pathlib import Path
+from slayer_cli.accounts import alias
 from slayer_cli.errors import AccountNotFound
 from slayer_cli.models.account import Account
 from slayer_cli.platform.paths import Paths
@@ -101,6 +102,18 @@ class AccountStore:
         """
         return self._read_state().get("active_slot")
 
+    def clear_active(self) -> None:
+        """Unset the active slot in `state.json` (`active()` returns `None`
+        afterward). Used when the active slot is removed, so it doesn't
+        linger as a dangling pointer.
+
+        :return: None
+        """
+        state = self._read_state()
+        state.pop("active_slot", None)
+        state["updated_at"] = int(time.time())
+        self._write_state(state)
+
     def touch_last_used(self, name: str) -> None:
         """Set the slot's `last_used` to now and re-write it (`0600`).
 
@@ -110,6 +123,42 @@ class AccountStore:
         """
         account = self.get(name)
         self._write_slot(account.model_copy(update={"last_used": int(time.time())}))
+
+    def resolve(self, identifier: str) -> Account:
+        """Resolve `identifier` to an account by slot name, then alias, then
+        email.
+
+        :param identifier: Slot name, alias, or email.
+        :return: The matching `Account`.
+        :raises AccountNotFound: If nothing matches.
+        """
+        if self.exists(identifier):
+            return self.get(identifier)
+        for account in self.list():
+            if account.alias == identifier:
+                return account
+        for account in self.list():
+            if account.email == identifier:
+                return account
+        raise AccountNotFound(identifier)
+
+    def set_alias(self, name: str, new_alias: str | None) -> None:
+        """Set (or clear, when `new_alias` is None) the alias of slot `name`.
+
+        :param name: Slot name.
+        :param new_alias: New alias, or None to clear.
+        :return: None
+        :raises AccountNotFound: If the slot does not exist.
+        :raises alias.InvalidAlias: If `new_alias` is malformed.
+        :raises alias.AliasInUse: If `new_alias` is taken by another slot.
+        """
+        account = self.get(name)
+        if new_alias is not None:
+            alias.validate_alias(new_alias)
+            for other in self.list():
+                if other.name != name and other.alias == new_alias:
+                    raise alias.AliasInUse(f"alias '{new_alias}' is already used by '{other.name}'")
+        self._write_slot(account.model_copy(update={"alias": new_alias}))
 
     def _slot_path(self, name: str) -> Path:
         """Return the on-disk path for slot `name`.

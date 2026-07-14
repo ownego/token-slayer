@@ -388,7 +388,27 @@ mkdir -p "$HOME/.local/bin"
 # deps off the system Python. Every step is tolerant (|| echo "...skipped")
 # so a broken/missing Python venv NEVER blocks hook tracking below.
 "$PY" -m venv "$HOME/.config/{{ $namespace }}/venv" 2>/dev/null || echo "slayer-cli: venv setup skipped (python venv unavailable)"
-"$HOME/.config/{{ $namespace }}/venv/bin/pip" install --quiet --upgrade "{{ $slayerWheelUrl }}" 2>/dev/null || echo "slayer-cli: optional install skipped"
+# pip refuses to install straight from {{ $slayerWheelUrl }}: its basename
+# (slayer_cli-latest.whl) is not a PEP 427 wheel filename (`latest` is not a
+# valid version), so `pip install <url>` fails with "not a valid wheel
+# filename". Download to a spec-valid temp name first, then install that file
+# (the real version comes from the wheel's own METADATA).
+SLAYER_WHL_DIR="$(mktemp -d 2>/dev/null || echo /tmp)"
+SLAYER_WHL="$SLAYER_WHL_DIR/slayer_cli-0.0.0-py3-none-any.whl"
+SLAYER_PIP="$HOME/.config/{{ $namespace }}/venv/bin/pip"
+if curl -fsSL "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>/dev/null; then
+  # Two steps on purpose: the served wheel is always "latest" and its version
+  # may be UNCHANGED between builds, so a plain `--upgrade` is a no-op and ships
+  # stale code. First install pulls deps (first run) / no-ops; then
+  # force-reinstall --no-deps refreshes ONLY the package code every time,
+  # cheaply (deps untouched).
+  "$SLAYER_PIP" install --quiet "$SLAYER_WHL" 2>/dev/null \
+    && "$SLAYER_PIP" install --quiet --force-reinstall --no-deps "$SLAYER_WHL" 2>/dev/null \
+    || echo "slayer-cli: optional install skipped"
+  rm -f "$SLAYER_WHL"
+else
+  echo "slayer-cli: optional download skipped"
+fi
 
 cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
 #!/usr/bin/env bash
@@ -445,6 +465,14 @@ CLI_SH
 chmod +x "$HOME/.local/bin/token-slayer"
 ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"
 
+# Register the machine's current Claude login as a base account slot, so a user
+# who already uses Claude Code sees their existing account in token-slayer right
+# away. Idempotent + identity-deduplicated (skips when absent or already
+# tracked) and best-effort -- never blocks the install.
+if [ -x "$HOME/.config/{{ $namespace }}/venv/bin/python" ]; then
+  SLAYER_NS={{ $namespace }} "$HOME/.config/{{ $namespace }}/venv/bin/python" -m slayer_cli detect-base >/dev/null 2>&1 || true
+fi
+
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
@@ -481,8 +509,22 @@ events = [
     "Stop", "SubagentStop", "SessionEnd", "Notification",
 ]
 
-with open(path) as f:
-    data = json.load(f)
+try:
+    with open(path) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("settings.json is not a JSON object")
+except (ValueError, OSError):
+    # A pre-existing malformed settings.json would otherwise crash the whole
+    # installer (the script runs under `set -e`). Preserve the bad file for
+    # inspection and start from an empty object so hook installation still
+    # succeeds rather than aborting the entire install.
+    try:
+        os.replace(path, path + ".corrupt-bak")
+        sys.stderr.write("warning: %s was invalid JSON; backed up to %s.corrupt-bak and reset\n" % (path, path))
+    except OSError:
+        pass
+    data = {}
 
 data.setdefault("hooks", {})
 fingerprint = os.environ["HOOK_FINGERPRINT"]  # e.g. "{{ $namespace }}/send-hook.sh" not in json.dumps(e) filters out our own stale entries
@@ -498,6 +540,46 @@ with open(path, "w") as f:
 PY
 
 echo "installed Claude Code hooks -> $SETTINGS"
+
+# Register a second, always-on Stop hook that warms the local usage cache
+# (independent of auto-switch, which stays opt-in via `token-slayer run`) so
+# `token-slayer tui` shows near-real-time quota without waiting on its
+# ticker. Appended alongside send-hook.sh's own Stop entry, not replacing it.
+#
+# Invokes the venv directly with an explicit SLAYER_NS, like `detect-base`
+# above -- NOT the `$HOME/.local/bin/token-slayer` shim. That shim is a
+# single shared file rewritten by every namespace's install (its NS_DIR is
+# whichever namespace installed last), so a machine with more than one
+# namespace installed (e.g. prod + staging) would have this hook silently
+# refresh the wrong one.
+USAGE_REFRESH_CMD="SLAYER_NS={{ $namespace }} \"\$HOME/.config/{{ $namespace }}/venv/bin/python\" -m slayer_cli hook usage-refresh"
+# The fingerprint must be a literal substring of the command above (the
+# dedup filter is a plain substring match, same as send-hook.sh's) --
+# picking anything else silently fails to replace a stale prior entry.
+CLAUDE_CMD="$USAGE_REFRESH_CMD" HOOK_FINGERPRINT="{{ $namespace }}/venv/bin/python" "$PY" - "$SETTINGS" <<'PY'
+import json, os, sys
+
+path = sys.argv[1]
+cmd = os.environ["CLAUDE_CMD"]
+events = ["Stop"]
+
+with open(path) as f:
+    data = json.load(f)
+
+data.setdefault("hooks", {})
+fingerprint = os.environ["HOOK_FINGERPRINT"]
+for event in events:
+    entries = [e for e in data["hooks"].get(event, [])
+               if fingerprint not in json.dumps(e)]
+    entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
+    data["hooks"][event] = entries
+
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "installed Claude Code usage-refresh hook -> $SETTINGS"
 
 # --- Codex CLI: rewrite the {{ $namespace }} block in ~/.codex/config.toml ---
 mkdir -p "$HOME/.codex"

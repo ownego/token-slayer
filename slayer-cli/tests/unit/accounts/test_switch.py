@@ -1,6 +1,9 @@
 """Tests for the switch service (`accounts.switch.switch_to`)."""
 from __future__ import annotations
 
+import json
+import sys
+
 import pytest
 
 from slayer_cli.accounts import switch as switch_mod
@@ -91,3 +94,62 @@ def test_switch_to_missing_slot_raises_account_not_found(tmp_path, monkeypatch):
     store = AccountStore(p)
     with pytest.raises(AccountNotFound):
         switch_mod.switch_to(store, "ghost", paths=p)
+
+
+def test_switch_writes_full_grant_when_slot_has_refresh(tmp_path, monkeypatch):
+    """A slot with both `refresh_token` and `expires_at` is written as a FULL
+    self-refreshing grant, not the legacy null-refresh write."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(switch_mod.beacon, "resolve_org_uuid", lambda tok: "org-1")
+    p = Paths("token_slayer")
+    store = AccountStore(p)
+    store.add(Account(name="b", email="b@x.com", org_uuid="org-1", uuid="u-b",
+                      token="sk-ant-oat01-B", refresh_token="sk-ant-ort01-B",
+                      expires_at=1_800_000_000_000, added_at=1))
+    switch_mod.switch_to(store, "b", paths=p)
+    creds = json.loads(p.claude_credentials_file.read_text())["claudeAiOauth"]
+    assert creds["accessToken"] == "sk-ant-oat01-B"
+    assert creds["refreshToken"] == "sk-ant-ort01-B"          # FULL grant, not null
+    assert creds["expiresAt"] == 1_800_000_000_000
+
+
+def test_switch_captures_rotated_grant_into_outgoing_slot(tmp_path, monkeypatch):
+    """Switching away from an active slot captures its live (possibly
+    Claude-Code-rotated) grant back onto that outgoing slot before the
+    incoming slot's credential is written."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(switch_mod.beacon, "resolve_org_uuid", lambda tok: "org-1")
+    p = Paths("token_slayer")
+    store = AccountStore(p)
+    store.add(Account(name="a", email="a@x.com", org_uuid="org-1", uuid="u-a",
+                      token="sk-ant-oat01-A", refresh_token="sk-ant-ort01-A-OLD",
+                      expires_at=1, added_at=1))
+    store.add(Account(name="b", email="b@x.com", org_uuid="org-1", uuid="u-b",
+                      token="sk-ant-oat01-B", refresh_token="sk-ant-ort01-B",
+                      expires_at=2, added_at=1))
+    switch_mod.switch_to(store, "a", paths=p)   # a is active; Claude "rotates" it:
+    p.claude_credentials_file.write_text(json.dumps({"claudeAiOauth": {
+        "accessToken": "sk-ant-oat01-A-ROTATED", "refreshToken": "sk-ant-ort01-A-ROTATED",
+        "expiresAt": 9_999}}))
+    switch_mod.switch_to(store, "b", paths=p)   # switching away from a captures its rotation
+    a = store.get("a")
+    assert a.refresh_token == "sk-ant-ort01-A-ROTATED"
+    assert a.token == "sk-ant-oat01-A-ROTATED" and a.expires_at == 9_999
+
+
+def test_force_switch_skips_rotation_capture(tmp_path, monkeypatch):
+    """When `force=True`, switch_to skips the rotation-capture step, allowing
+    a switch even if the outgoing slot's live credentials are corrupted."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("slayer_cli.auth.beacon.resolve_org_uuid", lambda tok: "org-1")
+    p = Paths("token_slayer")
+    store = AccountStore(p)
+    store.add(Account(name="a", org_uuid="org-1", token="sk-ant-oat01-A", added_at=1))
+    store.add(Account(name="b", org_uuid="org-1", token="sk-ant-oat01-B",
+                      refresh_token="sk-ant-ort01-B", expires_at=2, added_at=1))
+    switch_mod.switch_to(store, "a", paths=p)
+    # Corrupt the live creds file; a normal switch would try to capture it.
+    p.claude_credentials_file.write_text("{ not json")
+    acc = switch_mod.switch_to(store, "b", paths=p, force=True)   # must not raise
+    assert acc.name == "b"

@@ -1,104 +1,155 @@
 # slayer-cli
 
-slayer-cli is a command-line and interactive tool for managing Claude account slots locally. It connects to token-slayer's real-time battlefield visualization, sending usage events as you work.
+slayer-cli manages multiple Claude Code account slots on one machine and
+switches Claude Code's active login between them. It's the client half of
+token-slayer's multi-account support — the server-side event tracking
+(the `send-hook.sh` shell hook that posts to `/api/events` for the
+battlefield) is installed separately by the main token-slayer installer;
+slayer-cli itself only handles accounts and switching.
 
 ## What It Does
 
-- **Manage accounts:** Register, list, remove, and switch between Claude API accounts.
-- **Track usage:** View quota and token consumption for each account.
-- **Real-time events:** Send usage data to token-slayer for visualization on the battlefield.
-- **Interactive TUI:** Use `slayer tui` for a graphical interface to manage accounts and view stats.
+- **Manage accounts:** add, list, remove, switch, and alias Claude account slots.
+- **Pull provisioned accounts:** `setup` fetches accounts an admin provisioned for you.
+- **Detect your existing login:** `detect-base` registers whatever account you're already logged into as a slot.
+- **Track usage:** view each account's quota/utilization.
+- **Interactive TUI:** `token-slayer` with no arguments launches a Textual UI to browse accounts and switch between them.
 
 ## Installation
 
+slayer-cli isn't published to PyPI — it's installed as part of the main
+token-slayer setup:
+
 ```bash
-pip install slayer-cli
+curl -fsSL https://token-slayer.ownego.com/install | sh
 ```
 
-This installs two console commands: `slayer` and `token-slayer` (both point to the same CLI).
+This installs a private venv under `~/.config/<namespace>/venv`, a
+`token-slayer`/`slayer` shim on your `PATH` (both point at the same CLI),
+the event-tracking hook (`send-hook.sh`), and registers Claude Code hooks
+in `~/.claude/settings.json`. Re-running the installer is the upgrade path
+(`token-slayer update` does this for you).
+
+If your machine already has Claude Code logged in, the installer
+automatically registers that login as a base account slot
+(`detect-base`) — the account you're currently using is set up for you
+the moment the install finishes, nothing else to do.
+
+**First run only:** `token-slayer`/`slayer` won't be found in the same
+terminal you just ran the install in — the installer adds `~/.local/bin`
+to `PATH` via `~/.zshrc` (macOS default shell) or `~/.bashrc`, but your
+current shell doesn't reload that automatically. Open a new terminal, or
+run `source ~/.zshrc` / `source ~/.bashrc`.
+
+**macOS:** the first `switch` (or `setup`) pops a Keychain prompt asking
+for your login password/Touch ID — that's macOS asking permission to
+store the credential, not the command hanging; choose *Always Allow* to
+avoid repeat prompts. Also, on a brand-new Mac `python3` may be an Xcode
+stub that triggers its own "Install Command Line Developer Tools?"
+dialog the first time anything actually invokes it — run
+`xcode-select -p` first (empty output means run `xcode-select --install`)
+so the account-switcher venv sets up cleanly.
 
 ## Usage
 
-### Quick Commands
+### Adding a new personal account
+
+1. Log into that account in Claude Code itself (run `claude`, then `/login`).
+2. Run `token-slayer add NAME` — this snapshots whichever account Claude
+   Code is now logged into.
+
+For an **org account**, don't use `add` at all — contact an admin to
+provision it for you, then run `token-slayer setup` (see below).
+
+### Account commands
 
 ```bash
-# Show current active account
-slayer current
+# List all account slots, marking the active one
+token-slayer list
 
-# List all registered accounts
-slayer list
+# Print just the active slot's name and email/org
+token-slayer current
 
-# Add a new account (OAuth flow)
-slayer add --name "Work" --email dev@company.com
+# Add a slot from the machine's CURRENTLY logged-in Claude Code session
+token-slayer add work
 
-# Switch to an account
-slayer switch work-1
+# Pull accounts an admin provisioned for you and configure Claude Code
+token-slayer setup
 
-# View usage and quota
-slayer status
+# Register the machine's current Claude login as a base slot (usually automatic at install)
+token-slayer detect-base
 
-# Launch interactive TUI
-slayer tui
+# Switch the active Claude account
+token-slayer switch work
 
-# Install hooks into Claude Code
-slayer install-hooks
+# Switch bypassing rotation-capture (recovery when the outgoing slot's live credentials are broken)
+token-slayer force-switch work
 
-# Uninstall the switcher (restores your original Claude login)
-slayer uninstall
+# Set/clear a slot's alias
+token-slayer alias work@company.com w
+
+# Remove a slot (falls back to the most-recently-used remaining account if any are left)
+token-slayer remove work
+
+# Print version, namespace, active account, and credential status
+token-slayer status
 ```
 
 ### Interactive TUI
 
 ```bash
-slayer tui
+token-slayer          # launches the TUI directly (no subcommand)
+token-slayer tui       # same, explicit
 ```
 
-Launches a Textual-based interface where you can:
-- View all registered accounts
-- See real-time usage stats
-- Switch the active account with arrow keys and Enter
-- Refresh quota from Anthropic
+- `↑`/`↓` — move between accounts
+- `Enter` — switch to the highlighted account
+- `r` — force a live usage refresh (bypasses the cache)
+- `q` — quit
 
 ### Full Help
 
 ```bash
-slayer --help
-slayer <command> --help
+token-slayer --help
+token-slayer <command> --help
 ```
 
 ## Uninstall / Teardown
 
 ```bash
-slayer uninstall                # prompts for confirmation
-slayer uninstall --yes          # skip the confirmation prompt
-slayer uninstall --keep-accounts  # remove the switcher but keep your stored account slots
+token-slayer uninstall                  # prompts for confirmation
+token-slayer uninstall --yes            # skip the confirmation prompt
+token-slayer uninstall --keep-accounts  # remove the switcher but keep your stored account slots
 ```
 
 `uninstall` is safe and reversible: it restores your original Claude login
 from the pristine `.slayer-bak` backup that was captured before slayer-cli's
 first switch (Linux/Windows only — macOS keeps the original in the system
 Keychain and is left untouched), then removes the switcher's venv, the
-`token-slayer`/`slayer` shim, the attribution file, and — unless
-`--keep-accounts` is given — your stored account slots, switch state, swap
-history, and usage cache. It never touches the token-slayer event-tracking
-hook (`send-hook.sh`, hook token, detector-config, `custom.sh`, shell-rc
-block) — tearing that down is a separate manual step.
+`token-slayer`/`slayer` shim, and the attribution file. Unless
+`--keep-accounts` is given, it also removes your stored account slots,
+switch state, swap history, and usage cache. It never touches the
+token-slayer event-tracking hook footprint (`send-hook.sh`, hook token,
+detector-config, `custom.sh`, shell-rc PATH block) — tearing that down is a
+separate manual step.
 
-## Integration with token-slayer
+## How attribution works
 
-After installing and registering accounts, `slayer install-hooks` sets up background hooks in your Claude Code environment. These hooks:
+Every `switch`, `setup`, and `detect-base` call reconciles two files the
+event-tracking hook reads, in priority order:
 
-1. Detect when you use Claude Code.
-2. Send usage events to token-slayer's `/api/events` endpoint.
-3. Attribute events to the currently active account (org UUID).
-4. Display real-time damage on the token-slayer battlefield.
+1. `~/.config/<namespace>/account-provider/active.json` — highest priority (`account_source: provider`).
+2. `~/.claude.json`'s `oauthAccount` block — fallback if the provider file is missing/stale.
+
+If an account has no resolvable `org_uuid`, the provider file is removed
+rather than left stale, so the hook degrades to a lower-priority source
+instead of misattributing usage to the wrong account.
 
 ## Development
 
 ### Setup
 
 ```bash
-git clone <repo>
 cd slayer-cli
 python3 -m venv .venv
 source .venv/bin/activate
@@ -119,15 +170,20 @@ python -m slayer_cli --help
 
 ## Build & Deploy
 
-To build the wheel distribution for installation on dev machines:
-
 ```bash
 ./build.sh
 ```
 
-This builds the wheel and places it at `storage/app/dist/slayer_cli-latest.whl`. The token-slayer server serves this wheel over HTTP at `/dist/slayer_cli-latest.whl`, allowing `token-slayer update` on dev machines to fetch and install the latest version.
+Builds the wheel and copies it to `storage/app/dist/slayer_cli-latest.whl`
+(served by the token-slayer server at `/dist/slayer_cli-latest.whl`, which
+the install script downloads under a PEP 427-valid temp filename —
+`slayer_cli-latest.whl` itself isn't a valid wheel filename).
 
-When deploying a new version to staging, ensure the freshly built wheel is included in the rsync to the `tungot` host alongside PHP changes, so the update mechanism picks up the new version.
+**Bump the version in both `pyproject.toml` and `src/slayer_cli/version.py`
+before every deploy.** The install script force-reinstalls the package
+code every run, but `pip install --upgrade` elsewhere is a no-op if the
+wheel's own metadata version hasn't changed — an unbumped version can
+silently ship no code changes at all despite a "successful" reinstall.
 
 ## License
 
