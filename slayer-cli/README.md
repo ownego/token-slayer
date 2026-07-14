@@ -32,18 +32,16 @@ in `~/.claude/settings.json`. Re-running the installer is the upgrade path
 
 If your machine already has Claude Code logged in, the installer
 automatically registers that login as a base account slot
-(`detect-base`) — you don't need to add it manually.
+(`detect-base`) — the account you're currently using is set up for you
+the moment the install finishes, nothing else to do.
 
 ## Usage
 
 ### Adding a new personal account
 
-`token-slayer add work --login` (its own PKCE login flow) is currently
-broken — don't use it. To add another personal account:
-
 1. Log into that account in Claude Code itself (run `claude`, then `/login`).
-2. Run `token-slayer add NAME` (no `--login`) — this snapshots whichever
-   account Claude Code is now logged into.
+2. Run `token-slayer add NAME` — this snapshots whichever account Claude
+   Code is now logged into.
 
 For an **org account**, don't use `add` at all — contact an admin to
 provision it for you, then run `token-slayer setup` (see below).

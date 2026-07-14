@@ -138,6 +138,7 @@
         <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $combinedCommand }}</pre>
         <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $installUrl }}" class="underline">{{ $installUrl }}</a></p>
         <p class="text-xs text-gray-500 mt-1">Already installed? Run <code>token-slayer update</code>.</p>
+        <p class="text-xs text-gray-500 mt-1">The account you're currently logged into is set up for you automatically the moment install finishes — nothing else to do for it.</p>
 
         <details class="mt-3">
             <summary class="text-sm font-medium cursor-pointer text-gray-600">Manual hook config (if you'd rather copy by hand)</summary>
@@ -238,9 +239,9 @@ fi</pre>
                     <p class="text-sm mb-1">If an admin provisioned an org account for you, pull it and configure Claude Code in one step:</p>
                     <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">token-slayer setup</pre>
                 </div>
-                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                    <span class="font-medium">Adding another personal account:</span> <code>token-slayer add NAME --login</code> is currently broken — don't use it.
-                    Instead, log into that account in Claude Code itself (<code>claude</code>, then <code>/login</code>), then run <code>token-slayer add NAME</code> (no flag) to snapshot it.
+                <p class="text-sm text-gray-600">
+                    <span class="font-medium text-gray-700">Adding another personal account:</span> log into it in Claude Code itself
+                    (<code>claude</code>, then <code>/login</code>), then run <code>token-slayer add NAME</code> to snapshot it.
                     For an org account, don't use <code>add</code> at all — ask an admin to provision it, then run <code>token-slayer setup</code> above.
                 </p>
                 <div class="overflow-x-auto">
