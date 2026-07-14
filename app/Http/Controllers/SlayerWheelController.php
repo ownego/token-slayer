@@ -2,39 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\File;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 
 class SlayerWheelController extends Controller
 {
     /**
-     * Storage-relative path (under `storage/app/`) to the built slayer-cli
-     * wheel. Populated out of band by the `slayer-cli` build script — this
-     * controller only streams whatever is currently on disk.
+     * Redirect the install script's wheel download to slayer-cli's latest
+     * GitHub Release asset. slayer-cli is built and released from its own
+     * repo now — this server holds no copy of the wheel to stream. 404s
+     * cleanly when no release URL is configured yet, so the install
+     * script's tolerant `|| echo "...skipped"` fallback degrades gracefully.
      *
-     * @var string
+     * @return RedirectResponse
      */
-    private const string WHEEL_STORAGE_PATH = 'app/dist/slayer_cli-latest.whl';
-
-    /**
-     * Stream the built slayer-cli wheel so the install script can
-     * `pip install` it directly from this host. 404s cleanly when no wheel
-     * has been built/uploaded yet, so the install script's tolerant
-     * `|| echo "...skipped"` fallback degrades gracefully.
-     *
-     * @return Response
-     */
-    public function __invoke(): Response
+    public function __invoke(): RedirectResponse
     {
-        $path = storage_path(self::WHEEL_STORAGE_PATH);
+        $url = config('token_slayer.slayer_cli_wheel_url');
 
-        if (! File::exists($path)) {
+        if (! $url) {
             abort(404);
         }
 
-        return response(File::get($path), 200, [
-            'Content-Type' => 'application/octet-stream',
-            'Content-Disposition' => 'attachment; filename="slayer_cli-latest.whl"',
-        ]);
+        return redirect()->away($url);
     }
 }

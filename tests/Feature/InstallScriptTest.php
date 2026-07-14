@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\File;
-
 beforeEach(fn () => config(['app.hook_namespace' => 'token_slayer']));
 
 test('install.sh is publicly accessible as a shell script', function () {
@@ -464,22 +462,18 @@ it('symlinks slayer to the token-slayer shim', function () {
     expect($script)->toContain('ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"');
 });
 
-it('404s the slayer-cli wheel route when no wheel has been built', function () {
-    File::delete(storage_path('app/dist/slayer_cli-latest.whl'));
+it('redirects the slayer-cli wheel route to the configured release asset URL', function () {
+    config(['token_slayer.slayer_cli_wheel_url' => 'https://example.com/slayer_cli-latest.whl']);
+
+    $response = $this->get('/dist/slayer_cli-latest.whl');
+
+    $response->assertRedirect('https://example.com/slayer_cli-latest.whl');
+});
+
+it('404s the slayer-cli wheel route when no release URL is configured', function () {
+    config(['token_slayer.slayer_cli_wheel_url' => '']);
 
     $response = $this->get('/dist/slayer_cli-latest.whl');
 
     $response->assertNotFound();
-});
-
-it('streams the slayer-cli wheel as octet-stream when present', function () {
-    File::ensureDirectoryExists(storage_path('app/dist'));
-    File::put(storage_path('app/dist/slayer_cli-latest.whl'), 'dummy-wheel-bytes');
-
-    $response = $this->get('/dist/slayer_cli-latest.whl');
-
-    $response->assertOk();
-    expect($response->headers->get('Content-Type'))->toBe('application/octet-stream');
-
-    File::delete(storage_path('app/dist/slayer_cli-latest.whl'));
 });
