@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\AccountStatus;
+use App\Events\AccountTokenRejected;
 use App\Exceptions\UsageProbeException;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
@@ -86,9 +87,25 @@ class UsageProber
             }
 
             if (in_array($exception->reason, ['invalid_grant', 'unauthorized'], true)) {
+                // Capture the pre-mutation status so the alert fires only on the
+                // true transition into NeedsReauth, never on a re-probe of an
+                // already-flagged account (defensive — scopeProbeable already
+                // excludes NeedsReauth accounts from the prober batch).
+                $wasReauth = $account->getOriginal('status') === AccountStatus::NeedsReauth;
+
                 $account->status = AccountStatus::NeedsReauth;
+                $account->probe_error = "refresh failed: {$exception->reason}";
+                $account->save();
+
+                if (! $wasReauth) {
+                    AccountTokenRejected::dispatch($account, $exception->reason);
+                }
+
+                return false;
             }
 
+            // Transient failure: record the error, leave status untouched so the
+            // next cycle retries.
             $account->probe_error = "refresh failed: {$exception->reason}";
             $account->save();
 

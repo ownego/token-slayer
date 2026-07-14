@@ -1,11 +1,13 @@
 <?php
 
 use App\Enums\AccountStatus;
+use App\Events\AccountTokenRejected;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Services\AnthropicOAuthClient;
 use App\Services\UsageProber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
@@ -182,4 +184,79 @@ test('a rate-limited refresh is silent and leaves status and probe_error untouch
     expect($result)->toBeNull()
         ->and($account->status)->toBe(AccountStatus::Active)
         ->and($account->probe_error)->toBeNull();
+});
+
+test('it dispatches AccountTokenRejected when a refresh returns invalid_grant', function () {
+    Event::fake([AccountTokenRejected::class]);
+    fakeAnthropic(['token' => Http::response(['error' => ['type' => 'invalid_grant']], 400)]);
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addHours(1)]);
+
+    $this->prober->probe($account);
+
+    Event::assertDispatched(AccountTokenRejected::class, function (AccountTokenRejected $event) use ($account) {
+        return $event->account->is($account) && $event->reason === 'invalid_grant';
+    });
+});
+
+test('it dispatches AccountTokenRejected when a refresh returns unauthorized', function () {
+    Event::fake([AccountTokenRejected::class]);
+    // 403 (not 401) so AnthropicOAuthClient::decodeOrFail() actually classifies
+    // this as 'unauthorized' rather than 'invalid_grant' — for a token call it
+    // maps 400/401 to invalid_grant unconditionally and only reaches the
+    // unauthorized branch on 401/403 when the 400/401 check didn't match.
+    fakeAnthropic(['token' => Http::response(['error' => ['type' => 'unauthorized']], 403)]);
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addHours(1)]);
+
+    $this->prober->probe($account);
+
+    Event::assertDispatched(AccountTokenRejected::class, fn (AccountTokenRejected $event) => $event->reason === 'unauthorized');
+});
+
+test('it does not dispatch AccountTokenRejected on a transient refresh failure', function () {
+    Event::fake([AccountTokenRejected::class]);
+    fakeAnthropic(['token' => Http::response('', 503)]);
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addHours(1)]);
+
+    $this->prober->probe($account);
+
+    Event::assertNotDispatched(AccountTokenRejected::class);
+});
+
+test('it does not dispatch AccountTokenRejected on a rate-limited refresh', function () {
+    Event::fake([AccountTokenRejected::class]);
+    fakeAnthropic(['token' => Http::response(['error' => ['type' => 'rate_limited']], 429)]);
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addMinutes(30)]);
+
+    $this->prober->probe($account);
+
+    Event::assertNotDispatched(AccountTokenRejected::class);
+});
+
+test('it does not dispatch AccountTokenRejected when the account is already NeedsReauth', function () {
+    Event::fake([AccountTokenRejected::class]);
+    fakeAnthropic(['token' => Http::response(['error' => ['type' => 'invalid_grant']], 400)]);
+    // Constructed directly with a NeedsReauth original status; scopeProbeable
+    // would normally exclude it, so we exercise the guard in isolation.
+    $account = Account::factory()->needsReauth()->create(['oauth_expires_at' => now()->addHours(1)]);
+
+    $this->prober->probe($account);
+
+    Event::assertNotDispatched(AccountTokenRejected::class);
+});
+
+test('a rejected refresh posts one alert to the configured security webhook end to end', function () {
+    config(['services.slack_security.webhook_url' => 'https://hooks.slack.test/security']);
+    fakeAnthropic(['token' => Http::response(['error' => ['type' => 'invalid_grant']], 400)]);
+    Http::fake(['https://hooks.slack.test/*' => Http::response('', 200)]);
+    $account = Account::factory()->connected()->create([
+        'email' => 'compromised@example.com',
+        'oauth_expires_at' => now()->addHours(1),
+    ]);
+
+    $this->prober->probe($account);
+
+    Http::assertSent(function ($request) {
+        return $request->url() === 'https://hooks.slack.test/security'
+            && str_contains(json_encode($request->data()), 'compromised@example.com');
+    });
 });

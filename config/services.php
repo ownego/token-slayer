@@ -39,4 +39,8 @@ return [
         'webhook_url' => env('SLACK_NOTIFIER_WEBHOOK_URL'),
     ],
 
+    'slack_security' => [
+        'webhook_url' => env('SLACK_SECURITY_WEBHOOK_URL'),
+    ],
+
 ];
