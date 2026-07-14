@@ -383,14 +383,29 @@ fi
 printf '%s' "{{ $clientVersion }}" > "$HOME/.config/{{ $namespace }}/version"
 
 mkdir -p "$HOME/.local/bin"
+
+# slayer-cli: an isolated venv keeps its click/textual/pydantic/keyring/httpx
+# deps off the system Python. Every step is tolerant (|| echo "...skipped")
+# so a broken/missing Python venv NEVER blocks hook tracking below.
+"$PY" -m venv "$HOME/.config/{{ $namespace }}/venv" 2>/dev/null || echo "slayer-cli: venv setup skipped (python venv unavailable)"
+"$HOME/.config/{{ $namespace }}/venv/bin/pip" install --quiet --upgrade "{{ $slayerWheelUrl }}" 2>/dev/null || echo "slayer-cli: optional install skipped"
+
 cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
 #!/usr/bin/env bash
 set -u
 NS_DIR="$HOME/.config/{{ $namespace }}"
+SLAYER_VENV="$NS_DIR/venv"
 INSTALL_URL='{{ $installUrl }}'
 LATEST='{{ $clientVersion }}'
 
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+
+# Prefer the installed slayer-cli package; fall back to the old minimal
+# update/status behavior when the venv is missing so a failed venv/pip step
+# never bricks the token-slayer command.
+if [ -x "$SLAYER_VENV/bin/python" ]; then
+  exec env SLAYER_NS={{ $namespace }} SLAYER_INSTALL_URL={{ $installUrl }} "$SLAYER_VENV/bin/python" -m slayer_cli "$@"
+fi
 
 case "${1:-}" in
   update)
@@ -428,6 +443,7 @@ case "${1:-}" in
 esac
 CLI_SH
 chmod +x "$HOME/.local/bin/token-slayer"
+ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"
 
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;

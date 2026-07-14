@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\SlackController;
 use App\Http\Controllers\AvatarProxyController;
 use App\Http\Controllers\HistoryController;
+use App\Http\Controllers\SlayerWheelController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -28,10 +29,13 @@ Route::get('/install', fn () => response(
         'namespace' => config('app.hook_namespace'),
         'clientVersion' => config('token_slayer.client_version'),
         'installUrl' => route('install-script'),
+        'slayerWheelUrl' => route('slayer-wheel'),
     ])->render(),
     200,
     ['Content-Type' => 'text/x-shellscript; charset=utf-8'],
 ))->name('install-script');
+
+Route::get('/dist/slayer_cli-latest.whl', SlayerWheelController::class)->name('slayer-wheel');
 
 Route::get('/install-cowork', fn () => response(
     view('cowork-install-script', [
