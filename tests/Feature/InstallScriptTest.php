@@ -378,6 +378,25 @@ it('registers the current Claude login as a base account slot after installing t
         ->and($shimPos)->toBeLessThan($detectPos);
 });
 
+it('registers an always-on Stop hook that warms the local usage cache, independent of auto-switch', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('$HOME/.local/bin/token-slayer hook usage-refresh')
+        ->toContain('HOOK_FINGERPRINT="token_slayer/hook usage-refresh"')
+        ->toContain('events = ["Stop"]');
+
+    // Appended alongside send-hook.sh's own Stop entry, never replacing it.
+    expect($script)->not->toContain('data["hooks"][event] = [{');
+
+    // Must be registered AFTER the shim exists (uses its absolute path).
+    $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
+    $refreshPos = strpos($script, 'hook usage-refresh');
+    expect($shimPos)->not->toBeFalse()
+        ->and($refreshPos)->not->toBeFalse()
+        ->and($shimPos)->toBeLessThan($refreshPos);
+});
+
 it('downloads the wheel to a PEP 427-valid temp name before pip-installing (pip rejects slayer_cli-latest.whl)', function () {
     $script = $this->get(route('install-script'))->content();
 

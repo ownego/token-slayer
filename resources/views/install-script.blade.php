@@ -541,6 +541,36 @@ PY
 
 echo "installed Claude Code hooks -> $SETTINGS"
 
+# Register a second, always-on Stop hook that warms the local usage cache
+# (independent of auto-switch, which stays opt-in via `token-slayer run`) so
+# `token-slayer tui` shows near-real-time quota without waiting on its
+# ticker. Appended alongside send-hook.sh's own Stop entry, not replacing it.
+USAGE_REFRESH_CMD="$HOME/.local/bin/token-slayer hook usage-refresh"
+CLAUDE_CMD="$USAGE_REFRESH_CMD" HOOK_FINGERPRINT="{{ $namespace }}/hook usage-refresh" "$PY" - "$SETTINGS" <<'PY'
+import json, os, sys
+
+path = sys.argv[1]
+cmd = os.environ["CLAUDE_CMD"]
+events = ["Stop"]
+
+with open(path) as f:
+    data = json.load(f)
+
+data.setdefault("hooks", {})
+fingerprint = os.environ["HOOK_FINGERPRINT"]
+for event in events:
+    entries = [e for e in data["hooks"].get(event, [])
+               if fingerprint not in json.dumps(e)]
+    entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
+    data["hooks"][event] = entries
+
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "installed Claude Code usage-refresh hook -> $SETTINGS"
+
 # --- Codex CLI: rewrite the {{ $namespace }} block in ~/.codex/config.toml ---
 mkdir -p "$HOME/.codex"
 CODEX_CONFIG="$HOME/.codex/config.toml"

@@ -22,6 +22,23 @@ def test_list_and_switch(tmp_path, monkeypatch):
     assert out.exit_code == 0 and "oedev" in out.output and "sk-ant-oat01" not in out.output
 
 
+def test_hook_usage_refresh_is_unconditional(monkeypatch, tmp_path):
+    """`hook usage-refresh` always calls the refresh (no TS_WRAPPED gate,
+    unlike the other `hook` subcommands)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("TS_WRAPPED", raising=False)
+    called = {}
+    monkeypatch.setattr(
+        "slayer_cli.cli.commands.hook.stop_refresh.refresh_active_on_stop",
+        lambda paths: called.setdefault("ran", True),
+    )
+    from slayer_cli.cli.main import main
+
+    out = CliRunner().invoke(main, ["hook", "usage-refresh"], input="{}")
+    assert out.exit_code == 0
+    assert called.get("ran")
+
+
 def test_no_args_would_launch_tui(monkeypatch, tmp_path):
     """With no subcommand, the group callback launches the TUI."""
     monkeypatch.setenv("HOME", str(tmp_path))
