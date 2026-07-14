@@ -238,6 +238,11 @@ fi</pre>
                     <p class="text-sm mb-1">If an admin provisioned an org account for you, pull it and configure Claude Code in one step:</p>
                     <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">token-slayer setup</pre>
                 </div>
+                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    <span class="font-medium">Adding another personal account:</span> <code>token-slayer add NAME --login</code> is currently broken — don't use it.
+                    Instead, log into that account in Claude Code itself (<code>claude</code>, then <code>/login</code>), then run <code>token-slayer add NAME</code> (no flag) to snapshot it.
+                    For an org account, don't use <code>add</code> at all — ask an admin to provision it, then run <code>token-slayer setup</code> above.
+                </p>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead class="text-xs text-gray-500 uppercase">
@@ -250,7 +255,7 @@ fi</pre>
                             <tr><td class="py-2 font-mono text-xs align-top">token-slayer</td><td class="align-top">launches the interactive TUI (browse slots, switch, live usage)</td></tr>
                             <tr><td class="py-2 font-mono text-xs align-top">token-slayer list</td><td class="align-top">lists account slots, marking the active one</td></tr>
                             <tr><td class="py-2 font-mono text-xs align-top">token-slayer current</td><td class="align-top">prints just the active slot's name and email/org</td></tr>
-                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer add NAME [--login]</td><td class="align-top">adds a slot from the machine's current login, or via a fresh login with <code>--login</code></td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer add NAME</td><td class="align-top">adds a slot from the machine's current login</td></tr>
                             <tr><td class="py-2 font-mono text-xs align-top">token-slayer switch NAME</td><td class="align-top">switches the active Claude account</td></tr>
                             <tr><td class="py-2 font-mono text-xs align-top">token-slayer alias NAME ALIAS</td><td class="align-top">sets/clears a short alias for a slot</td></tr>
                             <tr><td class="py-2 font-mono text-xs align-top">token-slayer remove NAME</td><td class="align-top">removes a slot (falls back to another remaining account if any are left)</td></tr>
