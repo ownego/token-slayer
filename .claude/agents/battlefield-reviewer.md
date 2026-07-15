@@ -24,6 +24,27 @@ You review the Phaser 3 real-time battlefield renderer in `resources/js/battlefi
 - Grep for the paired `bus.on`/`bus.emit` and for `.destroy()`/removal of anything newly `add`-ed. Verify by reading, don't assume.
 - If Vitest specs exist for a touched module, run `npm test` and report failures.
 
+## Ready greps
+
+Run these against the changed files before writing anything up:
+
+```bash
+# every add without a matching destroy/removal (inspect pairs by hand)
+grep -n "scene\.add\.\|this\.add\.\|scene\.time\.\|\.tweens\.add\|bus\.on(" <changed files>
+grep -n "\.destroy()\|\.remove(\|bus\.off(\|removeAllListeners" <changed files>
+# dangling bus contract — every emit needs an on and vice versa
+grep -rn "bus\.emit('" resources/js/battlefield/ | sed "s/.*bus.emit('\([^']*\)'.*/\1/" | sort -u
+grep -rn "bus\.on('" resources/js/battlefield/ | sed "s/.*bus.on('\([^']*\)'.*/\1/" | sort -u
+# snapshot round-trip — fields written vs fields read back
+grep -n "snapshotState\|data-battlefield-state" resources/js/battlefield/snapshot.js resources/views/livewire/battlefield.blade.php
+```
+
 ## Output
 
-Report findings most-severe first: file:line, the concrete defect, and the runtime symptom (state lost on rotate, leak after N minutes, event silently dropped). If clean, say so and list the round-trips / bus pairs you verified.
+Report findings most-severe first, each tagged with a verdict:
+
+- 🔴 **BLOCKER** — state loss, leak, or contract break that will happen in production
+- 🟡 **SHOULD-FIX** — latent risk or convention violation, safe to merge with a follow-up
+- 🟢 **NOTE** — informational
+
+For each: file:line, the concrete defect, and the runtime symptom (state lost on rotate, leak after N minutes, event silently dropped). If clean, say so and list the round-trips / bus pairs you verified. **Never invent issues to fill the report — an empty report is a valid report.**

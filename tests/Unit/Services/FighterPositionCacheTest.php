@@ -53,3 +53,12 @@ test('many returns positions keyed by user id with null for missing', function (
 test('many returns empty array for empty input', function () {
     expect(app(FighterPositionCache::class)->many([]))->toBe([]);
 });
+
+test('put keeps the position forever, surviving past the old idle-minutes expiration window', function () {
+    $cache = app(FighterPositionCache::class);
+    $cache->put(42, 0.5, 0.75);
+
+    $this->travel(config('game.idle_minutes') + 1)->minutes();
+
+    expect($cache->get(42))->toBe(['x' => 0.5, 'y' => 0.75]);
+});

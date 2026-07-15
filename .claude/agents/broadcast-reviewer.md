@@ -25,6 +25,26 @@ Focus ONLY on the broadcast contract. Do not review unrelated business logic.
 - For each touched event, grep the JS for its `broadcastAs()` name and channel to locate the consumer, then diff the payload keys by hand.
 - Verify claims by reading both sides. Never assume a key exists — grep for it.
 
+## Ready greps
+
+```bash
+# all broadcast names on the PHP side
+grep -rn "broadcastAs" app/Events/ | grep -o "'[^']*'"
+# what the JS layer maps/subscribes to
+grep -n "ECHO_EVENT_MAP" -A 30 resources/js/battlefield/index.js
+# payload keys PHP sends vs keys JS reads for event <Name>
+grep -n "broadcastWith" -A 20 app/Events/<Name>.php
+grep -rn "<bus-key>" resources/js/battlefield/scene.js
+# shape tests cover the touched events?
+grep -n "<Name>" tests/Feature/Events/BroadcastShapeTest.php
+```
+
 ## Output
 
-Report findings most-severe first. For each: the file:line on BOTH sides of the contract, the concrete mismatch, and the runtime symptom (e.g. "client reads `event.handle` but broadcastWith sends `slack_handle` → fighter labels render undefined"). If the contract is intact, say so plainly and list the event/channel/payload pairs you verified.
+Report findings most-severe first, each tagged with a verdict:
+
+- 🔴 **BLOCKER** — a name/channel/payload mismatch that ships a silent production failure
+- 🟡 **SHOULD-FIX** — queue-semantics or serialization risk, missing shape test
+- 🟢 **NOTE** — informational (e.g. payload key the client ignores)
+
+For each: the file:line on BOTH sides of the contract, the concrete mismatch, and the runtime symptom (e.g. "client reads `event.handle` but broadcastWith sends `slack_handle` → fighter labels render undefined"). If the contract is intact, say so plainly and list the event/channel/payload pairs you verified. **Never invent issues to fill the report — an empty report is a valid report.**

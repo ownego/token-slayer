@@ -50,8 +50,40 @@ services:
       retries: 3
       timeout: 5s
 
+  redis:
+    image: 'valkey/valkey:8-alpine'
+    ports:
+      - '${FORWARD_REDIS_PORT:-6379}:6379'
+    volumes:
+      - 'redis:/data'
+    networks:
+      - development
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      retries: 3
+      timeout: 5s
+
+  worker:
+    build:
+      context: .
+      target: development
+      args:
+        USER_ID: ${SPIN_USER_ID:-1000}
+        GROUP_ID: ${SPIN_GROUP_ID:-1000}
+    volumes:
+      - .:/var/www/html/
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - development
+    depends_on:
+      - pgsql
+      - redis
+    command: php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+
 networks:
   development:
 
 volumes:
   pgsql:
+  redis:

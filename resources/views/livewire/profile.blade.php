@@ -10,20 +10,53 @@
 
     <section class="border rounded p-4">
         <h2 class="font-semibold mb-3">Battlefield stats</h2>
-        <dl class="grid grid-cols-3 gap-4 text-center">
+        <dl class="grid grid-cols-4 gap-4 text-center">
             <div>
-                <dt class="text-xs uppercase tracking-wide text-gray-500">All-time</dt>
-                <dd class="text-xl font-mono">{{ number_format($damageTotals['allTime']) }}</dd>
+                <dt class="text-xs uppercase tracking-wide text-gray-500">Hourly</dt>
+                <dd class="text-xl font-mono">{{ number_format($damageTotals['hourly']) }}</dd>
+            </div>
+            <div>
+                <dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt>
+                <dd class="text-xl font-mono">{{ number_format($damageTotals['daily']) }}</dd>
             </div>
             <div>
                 <dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt>
                 <dd class="text-xl font-mono">{{ number_format($damageTotals['monthly']) }}</dd>
             </div>
             <div>
-                <dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt>
-                <dd class="text-xl font-mono">{{ number_format($damageTotals['daily']) }}</dd>
+                <dt class="text-xs uppercase tracking-wide text-gray-500">All-time</dt>
+                <dd class="text-xl font-mono">{{ number_format($damageTotals['allTime']) }}</dd>
             </div>
         </dl>
+    </section>
+
+    <section class="border rounded p-4">
+        <h2 class="font-semibold mb-3">Attribution</h2>
+        @php($event = $attribution['event'])
+        @if ($event)
+            @if ($event->account_id)
+                <p class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5">
+                    Your latest usage matched <span class="font-medium">{{ $event->account->email }}</span> — an org account.
+                </p>
+            @elseif ($event->account_source === 'proxy')
+                <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    Your latest usage went through a proxy (<code>ANTHROPIC_BASE_URL</code> is set), so the account couldn't be detected. Set <code>account.json</code> to attribute it manually.
+                </p>
+            @elseif ($event->account_email)
+                <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    Your latest usage claimed <span class="font-medium">{{ $event->account_email }}</span>, which isn't a known org account — counted as personal usage. Tell an admin if this should be an org account.
+                </p>
+            @else
+                <p class="text-sm text-gray-500">Your latest usage wasn't tied to any account — counted as personal usage.</p>
+            @endif
+        @else
+            <p class="text-sm text-gray-500">No usage recorded yet.</p>
+        @endif
+        @if ($attribution['outdated'])
+            <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2">
+                Your client is running an outdated version{{ $attribution['clientVersion'] ? " ({$attribution['clientVersion']})" : '' }}. Run <code>token-slayer update</code> to get the latest.
+            </p>
+        @endif
     </section>
 
     <section class="border rounded p-4 space-y-4">
@@ -38,26 +71,41 @@
             </dl>
         </div>
 
-        <div>
-            <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">You</h3>
-            <dl class="grid grid-cols-3 gap-4 text-center">
-                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Hourly</dt><dd class="text-xl font-mono">{{ number_format($damageTotals['hourly']) }}</dd></div>
-                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt><dd class="text-xl font-mono">{{ number_format($damageTotals['daily']) }}</dd></div>
-                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt><dd class="text-xl font-mono">{{ number_format($damageTotals['monthly']) }}</dd></div>
-            </dl>
-        </div>
-
-        @if ($account)
+        @if (count($accountRows) > 0)
             <div>
-                <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">
-                    My account — {{ $account->email }}
-                    <span class="text-gray-400">({{ $account->plan }}, {{ $account->users()->count() }} members)</span>
-                </h3>
-                <dl class="grid grid-cols-3 gap-4 text-center">
-                    <div><dt class="text-xs uppercase tracking-wide text-gray-500">Hourly</dt><dd class="text-xl font-mono">{{ number_format($accountUsage['hourly']) }}</dd></div>
-                    <div><dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt><dd class="text-xl font-mono">{{ number_format($accountUsage['daily']) }}</dd></div>
-                    <div><dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt><dd class="text-xl font-mono">{{ number_format($accountUsage['monthly']) }}</dd></div>
-                </dl>
+                <h3 class="text-xs uppercase tracking-wide text-gray-500 mb-2">Your accounts</h3>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    @foreach ($accountRows as $row)
+                        <div class="border rounded p-3">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium">{{ $row['email'] }}</span>
+                                <span class="text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5">{{ $row['memberCount'] }} {{ Str::plural('member', $row['memberCount']) }}</span>
+                            </div>
+                            <p class="text-xs text-gray-400 mb-2">{{ $row['plan'] ?? 'no plan on file' }}</p>
+                            @unless ($row['isMember'])
+                                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">You're not a member of this account — usage was attributed here but you may lose access.</p>
+                            @endunless
+                            <dl class="grid grid-cols-3 gap-2 text-center">
+                                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Hourly</dt><dd class="text-sm font-mono">{{ number_format($row['hourly']) }}</dd></div>
+                                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Daily</dt><dd class="text-sm font-mono">{{ number_format($row['daily']) }}</dd></div>
+                                <div><dt class="text-xs uppercase tracking-wide text-gray-500">Monthly</dt><dd class="text-sm font-mono">{{ number_format($row['monthly']) }}</dd></div>
+                            </dl>
+                            @if (! is_null($row['util_5h']) || ! is_null($row['util_7d']))
+                                <div class="mt-3 space-y-2">
+                                    @foreach ($quotaBars($row) as $bar)
+                                        <div>
+                                            <div class="flex justify-between text-xs text-gray-500 mb-0.5"><span>{{ $bar['label'] }}</span><span class="font-mono">{{ $bar['pct'] }}%</span></div>
+                                            <div class="h-1.5 bg-gray-200 rounded overflow-hidden"><div class="h-full {{ $bar['band'] }}" style="width: {{ min($bar['pct'], 100) }}%"></div></div>
+                                        </div>
+                                    @endforeach
+                                    @if ($row['lastProbedAt'])
+                                        <p class="text-xs text-gray-400">probed {{ $row['lastProbedAt']->diffForHumans() }}</p>
+                                    @endif
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
             </div>
         @endif
     </section>
@@ -89,6 +137,11 @@
         <p class="text-sm text-gray-500 mb-3">For developers using the CLI agents. Installs the hooks and saves your token to <code>{{ $tokenPath }}</code> in one step. Safe to re-run on rotation.</p>
         <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $combinedCommand }}</pre>
         <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $installUrl }}" class="underline">{{ $installUrl }}</a></p>
+        <p class="text-xs text-gray-500 mt-1">Already installed? Run <code>token-slayer update</code>.</p>
+        <p class="text-xs text-gray-500 mt-1">The account you're currently logged into is set up for you automatically the moment install finishes — nothing else to do for it.</p>
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2">
+            <span class="font-medium">First time only:</span> <code>token-slayer</code>/<code>slayer</code> won't be found in the terminal you just ran the install in — the installer adds it to your PATH via <code>~/.zshrc</code> (macOS default shell) or <code>~/.bashrc</code>, but your current shell doesn't reload that automatically. Open a new terminal tab, or run <code>source ~/.zshrc</code> (macOS) / <code>source ~/.bashrc</code> (Linux).
+        </p>
 
         <details class="mt-3">
             <summary class="text-sm font-medium cursor-pointer text-gray-600">Manual hook config (if you'd rather copy by hand)</summary>
@@ -109,6 +162,116 @@
                     <p class="text-sm mb-1">4. Paste/merge into your global <code>~/.gemini/config/hooks.json</code> or project-level <code>.agents/hooks.json</code>:</p>
                     <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs">{{ $antigravitySnippet }}</pre>
                 </div>
+            </div>
+        </details>
+
+        <details class="mt-3">
+            <summary class="text-sm font-medium cursor-pointer text-gray-600">Customize what your fighter shows</summary>
+            <div class="mt-3 space-y-3">
+                <p class="text-sm text-gray-600">
+                    By default the charging bubble shows only a privacy-safe tool name — no commands, file paths, or prompts. Create
+                    <code>~/.config/{{ $namespace }}/custom.sh</code> and it will be sourced by every hook call right before the event is sent,
+                    with <code>$BODY</code> (the JSON payload) in scope for you to edit with <code>jq</code>. The installer creates the
+                    <code>~/.config/{{ $namespace }}</code> directory but never touches or overwrites this file, so it survives every install and update.
+                    Set <code>custom_activity</code> in <code>$BODY</code> and the server shows it verbatim instead of its own default label.
+                </p>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-xs text-gray-500 uppercase">
+                            <tr>
+                                <th class="py-2">Provider</th>
+                                <th>Example <code>tool_name</code></th>
+                                <th>Useful <code>tool_input</code> fields</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr>
+                                <td class="py-2 font-medium align-top">Claude Code</td>
+                                <td class="align-top"><code>Bash</code>, <code>Read</code>, <code>Edit</code>, <code>Write</code>, <code>Grep</code>, <code>WebFetch</code>, <code>Task</code></td>
+                                <td class="align-top"><code>command</code>, <code>file_path</code>, <code>pattern</code>, <code>url</code>, <code>description</code></td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">Any provider · MCP tools</td>
+                                <td class="align-top"><code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, e.g. <code>mcp__jira__jira_search_issues</code></td>
+                                <td class="align-top">shape varies per tool; the server name (segment after the first <code>__</code>) is the most reliable thing to key off</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">Antigravity</td>
+                                <td class="align-top"><code>run_command</code>, <code>read_file</code>, <code>write_file</code>, <code>grep_search</code></td>
+                                <td class="align-top"><code>CommandLine</code>, <code>AbsolutePath</code>, <code>TargetFile</code>, <code>Query</code></td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">Codex CLI</td>
+                                <td class="align-top text-gray-400" colspan="2">no per-tool events today — only session start/stop are wired, so there's nothing to key off yet</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2 font-medium align-top">claude.ai / Cowork</td>
+                                <td class="align-top text-gray-400" colspan="2">no tool events — these only ever report a token count on session end</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <p class="text-sm mb-1">Example <code>~/.config/{{ $namespace }}/custom.sh</code>:</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">if command -v jq >/dev/null 2>&1; then
+  BODY=$(printf '%s' "$BODY" | jq -c '
+    if (.hook_event_name // "") == "UserPromptSubmit" then
+      .custom_activity = "🧠 New prompt"
+    elif (.hook_event_name // "") == "PreToolUse" then
+      .custom_activity = ({
+        "Bash": "⚔️ All-In Execute",
+        "Task": ("Agent: " + (.tool_input.description // "subagent"))
+      }[.tool_name] // .tool_name)
+    else . end' 2>/dev/null || printf '%s' "$BODY")
+fi</pre>
+                </div>
+            </div>
+        </details>
+
+        <details class="mt-3">
+            <summary class="text-sm font-medium cursor-pointer text-gray-600">Using more than one Claude account? (<code>token-slayer</code> command)</summary>
+            <div class="mt-3 space-y-3">
+                <p class="text-sm text-gray-600">
+                    The install command above also sets up <code>token-slayer</code>, a small CLI/TUI that manages
+                    Claude Code login slots on this machine and keeps attribution pointed at whichever one is active.
+                    You only need it if you switch between more than one Claude account.
+                </p>
+                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    <span class="font-medium">macOS:</span> the first <code>token-slayer switch</code> (or <code>setup</code>) will pop up a Keychain prompt asking for your login password/Touch ID — that's macOS asking permission to store the credential, not the command hanging. Choose <em>Always Allow</em> to avoid repeat prompts.
+                    Also, on a brand-new Mac <code>python3</code> may be an Xcode stub that pops its own "Install Command Line Developer Tools?" dialog the first time anything actually runs it — check with <code>xcode-select -p</code> first (empty output → run <code>xcode-select --install</code>) so the account-switcher venv can set up cleanly.
+                </p>
+                <div>
+                    <p class="text-sm mb-1">If an admin provisioned an org account for you, pull it and configure Claude Code in one step:</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">token-slayer setup</pre>
+                </div>
+                <p class="text-sm text-gray-600">
+                    <span class="font-medium text-gray-700">Adding another personal account:</span> log into it in Claude Code itself
+                    (<code>claude</code>, then <code>/login</code>), then run <code>token-slayer add NAME</code> to snapshot it.
+                    For an org account, don't use <code>add</code> at all — ask an admin to provision it, then run <code>token-slayer setup</code> above.
+                </p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-xs text-gray-500 uppercase">
+                            <tr>
+                                <th class="py-2">Command</th>
+                                <th>What it does</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer</td><td class="align-top">launches the interactive TUI (browse slots, switch, live usage)</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer list</td><td class="align-top">lists account slots, marking the active one</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer current</td><td class="align-top">prints just the active slot's name and email/org</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer add NAME</td><td class="align-top">adds a slot from the machine's current login</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer switch NAME</td><td class="align-top">switches the active Claude account</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer alias NAME ALIAS</td><td class="align-top">sets/clears a short alias for a slot</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer remove NAME</td><td class="align-top">removes a slot (falls back to another remaining account if any are left)</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer status</td><td class="align-top">prints version, namespace, active account, and credential status</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-500"><code>token-slayer --help</code> or <code>token-slayer &lt;command&gt; --help</code> for full details on any of these.</p>
             </div>
         </details>
     </section>

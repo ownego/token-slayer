@@ -26,8 +26,8 @@ export const BOSS_TYPES = [
   {
     key: 'boss-flying-demon',
     animFiles: {
-      idle:   { file: '/assets/battlefield/bosses/flying-demon-xzany/idle.png',   frameWidth: 81, frameHeight: 71, count: 4, rate: 8 },
-      move:   { file: '/assets/battlefield/bosses/flying-demon-xzany/flying.png', frameWidth: 81, frameHeight: 71, count: 4, rate: 8 },
+      idle:   { file: '/assets/battlefield/bosses/flying-demon-xzany/idle.png',   frameWidth: 81, frameHeight: 71, count: 4, rate: 8, loop: true },
+      move:   { file: '/assets/battlefield/bosses/flying-demon-xzany/flying.png', frameWidth: 81, frameHeight: 71, count: 4, rate: 8, loop: true },
       attack: { file: '/assets/battlefield/bosses/flying-demon-xzany/attack.png', frameWidth: 81, frameHeight: 71, count: 8, rate: 10 },
       hurt:   { file: '/assets/battlefield/bosses/flying-demon-xzany/hurt.png',   frameWidth: 81, frameHeight: 71, count: 4, rate: 10 },
       death:  { file: '/assets/battlefield/bosses/flying-demon-xzany/death.png',  frameWidth: 81, frameHeight: 71, count: 7, rate: 8 },

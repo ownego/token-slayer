@@ -79,8 +79,12 @@ export class Fighter {
       const raw = f.position
         ? { x: f.position.x * L.logicalWidth, y: f.position.y * L.logicalHeight }
         : null;
-      const pos = raw && isValidMoveTarget(raw.x, raw.y, ctx) ? raw : autoPositions[i];
+      const isCustom = raw && isValidMoveTarget(raw.x, raw.y, ctx);
+      const pos = isCustom ? raw : autoPositions[i];
       this.addFighter(f, pos, config);
+      if (isCustom) {
+        this.scene.fighters.get(f.id).hasCustomPosition = true;
+      }
     });
     for (const [userId, damage] of state.damageTotals ?? []) {
       this.scene.damageTotals.set(userId, damage);
@@ -236,6 +240,7 @@ export class Fighter {
       isStunned: false,
       lastStunAt: null,
       waypointMoving: false,
+      hasCustomPosition: false,
       rescaleTween: null,
     });
 
@@ -336,6 +341,7 @@ export class Fighter {
           }
           if (idx === route.length - 1) {
             entry.pos = target;
+            entry.hasCustomPosition = true;
             if (entry.body && entry.animState !== AnimState.ATTACK) {
               const isCharging = this.scene.charges.has(entry.id);
               const next = isCharging ? AnimState.WALK : AnimState.IDLE;
@@ -444,17 +450,20 @@ export class Fighter {
 
     let i = 0;
     for (const [userId, entry] of this.scene.fighters.entries()) {
-      const target = positions[i++];
+      const gridTarget = positions[i++];
+      const target = entry.hasCustomPosition ? entry.pos : gridTarget;
       const newSize = config.displaySize;
       const sizeChanged = newSize !== entry.displaySize;
 
-      this.scene.tweens.add({
-        targets: entry.sprite,
-        x: target.x,
-        y: target.y,
-        duration: 200,
-        ease: 'Quad.easeOut',
-      });
+      if (!entry.hasCustomPosition) {
+        this.scene.tweens.add({
+          targets: entry.sprite,
+          x: target.x,
+          y: target.y,
+          duration: 200,
+          ease: 'Quad.easeOut',
+        });
+      }
 
       if (sizeChanged) {
         entry.displaySize = newSize;

@@ -10,11 +10,7 @@ class FighterPositionCache
 
     public function put(int $userId, float $x, float $y): void
     {
-        $this->cache->put(
-            $this->key($userId),
-            ['x' => $x, 'y' => $y],
-            now()->addMinutes(config('game.idle_minutes')),
-        );
+        $this->cache->forever($this->key($userId), ['x' => $x, 'y' => $y]);
     }
 
     /**

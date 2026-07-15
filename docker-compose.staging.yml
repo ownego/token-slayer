@@ -47,5 +47,33 @@ services:
     # traffic, just an internal tick loop dispatching due commands.
     command: php artisan schedule:work
 
+  redis:
+    image: 'valkey/valkey:8-alpine'
+    # No published port — reachable only over the token-slayer network as `redis`.
+    volumes:
+      - 'redis:/data'
+    networks:
+      - token-slayer
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      retries: 3
+      timeout: 5s
+
+  worker:
+    <<: *app
+    # docker-compose.yml only mounts source for `php`; re-declare here so the
+    # worker runs the same app code as the web tier.
+    volumes:
+      - .:/var/www/html/
+    depends_on:
+      - redis
+    # Long-running queue consumer for the redis connection. --max-time recycles
+    # the process hourly so a leaked resource or stale code never lingers.
+    command: php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+
 networks:
   token-slayer:
+
+volumes:
+  redis:
