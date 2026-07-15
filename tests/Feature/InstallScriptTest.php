@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\Http;
+
 beforeEach(fn () => config(['app.hook_namespace' => 'token_slayer']));
 
 test('install.sh is publicly accessible as a shell script', function () {
@@ -481,16 +483,27 @@ it('checks slayer_cli is actually importable before exec-ing into the venv, not 
         ->and($importCheckPosition)->toBeLessThan($execPosition);
 });
 
-it('redirects the slayer-cli wheel route to the configured release asset URL', function () {
-    config(['token_slayer.slayer_cli_wheel_url' => 'https://example.com/slayer_cli-latest.whl']);
+it('streams the slayer-cli wheel bytes fetched server-side from the private GitHub release', function () {
+    config([
+        'token_slayer.slayer_cli.github_repo' => 'ownego/token-slayer-cli',
+        'token_slayer.slayer_cli.github_token' => 'fake-token',
+        'token_slayer.slayer_cli.wheel_asset_name' => 'slayer_cli-latest.whl',
+    ]);
+    Http::fake([
+        'api.github.com/repos/ownego/token-slayer-cli/releases/latest' => Http::response([
+            'assets' => [['name' => 'slayer_cli-latest.whl', 'url' => 'https://api.github.com/repos/ownego/token-slayer-cli/releases/assets/2']],
+        ], 200),
+        'api.github.com/repos/ownego/token-slayer-cli/releases/assets/2' => Http::response('FAKE-WHEEL-BYTES', 200),
+    ]);
 
     $response = $this->get('/dist/slayer_cli-latest.whl');
 
-    $response->assertRedirect('https://example.com/slayer_cli-latest.whl');
+    $response->assertOk();
+    expect($response->getContent())->toBe('FAKE-WHEEL-BYTES');
 });
 
-it('404s the slayer-cli wheel route when no release URL is configured', function () {
-    config(['token_slayer.slayer_cli_wheel_url' => '']);
+it('404s the slayer-cli wheel route when the github repo/token are not configured', function () {
+    config(['token_slayer.slayer_cli.github_repo' => '', 'token_slayer.slayer_cli.github_token' => '']);
 
     $response = $this->get('/dist/slayer_cli-latest.whl');
 

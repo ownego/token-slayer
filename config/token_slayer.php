@@ -66,16 +66,22 @@ return [
     | slayer-cli release source
     |--------------------------------------------------------------------------
     |
-    | slayer-cli now lives in its own repo and ships as a GitHub Release
-    | asset; this server never builds or stores the wheel itself, it only
-    | redirects the install script's download to the latest release.
+    | slayer-cli lives in its own PRIVATE repo and ships as a GitHub Release
+    | asset. Because the repo is private, an anonymous install script can't
+    | download the asset directly (GitHub 404s unauthenticated release-asset
+    | requests on private repos) — so this server fetches it server-side with
+    | a repo-scoped token and streams the bytes back, never storing a copy.
     |
-    | Set per environment via SLAYER_CLI_WHEEL_URL once the release repo is
-    | settled. Empty until configured — the controller 404s cleanly rather
-    | than redirecting nowhere.
+    | `github_token` needs only `contents: read` on `github_repo` (fine-
+    | grained PAT). Empty until configured — the controller 404s cleanly
+    | rather than fetching nothing.
     |
     */
 
-    'slayer_cli_wheel_url' => env('SLAYER_CLI_WHEEL_URL', ''),
+    'slayer_cli' => [
+        'github_repo' => env('SLAYER_CLI_GITHUB_REPO', ''),
+        'github_token' => env('SLAYER_CLI_GITHUB_TOKEN', ''),
+        'wheel_asset_name' => env('SLAYER_CLI_WHEEL_ASSET', 'slayer_cli-latest.whl'),
+    ],
 
 ];
