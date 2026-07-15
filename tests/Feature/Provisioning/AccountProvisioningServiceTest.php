@@ -1,27 +1,30 @@
 <?php
 
 use App\Enums\MembershipStatus;
+use App\Exceptions\AccountConnectException;
 use App\Models\Account;
+use App\Models\AccountUser;
 use App\Models\User;
 use App\Services\AccountProvisioningService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
 it('writes tracking to the pivot and the encrypted grant to the cache', function () {
     $user = User::factory()->create();
-    $account = Account::factory()->create(['email' => 'shared@org.com', 'organization_uuid' => 'org-1']);
+    $account = Account::factory()->create([
+        'email' => 'ongtung2212002@gmail.com',
+        'organization_uuid' => '7f993a12-f480-45cd-8b99-1e3182d168bf',
+    ]);
 
     // Seed the PKCE verifier the way start() would (real prefix: 'account-connect:').
     $state = 'STATE123';
     Cache::put('account-connect:'.$state, ['verifier' => 'VERIFIER'], now()->addMinutes(10));
 
-    // Fake the Anthropic token endpoint with the canonical fixture.
+    fakeAnthropic();
     $token = json_decode(file_get_contents(base_path('tests/fixtures/anthropic/token.json')), true);
-    Http::fake(['*/v1/oauth/token' => Http::response($token, 200)]);
 
     $service = app(AccountProvisioningService::class);
     $pivot = $service->provisionFromCode($user, $account, $state, 'THECODE#'.$state);
@@ -39,8 +42,8 @@ it('writes tracking to the pivot and the encrypted grant to the cache', function
     $decoded = json_decode(Crypt::decryptString($raw), true);
     expect($decoded['access_token'])->toBe($token['access_token'])
         ->and($decoded['refresh_token'])->toBe($token['refresh_token'])
-        ->and($decoded['email'])->toBe('shared@org.com')
-        ->and($decoded['org_uuid'])->toBe('org-1')
+        ->and($decoded['email'])->toBe('ongtung2212002@gmail.com')
+        ->and($decoded['org_uuid'])->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
         ->and($decoded['expires_at'])->toBeInt();
 
     // claimableFor returns provisioned rows INCLUDING already-claimed ones
@@ -53,4 +56,27 @@ it('writes tracking to the pivot and the encrypted grant to the cache', function
         $revoked->id => ['status' => MembershipStatus::Tracked->value, 'provisioned_at' => now(), 'revoked_at' => now()],
     ]);
     expect($service->claimableFor($user))->toHaveCount(2);
+});
+
+it('rejects a pasted code whose authorized identity does not match the target account, writing nothing', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create([
+        'email' => 'intended-account@org.com',
+        'organization_uuid' => 'org-not-in-fixture',
+    ]);
+
+    $state = 'STATE456';
+    Cache::put('account-connect:'.$state, ['verifier' => 'VERIFIER'], now()->addMinutes(10));
+
+    // Profile fixture authorizes ongtung2212002@gmail.com / org 7f993a12-...
+    // — neither matches $account's identity above.
+    fakeAnthropic();
+
+    $service = app(AccountProvisioningService::class);
+
+    expect(fn () => $service->provisionFromCode($user, $account, $state, 'THECODE#'.$state))
+        ->toThrow(AccountConnectException::class);
+
+    expect(AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->exists())->toBeFalse()
+        ->and(Cache::get($service->cacheKey($user->id, $account->id)))->toBeNull();
 });

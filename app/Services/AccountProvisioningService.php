@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\MembershipStatus;
+use App\Exceptions\AccountConnectException;
 use App\Models\Account;
 use App\Models\AccountUser;
 use App\Models\User;
@@ -62,10 +63,12 @@ final class AccountProvisioningService
      * @param  string  $state  the state from {@see AccountConnectService::start()}
      * @param  string  $pastedCode  the `code#state` the admin pasted
      * @return AccountUser the written pivot tracking row
+     *
+     * @throws AccountConnectException 'connect_state_expired' | 'connect_no_identity' | 'connect_identity_mismatch' when the pasted code's authorized identity doesn't match `$account`
      */
     public function provisionFromCode(User $user, Account $account, string $state, string $pastedCode): AccountUser
     {
-        $token = $this->connect->exchangeForToken($state, $pastedCode);
+        $token = $this->connect->exchangeVerifiedToken($state, $pastedCode, $account);
 
         $user->accounts()->syncWithoutDetaching([
             $account->id => [
