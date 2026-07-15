@@ -7,6 +7,7 @@ use App\Filament\Widgets\FleetQuotaOverview;
 use App\Filament\Widgets\TokenVolumeChart;
 use App\Filament\Widgets\TopAccountsLeaderboard;
 use App\Filament\Widgets\TopUsersLeaderboard;
+use App\Http\Middleware\RedirectGuestsToSlackLogin;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -45,7 +46,6 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -77,6 +77,7 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->authMiddleware([
+                RedirectGuestsToSlackLogin::class,
                 Authenticate::class,
             ]);
     }
