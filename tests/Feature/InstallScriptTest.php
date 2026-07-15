@@ -462,6 +462,25 @@ it('symlinks slayer to the token-slayer shim', function () {
     expect($script)->toContain('ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"');
 });
 
+it('checks slayer_cli is actually importable before exec-ing into the venv, not just that python exists', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // python -m venv always succeeds (stdlib, no wheel needed), so a python
+    // binary can exist even when the wheel download/pip-install failed. The
+    // shim must not exec into the venv on that binary check alone -- it
+    // must also confirm slayer_cli is actually importable, or a partially
+    // failed install permanently breaks every subcommand (including
+    // `update`, which is supposed to be the self-heal path).
+    expect($script)->toContain('-c "import slayer_cli"');
+
+    $importCheckPosition = strpos($script, '-c "import slayer_cli"');
+    $execPosition = strpos($script, 'exec env SLAYER_NS');
+
+    expect($importCheckPosition)->not->toBeFalse()
+        ->and($execPosition)->not->toBeFalse()
+        ->and($importCheckPosition)->toBeLessThan($execPosition);
+});
+
 it('redirects the slayer-cli wheel route to the configured release asset URL', function () {
     config(['token_slayer.slayer_cli_wheel_url' => 'https://example.com/slayer_cli-latest.whl']);
 

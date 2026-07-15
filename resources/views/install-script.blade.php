@@ -421,9 +421,14 @@ LATEST='{{ $clientVersion }}'
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
 
 # Prefer the installed slayer-cli package; fall back to the old minimal
-# update/status behavior when the venv is missing so a failed venv/pip step
-# never bricks the token-slayer command.
-if [ -x "$SLAYER_VENV/bin/python" ]; then
+# update/status behavior when the venv OR the package itself is missing, so
+# a failed venv/pip step never bricks the token-slayer command. Checking
+# only that the python binary exists is not enough: `python -m venv`
+# succeeds on its own (stdlib, no wheel needed), so the binary can exist
+# even when the wheel download/pip-install failed -- exec-ing in on that
+# check alone would permanently break every subcommand, including this
+# same `update`, which is supposed to be the self-heal path.
+if [ -x "$SLAYER_VENV/bin/python" ] && "$SLAYER_VENV/bin/python" -c "import slayer_cli" >/dev/null 2>&1; then
   exec env SLAYER_NS={{ $namespace }} SLAYER_INSTALL_URL={{ $installUrl }} "$SLAYER_VENV/bin/python" -m slayer_cli "$@"
 fi
 
