@@ -12,13 +12,13 @@ test('admin usage route redirects guests to slack login', function () {
 });
 
 test('non-admin users are forbidden from the admin usage page', function () {
-    $this->actingAs(User::factory()->create(['is_admin' => false]));
+    $this->actingAs(User::factory()->create());
 
     $this->get('/admin/usage')->assertForbidden();
 });
 
 test('admin users can view the admin usage page', function () {
-    $this->actingAs(User::factory()->create(['is_admin' => true]));
+    $this->actingAs(User::factory()->admin()->create());
 
     $this->get('/admin/usage')
         ->assertOk()
@@ -29,7 +29,7 @@ test('admin users can view the admin usage page', function () {
 test('admin usage renders account and user rows with token figures', function () {
     $account = Account::factory()->create(['email' => 'team-a@example.com', 'plan' => 'max-20x']);
     $member = User::factory()->create(['slack_handle' => 'member-one']);
-    $admin = User::factory()->create(['is_admin' => true, 'slack_handle' => 'the-admin']);
+    $admin = User::factory()->admin()->create(['slack_handle' => 'the-admin']);
     $account->users()->attach([$member->id, $admin->id]);
 
     Event::factory()->create(['user_id' => $member->id, 'account_id' => $account->id, 'tokens' => 1234, 'created_at' => now()->subMinutes(20)]);

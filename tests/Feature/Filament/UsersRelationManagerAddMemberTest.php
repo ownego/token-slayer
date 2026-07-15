@@ -14,7 +14,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 it('adds a brand-new user directly as a tracked member', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $newcomer = User::factory()->create();
 
@@ -27,7 +27,7 @@ it('adds a brand-new user directly as a tracked member', function () {
 });
 
 it('promotes an existing untracked contributor without a duplicate-key error', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $contributor = User::factory()->create();
     $account->users()->attach($contributor, ['status' => MembershipStatus::Untracked->value]);

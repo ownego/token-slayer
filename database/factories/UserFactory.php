@@ -47,4 +47,15 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+
+    /**
+     * Create the user with the super_admin role, replacing the retired
+     * is_admin boolean flag used by every existing admin-gated test.
+     *
+     * @return static
+     */
+    public function admin(): static
+    {
+        return $this->afterCreating(fn (User $user) => $user->assignRole('super_admin'));
+    }
 }

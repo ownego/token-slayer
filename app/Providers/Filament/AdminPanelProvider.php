@@ -7,6 +7,7 @@ use App\Filament\Widgets\FleetQuotaOverview;
 use App\Filament\Widgets\TokenVolumeChart;
 use App\Filament\Widgets\TopAccountsLeaderboard;
 use App\Filament\Widgets\TopUsersLeaderboard;
+use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -26,7 +27,8 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 /**
  * Registers the `/admin` Filament panel — account CRUD, member management,
  * and (in later phases) quota/usage dashboards. Access is gated by
- * `User::canAccessPanel()` (requires `is_admin`).
+ * `User::canAccessPanel()` (requires at least one assigned role); per-action
+ * authorization inside the panel is enforced by Shield's generated Policies.
  */
 class AdminPanelProvider extends PanelProvider
 {
@@ -59,6 +61,9 @@ class AdminPanelProvider extends PanelProvider
                 TokenVolumeChart::class,
                 TopUsersLeaderboard::class,
                 TopAccountsLeaderboard::class,
+            ])
+            ->plugins([
+                FilamentShieldPlugin::make(),
             ])
             ->middleware([
                 EncryptCookies::class,

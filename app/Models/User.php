@@ -50,7 +50,6 @@ class User extends Authenticatable implements FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'last_event_at' => 'datetime',
-            'is_admin' => 'boolean',
         ];
     }
 
@@ -89,15 +88,15 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Single source of truth for admin authorization — the `admin` gate and
-     * Filament's panel access both delegate here so the rule can never drift
-     * between the two entry points.
+     * Whether this user can reach the admin panel — any assigned role grants
+     * entry; which Resources/actions they can actually use inside the panel
+     * is governed per-permission by Shield's generated Policies, not here.
      *
      * @return bool
      */
     public function isAdministrator(): bool
     {
-        return (bool) $this->is_admin;
+        return $this->roles()->exists();
     }
 
     /**

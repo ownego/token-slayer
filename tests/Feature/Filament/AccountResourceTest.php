@@ -15,17 +15,17 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 it('blocks non-admins from the panel', function () {
-    $this->actingAs(User::factory()->create(['is_admin' => false]))
+    $this->actingAs(User::factory()->create())
         ->get('/admin')->assertForbidden();
 });
 
 it('lets an admin into the panel dashboard', function () {
-    $this->actingAs(User::factory()->create(['is_admin' => true]))
+    $this->actingAs(User::factory()->admin()->create())
         ->get('/admin')->assertOk();
 });
 
 it('lets an admin create and list accounts', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
 
     Livewire::actingAs($admin)
         ->test(CreateAccount::class)
@@ -39,7 +39,7 @@ it('lets an admin create and list accounts', function () {
 
 it('rejects a duplicate account email on create', function () {
     Account::factory()->create(['email' => 'dupe@ownego.com']);
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
 
     Livewire::actingAs($admin)
         ->test(CreateAccount::class)
@@ -49,7 +49,7 @@ it('rejects a duplicate account email on create', function () {
 });
 
 it('lists accounts with member count and status badge', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->needsReauth()->create(['email' => 'org@ownego.com']);
     $account->users()->attach(User::factory()->count(2)->create());
 
@@ -62,7 +62,7 @@ it('lists accounts with member count and status badge', function () {
 });
 
 it('lets an admin set the organization uuid when creating an account', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
 
     Livewire::actingAs($admin)
         ->test(CreateAccount::class)
@@ -74,7 +74,7 @@ it('lets an admin set the organization uuid when creating an account', function 
 });
 
 it('makes email, organization uuid, and plan read-only when editing an account', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
 
     Livewire::actingAs($admin)
@@ -87,7 +87,7 @@ it('makes email, organization uuid, and plan read-only when editing an account',
 });
 
 it('leaves the organization uuid unchanged when an admin attempts to edit it', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create(['organization_uuid' => 'original-uuid']);
 
     Livewire::actingAs($admin)
@@ -100,7 +100,7 @@ it('leaves the organization uuid unchanged when an admin attempts to edit it', f
 });
 
 it('demotes a tracked member to untracked through the relation manager', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $user = User::factory()->create();
     $account->users()->attach($user, ['status' => MembershipStatus::Tracked->value]);
@@ -114,7 +114,7 @@ it('demotes a tracked member to untracked through the relation manager', functio
 });
 
 it('shows the connect action to an admin and mounts a fresh authorize url', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create(['status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
@@ -127,7 +127,7 @@ it('shows the connect action to an admin and mounts a fresh authorize url', func
 
 it('completes the connect action and marks the account active', function () {
     fakeAnthropic();
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com', 'status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
@@ -141,7 +141,7 @@ it('completes the connect action and marks the account active', function () {
 
 it('notifies a friendly error on connect identity mismatch and stores nothing', function () {
     fakeAnthropic();
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create(['email' => 'mismatched@example.com', 'status' => AccountStatus::NeedsReauth]);
 
     Livewire::actingAs($admin)
@@ -153,7 +153,7 @@ it('notifies a friendly error on connect identity mismatch and stores nothing', 
 });
 
 it('notifies a friendly error when the connect state has expired', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create(['status' => AccountStatus::NeedsReauth]);
 
     $component = Livewire::actingAs($admin)
@@ -169,7 +169,7 @@ it('notifies a friendly error when the connect state has expired', function () {
 
 it('refreshes usage on demand and records a snapshot', function () {
     fakeAnthropic();
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->connected()->create();
 
     Livewire::actingAs($admin)
@@ -182,7 +182,7 @@ it('refreshes usage on demand and records a snapshot', function () {
 });
 
 it('disconnects an account by wiping its stored tokens', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->connected()->create();
 
     Livewire::actingAs($admin)
@@ -198,7 +198,7 @@ it('disconnects an account by wiping its stored tokens', function () {
 });
 
 it('shows the latest usage utilization in the account table', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->connected()->create();
     AccountUsageSnapshot::factory()->for($account)->create([
         'util_5h' => 12, 'util_7d' => 34, 'created_at' => now()->subMinute(),

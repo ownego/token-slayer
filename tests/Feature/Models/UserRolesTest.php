@@ -7,10 +7,10 @@ use Spatie\Permission\Models\Role;
 uses(RefreshDatabase::class);
 
 it('lets a user be assigned a role and checked for it', function () {
-    Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
+    Role::create(['name' => 'editor', 'guard_name' => 'web']);
     $user = User::factory()->create();
 
-    $user->assignRole('super_admin');
+    $user->assignRole('editor');
 
-    expect($user->hasRole('super_admin'))->toBeTrue();
+    expect($user->hasRole('editor'))->toBeTrue();
 });
