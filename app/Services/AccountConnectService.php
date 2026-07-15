@@ -127,6 +127,31 @@ class AccountConnectService
     }
 
     /**
+     * Pull and single-use invalidate the cached PKCE verifier for `$state`,
+     * then exchange `$pastedCode` for a raw token array (token.json shape).
+     *
+     * @param  string  $state  the state returned by {@see start()}
+     * @param  string  $pastedCode  the `code#state` (or bare code) the admin pasted
+     * @return array<string, mixed> the decoded token response
+     *
+     * @throws AccountConnectException when the verifier is missing/expired
+     */
+    public function exchangeForToken(string $state, string $pastedCode): array
+    {
+        $cacheKey = self::CACHE_KEY_PREFIX.$state;
+        $pending = Cache::get($cacheKey);
+        Cache::forget($cacheKey);
+
+        if ($pending === null) {
+            throw new AccountConnectException('connect_state_expired', 'This connect link expired or was already used. Start again.');
+        }
+
+        $code = Str::before($pastedCode, '#');
+
+        return $this->client->exchangeCode($code, $pending['verifier'], $state);
+    }
+
+    /**
      * Resolve a pasted PKCE code into a connect outcome. Pulls and single-use
      * invalidates the cached verifier, exchanges the code, and reads the
      * authorized profile. When `$expected` is given (per-row re-auth), the
@@ -144,28 +169,11 @@ class AccountConnectService
      */
     public function resolve(string $state, string $pastedCode, ?Account $expected = null): ConnectResolution
     {
-        $cacheKey = self::CACHE_KEY_PREFIX.$state;
-        $pending = Cache::get($cacheKey);
-        Cache::forget($cacheKey);
-
-        if ($pending === null) {
-            throw new AccountConnectException('connect_state_expired', 'This connect link expired or was already used. Start again.');
-        }
-
-        $code = Str::before($pastedCode, '#');
-
-        $token = $this->client->exchangeCode($code, $pending['verifier'], $state);
-        $profile = $this->client->profile($token['access_token']);
-
-        $email = $profile['account']['email'] ?? null;
-        if ($email === null) {
-            throw new AccountConnectException('connect_no_identity', 'Could not read an email from the authorized Claude account.');
-        }
-        $orgUuid = $profile['organization']['uuid'] ?? null;
+        [$token, $profile, $email, $orgUuid] = $this->exchangeAndIdentify($state, $pastedCode);
 
         if ($expected !== null) {
             if (! $this->identityMatches($expected, $email, $orgUuid)) {
-                throw new AccountConnectException('connect_identity_mismatch', 'The Claude account you authorized does not match this account.');
+                throw new AccountConnectException('connect_identity_mismatch', "The Claude account you authorized ({$email}) does not match this account.");
             }
 
             $this->applyToken($expected, $token, $profile);
@@ -181,6 +189,55 @@ class AccountConnectService
         }
 
         return ConnectResolution::pending($this->stashPending($token, $profile, $email, $orgUuid));
+    }
+
+    /**
+     * Exchange a pasted PKCE code and verify the authorized identity matches
+     * `$account`, WITHOUT writing anything to the account — unlike
+     * {@see resolve()}, this never calls {@see applyToken()}, so it never
+     * touches the account's own stored probe grant. For callers (e.g. the
+     * per-user provisioning flow) that need a verified-identity token but
+     * own their own storage of where the grant goes.
+     *
+     * @param  string  $state  the state value returned by {@see start()}
+     * @param  string  $pastedCode  the code the admin pasted, either `CODE` or `CODE#STATE`
+     * @param  Account  $account  the account the authorized identity must match
+     * @return array<string, mixed> the exchanged token response
+     *
+     * @throws AccountConnectException 'connect_state_expired' | 'connect_no_identity' | 'connect_identity_mismatch'
+     */
+    public function exchangeVerifiedToken(string $state, string $pastedCode, Account $account): array
+    {
+        [$token, , $email, $orgUuid] = $this->exchangeAndIdentify($state, $pastedCode);
+
+        if (! $this->identityMatches($account, $email, $orgUuid)) {
+            throw new AccountConnectException('connect_identity_mismatch', "The Claude account you authorized ({$email}) does not match this account.");
+        }
+
+        return $token;
+    }
+
+    /**
+     * Exchange a pasted PKCE code and read the authorized profile's identity.
+     * Shared by {@see resolve()} and {@see exchangeVerifiedToken()}.
+     *
+     * @param  string  $state  the state value returned by {@see start()}
+     * @param  string  $pastedCode  the code the admin pasted, either `CODE` or `CODE#STATE`
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>, 2: string, 3: ?string} token, profile, email, organization uuid
+     *
+     * @throws AccountConnectException 'connect_state_expired' | 'connect_no_identity'
+     */
+    private function exchangeAndIdentify(string $state, string $pastedCode): array
+    {
+        $token = $this->exchangeForToken($state, $pastedCode);
+        $profile = $this->client->profile($token['access_token']);
+
+        $email = $profile['account']['email'] ?? null;
+        if ($email === null) {
+            throw new AccountConnectException('connect_no_identity', 'Could not read an email from the authorized Claude account.');
+        }
+
+        return [$token, $profile, $email, $profile['organization']['uuid'] ?? null];
     }
 
     /**

@@ -2,11 +2,15 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Auth\BattlefieldLogoutResponse;
 use App\Filament\Widgets\ActivityHeatmap;
 use App\Filament\Widgets\FleetQuotaOverview;
 use App\Filament\Widgets\TokenVolumeChart;
 use App\Filament\Widgets\TopAccountsLeaderboard;
 use App\Filament\Widgets\TopUsersLeaderboard;
+use App\Http\Middleware\RedirectGuestsToSlackLogin;
+use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
+use Filament\Auth\Http\Responses\Contracts\LogoutResponse;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -26,10 +30,25 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 /**
  * Registers the `/admin` Filament panel — account CRUD, member management,
  * and (in later phases) quota/usage dashboards. Access is gated by
- * `User::canAccessPanel()` (requires `is_admin`).
+ * `User::canAccessPanel()` (requires at least one assigned role); per-action
+ * authorization inside the panel is enforced by Shield's generated Policies.
  */
 class AdminPanelProvider extends PanelProvider
 {
+    /**
+     * Bind the panel's post-logout redirect to the public battlefield
+     * instead of Filament's default (which falls back to the panel's base
+     * URL and immediately bounces back into the Slack OAuth redirect).
+     *
+     * @return void
+     */
+    public function register(): void
+    {
+        parent::register();
+
+        $this->app->bind(LogoutResponse::class, BattlefieldLogoutResponse::class);
+    }
+
     /**
      * Configure the admin panel: id/path, discovered resources/pages/widgets,
      * and the middleware stack Filament needs for auth/session handling.
@@ -43,7 +62,6 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -60,6 +78,9 @@ class AdminPanelProvider extends PanelProvider
                 TopUsersLeaderboard::class,
                 TopAccountsLeaderboard::class,
             ])
+            ->plugins([
+                FilamentShieldPlugin::make(),
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -72,6 +93,7 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->authMiddleware([
+                RedirectGuestsToSlackLogin::class,
                 Authenticate::class,
             ]);
     }

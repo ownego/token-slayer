@@ -10,7 +10,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->admin = User::factory()->create(['is_admin' => true]);
+    $this->admin = User::factory()->admin()->create();
 });
 
 test('the page loads for an admin and lists unrecognized org rows', function () {

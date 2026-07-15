@@ -8,7 +8,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 it('renders both tabs and lists an unattached user', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $unattached = User::factory()->create(['name' => 'Floating Dev', 'slack_handle' => null, 'display_name' => null]);
 
     Livewire::actingAs($admin)
@@ -19,7 +19,7 @@ it('renders both tabs and lists an unattached user', function () {
 });
 
 it('exposes the connect action for an org with no account', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
 
     Livewire::actingAs($admin)
         ->test(UnrecognizedAccounts::class)

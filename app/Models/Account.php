@@ -87,6 +87,21 @@ class Account extends Model
     }
 
     /**
+     * Users who have had an OAuth grant provisioned for this account
+     * (`account_user.provisioned_at` set), regardless of claim/revoke state.
+     * Exposes the provisioning audit columns (`token_uuid`, `provisioned_at`,
+     * `claimed_at`, `revoked_at`) on the pivot for the provisions relation manager.
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function provisionedUsers(): BelongsToMany
+    {
+        return $this->users()
+            ->withPivot(['token_uuid', 'provisioned_at', 'claimed_at', 'revoked_at'])
+            ->wherePivotNotNull('provisioned_at');
+    }
+
+    /**
      * Every quota-utilization snapshot recorded for this account by the
      * 5-minute prober, in natural (insertion) order. Callers that need
      * newest-first should order the query explicitly.

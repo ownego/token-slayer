@@ -10,7 +10,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 test('an admin can view an account detail page with its quota history', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create(['email' => 'seen@example.com']);
     AccountUsageSnapshot::factory()->for($account)->create(['util_7d' => 42, 'created_at' => now()->subHour()]);
 
@@ -21,7 +21,7 @@ test('an admin can view an account detail page with its quota history', function
 });
 
 test('a non-admin cannot view an account detail page', function () {
-    $user = User::factory()->create(['is_admin' => false]);
+    $user = User::factory()->create();
     $account = Account::factory()->create();
 
     $this->actingAs($user)
@@ -30,7 +30,7 @@ test('a non-admin cannot view an account detail page', function () {
 });
 
 test('the account detail page renders an edit header action', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
 
     Livewire::actingAs($admin)

@@ -14,7 +14,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 it('shows only tracked members', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $member = User::factory()->create();
     $account->users()->attach($member, ['status' => MembershipStatus::Tracked->value]);
@@ -29,7 +29,7 @@ it('shows only tracked members', function () {
 });
 
 it('demotes a member to untracked keeping the row, and forgets the cache', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $member = User::factory()->create();
     $account->users()->attach($member, ['status' => MembershipStatus::Tracked->value]);
@@ -46,7 +46,7 @@ it('demotes a member to untracked keeping the row, and forgets the cache', funct
 });
 
 it('refreshes by forgetting the membership caches', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     app(AccountMembershipCache::class)->trackedLastSeen($account);
 

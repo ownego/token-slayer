@@ -14,7 +14,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 it('lists untracked contributors and hides tracked members', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $member = User::factory()->create();
     $account->users()->attach($member, ['status' => MembershipStatus::Tracked->value]);
@@ -29,7 +29,7 @@ it('lists untracked contributors and hides tracked members', function () {
 });
 
 it('promotes a contributor to tracked and forgets the cache', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $contributor = User::factory()->create();
     $account->users()->attach($contributor, ['status' => MembershipStatus::Untracked->value]);
@@ -47,7 +47,7 @@ it('promotes a contributor to tracked and forgets the cache', function () {
 });
 
 it('refreshes by forgetting the membership caches', function () {
-    $admin = User::factory()->create(['is_admin' => true]);
+    $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     app(AccountMembershipCache::class)->untrackedAggregates($account);
 

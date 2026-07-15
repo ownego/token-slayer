@@ -138,6 +138,10 @@
         <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $combinedCommand }}</pre>
         <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $installUrl }}" class="underline">{{ $installUrl }}</a></p>
         <p class="text-xs text-gray-500 mt-1">Already installed? Run <code>token-slayer update</code>.</p>
+        <p class="text-xs text-gray-500 mt-1">The account you're currently logged into is set up for you automatically the moment install finishes — nothing else to do for it.</p>
+        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 mt-2">
+            <span class="font-medium">First time only:</span> <code>token-slayer</code>/<code>slayer</code> won't be found in the terminal you just ran the install in — the installer adds it to your PATH via <code>~/.zshrc</code> (macOS default shell) or <code>~/.bashrc</code>, but your current shell doesn't reload that automatically. Open a new terminal tab, or run <code>source ~/.zshrc</code> (macOS) / <code>source ~/.bashrc</code> (Linux).
+        </p>
 
         <details class="mt-3">
             <summary class="text-sm font-medium cursor-pointer text-gray-600">Manual hook config (if you'd rather copy by hand)</summary>
@@ -223,6 +227,51 @@
     else . end' 2>/dev/null || printf '%s' "$BODY")
 fi</pre>
                 </div>
+            </div>
+        </details>
+
+        <details class="mt-3">
+            <summary class="text-sm font-medium cursor-pointer text-gray-600">Using more than one Claude account? (<code>token-slayer</code> command)</summary>
+            <div class="mt-3 space-y-3">
+                <p class="text-sm text-gray-600">
+                    The install command above also sets up <code>token-slayer</code>, a small CLI/TUI that manages
+                    Claude Code login slots on this machine and keeps attribution pointed at whichever one is active.
+                    You only need it if you switch between more than one Claude account.
+                </p>
+                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    <span class="font-medium">macOS:</span> the first <code>token-slayer switch</code> (or <code>setup</code>) will pop up a Keychain prompt asking for your login password/Touch ID — that's macOS asking permission to store the credential, not the command hanging. Choose <em>Always Allow</em> to avoid repeat prompts.
+                    Also, on a brand-new Mac <code>python3</code> may be an Xcode stub that pops its own "Install Command Line Developer Tools?" dialog the first time anything actually runs it — check with <code>xcode-select -p</code> first (empty output → run <code>xcode-select --install</code>) so the account-switcher venv can set up cleanly.
+                </p>
+                <div>
+                    <p class="text-sm mb-1">If an admin provisioned an org account for you, pull it and configure Claude Code in one step:</p>
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">token-slayer setup</pre>
+                </div>
+                <p class="text-sm text-gray-600">
+                    <span class="font-medium text-gray-700">Adding another personal account:</span> log into it in Claude Code itself
+                    (<code>claude</code>, then <code>/login</code>), then run <code>token-slayer add NAME</code> to snapshot it.
+                    For an org account, don't use <code>add</code> at all — ask an admin to provision it, then run <code>token-slayer setup</code> above.
+                </p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-xs text-gray-500 uppercase">
+                            <tr>
+                                <th class="py-2">Command</th>
+                                <th>What it does</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer</td><td class="align-top">launches the interactive TUI (browse slots, switch, live usage)</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer list</td><td class="align-top">lists account slots, marking the active one</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer current</td><td class="align-top">prints just the active slot's name and email/org</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer add NAME</td><td class="align-top">adds a slot from the machine's current login</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer switch NAME</td><td class="align-top">switches the active Claude account</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer alias NAME ALIAS</td><td class="align-top">sets/clears a short alias for a slot</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer remove NAME</td><td class="align-top">removes a slot (falls back to another remaining account if any are left)</td></tr>
+                            <tr><td class="py-2 font-mono text-xs align-top">token-slayer status</td><td class="align-top">prints version, namespace, active account, and credential status</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-500"><code>token-slayer --help</code> or <code>token-slayer &lt;command&gt; --help</code> for full details on any of these.</p>
             </div>
         </details>
     </section>

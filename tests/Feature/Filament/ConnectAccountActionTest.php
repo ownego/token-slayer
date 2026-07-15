@@ -10,7 +10,7 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->admin = User::factory()->create(['is_admin' => true]);
+    $this->admin = User::factory()->admin()->create();
 });
 
 test('connecting an existing identity updates its token and does not open the create modal', function () {

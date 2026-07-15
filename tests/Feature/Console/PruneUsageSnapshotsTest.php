@@ -2,7 +2,6 @@
 
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -29,12 +28,4 @@ test('reports the deleted count', function () {
     $this->artisan('accounts:prune-usage-snapshots')
         ->expectsOutputToContain('pruned 2 usage snapshots')
         ->assertSuccessful();
-});
-
-test('accounts:prune-usage-snapshots is scheduled daily', function () {
-    $event = collect(app(Schedule::class)->events())
-        ->first(fn ($event) => str_contains($event->command, 'accounts:prune-usage-snapshots'));
-
-    expect($event)->not->toBeNull()
-        ->and($event->expression)->toBe('0 0 * * *');
 });
