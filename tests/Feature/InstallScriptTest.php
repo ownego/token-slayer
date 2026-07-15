@@ -243,11 +243,14 @@ it('merges account_org_id into the outgoing event body when resolved', function 
     expect($mergeBlock)->toContain('account_org_id');
 });
 
-it('bumps the client version to 3 for the org-id beacon rollout', function () {
+it('stamps the client version (semver) into the script, UA, and version file', function () {
+    $version = config('token_slayer.client_version');
     $script = $this->get(route('install-script'))->content();
 
-    expect(config('token_slayer.client_version'))->toBe('3')
-        ->and($script)->toContain("CLIENT_VERSION='3'");
+    expect($version)->toBe('1.0.0')
+        ->and($script)->toContain("CLIENT_VERSION='1.0.0'")
+        ->and($script)->toContain('token-slayer-hook/1.0.0')
+        ->and($script)->toContain("LATEST='1.0.0'");
 });
 
 it('tips users toward custom.sh to customize what their fighter shows, at the end of a successful install', function () {
@@ -264,4 +267,213 @@ it('tips users toward custom.sh to customize what their fighter shows, at the en
     expect($tipPosition)->not->toBeFalse()
         ->and($lastHookInstallPosition)->not->toBeFalse()
         ->and($tipPosition)->toBeGreaterThan($lastHookInstallPosition);
+});
+
+it('sends an explicit User-Agent on every Anthropic curl call', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain("HOOK_UA='token-slayer-hook/");
+    // Both the beacon and the profile lookup must carry it.
+    expect(substr_count($script, '-A "$HOOK_UA"'))->toBeGreaterThanOrEqual(2);
+});
+
+it('retries a transient beacon error after a short self-heal window, not an hour', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('BEACON_ERROR_RETRY_SECS=300');
+    expect($script)->toContain('-le "$BEACON_ERROR_RETRY_SECS"');
+    expect($script)->not->toContain('-le 3600');
+});
+
+it('forces bash for Claude Code hooks so Windows uses Git Bash deterministically', function () {
+    $script = $this->get('/install')->getContent();
+
+    // The Python merge appends the command dict with an explicit shell.
+    expect($script)->toContain('"type": "command", "command": cmd, "shell": "bash"');
+});
+
+it('consults an account identity provider before the beacon, by-session then active', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('provider_account()');
+    expect($script)->toContain('CLAUDE_ACCOUNT_PROVIDER');
+    expect($script)->toContain('account-provider/sessions/$SESSION_ID.json');
+    expect($script)->toContain('account-provider/active.json');
+    expect($script)->toContain('ACC_SOURCE="provider"');
+
+    // provider runs before the credential beacon
+    expect(strpos($script, 'provider_account && return'))
+        ->toBeLessThan(strpos($script, 'OAUTH_TOKEN=$(current_access_token)'));
+
+    // session id is extracted from the payload before resolve_account runs
+    expect($script)->toContain('.session_id // .sessionId // ""');
+    expect(strpos($script, 'SESSION_ID=$(printf'))
+        ->toBeLessThan(strpos($script, "\n  resolve_account\n"));
+});
+
+it('bundles a detector-config and scans a proxy log by session id before giving up', function () {
+    $script = $this->get('/install')->getContent();
+
+    // Bundled config is written by the installer.
+    expect($script)->toContain('detector-config.json');
+    expect($script)->toContain('"teamclaude"');
+    expect($script)->toContain('"join": "session"');
+
+    // Generic scanner exists and runs inside the proxy branch, before NULL.
+    expect($script)->toContain('detector_scan()');
+    expect($script)->toContain('ACC_SOURCE="detector"');
+    expect(strpos($script, 'detector_scan && return'))
+        ->toBeLessThan(strpos($script, 'ACC_SOURCE="proxy"'));
+});
+
+it('attributes a ts_tokens window only when exactly one account served it', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('DETECTOR_WINDOW_SECS=120');
+    // Distinct-account gate: 1 -> attribute, else NULL (the SAFE rule).
+    expect($script)->toContain('unique');
+    expect($script)->toContain('if length == 1');
+    // ts_tokens arm resolves to the detector source, not a guess.
+    expect(strpos($script, 'DETECTOR_WINDOW_SECS'))
+        ->toBeGreaterThan(strpos($script, 'detector_scan()'));
+});
+
+it('reserves the exclude-check hook point between attribution and the POST', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('exclude-check hook point (Phase 3)');
+
+    $marker = strpos($script, 'exclude-check hook point (Phase 3)');
+    expect($marker)->toBeGreaterThan(strpos($script, 'resolve_account'));
+    expect($marker)->toBeLessThan(strpos($script, 'curl -s --max-time 3 -X POST'));
+});
+
+it('sets up a python venv and installs slayer-cli, with a shim that execs the venv module', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('-m venv')
+        ->toContain('/venv/bin/pip')
+        ->toContain('-m slayer_cli')
+        ->toContain('exec env SLAYER_NS')
+        ->toContain('SLAYER_NS=token_slayer')
+        ->toContain('SLAYER_INSTALL_URL=');
+});
+
+it('registers the current Claude login as a base account slot after installing the CLI', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // Best-effort, namespaced, never blocks the install.
+    expect($script)
+        ->toContain('-m slayer_cli detect-base')
+        ->toContain('SLAYER_NS=token_slayer');
+
+    // It must run AFTER the shim is written (needs the venv/package present).
+    $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
+    $detectPos = strpos($script, '-m slayer_cli detect-base');
+    expect($shimPos)->not->toBeFalse()
+        ->and($detectPos)->not->toBeFalse()
+        ->and($shimPos)->toBeLessThan($detectPos);
+});
+
+it('registers an always-on Stop hook that warms the local usage cache, independent of auto-switch', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // Invokes the venv directly with an explicit namespace, like detect-base
+    // -- NOT the shared `$HOME/.local/bin/token-slayer` shim, whose baked-in
+    // namespace is whichever install ran last (would silently refresh the
+    // wrong namespace on a machine with more than one installed).
+    expect($script)
+        ->toContain('-m slayer_cli hook usage-refresh')
+        ->toContain('SLAYER_NS=token_slayer "$HOME/.config/token_slayer/venv/bin/python"')
+        ->toContain('HOOK_FINGERPRINT="token_slayer/venv/bin/python"')
+        ->toContain('events = ["Stop"]');
+
+    // Appended alongside send-hook.sh's own Stop entry, never replacing it.
+    expect($script)->not->toContain('data["hooks"][event] = [{');
+
+    // The dedup filter is a plain substring match (`fingerprint not in
+    // json.dumps(e)`) -- a fingerprint that isn't literally contained in
+    // the command it's meant to identify silently fails to replace a stale
+    // entry on re-install, leaving duplicates forever.
+    $fingerprintPos = strpos($script, 'HOOK_FINGERPRINT="token_slayer/venv/bin/python"');
+    $fingerprint = 'token_slayer/venv/bin/python';
+    expect($fingerprintPos)->not->toBeFalse()
+        ->and(str_contains($script, 'SLAYER_NS=token_slayer "$HOME/.config/'.$fingerprint.'"'))->toBeTrue();
+
+    // Must be registered AFTER the shim exists (this section runs after it).
+    $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
+    $refreshPos = strpos($script, 'hook usage-refresh');
+    expect($shimPos)->not->toBeFalse()
+        ->and($refreshPos)->not->toBeFalse()
+        ->and($shimPos)->toBeLessThan($refreshPos);
+});
+
+it('downloads the wheel to a PEP 427-valid temp name before pip-installing (pip rejects slayer_cli-latest.whl)', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // pip refuses `pip install <url ending in slayer_cli-latest.whl>` because
+    // `latest` is not a valid version segment; the script must download first
+    // to a spec-valid filename, then install that local file.
+    expect($script)
+        ->toContain('slayer_cli-0.0.0-py3-none-any.whl')
+        ->toContain('install --quiet "$SLAYER_WHL"');
+
+    // The served wheel version may be unchanged between builds, so a plain
+    // --upgrade would ship stale code; the package code is force-reinstalled.
+    expect($script)->toContain('install --quiet --force-reinstall --no-deps "$SLAYER_WHL"');
+
+    // It must NOT pip-install straight from the wheel URL/route anymore.
+    expect($script)->not->toContain('pip" install --quiet --upgrade "'.route('slayer-wheel').'"');
+});
+
+it('does not let a malformed existing settings.json abort the whole installer', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // The settings.json merge runs under `set -e`; a bare json.load() on a
+    // corrupt file would crash the entire install. It must catch that, back the
+    // bad file up, and continue.
+    expect($script)
+        ->toContain('except (ValueError, OSError):')
+        ->toContain('.corrupt-bak')
+        ->toContain('was invalid JSON');
+});
+
+it('falls back to the old update/status behavior when the venv is missing, and never blocks on a python failure', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('already up to date')
+        ->toContain('usage: token-slayer {update|status}')
+        ->toContain('venv setup skipped')
+        ->toContain('optional install skipped');
+
+    $execPosition = strpos($script, 'exec env SLAYER_NS');
+    $fallbackPosition = strpos($script, 'already up to date');
+
+    expect($execPosition)->not->toBeFalse()
+        ->and($fallbackPosition)->not->toBeFalse()
+        ->and($execPosition)->toBeLessThan($fallbackPosition);
+});
+
+it('symlinks slayer to the token-slayer shim', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"');
+});
+
+it('redirects the slayer-cli wheel route to the configured release asset URL', function () {
+    config(['token_slayer.slayer_cli_wheel_url' => 'https://example.com/slayer_cli-latest.whl']);
+
+    $response = $this->get('/dist/slayer_cli-latest.whl');
+
+    $response->assertRedirect('https://example.com/slayer_cli-latest.whl');
+});
+
+it('404s the slayer-cli wheel route when no release URL is configured', function () {
+    config(['token_slayer.slayer_cli_wheel_url' => '']);
+
+    $response = $this->get('/dist/slayer_cli-latest.whl');
+
+    $response->assertNotFound();
 });

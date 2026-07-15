@@ -4,20 +4,23 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\FighterCharacter;
+use App\Enums\MembershipStatus;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Spatie\Permission\Traits\HasRoles;
 
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, HasRoles, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -48,7 +51,6 @@ class User extends Authenticatable implements FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'last_event_at' => 'datetime',
-            'is_admin' => 'boolean',
         ];
     }
 
@@ -69,19 +71,44 @@ class User extends Authenticatable implements FilamentUser
      */
     public function accounts(): BelongsToMany
     {
-        return $this->belongsToMany(Account::class)->withTimestamps();
+        return $this->belongsToMany(Account::class)
+            ->using(AccountUser::class)
+            ->withPivot('token_uuid', 'provisioned_at', 'claimed_at', 'revoked_at')
+            ->withTimestamps();
     }
 
     /**
-     * Single source of truth for admin authorization — the `admin` gate and
-     * Filament's panel access both delegate here so the rule can never drift
-     * between the two entry points.
+     * The accounts this user is a tracked member of
+     * (`account_user.status = tracked`).
+     *
+     * @return BelongsToMany<Account, $this>
+     */
+    public function trackedAccounts(): BelongsToMany
+    {
+        return $this->accounts()->wherePivot('status', MembershipStatus::Tracked->value);
+    }
+
+    /**
+     * Usage events this user has logged, across all accounts, in natural
+     * order. Callers that need newest-first order the query explicitly.
+     *
+     * @return HasMany<Event, $this>
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(Event::class);
+    }
+
+    /**
+     * Whether this user can reach the admin panel — any assigned role grants
+     * entry; which Resources/actions they can actually use inside the panel
+     * is governed per-permission by Shield's generated Policies, not here.
      *
      * @return bool
      */
     public function isAdministrator(): bool
     {
-        return (bool) $this->is_admin;
+        return $this->roles()->exists();
     }
 
     /**

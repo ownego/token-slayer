@@ -26,6 +26,17 @@ fi
 # Ensure token directory exists.
 mkdir -p "$HOME/.config/{{ $namespace }}"
 
+# Bundled detector config (data, not code): tells the hook where a locally-run
+# proxy already logs session/account, so token-slayer can attribute without
+# modifying the proxy. Overwritten on every install so new entries ship centrally.
+cat > "$HOME/.config/{{ $namespace }}/detector-config.json" <<'DETECTOR_JSON'
+{
+  "teamclaude": { "join": "session", "logs": ["~/.config/teamclaude/requests/*.log"], "account_pattern": "account: ([^[:space:]]+)" },
+  "claudehub":  { "join": "ts_tokens", "logs": ["~/.config/claudehub/stats.jsonl"], "account_field": "account_name", "ts_field": "ts" },
+  "auth2api":   { "join": "ts_tokens", "logs": ["~/.config/auth2api/stats.jsonl"], "account_field": "accountEmail", "ts_field": "ts" }
+}
+DETECTOR_JSON
+
 # Drop the hook helper script. Stop events are enriched with a tokens count
 # parsed from the local Claude transcript (requires jq when available),
 # because the server cannot read the user's filesystem.
@@ -92,6 +103,7 @@ elif [ "${PROVIDER:-}" = "antigravity" ]; then
 fi
 
 CLIENT_VERSION='{{ $clientVersion }}'
+HOOK_UA='token-slayer-hook/{{ $clientVersion }} (external, cli)'
 NS_DIR="$HOME/.config/{{ $namespace }}"
 
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
@@ -119,20 +131,109 @@ beacon_org_id() {
   # 400, zero token cost, touches no quota, and works with bare inference scope
   # (including setup-tokens, which get a permanent 403 from /api/oauth/profile). The
   # response headers still carry the org UUID that owns the token.
-  curl -si --max-time 5 "https://api.anthropic.com/v1/messages" \
+  curl -si --max-time 5 -A "$HOOK_UA" "https://api.anthropic.com/v1/messages" \
     -H "$1" \
     -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
     -d '{"model":"claude-haiku-4-5-20251001","max_tokens":0,"messages":[]}' 2>/dev/null \
     | grep -i '^anthropic-organization-id:' | awk '{print $2}' | tr -d '\r'
 }
 
+provider_account() {
+  # Account Identity Provider intake. Whichever layer holds the real credential
+  # (a proxy or switcher) may declare identity via a portable transport;
+  # token-slayer ships no code into that layer -- it only reads. Env var + file
+  # only (socket / URL / executable transports are out of scope for now).
+  _pv=""
+  if [ -n "${CLAUDE_ACCOUNT_PROVIDER:-}" ] && [ -r "${CLAUDE_ACCOUNT_PROVIDER}" ]; then
+    _pv="${CLAUDE_ACCOUNT_PROVIDER}"
+  elif [ -n "${SESSION_ID:-}" ] && [ -r "$NS_DIR/account-provider/sessions/$SESSION_ID.json" ]; then
+    _pv="$NS_DIR/account-provider/sessions/$SESSION_ID.json"
+  elif [ -r "$NS_DIR/account-provider/active.json" ]; then
+    _pv="$NS_DIR/account-provider/active.json"
+  fi
+  [ -n "$_pv" ] || return 1
+
+  _org=$(jq -r '.org_uuid // ""' "$_pv" 2>/dev/null)
+  [ -n "$_org" ] || return 1
+  ACC_ORG_ID="$_org"
+  ACC_EMAIL=$(jq -r '.email // ""' "$_pv" 2>/dev/null)
+  ACC_UUID=$(jq -r '.uuid // ""' "$_pv" 2>/dev/null)
+  ACC_SOURCE="provider"
+  return 0
+}
+
+detector_scan() {
+  # Generic, data-driven fallback for local proxies. Reads ONLY existing local
+  # logs named by detector-config.json; never writes/rotates/deletes them.
+  # Two join strategies per config entry: exact `session` (match the current
+  # session id) and best-effort `ts_tokens` (SAFE single-account time window).
+  _cfg="$NS_DIR/detector-config.json"
+  [ -r "$_cfg" ] || return 1
+
+  for _mgr in $(jq -r 'keys[]' "$_cfg" 2>/dev/null); do
+    _join=$(jq -r --arg k "$_mgr" '.[$k].join // ""' "$_cfg" 2>/dev/null)
+    case "$_join" in
+      session)
+        [ -n "${SESSION_ID:-}" ] || continue
+        _pat=$(jq -r --arg k "$_mgr" '.[$k].account_pattern // ""' "$_cfg" 2>/dev/null)
+        [ -n "$_pat" ] || continue
+        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+          _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
+          for _f in $_glob; do
+            [ -r "$_f" ] || continue
+            grep -qF -- "$SESSION_ID" "$_f" 2>/dev/null || continue
+            # This file carries the current session (teamclaude logs one file per
+            # request), so we trust its first "account:" match. account_pattern must
+            # hold exactly one capture group and no "/" (the sed delimiter). Unlike
+            # the ts_tokens arm this has no distinct-account guard: it rests on the
+            # one-request-per-file assumption -- verify on staging with a real log.
+            _acct=$(sed -nE "s/.*$_pat.*/\1/p" "$_f" 2>/dev/null | head -1)
+            if [ -n "$_acct" ]; then
+              ACC_EMAIL="$_acct"; ACC_UUID=""; ACC_ORG_ID=""; ACC_SOURCE="detector"
+              return 0
+            fi
+          done
+        done
+        ;;
+      ts_tokens)
+        DETECTOR_WINDOW_SECS=120
+        _af=$(jq -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
+        _tf=$(jq -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
+        [ -n "$_af" ] || continue
+        _now=$(date +%s)
+        _lo=$((_now - DETECTOR_WINDOW_SECS))
+        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+          _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
+          for _f in $_glob; do
+            [ -r "$_f" ] || continue
+            # SAFE rule: one distinct account in the window -> attribute; more -> NULL.
+            _acct=$(jq -rs --arg af "$_af" --arg tf "$_tf" \
+              --argjson lo "$_lo" --argjson hi "$_now" '
+                [ .[] | select((.[$tf] // 0) >= $lo and (.[$tf] // 0) <= $hi) | .[$af] ]
+                | map(select(. != null and . != "")) | unique
+                | if length == 1 then .[0] else "" end' "$_f" 2>/dev/null)
+            if [ -n "$_acct" ]; then
+              ACC_EMAIL="$_acct"; ACC_UUID=""; ACC_ORG_ID=""; ACC_SOURCE="detector"
+              return 0
+            fi
+          done
+        done
+        ;;
+    esac
+  done
+  return 1
+}
+
 resolve_account() {
   ACC_EMAIL="" ACC_UUID="" ACC_SOURCE="" ACC_ORG_ID=""
 
-  # 0. Non-Claude providers (codex/antigravity) never carry Claude account claims.
+  # Pre-check: non-Claude providers (codex/antigravity) never carry Claude account claims.
   [ -n "${PROVIDER:-}" ] && return
 
-  # 1. Manual override wins unconditionally.
+  # 0. Account Identity Provider (proxy/switcher declares identity) -- highest signal.
+  provider_account && return
+
+  # 1. Manual override: wins over credential/proxy/auto (a provider still precedes it).
   if [ -r "$NS_DIR/account.json" ]; then
     ACC_EMAIL=$(jq -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
     ACC_UUID=$(jq -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
@@ -143,7 +244,8 @@ resolve_account() {
   #    and don't beacon a URL that isn't api.anthropic.com.
   case "${ANTHROPIC_BASE_URL:-}" in
     ""|*api.anthropic.com*) ;;
-    *) ACC_SOURCE="proxy"; ACC_EMAIL=""; ACC_UUID=""; return ;;
+    *) detector_scan && return
+       ACC_SOURCE="proxy"; ACC_EMAIL=""; ACC_UUID=""; return ;;
   esac
 
   # 3. Credential identity: resolve the org UUID via a zero-cost beacon call, cached
@@ -163,6 +265,7 @@ resolve_account() {
     FP=$(printf '%s' "$TOKEN" | sha256)
     CACHE="$NS_DIR/identity-cache.json"
     NOW=$(date +%s)
+    BEACON_ERROR_RETRY_SECS=300
 
     CACHED_STATUS="" CACHED_CHECKED_AT=0
     if [ -r "$CACHE" ]; then
@@ -184,8 +287,8 @@ resolve_account() {
         SHOULD_LOOKUP=0
         ;;
       error)
-        # Transient failure: retry only after an hour has passed.
-        [ $((NOW - CACHED_CHECKED_AT)) -le 3600 ] && SHOULD_LOOKUP=0
+        # Transient failure: retry only after the short self-heal window.
+        [ $((NOW - CACHED_CHECKED_AT)) -le "$BEACON_ERROR_RETRY_SECS" ] && SHOULD_LOOKUP=0
         ;;
     esac
 
@@ -198,7 +301,7 @@ resolve_account() {
           # Best-effort profile lookup for email/uuid (enables server auto-learn); a
           # 403 here is fine and just leaves email/uuid blank -- the beacon already
           # proved identity via the org id.
-          PROFILE=$(curl -sf --max-time 5 "https://api.anthropic.com/api/oauth/profile" \
+          PROFILE=$(curl -sf --max-time 5 -A "$HOOK_UA" "https://api.anthropic.com/api/oauth/profile" \
             -H "Authorization: Bearer $OAUTH_TOKEN" -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
           ACC_EMAIL=$(printf '%s' "$PROFILE" | jq -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
           ACC_UUID=$(printf '%s' "$PROFILE" | jq -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
@@ -230,6 +333,7 @@ resolve_account() {
 }
 
 if command -v jq >/dev/null 2>&1; then
+  SESSION_ID=$(printf '%s' "$BODY" | jq -r '.session_id // .sessionId // ""' 2>/dev/null)
   resolve_account
   BODY=$(printf '%s' "$BODY" | jq -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
     --arg s "$ACC_SOURCE" --arg v "$CLIENT_VERSION" --arg o "$ACC_ORG_ID" \
@@ -241,6 +345,11 @@ fi
 
 CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
 [ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"
+
+# --- exclude-check hook point (Phase 3) ---
+# Reserved: a future dev-owned exclude-accounts.json will let a developer drop
+# their own private accounts here (exit 0 before POST) so those events never
+# leave the machine. Not active yet -- default is track everything.
 
 curl -s --max-time 3 -X POST "$URL" \
   -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
@@ -274,14 +383,49 @@ fi
 printf '%s' "{{ $clientVersion }}" > "$HOME/.config/{{ $namespace }}/version"
 
 mkdir -p "$HOME/.local/bin"
+
+# slayer-cli: an isolated venv keeps its click/textual/pydantic/keyring/httpx
+# deps off the system Python. Every step is tolerant (|| echo "...skipped")
+# so a broken/missing Python venv NEVER blocks hook tracking below.
+"$PY" -m venv "$HOME/.config/{{ $namespace }}/venv" 2>/dev/null || echo "slayer-cli: venv setup skipped (python venv unavailable)"
+# pip refuses to install straight from {{ $slayerWheelUrl }}: its basename
+# (slayer_cli-latest.whl) is not a PEP 427 wheel filename (`latest` is not a
+# valid version), so `pip install <url>` fails with "not a valid wheel
+# filename". Download to a spec-valid temp name first, then install that file
+# (the real version comes from the wheel's own METADATA).
+SLAYER_WHL_DIR="$(mktemp -d 2>/dev/null || echo /tmp)"
+SLAYER_WHL="$SLAYER_WHL_DIR/slayer_cli-0.0.0-py3-none-any.whl"
+SLAYER_PIP="$HOME/.config/{{ $namespace }}/venv/bin/pip"
+if curl -fsSL "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>/dev/null; then
+  # Two steps on purpose: the served wheel is always "latest" and its version
+  # may be UNCHANGED between builds, so a plain `--upgrade` is a no-op and ships
+  # stale code. First install pulls deps (first run) / no-ops; then
+  # force-reinstall --no-deps refreshes ONLY the package code every time,
+  # cheaply (deps untouched).
+  "$SLAYER_PIP" install --quiet "$SLAYER_WHL" 2>/dev/null \
+    && "$SLAYER_PIP" install --quiet --force-reinstall --no-deps "$SLAYER_WHL" 2>/dev/null \
+    || echo "slayer-cli: optional install skipped"
+  rm -f "$SLAYER_WHL"
+else
+  echo "slayer-cli: optional download skipped"
+fi
+
 cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
 #!/usr/bin/env bash
 set -u
 NS_DIR="$HOME/.config/{{ $namespace }}"
+SLAYER_VENV="$NS_DIR/venv"
 INSTALL_URL='{{ $installUrl }}'
 LATEST='{{ $clientVersion }}'
 
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+
+# Prefer the installed slayer-cli package; fall back to the old minimal
+# update/status behavior when the venv is missing so a failed venv/pip step
+# never bricks the token-slayer command.
+if [ -x "$SLAYER_VENV/bin/python" ]; then
+  exec env SLAYER_NS={{ $namespace }} SLAYER_INSTALL_URL={{ $installUrl }} "$SLAYER_VENV/bin/python" -m slayer_cli "$@"
+fi
 
 case "${1:-}" in
   update)
@@ -319,6 +463,15 @@ case "${1:-}" in
 esac
 CLI_SH
 chmod +x "$HOME/.local/bin/token-slayer"
+ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"
+
+# Register the machine's current Claude login as a base account slot, so a user
+# who already uses Claude Code sees their existing account in token-slayer right
+# away. Idempotent + identity-deduplicated (skips when absent or already
+# tracked) and best-effort -- never blocks the install.
+if [ -x "$HOME/.config/{{ $namespace }}/venv/bin/python" ]; then
+  SLAYER_NS={{ $namespace }} "$HOME/.config/{{ $namespace }}/venv/bin/python" -m slayer_cli detect-base >/dev/null 2>&1 || true
+fi
 
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
@@ -356,15 +509,29 @@ events = [
     "Stop", "SubagentStop", "SessionEnd", "Notification",
 ]
 
-with open(path) as f:
-    data = json.load(f)
+try:
+    with open(path) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("settings.json is not a JSON object")
+except (ValueError, OSError):
+    # A pre-existing malformed settings.json would otherwise crash the whole
+    # installer (the script runs under `set -e`). Preserve the bad file for
+    # inspection and start from an empty object so hook installation still
+    # succeeds rather than aborting the entire install.
+    try:
+        os.replace(path, path + ".corrupt-bak")
+        sys.stderr.write("warning: %s was invalid JSON; backed up to %s.corrupt-bak and reset\n" % (path, path))
+    except OSError:
+        pass
+    data = {}
 
 data.setdefault("hooks", {})
 fingerprint = os.environ["HOOK_FINGERPRINT"]  # e.g. "{{ $namespace }}/send-hook.sh" not in json.dumps(e) filters out our own stale entries
 for event in events:
     entries = [e for e in data["hooks"].get(event, [])
                if fingerprint not in json.dumps(e)]
-    entries.append({"hooks": [{"type": "command", "command": cmd}]})
+    entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
     data["hooks"][event] = entries
 
 with open(path, "w") as f:
@@ -373,6 +540,46 @@ with open(path, "w") as f:
 PY
 
 echo "installed Claude Code hooks -> $SETTINGS"
+
+# Register a second, always-on Stop hook that warms the local usage cache
+# (independent of auto-switch, which stays opt-in via `token-slayer run`) so
+# `token-slayer tui` shows near-real-time quota without waiting on its
+# ticker. Appended alongside send-hook.sh's own Stop entry, not replacing it.
+#
+# Invokes the venv directly with an explicit SLAYER_NS, like `detect-base`
+# above -- NOT the `$HOME/.local/bin/token-slayer` shim. That shim is a
+# single shared file rewritten by every namespace's install (its NS_DIR is
+# whichever namespace installed last), so a machine with more than one
+# namespace installed (e.g. prod + staging) would have this hook silently
+# refresh the wrong one.
+USAGE_REFRESH_CMD="SLAYER_NS={{ $namespace }} \"\$HOME/.config/{{ $namespace }}/venv/bin/python\" -m slayer_cli hook usage-refresh"
+# The fingerprint must be a literal substring of the command above (the
+# dedup filter is a plain substring match, same as send-hook.sh's) --
+# picking anything else silently fails to replace a stale prior entry.
+CLAUDE_CMD="$USAGE_REFRESH_CMD" HOOK_FINGERPRINT="{{ $namespace }}/venv/bin/python" "$PY" - "$SETTINGS" <<'PY'
+import json, os, sys
+
+path = sys.argv[1]
+cmd = os.environ["CLAUDE_CMD"]
+events = ["Stop"]
+
+with open(path) as f:
+    data = json.load(f)
+
+data.setdefault("hooks", {})
+fingerprint = os.environ["HOOK_FINGERPRINT"]
+for event in events:
+    entries = [e for e in data["hooks"].get(event, [])
+               if fingerprint not in json.dumps(e)]
+    entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
+    data["hooks"][event] = entries
+
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "installed Claude Code usage-refresh hook -> $SETTINGS"
 
 # --- Codex CLI: rewrite the {{ $namespace }} block in ~/.codex/config.toml ---
 mkdir -p "$HOME/.codex"

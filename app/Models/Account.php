@@ -3,7 +3,8 @@
 namespace App\Models;
 
 use App\Enums\AccountStatus;
-use App\Services\AccountResolver;
+use App\Enums\MembershipStatus;
+use App\Support\CacheKeys;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
@@ -12,7 +13,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Facades\Cache;
 
 #[Hidden(['oauth_access_token', 'oauth_refresh_token'])]
 class Account extends Model
@@ -33,28 +33,72 @@ class Account extends Model
     ];
 
     /**
-     * Keep the resolver's email and organization-uuid maps in sync with account mutations.
+     * Keep the resolver's email and organization-uuid maps, and this
+     * account's membership aggregate + ingest pair caches, in sync with
+     * account mutations.
      *
      * @return void
      */
     protected static function booted(): void
     {
-        $flush = function (): void {
-            Cache::forget(AccountResolver::CACHE_KEY);
-            Cache::forget(AccountResolver::ORG_CACHE_KEY);
+        $flush = function (Account $account): void {
+            CacheKeys::forgetAccountMaps();
+            CacheKeys::forgetAccountMembership($account->id);
+            CacheKeys::forgetMembershipPairs($account->id);
         };
         static::saved($flush);
         static::deleted($flush);
     }
 
     /**
-     * Users who are members of this org account, via the account_user pivot.
+     * Every developer linked to this org account via the `account_user`
+     * pivot, of any membership status. Use {@see trackedUsers()} for the
+     * "members" subset.
      *
      * @return BelongsToMany<User, $this>
      */
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)->withTimestamps();
+        return $this->belongsToMany(User::class)
+            ->using(AccountUser::class)
+            ->withPivot('status')
+            ->withTimestamps();
+    }
+
+    /**
+     * The tracked members of this account (`account_user.status = tracked`).
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function trackedUsers(): BelongsToMany
+    {
+        return $this->users()->wherePivot('status', MembershipStatus::Tracked->value);
+    }
+
+    /**
+     * The untracked contributors of this account (`account_user.status =
+     * untracked`) — developers with events here who have not been promoted.
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function untrackedUsers(): BelongsToMany
+    {
+        return $this->users()->wherePivot('status', MembershipStatus::Untracked->value);
+    }
+
+    /**
+     * Users who have had an OAuth grant provisioned for this account
+     * (`account_user.provisioned_at` set), regardless of claim/revoke state.
+     * Exposes the provisioning audit columns (`token_uuid`, `provisioned_at`,
+     * `claimed_at`, `revoked_at`) on the pivot for the provisions relation manager.
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function provisionedUsers(): BelongsToMany
+    {
+        return $this->users()
+            ->withPivot(['token_uuid', 'provisioned_at', 'claimed_at', 'revoked_at'])
+            ->wherePivotNotNull('provisioned_at');
     }
 
     /**
@@ -78,6 +122,18 @@ class Account extends Model
     public function latestUsageSnapshot(): HasOne
     {
         return $this->hasOne(AccountUsageSnapshot::class)->latestOfMany('created_at');
+    }
+
+    /**
+     * Every usage event attributed to this org account via
+     * `events.account_id`, in natural order. Callers that need newest-first
+     * order the query explicitly.
+     *
+     * @return HasMany<Event, $this>
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(Event::class);
     }
 
     /**

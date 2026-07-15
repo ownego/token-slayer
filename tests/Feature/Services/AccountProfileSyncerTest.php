@@ -23,7 +23,7 @@ test('sync applies plan and identity fields from a matching profile', function (
     $account->refresh();
 
     expect($result)->toBe(AccountProfileSyncResult::Synced)
-        ->and($account->plan)->toBe('default_claude_ai')
+        ->and($account->plan)->toBe('claude_pro')
         ->and($account->account_uuid)->toBe('adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9')
         ->and($account->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
         ->and($account->probe_error)->toBeNull();

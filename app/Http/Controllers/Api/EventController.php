@@ -12,6 +12,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Boss;
 use App\Models\Event;
 use App\Services\AccountResolver;
+use App\Services\Accounts\AccountMembershipRecorder;
 use App\Services\DamageService;
 use App\Services\FighterChargingCache;
 use App\Services\TranscriptReader;
@@ -25,6 +26,7 @@ class EventController extends Controller
         private TranscriptReader $transcripts,
         private FighterChargingCache $chargingCache,
         private AccountResolver $accounts,
+        private AccountMembershipRecorder $membership,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -85,6 +87,14 @@ class EventController extends Controller
                     'account_source' => $accountSource,
                     'account_org_id' => $accountOrgId,
                 ]);
+
+                try {
+                    if ($accountId !== null) {
+                        $this->membership->record($user->id, $accountId);
+                    }
+                } catch (\Throwable) {
+                    // Membership recording is best-effort — it must never break ingest.
+                }
 
                 $result = $this->damage->apply($user, $tokens);
 

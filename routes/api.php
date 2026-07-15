@@ -5,10 +5,14 @@ use App\Http\Controllers\Api\Ide\AuthController;
 use App\Http\Controllers\Api\Ide\HookConfigController;
 use App\Http\Controllers\Api\Ide\MeController;
 use App\Http\Controllers\Api\Ide\SnapshotController;
+use App\Http\Controllers\Api\ProvisionedAccountController;
 use App\Http\Controllers\Api\StateController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/events', [EventController::class, 'store'])
+    ->middleware('hook.token');
+
+Route::get('/provisioned', [ProvisionedAccountController::class, 'index'])
     ->middleware('hook.token');
 
 Route::get('/state', [StateController::class, 'show']);

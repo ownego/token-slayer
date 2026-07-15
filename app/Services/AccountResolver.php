@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Support\CacheKeys;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +15,7 @@ final class AccountResolver
      *
      * @var string
      */
-    public const string CACHE_KEY = 'accounts:email-map';
+    public const string CACHE_KEY = CacheKeys::ACCOUNTS_EMAIL_MAP;
 
     /**
      * Cache key of the organization-uuid → account-id map.
@@ -23,7 +24,7 @@ final class AccountResolver
      *
      * @var string
      */
-    public const string ORG_CACHE_KEY = 'accounts:org-map';
+    public const string ORG_CACHE_KEY = CacheKeys::ACCOUNTS_ORG_MAP;
 
     /**
      * How long the email map is cached before a natural refresh.

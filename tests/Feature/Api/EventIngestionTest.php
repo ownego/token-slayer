@@ -538,3 +538,41 @@ it('attributes the event to the account matching the organization uuid', functio
     $event = Event::latest('id')->first();
     expect($event->account_id)->toBe($account->id);
 });
+
+it('attributes a provider-sourced stop event by organization uuid', function () {
+    $account = Account::factory()->withOrganizationUuid('org-provider-1')->create();
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 's-provider',
+            'tokens' => 1200,
+            'account_org_id' => 'org-provider-1',
+            'account_source' => 'provider',
+        ])
+        ->assertCreated();
+
+    $event = Event::query()->latest('id')->first();
+    expect($event->account_id)->toBe($account->id);
+    expect($event->account_source)->toBe('provider');
+    expect($event->account_org_id)->toBe('org-provider-1');
+});
+
+it('attributes a detector-sourced stop event by account email', function () {
+    $account = Account::factory()->create(['email' => 'detected@ownego.com']);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 's-detector',
+            'tokens' => 900,
+            'account_email' => 'detected@ownego.com',
+            'account_source' => 'detector',
+        ])
+        ->assertCreated();
+
+    $event = Event::query()->latest('id')->first();
+    expect($event->account_id)->toBe($account->id);
+    expect($event->account_source)->toBe('detector');
+    expect($event->account_email)->toBe('detected@ownego.com');
+});

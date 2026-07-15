@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
+use App\Support\CacheKeys;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -12,7 +13,13 @@ use Illuminate\Support\Facades\DB;
 
 final class DamageTotals
 {
-    private const CACHE_KEY = 'damage-totals:global';
+    /**
+     * Cache key of the global damage-totals aggregate. Public so attribution
+     * backfill can invalidate it after re-attributing historical events.
+     *
+     * @var string
+     */
+    public const string CACHE_KEY = CacheKeys::DAMAGE_TOTALS;
 
     private const CACHE_TTL_SECONDS = 60;
 
@@ -102,21 +109,21 @@ final class DamageTotals
             }
         }
 
-        $rows = Account::withCount('users')->orderBy('email')->get()->map(function (Account $account) use ($byAccount): array {
+        $rows = Account::withCount('trackedUsers')->orderBy('email')->get()->map(function (Account $account) use ($byAccount): array {
             $sum = $byAccount[$account->id] ?? null;
 
             return [
                 'account_id' => $account->id,
                 'email' => $account->email,
                 'plan' => $account->plan,
-                'memberCount' => $account->users_count,
+                'memberCount' => $account->tracked_users_count,
                 'hourly' => (int) ($sum->hourly ?? 0),
                 'daily' => (int) ($sum->daily ?? 0),
                 'monthly' => (int) ($sum->monthly ?? 0),
             ];
         })->all();
 
-        $unassignedMembers = User::whereDoesntHave('accounts')->count();
+        $unassignedMembers = User::whereDoesntHave('trackedAccounts')->count();
         if ($unassignedMembers > 0 || $unassignedSums !== null) {
             $rows[] = [
                 'account_id' => null,
@@ -230,8 +237,8 @@ final class DamageTotals
             ->get()
             ->keyBy('account_id');
 
-        $memberIds = $user->accounts()->pluck('accounts.id');
-        $accounts = Account::withCount('users')
+        $memberIds = $user->trackedAccounts()->pluck('accounts.id');
+        $accounts = Account::withCount('trackedUsers')
             ->with('latestUsageSnapshot')
             ->whereIn('id', $memberIds->merge($sums->keys())->unique())
             ->orderBy('email')
@@ -242,7 +249,7 @@ final class DamageTotals
             'email' => $account->email,
             'name' => $account->name,
             'plan' => $account->plan,
-            'memberCount' => $account->users_count,
+            'memberCount' => $account->tracked_users_count,
             'isMember' => $memberIds->contains($account->id),
             'util_5h' => $account->latestUsageSnapshot?->util_5h,
             'util_7d' => $account->latestUsageSnapshot?->util_7d,
