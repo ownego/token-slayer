@@ -173,7 +173,7 @@ class AccountConnectService
 
         if ($expected !== null) {
             if (! $this->identityMatches($expected, $email, $orgUuid)) {
-                throw new AccountConnectException('connect_identity_mismatch', 'The Claude account you authorized does not match this account.');
+                throw new AccountConnectException('connect_identity_mismatch', "The Claude account you authorized ({$email}) does not match this account.");
             }
 
             $this->applyToken($expected, $token, $profile);
@@ -211,7 +211,7 @@ class AccountConnectService
         [$token, , $email, $orgUuid] = $this->exchangeAndIdentify($state, $pastedCode);
 
         if (! $this->identityMatches($account, $email, $orgUuid)) {
-            throw new AccountConnectException('connect_identity_mismatch', 'The Claude account you authorized does not match this account.');
+            throw new AccountConnectException('connect_identity_mismatch', "The Claude account you authorized ({$email}) does not match this account.");
         }
 
         return $token;

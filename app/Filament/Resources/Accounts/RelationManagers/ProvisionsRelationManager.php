@@ -169,9 +169,11 @@ class ProvisionsRelationManager extends RelationManager
                     Notification::make()
                         ->danger()
                         ->title('Provisioning failed')
-                        ->body($exception->reason === 'connect_state_expired'
-                            ? 'This connect link expired or was already used. Start again.'
-                            : 'Something went wrong completing the provisioning.')
+                        ->body(match ($exception->reason) {
+                            'connect_identity_mismatch' => $exception->getMessage(),
+                            'connect_state_expired' => 'This connect link expired or was already used. Start again.',
+                            default => 'Something went wrong completing the provisioning.',
+                        })
                         ->send();
 
                     return;

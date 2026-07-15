@@ -207,7 +207,7 @@ class AccountResource extends Resource
                         ->danger()
                         ->title('Connect failed')
                         ->body(match ($exception->reason) {
-                            'connect_identity_mismatch' => 'The Claude account you authorized does not match this account.',
+                            'connect_identity_mismatch' => $exception->getMessage(),
                             'connect_state_expired' => 'This connect link expired or was already used. Click Connect to start again.',
                             'connect_no_identity' => 'Could not read an email from the authorized Claude account.',
                             default => 'Something went wrong completing the connect.',

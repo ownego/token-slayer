@@ -74,8 +74,13 @@ it('rejects a pasted code whose authorized identity does not match the target ac
 
     $service = app(AccountProvisioningService::class);
 
-    expect(fn () => $service->provisionFromCode($user, $account, $state, 'THECODE#'.$state))
-        ->toThrow(AccountConnectException::class);
+    try {
+        $service->provisionFromCode($user, $account, $state, 'THECODE#'.$state);
+        $this->fail('Expected AccountConnectException');
+    } catch (AccountConnectException $e) {
+        expect($e->reason)->toBe('connect_identity_mismatch')
+            ->and($e->getMessage())->toContain('ongtung2212002@gmail.com');
+    }
 
     expect(AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->exists())->toBeFalse()
         ->and(Cache::get($service->cacheKey($user->id, $account->id)))->toBeNull();

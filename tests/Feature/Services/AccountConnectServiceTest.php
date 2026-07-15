@@ -136,8 +136,13 @@ test('resolve with an expected account throws identity mismatch and writes nothi
     $account = Account::factory()->create(['email' => 'someone-else@example.com']);
     $started = $this->service->start();
 
-    expect(fn () => $this->service->resolve($started['state'], 'pasted-code', $account))
-        ->toThrow(AccountConnectException::class);
+    try {
+        $this->service->resolve($started['state'], 'pasted-code', $account);
+        $this->fail('Expected AccountConnectException');
+    } catch (AccountConnectException $e) {
+        expect($e->reason)->toBe('connect_identity_mismatch')
+            ->and($e->getMessage())->toContain('ongtung2212002@gmail.com');
+    }
 
     $account->refresh();
     expect($account->oauth_access_token)->toBeNull()
