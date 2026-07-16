@@ -581,6 +581,46 @@ PY
 
 echo "installed Claude Code usage-refresh hook -> $SETTINGS"
 
+# Register a third, always-on SessionStart hook that tracks this session for
+# the `token-slayer tui` Sessions page (independent of auto-switch, same as
+# the usage-refresh Stop hook above) -- so a user sees their session there
+# without needing the hidden `install-hooks` auto-switch command. Appended
+# alongside send-hook.sh's own SessionStart entry, not replacing it.
+#
+# Invokes the venv directly with an explicit SLAYER_NS, like `detect-base`
+# and the usage-refresh hook above -- NOT the shared `token-slayer` shim
+# (see that hook's comment for why).
+SESSION_TRACK_CMD="SLAYER_NS={{ $namespace }} \"\$HOME/.config/{{ $namespace }}/venv/bin/python\" -m slayer_cli hook session-track-start"
+# The fingerprint must be a literal, contiguous substring of the command
+# above (the dedup filter is a plain substring match) -- picking anything
+# else silently fails to replace a stale prior entry, leaving duplicates on
+# every re-run. "hook session-track-start" is the command's own trailing
+# text, verified present verbatim.
+CLAUDE_CMD="$SESSION_TRACK_CMD" HOOK_FINGERPRINT="hook session-track-start" "$PY" - "$SETTINGS" <<'PY'
+import json, os, sys
+
+path = sys.argv[1]
+cmd = os.environ["CLAUDE_CMD"]
+events = ["SessionStart"]
+
+with open(path) as f:
+    data = json.load(f)
+
+data.setdefault("hooks", {})
+fingerprint = os.environ["HOOK_FINGERPRINT"]
+for event in events:
+    entries = [e for e in data["hooks"].get(event, [])
+               if fingerprint not in json.dumps(e)]
+    entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
+    data["hooks"][event] = entries
+
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "installed Claude Code session-tracking hook -> $SETTINGS"
+
 # --- Codex CLI: rewrite the {{ $namespace }} block in ~/.codex/config.toml ---
 mkdir -p "$HOME/.codex"
 CODEX_CONFIG="$HOME/.codex/config.toml"

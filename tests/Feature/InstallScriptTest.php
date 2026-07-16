@@ -409,6 +409,46 @@ it('registers an always-on Stop hook that warms the local usage cache, independe
         ->and($shimPos)->toBeLessThan($refreshPos);
 });
 
+it('registers an always-on SessionStart hook that tracks the session for the Sessions TUI page, independent of auto-switch', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // Same shape as the usage-refresh Stop hook above: invokes the venv
+    // directly with an explicit namespace (never the shared shim), so a
+    // machine with more than one namespace installed never tracks the
+    // wrong one.
+    expect($script)
+        ->toContain('-m slayer_cli hook session-track-start')
+        ->toContain('SLAYER_NS=token_slayer')
+        ->toContain('HOOK_FINGERPRINT="hook session-track-start"')
+        ->toContain('events = ["SessionStart"]');
+
+    // Appended alongside send-hook.sh's own SessionStart entry, never
+    // replacing it -- must not be a full-replace assignment.
+    expect($script)->not->toContain('data["hooks"][event] = [{');
+
+    // The dedup filter is a plain substring match against `json.dumps(e)`
+    // of the WHOLE settings entry -- the fingerprint must be a literal,
+    // contiguous substring of the actual command text, or re-install
+    // silently leaves duplicates forever instead of replacing the stale
+    // entry (caught live: an earlier fingerprint here concatenated the
+    // namespace with "/hook session-track-start", which is never actually
+    // adjacent in the real command and re-running the merge twice produced
+    // 2 entries instead of 1 -- verified by extracting this exact snippet
+    // and executing it against fixture settings.json files).
+    $cmdPos = strpos($script, 'SESSION_TRACK_CMD="SLAYER_NS=token_slayer');
+    $fingerprintDeclPos = strpos($script, 'HOOK_FINGERPRINT="hook session-track-start"');
+    expect($cmdPos)->not->toBeFalse()->and($fingerprintDeclPos)->not->toBeFalse();
+    $cmdLine = substr($script, $cmdPos, $fingerprintDeclPos - $cmdPos);
+    expect($cmdLine)->toContain('hook session-track-start');
+
+    // Must be registered AFTER the shim exists (this section runs after it).
+    $shimPos = strpos($script, 'chmod +x "$HOME/.local/bin/token-slayer"');
+    $trackPos = strpos($script, 'hook session-track-start');
+    expect($shimPos)->not->toBeFalse()
+        ->and($trackPos)->not->toBeFalse()
+        ->and($shimPos)->toBeLessThan($trackPos);
+});
+
 it('downloads the wheel to a PEP 427-valid temp name before pip-installing (pip rejects slayer_cli-latest.whl)', function () {
     $script = $this->get(route('install-script'))->content();
 
