@@ -17,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -85,9 +86,8 @@ class UserResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query
-                ->withSum('events as total_tokens', 'tokens')
-                ->withSum(['events as account_tokens' => fn (Builder $q): Builder => $q->whereNotNull('account_id')], 'tokens'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->withSum('events as total_tokens', 'tokens'))
+            ->filtersLayout(FiltersLayout::AboveContent)
             ->columns([
                 ImageColumn::make('avatar_url')
                     ->label('')
@@ -108,16 +108,16 @@ class UserResource extends Resource
                     ->numeric()
                     ->sortable()
                     ->default(0),
-                TextColumn::make('account_tokens')
-                    ->label('Company account usage')
-                    ->numeric()
-                    ->sortable()
-                    ->default(0),
                 TextColumn::make('tokens_in_range')
                     ->label('Tokens (range)')
                     ->numeric()
                     ->default(0)
                     ->state(fn (User $record): int => (int) ($record->tokens_in_range ?? 0)),
+                TextColumn::make('account_tokens_in_range')
+                    ->label('Company account usage (range)')
+                    ->numeric()
+                    ->default(0)
+                    ->state(fn (User $record): int => (int) ($record->account_tokens_in_range ?? 0)),
                 TextColumn::make('last_event_at')
                     ->label('Last active')
                     ->dateTime()
@@ -125,9 +125,10 @@ class UserResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('range')
-                    ->label('Tokens window')
-                    ->options(['1' => 'Today', '7' => 'Last 7 days', '30' => 'Last 30 days'])
+                    ->label('Usage window')
+                    ->options(['1' => 'Today', '7' => 'Last 7 days', '30' => 'Last 30 days', '0' => 'All time'])
                     ->default('7')
+                    ->selectablePlaceholder(false)
                     // A no-op `query()` closure only exists so `SelectFilter` sees a query
                     // modification callback and skips its default behaviour of treating
                     // `range` as a real column (`where('range', $value)`, which errors — there
@@ -141,14 +142,15 @@ class UserResource extends Resource
                     // `applyToBaseQuery()` runs unwrapped, so the aggregate lands correctly.
                     ->baseQuery(function (Builder $query, array $data): Builder {
                         $days = (int) ($data['value'] ?? 7);
-                        if ($days <= 0) {
-                            return $query;
-                        }
+                        // `days <= 0` means "All time": window sums span every event
+                        // (no date floor); otherwise floor at `now() - days`.
+                        $since = $days > 0 ? now()->subDays($days) : null;
 
-                        return $query->withSum(
-                            ['events as tokens_in_range' => fn ($q) => $q->where('created_at', '>=', now()->subDays($days))],
-                            'tokens'
-                        );
+                        return $query
+                            ->withSum(['events as tokens_in_range' => fn (Builder $q): Builder => $since !== null ? $q->where('created_at', '>=', $since) : $q], 'tokens')
+                            ->withSum(['events as account_tokens_in_range' => fn (Builder $q): Builder => $since !== null
+                                ? $q->whereNotNull('account_id')->where('created_at', '>=', $since)
+                                : $q->whereNotNull('account_id')], 'tokens');
                     }),
             ])
             ->defaultSort('total_tokens', 'desc');

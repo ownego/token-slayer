@@ -24,19 +24,35 @@ it('shows total tokens on the user list', function () {
         ->assertSee('1,000'); // windowed tokens: default range filter is 7 days, excludes the 20-day-old event
 });
 
-it('shows each user\'s usage attributed to company accounts, excluding unattributed events', function () {
+it('shows each user\'s windowed company-account usage, excluding unattributed and out-of-range events', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
 
     $user = User::factory()->create(['name' => 'Zed']);
     Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 700, 'created_at' => now()]);
     Event::factory()->for($user)->create(['account_id' => null, 'tokens' => 250, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 5000, 'created_at' => now()->subDays(20)]);
 
+    // Default range filter = last 7 days: excludes the 20-day-old account event.
     Livewire::actingAs($admin)
         ->test(ListUsers::class)
         ->assertOk()
-        ->assertTableColumnStateSet('total_tokens', 950, record: $user)
-        ->assertTableColumnStateSet('account_tokens', 700, record: $user);
+        ->assertTableColumnStateSet('total_tokens', 5950, record: $user) // all-time, all events
+        ->assertTableColumnStateSet('account_tokens_in_range', 700, record: $user); // account-attributed, within 7 days
+});
+
+it('shows all-time company-account usage when the range is set to all time', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+
+    $user = User::factory()->create(['name' => 'Zed']);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 700, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 5000, 'created_at' => now()->subDays(20)]);
+
+    Livewire::actingAs($admin)
+        ->test(ListUsers::class)
+        ->set('tableFilters.range.value', '0') // All time
+        ->assertTableColumnStateSet('account_tokens_in_range', 5700, record: $user);
 });
 
 it('does not error when the tokens window filter is cleared', function () {
