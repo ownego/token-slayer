@@ -32,8 +32,9 @@ class EventsRelationManager extends RelationManager
     protected static ?string $title = 'Events';
 
     /**
-     * Only render this relation manager on the View page, keeping the Edit
-     * page focused on role assignment.
+     * Render this relation manager only on the View page (keeping Edit focused
+     * on role assignment) AND only for users granted the `view_events`
+     * permission. super_admin passes via Shield's Gate::before bypass.
      *
      * @param  Model  $ownerRecord  the owning User record
      * @param  string  $pageClass  the page the manager is about to render on
@@ -41,7 +42,8 @@ class EventsRelationManager extends RelationManager
      */
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
-        return $pageClass === ViewUser::class;
+        return $pageClass === ViewUser::class
+            && (auth()->user()?->can('view_events') ?? false);
     }
 
     /**

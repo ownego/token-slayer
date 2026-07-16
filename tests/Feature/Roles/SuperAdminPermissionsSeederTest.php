@@ -19,5 +19,8 @@ it('assigns every permission to the super_admin role and is idempotent', functio
 
     $role = Role::where('name', 'super_admin')->where('guard_name', 'web')->sole();
 
-    expect($role->permissions()->count())->toBe(3);
+    // super_admin must hold EVERY permission in the table (the two created
+    // here plus any inserted by migrations), so assert against the live
+    // total rather than a brittle hardcoded count.
+    expect($role->permissions()->count())->toBe(Permission::count());
 });

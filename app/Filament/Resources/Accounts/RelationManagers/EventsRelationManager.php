@@ -8,6 +8,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Read-only stream of the events attributed to an `Account`
@@ -29,6 +30,19 @@ class EventsRelationManager extends RelationManager
      * @var string|null
      */
     protected static ?string $title = 'Events';
+
+    /**
+     * Render the events tab only for users granted the `view_events`
+     * permission. super_admin passes via Shield's Gate::before bypass.
+     *
+     * @param  Model  $ownerRecord  the owning Account record
+     * @param  string  $pageClass  the page the manager is about to render on
+     * @return bool
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return auth()->user()?->can('view_events') ?? false;
+    }
 
     /**
      * No form: the events stream is read-only.
