@@ -20,11 +20,24 @@ use UnitEnum;
  * developers with no account membership at all. The Accounts tab offers
  * Connect (via {@see ConnectsAccounts}) for orgs with no matching account yet,
  * and Backfill for orgs that now have one — the events are re-attributed in
- * place. Access is gated panel-wide by {@see User::canAccessPanel()}.
+ * place. Access is gated panel-wide by {@see User::canAccessPanel()} and,
+ * additionally, by the `view_usage_analytics` permission via
+ * {@see self::canAccess()}.
  */
 class UnrecognizedAccounts extends Page
 {
     use ConnectsAccounts;
+
+    /**
+     * Only users granted the usage-analytics permission may open this page.
+     * super_admin passes via filament-shield's Gate::before bypass.
+     *
+     * @return bool
+     */
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->can('view_usage_analytics') ?? false;
+    }
 
     /**
      * Sidebar navigation icon.

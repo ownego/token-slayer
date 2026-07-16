@@ -26,7 +26,10 @@ class RedirectGuestsToSlackLogin
     public function handle(Request $request, Closure $next): Response
     {
         if (Auth::guard('web')->guest()) {
-            return redirect()->route('slack.login');
+            // `guest()` stashes the current URL in `session('url.intended')`
+            // so the Slack callback can send the user back where they were
+            // headed (redirect()->intended()) instead of a fixed landing page.
+            return redirect()->guest(route('slack.login'));
         }
 
         return $next($request);

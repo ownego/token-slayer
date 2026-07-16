@@ -9,9 +9,8 @@ use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Filament\Resources\Accounts\Pages\ViewAccount;
 use App\Filament\Resources\Accounts\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
-use App\Filament\Resources\Accounts\RelationManagers\UntrackedContributorsRelationManager;
-use App\Filament\Resources\Accounts\RelationManagers\UsersRelationManager;
 use App\Models\Account;
 use App\Services\AccountConnectService;
 use App\Services\UsageProber;
@@ -37,7 +36,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Admin CRUD for org `Account` records: connection details, plan, status,
- * and (via `UsersRelationManager`) which `User`s are members of the account.
+ * and (via `MembersRelationManager`) which `User`s are members of the account.
  * Attribution on already-ingested `events` rows is unaffected by edits or
  * deletes here — events keep the raw `account_email` they were stamped with.
  */
@@ -323,8 +322,7 @@ class AccountResource extends Resource
     public static function getRelations(): array
     {
         return [
-            UsersRelationManager::class,
-            UntrackedContributorsRelationManager::class,
+            MembersRelationManager::class,
             ProvisionsRelationManager::class,
             EventsRelationManager::class,
         ];

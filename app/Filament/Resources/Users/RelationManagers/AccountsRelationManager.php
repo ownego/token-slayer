@@ -2,10 +2,12 @@
 
 namespace App\Filament\Resources\Users\RelationManagers;
 
+use App\Filament\Resources\Users\Pages\ViewUser;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Read-only list of the org `Account`s a `User` is a member of
@@ -29,6 +31,19 @@ class AccountsRelationManager extends RelationManager
      * @var string|null
      */
     protected static ?string $title = 'Accounts';
+
+    /**
+     * Only render this relation manager on the View page, keeping the Edit
+     * page focused on role assignment.
+     *
+     * @param  Model  $ownerRecord  the owning User record
+     * @param  string  $pageClass  the page the manager is about to render on
+     * @return bool
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return $pageClass === ViewUser::class;
+    }
 
     /**
      * No form: membership is read-only from this side.

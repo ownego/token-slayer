@@ -11,16 +11,17 @@ use Illuminate\Support\Facades\Cache;
 
 uses(RefreshDatabase::class);
 
-it('maps each tracked member to their latest event time', function () {
+it('aggregates tracked members with event count and last seen', function () {
     $account = Account::factory()->create();
     $member = User::factory()->create();
     $account->users()->attach($member, ['status' => MembershipStatus::Tracked->value]);
     Event::factory()->for($member)->for($account)->create(['created_at' => now()->subDay()]);
     $latest = Event::factory()->for($member)->for($account)->create(['created_at' => now()->subHour()]);
 
-    $map = app(AccountMembershipCache::class)->trackedLastSeen($account);
+    $map = app(AccountMembershipCache::class)->trackedAggregates($account);
 
-    expect($map[$member->id])->toBe((string) $latest->created_at);
+    expect($map[$member->id]['events'])->toBe(2);
+    expect($map[$member->id]['last_seen'])->toBe((string) $latest->created_at);
 });
 
 it('aggregates untracked contributors with event count and last seen', function () {
@@ -39,9 +40,26 @@ it('aggregates untracked contributors with event count and last seen', function 
     expect($map[$contributor->id]['events'])->toBe(3);
 });
 
+it('merges tracked and untracked aggregates into one contributor map', function () {
+    $account = Account::factory()->create();
+    $member = User::factory()->create();
+    $account->users()->attach($member, ['status' => MembershipStatus::Tracked->value]);
+    Event::factory()->count(2)->for($member)->for($account)->create();
+
+    $contributor = User::factory()->create();
+    $account->users()->attach($contributor, ['status' => MembershipStatus::Untracked->value]);
+    Event::factory()->count(3)->for($contributor)->for($account)->create();
+
+    $map = app(AccountMembershipCache::class)->allContributorAggregates($account);
+
+    expect(array_keys($map))->toEqualCanonicalizing([$member->id, $contributor->id]);
+    expect($map[$member->id]['events'])->toBe(2);
+    expect($map[$contributor->id]['events'])->toBe(3);
+});
+
 it('caches under the account keys', function () {
     $account = Account::factory()->create();
-    app(AccountMembershipCache::class)->trackedLastSeen($account);
+    app(AccountMembershipCache::class)->trackedAggregates($account);
     app(AccountMembershipCache::class)->untrackedAggregates($account);
 
     expect(Cache::has(CacheKeys::trackedMembers($account->id)))->toBeTrue();

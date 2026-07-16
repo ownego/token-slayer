@@ -22,11 +22,23 @@ use UnitEnum;
 /**
  * Admin-only Usage Analytics page: a shared filter form (time range, account,
  * provider, user) feeding a set of consumption and quota widgets. Access is
- * already gated panel-wide by {@see User::canAccessPanel()}.
+ * gated panel-wide by {@see User::canAccessPanel()} and, additionally, by the
+ * `view_usage_analytics` permission via {@see self::canAccess()}.
  */
 class UsageAnalytics extends Page
 {
     use HasFiltersForm;
+
+    /**
+     * Only users granted the usage-analytics permission may open this page.
+     * super_admin passes via filament-shield's Gate::before bypass.
+     *
+     * @return bool
+     */
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->can('view_usage_analytics') ?? false;
+    }
 
     /**
      * Sidebar navigation icon for this page.
@@ -71,12 +83,14 @@ class UsageAnalytics extends Page
             ->components([
                 Select::make('range')
                     ->options([
-                        '24h' => 'Last 24 hours',
-                        '7d' => 'Last 7 days',
-                        '30d' => 'Last 30 days',
+                        'all' => 'All time',
+                        'today' => 'Today',
+                        'week' => 'This week',
+                        'month' => 'This month',
+                        'year' => 'This year',
                         'custom' => 'Custom range',
                     ])
-                    ->default('7d')
+                    ->default('all')
                     ->live(),
                 DatePicker::make('from')->visible(fn (callable $get): bool => $get('range') === 'custom'),
                 DatePicker::make('to')->visible(fn (callable $get): bool => $get('range') === 'custom'),

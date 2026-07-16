@@ -5,7 +5,7 @@ use App\Enums\MembershipStatus;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
-use App\Filament\Resources\Accounts\RelationManagers\UsersRelationManager;
+use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\User;
@@ -106,8 +106,8 @@ it('demotes a tracked member to untracked through the relation manager', functio
     $account->users()->attach($user, ['status' => MembershipStatus::Tracked->value]);
 
     Livewire::actingAs($admin)
-        ->test(UsersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->callTableAction('removeFromTracking', record: $user);
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->callTableAction('unverify', record: $user);
 
     expect($account->trackedUsers()->whereKey($user->id)->exists())->toBeFalse();
     expect($account->untrackedUsers()->whereKey($user->id)->exists())->toBeTrue();

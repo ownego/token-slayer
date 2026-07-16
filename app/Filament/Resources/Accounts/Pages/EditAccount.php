@@ -9,7 +9,7 @@ use Filament\Resources\Pages\EditRecord;
 
 /**
  * The "edit Account" page of `AccountResource`, hosting the connection
- * status field and the `UsersRelationManager` member-management table.
+ * status field and the `MembersRelationManager` member-management table.
  */
 class EditAccount extends EditRecord
 {

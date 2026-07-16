@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources\Users\RelationManagers;
 
+use App\Filament\Resources\Users\Pages\ViewUser;
 use App\Models\Event;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Read-only stream of the events logged by a `User` (`events.user_id`),
@@ -28,6 +30,21 @@ class EventsRelationManager extends RelationManager
      * @var string|null
      */
     protected static ?string $title = 'Events';
+
+    /**
+     * Render this relation manager only on the View page (keeping Edit focused
+     * on role assignment) AND only for users granted the `view_events`
+     * permission. super_admin passes via Shield's Gate::before bypass.
+     *
+     * @param  Model  $ownerRecord  the owning User record
+     * @param  string  $pageClass  the page the manager is about to render on
+     * @return bool
+     */
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return $pageClass === ViewUser::class
+            && (auth()->user()?->can('view_events') ?? false);
+    }
 
     /**
      * No form: the events stream is read-only.

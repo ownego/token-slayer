@@ -68,7 +68,10 @@ class SlackController extends Controller
             return $this->redirectToIde($user, $ide['state'], $ide['client'], $ide['redirect']);
         }
 
-        return redirect()->route($defaultRoute);
+        // Send the user back to the page they originally tried to reach
+        // (stashed as `url.intended` when a guest hit a gated route), falling
+        // back to the per-user default landing page.
+        return redirect()->intended(route($defaultRoute));
     }
 
     /**
