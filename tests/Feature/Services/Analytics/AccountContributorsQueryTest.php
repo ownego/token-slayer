@@ -5,6 +5,7 @@ use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Analytics\AccountContributorsQuery;
+use App\Services\Analytics\UsageFilters;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -47,4 +48,40 @@ it('excludes events with no account and sums all-time regardless of when they oc
 
     expect($members)->toHaveCount(1)
         ->and($members[0]['tokens'])->toBe(150);
+});
+
+it('windows tokens to the filter range', function () {
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 40, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 900, 'created_at' => now()->subMonths(2)]);
+
+    $filters = UsageFilters::fromPageFilters(['range' => 'week']);
+    $members = app(AccountContributorsQuery::class)->get($filters)[$account->id];
+
+    expect($members[0]['tokens'])->toBe(40);
+});
+
+it('in total-across-accounts mode shows the same user total in each of their account cards', function () {
+    $accountA = Account::factory()->create();
+    $accountB = Account::factory()->create();
+    $user = User::factory()->create();
+    $accountA->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+    $accountB->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+
+    Event::factory()->for($user)->create(['account_id' => $accountA->id, 'tokens' => 100, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => $accountB->id, 'tokens' => 200, 'created_at' => now()]);
+
+    $filters = UsageFilters::fromPageFilters(['range' => 'all']);
+    $byAccount = app(AccountContributorsQuery::class)->get($filters, totalAcrossAccounts: true);
+
+    expect($byAccount[$accountA->id][0]['tokens'])->toBe(300)
+        ->and($byAccount[$accountB->id][0]['tokens'])->toBe(300);
+
+    // Default (per-account) mode keeps each card scoped to its own attribution.
+    $perAccount = app(AccountContributorsQuery::class)->get($filters);
+    expect($perAccount[$accountA->id][0]['tokens'])->toBe(100)
+        ->and($perAccount[$accountB->id][0]['tokens'])->toBe(200);
 });

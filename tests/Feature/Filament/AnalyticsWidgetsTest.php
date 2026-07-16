@@ -69,6 +69,20 @@ test('the fleet quota overview lists each account contributor with all-time toke
         ->assertSee('4,200');
 });
 
+test('the fleet quota overview honors the total-across-accounts toggle', function () {
+    $accountA = Account::factory()->create(['email' => 'a-team@example.com']);
+    $accountB = Account::factory()->create();
+    $user = User::factory()->create(['slack_handle' => 'nova']);
+    $accountA->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+    $accountB->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+    Event::factory()->for($user)->create(['account_id' => $accountA->id, 'tokens' => 100, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => $accountB->id, 'tokens' => 200, 'created_at' => now()]);
+
+    Livewire::test(FleetQuotaOverview::class, ['pageFilters' => ['range' => 'all', 'total_across_accounts' => true]])
+        ->assertOk()
+        ->assertSee('300');
+});
+
 test('the account quota history chart renders without a record set', function () {
     Livewire::test(AccountQuotaHistoryChart::class)->assertOk();
 });

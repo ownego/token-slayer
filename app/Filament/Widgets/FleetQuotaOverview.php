@@ -4,15 +4,21 @@ namespace App\Filament\Widgets;
 
 use App\Services\Analytics\AccountContributorsQuery;
 use App\Services\Analytics\QuotaGaugesQuery;
+use App\Services\Analytics\UsageFilters;
+use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Filament\Widgets\Widget;
 
 /**
  * Blade widget showing a current quota gauge card per account: 5h and 7d
- * utilization bars, time-to-reset, projected utilization at reset, and a
- * near-cap flag. Reflects live state, so it ignores the page's time filter.
+ * utilization bars, time-to-reset, projected utilization at reset, a near-cap
+ * flag, and the account's contributors. The quota bars reflect live state; the
+ * per-member token figures honor the dashboard's time filter and its
+ * "total across accounts" toggle.
  */
 class FleetQuotaOverview extends Widget
 {
+    use InteractsWithPageFilters;
+
     /**
      * The Blade view rendering the gauge cards.
      *
@@ -39,16 +45,22 @@ class FleetQuotaOverview extends Widget
     }
 
     /**
-     * Provide the per-account gauge rows and the all-time contributor
-     * breakdown (keyed by account id) to the view.
+     * Provide the per-account gauge rows and the contributor breakdown (keyed
+     * by account id) to the view. The breakdown is windowed by the dashboard's
+     * time filter and switched between per-account and cross-account totals by
+     * the `total_across_accounts` toggle.
      *
      * @return array<string, mixed>
      */
     protected function getViewData(): array
     {
+        $pageFilters = $this->pageFilters ?? [];
+        $filters = UsageFilters::fromPageFilters($pageFilters);
+        $totalAcrossAccounts = (bool) ($pageFilters['total_across_accounts'] ?? false);
+
         return [
             'gauges' => app(QuotaGaugesQuery::class)->get(),
-            'contributors' => app(AccountContributorsQuery::class)->get(),
+            'contributors' => app(AccountContributorsQuery::class)->get($filters, $totalAcrossAccounts),
         ];
     }
 }

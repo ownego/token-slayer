@@ -7,22 +7,30 @@ use App\Models\Event;
 use Illuminate\Database\Query\JoinClause;
 
 /**
- * All-time contributor breakdown per account: every user with events
- * attributed to an account, their membership status, and their total tokens
- * for that account. Powers the member list inside each Fleet Quota card on
- * the admin dashboard, which reflects live state and takes no time filter.
+ * Contributor breakdown per account: every user with events attributed to an
+ * account, their membership status, and their token spend. Powers the member
+ * list inside each Fleet Quota card on the admin dashboard. Honors the
+ * dashboard's time filter, and can either scope each user's tokens to the
+ * account being viewed (default) or show their total across every account.
  */
 final class AccountContributorsQuery
 {
     /**
      * Build the per-account contributor lists, keyed by account id. Each
      * account's list holds every user with events attributed to it (any
-     * membership status), sorted by all-time token spend descending. A user
-     * with events but no membership pivot row is reported as untracked.
+     * membership status), sorted by token spend descending. A user with events
+     * but no membership pivot row is reported as untracked.
      *
+     * The tokens shown are windowed to `$filters` (all-time when null). When
+     * `$totalAcrossAccounts` is true, each user's tokens are their total over
+     * every account in the window (the same figure in each of their cards)
+     * rather than the amount attributed to the account being viewed.
+     *
+     * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
+     * @param  bool  $totalAcrossAccounts  show each user's cross-account total instead of the per-account amount
      * @return array<int, array<int, array{user_id:int, handle:string, avatar_url:?string, status:string, tokens:int}>>
      */
-    public function get(): array
+    public function get(?UsageFilters $filters = null, bool $totalAcrossAccounts = false): array
     {
         $rows = Event::query()
             ->join('users', 'users.id', '=', 'events.user_id')
@@ -31,6 +39,7 @@ final class AccountContributorsQuery
                     ->on('account_user.user_id', '=', 'events.user_id');
             })
             ->whereNotNull('events.account_id')
+            ->when($filters !== null, fn ($q) => $q->whereBetween('events.created_at', [$filters->from, $filters->to]))
             ->groupBy('events.account_id', 'users.id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url', 'account_user.status')
             ->selectRaw('events.account_id as account_id')
             ->selectRaw('users.id as user_id, users.slack_handle, users.display_name, users.name, users.avatar_url')
@@ -39,18 +48,48 @@ final class AccountContributorsQuery
             ->orderByRaw('SUM(events.tokens) DESC')
             ->get();
 
+        $userTotals = $totalAcrossAccounts ? $this->userTotals($filters) : [];
+
         $byAccount = [];
 
         foreach ($rows as $row) {
+            $userId = (int) $row->user_id;
             $byAccount[(int) $row->account_id][] = [
-                'user_id' => (int) $row->user_id,
-                'handle' => $row->slack_handle ?: ($row->display_name ?: ($row->name ?: ('#'.$row->user_id))),
+                'user_id' => $userId,
+                'handle' => $row->slack_handle ?: ($row->display_name ?: ($row->name ?: ('#'.$userId))),
                 'avatar_url' => $row->avatar_url,
                 'status' => $row->status ?? MembershipStatus::Untracked->value,
-                'tokens' => (int) $row->tokens,
+                'tokens' => $totalAcrossAccounts ? ($userTotals[$userId] ?? 0) : (int) $row->tokens,
             ];
         }
 
+        if ($totalAcrossAccounts) {
+            foreach ($byAccount as &$members) {
+                usort($members, fn (array $a, array $b): int => $b['tokens'] <=> $a['tokens']);
+            }
+            unset($members);
+        }
+
         return $byAccount;
+    }
+
+    /**
+     * Map each user id to their total attributed tokens across every account
+     * in the window (all-time when `$filters` is null).
+     *
+     * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
+     * @return array<int, int>
+     */
+    private function userTotals(?UsageFilters $filters): array
+    {
+        return Event::query()
+            ->whereNotNull('events.account_id')
+            ->when($filters !== null, fn ($q) => $q->whereBetween('events.created_at', [$filters->from, $filters->to]))
+            ->groupBy('events.user_id')
+            ->selectRaw('events.user_id as user_id')
+            ->selectRaw('SUM(events.tokens) as tokens')
+            ->get()
+            ->mapWithKeys(fn ($row): array => [(int) $row->user_id => (int) $row->tokens])
+            ->all();
     }
 }
