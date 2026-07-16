@@ -71,12 +71,14 @@ class UsageAnalytics extends Page
             ->components([
                 Select::make('range')
                     ->options([
-                        '24h' => 'Last 24 hours',
-                        '7d' => 'Last 7 days',
-                        '30d' => 'Last 30 days',
+                        'all' => 'All time',
+                        'today' => 'Today',
+                        'week' => 'This week',
+                        'month' => 'This month',
+                        'year' => 'This year',
                         'custom' => 'Custom range',
                     ])
-                    ->default('7d')
+                    ->default('all')
                     ->live(),
                 DatePicker::make('from')->visible(fn (callable $get): bool => $get('range') === 'custom'),
                 DatePicker::make('to')->visible(fn (callable $get): bool => $get('range') === 'custom'),
