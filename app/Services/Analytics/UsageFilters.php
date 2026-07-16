@@ -2,6 +2,7 @@
 
 namespace App\Services\Analytics;
 
+use App\Models\Event;
 use Illuminate\Support\Carbon;
 
 /**
@@ -14,7 +15,8 @@ final class UsageFilters
 {
     /**
      * Largest range (in days) any query will scan, to bound result size and
-     * protect the database from an unbounded custom range.
+     * protect the database from an unbounded custom range. Not applied to
+     * the `all` and `year` ranges, which are intentionally long.
      *
      * @var int
      */
@@ -29,7 +31,32 @@ final class UsageFilters
     public const int HOURLY_BUCKET_MAX_HOURS = 48;
 
     /**
-     * The time bucket granularity for series queries: `'hour'` or `'day'`.
+     * Range length at or below which the time bucket is daily rather than
+     * weekly, in days.
+     *
+     * @var int
+     */
+    public const int DAILY_BUCKET_MAX_DAYS = 90;
+
+    /**
+     * Range length at or below which the time bucket is weekly rather than
+     * monthly, in days (roughly two years).
+     *
+     * @var int
+     */
+    public const int WEEKLY_BUCKET_MAX_DAYS = 730;
+
+    /**
+     * Years to look back for the `all` range's `from` when there are no
+     * events yet to derive an earliest date from.
+     *
+     * @var int
+     */
+    public const int ALL_TIME_FALLBACK_YEARS = 5;
+
+    /**
+     * The time bucket granularity for series queries: `'hour'`, `'day'`,
+     * `'week'`, or `'month'`.
      *
      * @var string
      */
@@ -51,14 +78,22 @@ final class UsageFilters
         public readonly ?string $provider,
         public readonly ?int $userId,
     ) {
-        $this->bucket = $from->diffInSeconds($to) <= self::HOURLY_BUCKET_MAX_HOURS * 3600 ? 'hour' : 'day';
+        $seconds = $from->diffInSeconds($to);
+
+        $this->bucket = match (true) {
+            $seconds <= self::HOURLY_BUCKET_MAX_HOURS * 3600 => 'hour',
+            $seconds <= self::DAILY_BUCKET_MAX_DAYS * 86400 => 'day',
+            $seconds <= self::WEEKLY_BUCKET_MAX_DAYS * 86400 => 'week',
+            default => 'month',
+        };
     }
 
     /**
      * Build filters from the Filament page filter form's raw array. `range`
-     * is one of `24h | 7d | 30d | custom`; `custom` reads `from`/`to` dates
-     * and is clamped to {@see self::MAX_RANGE_DAYS}. Missing selections mean
-     * "all".
+     * is one of `all | today | week | month | year | 24h | 7d | 30d | custom`;
+     * `custom` reads `from`/`to` dates. All ranges except `all` and `year`
+     * are clamped to {@see self::MAX_RANGE_DAYS}. Missing selections mean
+     * "all" (7d fallback for the range, unfiltered for account/provider/user).
      *
      * @param  array<string, mixed>  $filters  raw values from the filter form
      * @return self
@@ -66,20 +101,29 @@ final class UsageFilters
     public static function fromPageFilters(array $filters): self
     {
         $to = now();
-        $from = match ($filters['range'] ?? '7d') {
+        $range = $filters['range'] ?? '7d';
+
+        $from = match ($range) {
             '24h' => now()->subDay(),
+            'today' => now()->startOfDay(),
+            'week' => now()->startOfWeek(),
+            'month' => now()->startOfMonth(),
+            'year' => now()->startOfYear(),
             '30d' => now()->subDays(30),
+            'all' => self::allTimeFrom(),
             'custom' => Carbon::parse($filters['from'] ?? now()->subDays(7)->toDateString())->startOfDay(),
             default => now()->subDays(7),
         };
 
-        if (($filters['range'] ?? null) === 'custom') {
+        if ($range === 'custom') {
             $to = Carbon::parse($filters['to'] ?? now()->toDateString())->endOfDay();
         }
 
-        $floor = $to->copy()->subDays(self::MAX_RANGE_DAYS);
-        if ($from->lessThan($floor)) {
-            $from = $floor;
+        if (! in_array($range, ['all', 'year'], true)) {
+            $floor = $to->copy()->subDays(self::MAX_RANGE_DAYS);
+            if ($from->lessThan($floor)) {
+                $from = $floor;
+            }
         }
 
         return new self(
@@ -89,6 +133,22 @@ final class UsageFilters
             ($filters['provider'] ?? null) ?: null,
             self::intOrNull($filters['user_id'] ?? null),
         );
+    }
+
+    /**
+     * Start of the `all` range: the earliest recorded event, or a far-past
+     * fallback ({@see self::ALL_TIME_FALLBACK_YEARS} years back) when no
+     * events exist yet.
+     *
+     * @return Carbon the earliest event's timestamp, or the fallback date
+     */
+    private static function allTimeFrom(): Carbon
+    {
+        $earliest = Event::min('created_at');
+
+        return $earliest !== null
+            ? Carbon::parse($earliest)
+            : now()->subYears(self::ALL_TIME_FALLBACK_YEARS);
     }
 
     /**

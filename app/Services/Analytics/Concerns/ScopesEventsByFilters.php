@@ -33,11 +33,11 @@ trait ScopesEventsByFilters
     }
 
     /**
-     * Driver-aware SQL expression truncating a timestamp column to an hourly
-     * or daily bucket string, portable across PostgreSQL (production) and
-     * SQLite (tests).
+     * Driver-aware SQL expression truncating a timestamp column to an hourly,
+     * daily, weekly, or monthly bucket string, portable across PostgreSQL
+     * (production) and SQLite (tests).
      *
-     * @param  string  $bucket  `'hour'` or `'day'`
+     * @param  string  $bucket  `'hour'`, `'day'`, `'week'`, or `'month'`
      * @param  string  $column  the timestamp column to bucket (e.g. `events.created_at`)
      * @return string the raw SQL expression
      */
@@ -49,6 +49,12 @@ trait ScopesEventsByFilters
             'hour' => $isSqlite
                 ? "strftime('%Y-%m-%d %H:00', {$column})"
                 : "to_char({$column}, 'YYYY-MM-DD HH24:00')",
+            'week' => $isSqlite
+                ? "strftime('%Y-%W', {$column})"
+                : "to_char({$column}, 'IYYY-IW')",
+            'month' => $isSqlite
+                ? "strftime('%Y-%m', {$column})"
+                : "to_char({$column}, 'YYYY-MM')",
             default => $isSqlite
                 ? "strftime('%Y-%m-%d', {$column})"
                 : "to_char({$column}, 'YYYY-MM-DD')",
