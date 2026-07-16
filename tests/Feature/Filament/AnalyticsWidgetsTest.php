@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\MembershipStatus;
 use App\Filament\Widgets\AccountQuotaHistoryChart;
 use App\Filament\Widgets\ActivityHeatmap;
 use App\Filament\Widgets\FleetQuotaOverview;
@@ -54,6 +55,18 @@ test('the fleet quota overview widget renders and flags a near-cap account', fun
     Livewire::test(FleetQuotaOverview::class)
         ->assertOk()
         ->assertSee('hot@example.com');
+});
+
+test('the fleet quota overview lists each account contributor with all-time tokens', function () {
+    $account = Account::factory()->create(['email' => 'team@example.com']);
+    $user = User::factory()->create(['slack_handle' => 'devon']);
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Untracked->value]);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 4200, 'created_at' => now()]);
+
+    Livewire::test(FleetQuotaOverview::class)
+        ->assertOk()
+        ->assertSee('devon')
+        ->assertSee('4,200');
 });
 
 test('the account quota history chart renders without a record set', function () {

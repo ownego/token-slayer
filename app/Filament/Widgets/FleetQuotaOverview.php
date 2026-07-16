@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Services\Analytics\AccountContributorsQuery;
 use App\Services\Analytics\QuotaGaugesQuery;
 use Filament\Widgets\Widget;
 
@@ -38,12 +39,16 @@ class FleetQuotaOverview extends Widget
     }
 
     /**
-     * Provide the per-account gauge rows to the view.
+     * Provide the per-account gauge rows and the all-time contributor
+     * breakdown (keyed by account id) to the view.
      *
      * @return array<string, mixed>
      */
     protected function getViewData(): array
     {
-        return ['gauges' => app(QuotaGaugesQuery::class)->get()];
+        return [
+            'gauges' => app(QuotaGaugesQuery::class)->get(),
+            'contributors' => app(AccountContributorsQuery::class)->get(),
+        ];
     }
 }
