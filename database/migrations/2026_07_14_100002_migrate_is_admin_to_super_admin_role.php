@@ -11,10 +11,12 @@ return new class extends Migration
 {
     /**
      * Create the super_admin role, hand it to every user who currently has
-     * is_admin = true, then drop the now-retired column. super_admin needs
-     * no explicit permissions attached — filament-shield's Gate::before
-     * bypass (config/filament-shield.php super_admin.enabled) grants it
-     * everything.
+     * is_admin = true, then drop the now-retired column. filament-shield's
+     * Gate::before bypass (config/filament-shield.php super_admin.enabled)
+     * remains a safety net that grants super_admin everything regardless of
+     * attached permissions, but `SuperAdminPermissionsSeeder` also syncs all
+     * permissions onto this role explicitly, so it does not rely solely on
+     * the bypass.
      *
      * @return void
      */

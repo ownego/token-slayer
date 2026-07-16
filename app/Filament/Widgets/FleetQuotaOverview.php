@@ -27,6 +27,17 @@ class FleetQuotaOverview extends Widget
     protected int|string|array $columnSpan = 'full';
 
     /**
+     * Only users granted the usage-analytics permission see this widget.
+     * super_admin passes via the Gate::before bypass.
+     *
+     * @return bool
+     */
+    public static function canView(): bool
+    {
+        return auth()->user()?->can('view_usage_analytics') ?? false;
+    }
+
+    /**
      * Provide the per-account gauge rows to the view.
      *
      * @return array<string, mixed>

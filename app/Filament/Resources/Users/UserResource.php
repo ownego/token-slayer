@@ -19,6 +19,7 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Admin management of `User`s: users self-register via Slack OAuth (no
@@ -84,7 +85,7 @@ class UserResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query->withSum('events as total_tokens', 'tokens'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->withSum('events as total_tokens', 'tokens'))
             ->columns([
                 ImageColumn::make('avatar_url')
                     ->label('')
@@ -124,14 +125,14 @@ class UserResource extends Resource
                     // modification callback and skips its default behaviour of treating
                     // `range` as a real column (`where('range', $value)`, which errors — there
                     // is no such column). The real aggregate is added via `baseQuery()` below.
-                    ->query(fn ($query) => $query)
+                    ->query(fn (Builder $query): Builder => $query)
                     // `baseQuery()` (not `query()`): Filament's HasFilters::applyFiltersToTableQuery
                     // wraps `apply()`'s query in a nested `where(Closure)` for filter predicates.
                     // `withAggregate()` (which `withSum` calls) mutates the query builder's SELECT
                     // columns directly rather than via the merged `$eagerLoad` array, so an
                     // aggregate added inside that nested closure never reaches the outer query.
                     // `applyToBaseQuery()` runs unwrapped, so the aggregate lands correctly.
-                    ->baseQuery(function ($query, array $data) {
+                    ->baseQuery(function (Builder $query, array $data): Builder {
                         $days = (int) ($data['value'] ?? 7);
                         if ($days <= 0) {
                             return $query;

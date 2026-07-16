@@ -43,6 +43,17 @@ class TopUsersLeaderboard extends ChartWidget
     private const int LIMIT = 10;
 
     /**
+     * Only users granted the usage-analytics permission see this widget.
+     * super_admin passes via the Gate::before bypass.
+     *
+     * @return bool
+     */
+    public static function canView(): bool
+    {
+        return auth()->user()?->can('view_usage_analytics') ?? false;
+    }
+
+    /**
      * Build the Chart.js dataset from the top-users leaderboard.
      *
      * @return array<string, mixed>

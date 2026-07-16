@@ -11,8 +11,11 @@ return new class extends Migration
      * outside the Filament panel and therefore never received a
      * Shield-generated permission of its own; without this row, the route's
      * `can:view_usage_analytics` gate would have nothing to check against.
-     * `super_admin` does not need this permission attached explicitly —
-     * Shield's `Gate::before` bypass already grants it everything.
+     * The permission also gates the Filament `UsageAnalytics` and
+     * `UnrecognizedAccounts` pages and their usage widgets (each via its own
+     * `canAccess()`/`canView()`). `super_admin` does not need this permission
+     * attached explicitly — Shield's `Gate::before` bypass already grants it
+     * everything.
      *
      * @return void
      */

@@ -23,11 +23,23 @@ use UnitEnum;
 /**
  * Admin-only Usage Analytics page: a shared filter form (time range, account,
  * provider, user) feeding a set of consumption and quota widgets. Access is
- * already gated panel-wide by {@see User::canAccessPanel()}.
+ * gated panel-wide by {@see User::canAccessPanel()} and, additionally, by the
+ * `view_usage_analytics` permission via {@see self::canAccess()}.
  */
 class UsageAnalytics extends Page
 {
     use HasFiltersForm;
+
+    /**
+     * Only users granted the usage-analytics permission may open this page.
+     * super_admin passes via filament-shield's Gate::before bypass.
+     *
+     * @return bool
+     */
+    public static function canAccess(): bool
+    {
+        return auth()->user()?->can('view_usage_analytics') ?? false;
+    }
 
     /**
      * Sidebar navigation icon for this page.

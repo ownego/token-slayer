@@ -63,3 +63,16 @@ it('does not sync when a role is saved without becoming default', function () {
 
     expect($other->fresh()->roles)->toBeEmpty();
 });
+
+it('creating a new role with is_default true assigns it to a pre-existing user (observer fires on create)', function () {
+    $admin = User::factory()->admin()->create();
+    $existingUser = User::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(CreateRole::class)
+        ->fillForm(['name' => 'auto-default', 'guard_name' => 'web', 'is_default' => true])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    expect($existingUser->fresh()->hasRole('auto-default'))->toBeTrue();
+});
