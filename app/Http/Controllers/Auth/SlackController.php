@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\IdeAccessToken;
 use App\Models\User;
+use App\Services\Roles\DefaultRoleAssigner;
 use App\Services\Slack\SlackProfileFetcher;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -55,6 +56,7 @@ class SlackController extends Controller
             ]);
 
             session()->put('hook_token_plain', $plainToken);
+            app(DefaultRoleAssigner::class)->assignTo($user);
             $defaultRoute = 'profile';
         } else {
             $existing->update($attributes);
