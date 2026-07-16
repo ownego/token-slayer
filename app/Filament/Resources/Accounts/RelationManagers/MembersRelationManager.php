@@ -22,7 +22,7 @@ use Filament\Tables\Table;
  * status. Tracked members show a "Verified" badge; untracked contributors a
  * "Chưa verify" badge and can be verified (promoted) in place; a tracked
  * member can also be unverified (demoted) back to untracked. Replaces the
- * former separate {@see UsersRelationManager}/{@see UntrackedContributorsRelationManager}
+ * former separate `UsersRelationManager`/`UntrackedContributorsRelationManager`
  * tabs.
  */
 class MembersRelationManager extends RelationManager

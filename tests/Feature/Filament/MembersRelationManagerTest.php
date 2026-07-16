@@ -32,6 +32,23 @@ it('lists tracked and untracked contributors with status and toggles them', func
     expect($account->trackedUsers()->whereKey($untracked->id)->exists())->toBeTrue();
 });
 
+it('verifies an untracked contributor, dropping them from untrackedUsers() and forgetting the untracked cache', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $contributor = User::factory()->create();
+    $account->users()->attach($contributor, ['status' => MembershipStatus::Untracked->value]);
+    app(AccountMembershipCache::class)->untrackedAggregates($account);
+    expect(Cache::has(CacheKeys::untrackedContributors($account->id)))->toBeTrue();
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->callTableAction('verify', $contributor);
+
+    expect($account->trackedUsers()->whereKey($contributor->id)->exists())->toBeTrue();
+    expect($account->untrackedUsers()->whereKey($contributor->id)->exists())->toBeFalse();
+    expect(Cache::has(CacheKeys::untrackedContributors($account->id)))->toBeFalse();
+});
+
 it('demotes a tracked member to untracked keeping the row, and forgets the cache', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
