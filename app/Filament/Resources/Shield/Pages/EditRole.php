@@ -55,8 +55,7 @@ class EditRole extends BaseEditRole
      * Applies the pulled `is_default` value to the saved record via
      * `forceFill()->save()`, after Shield's own `afterSave()` has synced
      * permissions. This is a genuine attribute write (not mass-assignment),
-     * so it is immune to the guardable-columns cache landmine and fires
-     * `RoleObserver::saved()` with `wasChanged('is_default')` correctly.
+     * so it is immune to the guardable-columns cache landmine.
      *
      * @return void
      */

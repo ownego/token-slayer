@@ -13,10 +13,12 @@ use Filament\Schemas\Schema;
 
 /**
  * Extends Shield's role resource to add an `is_default` toggle: a role
- * marked default is auto-assigned to every user (see
- * `App\Observers\RoleObserver`). Registered on the admin panel in place of
- * Shield's own resource so the toggle appears in the create/edit form and
- * Shield's `FilamentShieldPlugin::register()` suppresses its duplicate.
+ * marked default is applied implicitly to every user (its permissions are
+ * granted via a Gate::before hook — see
+ * `App\Services\Roles\DefaultRolePermissions`; no per-user assignment row is
+ * written). Registered on the admin panel in place of Shield's own resource
+ * so the toggle appears in the create/edit form and Shield's
+ * `FilamentShieldPlugin::register()` suppresses its duplicate.
  */
 class RoleResource extends BaseRoleResource
 {

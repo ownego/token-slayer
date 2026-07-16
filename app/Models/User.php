@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\FighterCharacter;
 use App\Enums\MembershipStatus;
+use App\Services\Roles\DefaultRolePermissions;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -112,10 +113,16 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * Whether this user can reach the admin panel. A user with any assigned
+     * role gets in; additionally, while any role is flagged `is_default`,
+     * every user gets in (default roles are virtual — see
+     * {@see DefaultRolePermissions}).
+     *
      * @inheritDoc
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->isAdministrator();
+        return $this->isAdministrator()
+            || app(DefaultRolePermissions::class)->hasAnyDefaultRole();
     }
 }
