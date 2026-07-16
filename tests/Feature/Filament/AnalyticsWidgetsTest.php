@@ -69,6 +69,19 @@ test('the fleet quota overview lists each account contributor with all-time toke
         ->assertSee('4,200');
 });
 
+test('the fleet quota overview shows a fleet-wide total usage across accounts', function () {
+    $accountA = Account::factory()->create();
+    $accountB = Account::factory()->create();
+    $user = User::factory()->create();
+    Event::factory()->for($user)->create(['account_id' => $accountA->id, 'tokens' => 100, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => $accountB->id, 'tokens' => 250, 'created_at' => now()]);
+
+    Livewire::test(FleetQuotaOverview::class, ['pageFilters' => ['range' => 'all']])
+        ->assertOk()
+        ->assertSee('Total usage')
+        ->assertSee('350'); // 100 + 250, the fleet-wide grand total
+});
+
 test('the fleet quota overview honors the total-across-accounts toggle', function () {
     $accountA = Account::factory()->create(['email' => 'a-team@example.com']);
     $accountB = Account::factory()->create();

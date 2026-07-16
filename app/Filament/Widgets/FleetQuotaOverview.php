@@ -58,9 +58,14 @@ class FleetQuotaOverview extends Widget
         $filters = UsageFilters::fromPageFilters($pageFilters);
         $totalAcrossAccounts = (bool) ($pageFilters['total_across_accounts'] ?? false);
 
+        $contributors = app(AccountContributorsQuery::class);
+        $accountTotals = $contributors->accountTotals($filters);
+
         return [
             'gauges' => app(QuotaGaugesQuery::class)->get(),
-            'contributors' => app(AccountContributorsQuery::class)->get($filters, $totalAcrossAccounts),
+            'contributors' => $contributors->get($filters, $totalAcrossAccounts),
+            'accountTotals' => $accountTotals,
+            'totalUsage' => array_sum($accountTotals),
         ];
     }
 }

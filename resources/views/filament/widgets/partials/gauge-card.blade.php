@@ -10,6 +10,7 @@
 --}}
 @php
     $members = $members ?? [];
+    $accountTotal = $accountTotal ?? null;
     $nearCap = $g['near_cap'];
     $cardStyle = $nearCap
         ? 'border:1px solid rgba(220,38,38,.55); background:rgba(220,38,38,.06);'
@@ -27,6 +28,12 @@
             <span style="font-size:.65rem; font-weight:700; letter-spacing:.03em; color:#dc2626; white-space:nowrap;">NEAR CAP</span>
         @endif
     </div>
+
+    @if ($accountTotal !== null)
+        <div style="margin-top:.3rem; font-size:.72rem; opacity:.7;">
+            usage <span style="font-weight:600; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:1;">{{ number_format($accountTotal) }}</span>
+        </div>
+    @endif
 
     <div style="margin-top:.7rem; display:flex; flex-direction:column; gap:.7rem;">
         @foreach ($windows as $label => $w)

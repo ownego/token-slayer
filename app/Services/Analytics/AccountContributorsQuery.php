@@ -74,6 +74,28 @@ final class AccountContributorsQuery
     }
 
     /**
+     * Map each account id to its total attributed tokens in the window
+     * (all-time when `$filters` is null). This is the real per-account usage —
+     * independent of the "total across accounts" display toggle — so the Fleet
+     * Quota widget can show a per-account total and a fleet-wide grand total.
+     *
+     * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
+     * @return array<int, int>
+     */
+    public function accountTotals(?UsageFilters $filters = null): array
+    {
+        return Event::query()
+            ->whereNotNull('events.account_id')
+            ->when($filters !== null, fn ($q) => $q->whereBetween('events.created_at', [$filters->from, $filters->to]))
+            ->groupBy('events.account_id')
+            ->selectRaw('events.account_id as account_id')
+            ->selectRaw('SUM(events.tokens) as tokens')
+            ->get()
+            ->mapWithKeys(fn ($row): array => [(int) $row->account_id => (int) $row->tokens])
+            ->all();
+    }
+
+    /**
      * Map each user id to their total attributed tokens across every account
      * in the window (all-time when `$filters` is null).
      *

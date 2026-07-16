@@ -50,6 +50,25 @@ it('excludes events with no account and sums all-time regardless of when they oc
         ->and($members[0]['tokens'])->toBe(150);
 });
 
+it('sums each account\'s attributed tokens (per-account, toggle-independent), windowed', function () {
+    $accountA = Account::factory()->create();
+    $accountB = Account::factory()->create();
+    $userA = User::factory()->create();
+    $userB = User::factory()->create();
+
+    Event::factory()->for($userA)->create(['account_id' => $accountA->id, 'tokens' => 100, 'created_at' => now()]);
+    Event::factory()->for($userB)->create(['account_id' => $accountA->id, 'tokens' => 200, 'created_at' => now()]);
+    Event::factory()->for($userB)->create(['account_id' => $accountB->id, 'tokens' => 50, 'created_at' => now()]);
+    Event::factory()->for($userA)->create(['account_id' => $accountA->id, 'tokens' => 900, 'created_at' => now()->subMonths(2)]);
+
+    $filters = UsageFilters::fromPageFilters(['range' => 'week']);
+    $totals = app(AccountContributorsQuery::class)->accountTotals($filters);
+
+    expect($totals[$accountA->id])->toBe(300)
+        ->and($totals[$accountB->id])->toBe(50)
+        ->and(array_sum($totals))->toBe(350);
+});
+
 it('windows tokens to the filter range', function () {
     $account = Account::factory()->create();
     $user = User::factory()->create();
