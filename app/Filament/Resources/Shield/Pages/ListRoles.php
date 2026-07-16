@@ -15,6 +15,8 @@ use BezhanSalleh\FilamentShield\Resources\Roles\Pages\ListRoles as BaseListRoles
 class ListRoles extends BaseListRoles
 {
     /**
+     * The resource this page belongs to.
+     *
      * @var class-string<RoleResource>
      */
     protected static string $resource = RoleResource::class;

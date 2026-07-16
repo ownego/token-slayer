@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\Shield\Pages;
 
+use App\Filament\Resources\Shield\Concerns\PreservesIsDefault;
 use App\Filament\Resources\Shield\RoleResource;
 use BezhanSalleh\FilamentShield\Resources\Roles\Pages\CreateRole as BaseCreateRole;
-use Illuminate\Support\Arr;
 
 /**
  * Re-points Shield's create page at our `RoleResource` subclass so the
@@ -14,30 +14,31 @@ use Illuminate\Support\Arr;
  */
 class CreateRole extends BaseCreateRole
 {
+    use PreservesIsDefault;
+
     /**
+     * The resource this page belongs to.
+     *
      * @var class-string<RoleResource>
      */
     protected static string $resource = RoleResource::class;
 
     /**
-     * Shield's own implementation treats every form key other than
-     * `name`/`guard_name`/`select_all`/the tenant key as a permission name to
-     * sync onto the role, then whitelists only `name`/`guard_name` back into
-     * the persisted attributes. `is_default` would otherwise be swept into
-     * that permission-name collection (and then dropped entirely). Pull it
-     * out before delegating, then restore it on the whitelisted result.
+     * Preserves `is_default` across Shield's permission-name collection
+     * logic — see `PreservesIsDefault` for why this pull/restore is needed.
+     * `CreateRecord::handleRecordCreation()` constructs the model directly
+     * (`new Role($data)`), so `is_default` reaches the record via the
+     * constructor rather than mass-assignment.
      *
      * @param  array<string, mixed>  $data  the raw form state
      * @return array<string, mixed>
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $isDefault = (bool) Arr::pull($data, 'is_default', false);
+        $isDefault = $this->pullIsDefault($data);
 
         $data = parent::mutateFormDataBeforeCreate($data);
 
-        $data['is_default'] = $isDefault;
-
-        return $data;
+        return $this->restoreIsDefault($data, $isDefault);
     }
 }

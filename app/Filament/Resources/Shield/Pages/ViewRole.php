@@ -12,6 +12,8 @@ use BezhanSalleh\FilamentShield\Resources\Roles\Pages\ViewRole as BaseViewRole;
 class ViewRole extends BaseViewRole
 {
     /**
+     * The resource this page belongs to.
+     *
      * @var class-string<RoleResource>
      */
     protected static string $resource = RoleResource::class;
