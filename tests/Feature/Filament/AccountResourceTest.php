@@ -6,6 +6,7 @@ use App\Filament\Resources\Accounts\Pages\CreateAccount;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
+use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\User;
@@ -13,6 +14,34 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
+
+it('no longer exposes the provisionForUser header action on the provisions tab', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertActionDoesNotExist('provisionForUser');
+});
+
+it('still lists provisioned users and can revoke one from the provisions tab', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $user->accounts()->attach($account, [
+        'status' => MembershipStatus::Pending->value,
+        'provisioned_at' => now(),
+    ]);
+
+    Livewire::actingAs($admin)
+        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertCanSeeTableRecords([$user])
+        ->callTableAction('revoke', $user)
+        ->assertNotified();
+
+    $pivot = $account->provisionedUsers()->whereKey($user->id)->firstOrFail();
+    expect($pivot->pivot->revoked_at)->not->toBeNull();
+});
 
 it('blocks non-admins from the panel', function () {
     $this->actingAs(User::factory()->create())
