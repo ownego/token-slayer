@@ -10,7 +10,6 @@ use App\Services\BossArena;
 use App\Services\DamageTotals;
 use App\Services\FighterChargingCache;
 use App\Services\FighterPositionCache;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Renderless;
@@ -28,6 +27,14 @@ class Battlefield extends Component
     /** @var array<int, array{x: float, y: float}|null> */
     protected array $positionsByUser = [];
 
+    /**
+     * Memoized leaderboard rows, so the boot payload's leaderboard and damage
+     * totals derive from a single query.
+     *
+     * @var array<int, array{userId: int, handle: ?string, damage: int}>|null
+     */
+    protected ?array $leaderboardRows = null;
+
     public function mount(BossArena $arena, FighterChargingCache $chargingCache, FighterPositionCache $positionCache): void
     {
         $this->boss = $arena->current();
@@ -41,8 +48,12 @@ class Battlefield extends Component
     /**
      * Move the authenticated user's fighter to normalized coordinates.
      *
+     * Every accepted move is persisted, so the stored position always matches
+     * the fighter the player last saw; a client-side debounce bounds the rate.
+     *
      * @param  float  $x  Normalized x in [0.02, 0.98]
      * @param  float  $y  Normalized y in [0.02, 0.98]
+     * @return void
      */
     #[Renderless]
     #[On('fighter-move')]
@@ -58,12 +69,6 @@ class Battlefield extends Component
             return;
         }
 
-        $lockKey = "fighter-move-lock:{$user->id}";
-
-        if (! Cache::add($lockKey, 1, now()->addSecond())) {
-            return;
-        }
-
         app(FighterPositionCache::class)->put($user->id, $x, $y);
 
         FighterMoved::dispatch($user, $x, $y);
@@ -74,7 +79,7 @@ class Battlefield extends Component
      */
     public function leaderboardForCurrentBoss(): array
     {
-        return Event::query()
+        return $this->leaderboardRows ??= Event::query()
             ->where('boss_id', $this->boss->id)
             ->select('user_id', DB::raw('SUM(tokens) as damage'))
             ->groupBy('user_id')
@@ -87,6 +92,23 @@ class Battlefield extends Component
                 'damage' => (int) $row->damage,
             ])
             ->all();
+    }
+
+    /**
+     * Per-user damage against the current boss, as [userId, damage] pairs.
+     *
+     * Drives each fighter's damage-grown sprite size. Mirrors the shape
+     * snapshotState() emits, so a page load and a scene reboot seed identical
+     * sizes rather than a reload silently shrinking everyone back to base.
+     *
+     * @return array<int, array<int, int>>
+     */
+    public function damageTotalsForCurrentBoss(): array
+    {
+        return array_map(
+            fn (array $row) => [$row['userId'], $row['damage']],
+            $this->leaderboardForCurrentBoss(),
+        );
     }
 
     /**

@@ -78,6 +78,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `config.js` → `config/` | Barrel over `bosses.js` (BOSS_TYPES), `fighters.js` (FIGHTER_TYPES), `layouts.js` (LAYOUTS), `timings.js` (TIMINGS) |
 | `layout.js` | Pure position helpers: computeFighterPositions, fighterDisplayConfig, damageScaleMultiplier, chargeFootY, rowsNeeded |
 | `move-geometry.js` | Pure move-target geometry: isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute — boss/HP-bar column, leaderboard, and Damage HUD exclusion zones (both fixed: leaderboard top-right, Damage HUD top-left, in both orientations); size-aware edge margins. `planRoute` is shared by `move-input.js` (mover's local animation) and `fighter/index.js`'s `handleFighterMoved` (remote echo) so every client renders the same detour |
+| `fighter-placement.js` | Pure entry placement: `resolveFighterPlacement(saved, gridPos, ctx)` — decides whether a fighter entering the scene (boot payload or `FighterJoined` echo) restores its persisted position or takes the default grid slot; snaps a no-longer-valid saved position instead of resetting it. Shared by `seedInitial` and `handleFighterJoined` so both entry paths place a fighter identically |
 | `format.js` | Pure format helpers: formatHp |
 | `snapshot.js` | Snapshot/restore scene state on orientation change |
 | `bus.js` | Tiny event bus for cross-manager communication |
@@ -98,6 +99,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 |---|---|
 | `tests/js/layout.test.js` | computeFighterPositions, fighterDisplayConfig, damageScaleMultiplier, chargeFootY, rowsNeeded |
 | `tests/js/move-geometry.test.js` | isValidMoveTarget (edges, boss column, leaderboard, Damage HUD), bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel |
+| `tests/js/fighter-placement.test.js` | resolveFighterPlacement — saved-position restore, snap-instead-of-reset, grid fallback |
 | `tests/js/config.test.js` | BOSS_TYPES, FIGHTER_TYPES config shape validation |
 | `tests/js/snapshot.test.js` | snapshotState roundtrip |
 | `tests/js/constants.test.js` | BusEvent, TextureKey, SCENE_KEY shape validation |

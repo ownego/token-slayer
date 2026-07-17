@@ -9,6 +9,7 @@ use App\Events\FighterMoved;
 use App\Events\HitDealt;
 use App\Models\Boss;
 use App\Models\User;
+use App\Services\FighterPositionCache;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -73,6 +74,26 @@ test('FighterJoined payload includes display_name and avatar_url', function () {
         ->and($payload['avatar_url'])->toStartWith('http');
 });
 
+test('FighterJoined carries the rejoining fighter saved position', function () {
+    $user = User::factory()->create();
+    $boss = Boss::factory()->create();
+    app(FighterPositionCache::class)->put($user->id, 0.42, 0.66);
+
+    $payload = (new FighterJoined($user, $boss))->broadcastWith();
+
+    expect($payload['position'])->toBe(['x' => 0.42, 'y' => 0.66]);
+});
+
+test('FighterJoined carries a null position for a fighter that never moved', function () {
+    $user = User::factory()->create();
+    $boss = Boss::factory()->create();
+
+    $payload = (new FighterJoined($user, $boss))->broadcastWith();
+
+    expect($payload)->toHaveKey('position')
+        ->and($payload['position'])->toBeNull();
+});
+
 test('FighterCharging broadcasts character for the given boss', function () {
     $user = User::factory()->create();
     $boss = Boss::factory()->create();
@@ -81,9 +102,9 @@ test('FighterCharging broadcasts character for the given boss', function () {
     $withoutBoss = new FighterCharging($user, '$ npm install');
 
     expect($withBoss->broadcastWith())->toMatchArray([
-        'user_id'   => $user->id,
+        'user_id' => $user->id,
         'character' => $user->characterForBoss($boss->id),
-        'activity'  => 'thinking…',
+        'activity' => 'thinking…',
     ])->and($withoutBoss->broadcastWith()['character'])->toBe($user->characterForBoss(null));
 });
 

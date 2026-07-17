@@ -18,6 +18,7 @@
                 'position' => $this->positionsByUser[$f->id] ?? null,
             ])->values(),
             'leaderboard' => $this->leaderboardForCurrentBoss(),
+            'damageTotals' => $this->damageTotalsForCurrentBoss(),
             'globalDamage' => $this->globalDamage(),
         ]) }}"
         class="fixed inset-0" style="background-color:#020617"

@@ -116,6 +116,39 @@ test('battlefield ships cached position in the data payload', function () {
         ->assertSeeHtml('&quot;position&quot;:null');
 });
 
+test('battlefield ships per-user damage totals so fighter sizes survive a reload', function () {
+    $boss = Boss::factory()->create();
+    $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    Event::factory()->create([
+        'user_id' => $fighter->id,
+        'boss_id' => $boss->id,
+        'tokens' => 900,
+    ]);
+
+    // Same [userId, damage] pair shape that snapshotState() emits on rotate.
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;damageTotals&quot;:[['.$fighter->id.',900]]');
+});
+
+test('battlefield damage totals cover only the current boss', function () {
+    $oldBoss = Boss::factory()->create(['number' => 1, 'status' => 'dead']);
+    $currentBoss = Boss::factory()->create(['number' => 2, 'status' => 'alive']);
+    $fighter = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    Event::factory()->create([
+        'user_id' => $fighter->id,
+        'boss_id' => $oldBoss->id,
+        'tokens' => 5000,
+    ]);
+    Event::factory()->create([
+        'user_id' => $fighter->id,
+        'boss_id' => $currentBoss->id,
+        'tokens' => 120,
+    ]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;damageTotals&quot;:[['.$fighter->id.',120]]');
+});
+
 test('battlefield ships cached charging activity in the data payload', function () {
     Boss::factory()->create();
     $busy = User::factory()->create(['last_event_at' => now()->subMinute()]);
