@@ -22,11 +22,13 @@ class TopUsersLeaderboard extends ChartWidget
     protected ?string $heading = 'Top users';
 
     /**
-     * How many of the page's columns this widget spans (full-width row).
+     * How many of the page's columns this widget spans. One column, so the
+     * dashboard's 2-column grid fits two of these per row; on the single-column
+     * Usage Analytics footer it still fills the row.
      *
      * @var int|string|array<string, int|string|null>
      */
-    protected int|string|array $columnSpan = 'full';
+    protected int|string|array $columnSpan = 1;
 
     /**
      * Maximum canvas height so the full-width chart stays compact.

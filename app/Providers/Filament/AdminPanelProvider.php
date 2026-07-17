@@ -20,7 +20,6 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets\AccountWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -74,8 +73,11 @@ class AdminPanelProvider extends PanelProvider
             ->resources([
                 RoleResource::class,
             ])
+            // The panel has no global-search-worthy surface: accounts/users are
+            // few and reachable from the nav, so the header search box is dead
+            // weight.
+            ->globalSearch(false)
             ->widgets([
-                AccountWidget::class,
                 FleetQuotaOverview::class,
                 ActivityHeatmap::class,
                 TokenVolumeChart::class,
