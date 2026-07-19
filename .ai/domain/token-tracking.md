@@ -27,3 +27,5 @@ Hook event names arrive as `hook_event_name` (e.g. `Stop`, `PreToolUse`) and are
 ## Install scripts
 
 Blade-rendered shell scripts served from web routes (`/install`, `/install-cowork`, `/tracker.user.js`). Idempotent by design: Claude hooks are **assigned** per event key in `~/.claude/settings.json` (not appended); the Codex `config.toml` block is marker-delimited and replaced. Re-running the install URL is the upgrade path. Hook token is read at runtime from `~/.config/{namespace}/token`.
+
+The `token-slayer setup` CLI pulls any admin-provisioned accounts and then confirms them back to the server via `POST /api/provisioned/confirm` (same `hook.token` bearer), which promotes the `pending` memberships to `tracked`. See the *Provisioning* section of `accounts.md`.
