@@ -3,7 +3,8 @@ import { FIGHTER_TYPES, TIMINGS } from '@battlefield/config.js';
 import { computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from '@battlefield/layout.js';
 import { AnimState, AttackType, TextureKey } from '@battlefield/constants.js';
 import { Boss } from '@battlefield/boss.js';
-import { isValidMoveTarget, planRoute } from '@battlefield/move-geometry.js';
+import { planRoute } from '@battlefield/move-geometry.js';
+import { resolveFighterPlacement } from '@battlefield/fighter-placement.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture } from './avatar.js';
 
 // Tiny RPG sprite geometry constants — do not change without re-measuring the atlas.
@@ -76,11 +77,7 @@ export class Fighter {
         bossType,
         fsize: config.displaySize * damageScale,
       };
-      const raw = f.position
-        ? { x: f.position.x * L.logicalWidth, y: f.position.y * L.logicalHeight }
-        : null;
-      const isCustom = raw && isValidMoveTarget(raw.x, raw.y, ctx);
-      const pos = isCustom ? raw : autoPositions[i];
+      const { pos, isCustom } = resolveFighterPlacement(f.position, autoPositions[i], ctx);
       this.addFighter(f, pos, config);
       if (isCustom) {
         this.scene.fighters.get(f.id).hasCustomPosition = true;
@@ -94,8 +91,10 @@ export class Fighter {
 
   /**
    * Handles the fighter-joined event payload, adding the fighter to the scene.
+   * A rejoining fighter carries its persisted position and is restored there
+   * rather than placed in the next free grid slot.
    *
-   * @param {{ user_id: number|string, slack_handle?: string, display_name?: string, character?: string }} payload
+   * @param {{ user_id: number|string, slack_handle?: string, display_name?: string, character?: string, position?: {x: number, y: number}|null }} payload
    * @return {void}
    */
   handleFighterJoined(payload) {
@@ -122,14 +121,26 @@ export class Fighter {
       config.rowSpacing,
     );
 
-    const newPos = positions[positions.length - 1];
-    this.addFighter(fighter, newPos, config);
-    this.relayoutFighters();
+    const damageScale = damageScaleMultiplier(
+      this.scene.damageTotals.get(payload.user_id) ?? 0,
+      this.scene.bossState?.maxHp,
+    );
+    const { pos, isCustom } = resolveFighterPlacement(payload.position, positions[positions.length - 1], {
+      layout: this.scene.layout,
+      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      fsize: config.displaySize * damageScale,
+    });
+    this.addFighter(fighter, pos, config);
 
     const entry = this.scene.fighters.get(fighter.id);
     if (!entry) {
       return;
     }
+    // Must be flagged before relayoutFighters(), which grid-snaps every
+    // fighter not already marked as custom-positioned.
+    entry.hasCustomPosition = isCustom;
+    this.relayoutFighters();
+
     const finalScale = entry.sprite.scaleX;
     entry.sprite.setScale(0);
     this.scene.tweens.add({

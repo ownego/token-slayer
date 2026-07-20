@@ -72,7 +72,7 @@ test('move is rejected when y is out of bounds', function () {
     Event::assertNotDispatched(FighterMoved::class);
 });
 
-test('second move within 1 second is rate-limited', function () {
+test('consecutive moves each persist, so the last position always wins', function () {
     Event::fake([FighterMoved::class]);
     $user = User::factory()->create();
 
@@ -81,5 +81,17 @@ test('second move within 1 second is rate-limited', function () {
         ->call('move', 0.5, 0.7)
         ->call('move', 0.6, 0.8);
 
-    Event::assertDispatchedTimes(FighterMoved::class, 1);
+    expect(app(FighterPositionCache::class)->get($user->id))->toBe(['x' => 0.6, 'y' => 0.8]);
+});
+
+test('consecutive moves each broadcast so other clients never miss one', function () {
+    Event::fake([FighterMoved::class]);
+    $user = User::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test(Battlefield::class)
+        ->call('move', 0.5, 0.7)
+        ->call('move', 0.6, 0.8);
+
+    Event::assertDispatchedTimes(FighterMoved::class, 2);
 });
