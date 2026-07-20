@@ -30,14 +30,15 @@ class ActivityHeatmap extends Widget
     protected int|string|array $columnSpan = 'full';
 
     /**
-     * Only users granted the usage-analytics permission see this widget.
+     * Only users granted this widget's own View permission see it, so the
+     * role editor's Widgets tab toggles each chart independently.
      * super_admin passes via the Gate::before bypass.
      *
      * @return bool
      */
     public static function canView(): bool
     {
-        return auth()->user()?->can('view_usage_analytics') ?? false;
+        return auth()->user()?->can('View:ActivityHeatmap') ?? false;
     }
 
     /**
