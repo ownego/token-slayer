@@ -31,4 +31,26 @@ final class ProvisionedAccountController extends Controller
             'accounts' => $this->provisioning->claim($request->user('hook')),
         ]);
     }
+
+    /**
+     * Confirm the org accounts the CLI actually finished setting up during
+     * `token-slayer setup`, promoting each to a tracked membership.
+     *
+     * @param  Request  $request  carries the hook-authenticated user and the
+     *                            `{accounts: [{org_uuid}]}` confirmation body
+     * @return JsonResponse the confirmed count ({confirmed: <int>})
+     */
+    public function confirm(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'accounts' => ['required', 'array'],
+            'accounts.*.org_uuid' => ['required', 'uuid'],
+        ]);
+
+        $orgUuids = array_column($validated['accounts'], 'org_uuid');
+
+        return response()->json([
+            'confirmed' => $this->provisioning->confirmSetup($request->user('hook'), $orgUuids),
+        ]);
+    }
 }

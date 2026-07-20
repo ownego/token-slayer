@@ -15,6 +15,9 @@ Route::post('/events', [EventController::class, 'store'])
 Route::get('/provisioned', [ProvisionedAccountController::class, 'index'])
     ->middleware('hook.token');
 
+Route::post('/provisioned/confirm', [ProvisionedAccountController::class, 'confirm'])
+    ->middleware('hook.token');
+
 Route::get('/state', [StateController::class, 'show']);
 
 Route::middleware('throttle:30,1')->prefix('ide')->group(function (): void {

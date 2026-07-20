@@ -70,7 +70,7 @@
                         @endif
                         <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.74rem;">{{ $m['handle'] }}</span>
                         @if ($m['status'] !== 'tracked')
-                            <span title="Chưa verify" style="flex:none; font-size:.55rem; color:#d97706;">●</span>
+                            <span title="Unverified" style="flex:none; font-size:.55rem; color:#d97706;">●</span>
                         @endif
                     </span>
                     <span style="flex:none; font-size:.68rem; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:.8;">{{ number_format($m['tokens']) }}</span>

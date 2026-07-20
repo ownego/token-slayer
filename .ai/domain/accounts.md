@@ -4,6 +4,14 @@
 
 An **Account** = one Claude (Anthropic) Max subscription owned by the org, identified by its login email. Developers (users) are members of zero or more accounts (`account_user` pivot). One user regularly switches between accounts (personal + org), so account attribution is **per-event, never per-user**.
 
+## Membership states (`account_user.status`)
+
+The pivot's `status` (string-backed enum `MembershipStatus`) records how far a user's attribution setup has progressed for that account. It never drives attribution itself — events do — only the admin UI and the provisioning handoff:
+
+- `untracked` — a known contributor who has not confirmed token-slayer setup for this account. Shown as **"Unverified"** (warning) in the Members table; can be verified (promoted) in place.
+- `tracked` — setup confirmed, attribution live. Shown as **"Verified"** (success).
+- `pending` — an admin provisioned an OAuth grant for the user (see *Provisioning* below) and is waiting for the user's machine to confirm setup. Shown as **"Pending setup"** (warning).
+
 ## Attribution (which account served this usage?)
 
 Verified constraints (2026-07-10, do not re-litigate):
@@ -16,6 +24,16 @@ Resolution chain (client-side, in the hook helper):
 2. Fallback: `~/.claude.json → .oauthAccount` (`source=auto`).
 
 Events POST `account_email`, `account_uuid`, `account_source`, `client_version`. Server-side, `AccountResolver` matches the claimed email against a cached org-account email map → `events.account_id` (null = personal/unknown; raw claim kept in `events.account_email` for later reconciliation/backfill).
+
+## Provisioning (admin sets up an account for a user)
+
+Provisioning is folded into the Members tab's **Add member** action: a *provision* toggle (default on) runs the admin OAuth code-paste flow on the user's behalf, stores the encrypted grant, and writes the pivot as `pending`. Turning it off just adds a `tracked` membership. (The former standalone "Provision for user" button is retired.)
+
+The user's machine finishes the handoff: `token-slayer setup` pulls each provisioned grant and, once configured, calls `POST /api/provisioned/confirm` (`hook.token` bearer) with the `organization_uuid`s it set up. `AccountProvisioningService::confirmSetup` then, per org:
+
+- resolves the Account by `organization_uuid` — **never creates one** from client input (unknown orgs are skipped);
+- promotes the membership to `tracked` **only if the user actually holds a live provisioned grant** for it (`provisionedUsers()`, `revoked_at` null) — this closes a self-graft where a client could claim membership of any account;
+- is **additive-only** and idempotent: accounts the user set up that aren't ours, or weren't just provisioned, are ignored; already-`tracked` rows stay put. No cache invalidation — the email map self-expires (~1 day).
 
 ## Quota tracking
 

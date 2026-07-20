@@ -26,7 +26,7 @@ it('lists tracked and untracked contributors with status and toggles them', func
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
         ->assertCanSeeTableRecords([$tracked, $untracked])
         ->assertSee('Verified')
-        ->assertSee('Chưa verify')
+        ->assertSee('Unverified')
         ->callTableAction('verify', $untracked);
 
     expect($account->trackedUsers()->whereKey($untracked->id)->exists())->toBeTrue();
@@ -82,14 +82,14 @@ it('refreshes by forgetting both membership caches', function () {
     expect(Cache::has(CacheKeys::untrackedContributors($account->id)))->toBeFalse();
 });
 
-it('adds a brand-new user directly as a tracked member', function () {
+it('adds a brand-new user directly as a tracked member when the provision toggle is off', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $newcomer = User::factory()->create();
 
     Livewire::actingAs($admin)
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->callTableAction('addMember', data: ['user_id' => $newcomer->id])
+        ->callTableAction('addMember', data: ['user_id' => $newcomer->id, 'provision' => false])
         ->assertNotified();
 
     expect($account->trackedUsers()->whereKey($newcomer->id)->exists())->toBeTrue();
@@ -105,7 +105,7 @@ it('promotes an existing untracked contributor via addMember without a duplicate
 
     Livewire::actingAs($admin)
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->callTableAction('addMember', data: ['user_id' => $contributor->id]);
+        ->callTableAction('addMember', data: ['user_id' => $contributor->id, 'provision' => false]);
 
     expect($account->trackedUsers()->whereKey($contributor->id)->exists())->toBeTrue();
     expect($account->untrackedUsers()->whereKey($contributor->id)->exists())->toBeFalse();
@@ -139,6 +139,31 @@ it('displays the cached event count and last-seen time for an untracked contribu
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
         ->assertTableColumnStateSet('events', 3, $contributor)
         ->assertTableColumnStateSet('last_seen', (string) $latest->created_at, $contributor);
+});
+
+it('renders the "Pending setup" badge for a pending member', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $pending = User::factory()->create();
+    $account->users()->attach($pending, ['status' => MembershipStatus::Pending->value]);
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertSee('Pending setup');
+});
+
+it('verifies a pending member, flipping their pivot status to tracked (not a status-filtered no-op)', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $pending = User::factory()->create();
+    $account->users()->attach($pending, ['status' => MembershipStatus::Pending->value]);
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->callTableAction('verify', $pending);
+
+    $pivot = $account->users()->whereKey($pending->id)->first()->pivot;
+    expect($pivot->status)->toBe(MembershipStatus::Tracked);
 });
 
 it('renders a member identity even when slack_handle is null', function () {

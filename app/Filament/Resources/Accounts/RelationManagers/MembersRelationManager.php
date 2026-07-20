@@ -3,24 +3,32 @@
 namespace App\Filament\Resources\Accounts\RelationManagers;
 
 use App\Enums\MembershipStatus;
+use App\Exceptions\AccountConnectException;
+use App\Filament\Concerns\ConnectsAccounts;
 use App\Models\Account;
 use App\Models\User;
+use App\Services\AccountConnectService;
+use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMembershipCache;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Livewire\Component;
 
 /**
  * All contributors of an `Account` in one tab, regardless of membership
- * status. Tracked members show a "Verified" badge; untracked contributors a
- * "Chưa verify" badge and can be verified (promoted) in place; a tracked
+ * status. Tracked members show a "Verified" badge; untracked contributors an
+ * "Unverified" badge and can be verified (promoted) in place; a tracked
  * member can also be unverified (demoted) back to untracked. Replaces the
  * former separate `UsersRelationManager`/`UntrackedContributorsRelationManager`
  * tabs.
@@ -74,8 +82,16 @@ class MembersRelationManager extends RelationManager
                 TextColumn::make('pivot.status')
                     ->label('Status')
                     ->badge()
-                    ->formatStateUsing(fn (MembershipStatus $state): string => $state === MembershipStatus::Tracked ? 'Verified' : 'Chưa verify')
-                    ->color(fn (MembershipStatus $state): string => $state === MembershipStatus::Tracked ? 'success' : 'warning'),
+                    ->formatStateUsing(fn (MembershipStatus $state): string => match ($state) {
+                        MembershipStatus::Tracked => 'Verified',
+                        MembershipStatus::Pending => $state->getLabel(),
+                        MembershipStatus::Untracked => 'Unverified',
+                    })
+                    ->color(fn (MembershipStatus $state): string => match ($state) {
+                        MembershipStatus::Tracked => 'success',
+                        MembershipStatus::Pending => 'warning',
+                        MembershipStatus::Untracked => 'warning',
+                    }),
                 TextColumn::make('events')
                     ->label('Events')
                     ->state(fn (User $record): int => $aggregates[$record->id]['events'] ?? 0),
@@ -112,9 +128,13 @@ class MembersRelationManager extends RelationManager
     }
 
     /**
-     * Promote an untracked contributor to tracked ("verify"). Uses
-     * `untrackedUsers()->updateExistingPivot()` so the update's `wherePivot`
-     * matches the row's current (untracked) status.
+     * Promote an untracked or pending contributor to tracked ("verify").
+     * Uses `syncWithoutDetaching()` on the base, unfiltered `users()`
+     * relationship rather than a status-matched relation: a `pending` row
+     * sits in neither `trackedUsers()` nor `untrackedUsers()`, so
+     * `untrackedUsers()->updateExistingPivot()` would silently no-op for it
+     * (the `wherePivot('status', …)` never matches, so the UPDATE affects
+     * zero rows).
      *
      * @return Action
      */
@@ -123,12 +143,12 @@ class MembersRelationManager extends RelationManager
         return Action::make('verify')
             ->label('Verify (track)')
             ->icon(Heroicon::OutlinedCheckBadge)
-            ->visible(fn (User $record): bool => $record->pivot->status === MembershipStatus::Untracked)
+            ->visible(fn (User $record): bool => in_array($record->pivot->status, [MembershipStatus::Untracked, MembershipStatus::Pending], true))
             ->action(function (User $record): void {
                 /** @var Account $account */
                 $account = $this->getOwnerRecord();
-                $account->untrackedUsers()->updateExistingPivot($record->id, [
-                    'status' => MembershipStatus::Tracked->value,
+                $account->users()->syncWithoutDetaching([
+                    $record->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
                 CacheKeys::forgetAccountMembership($account->id);
 
@@ -163,35 +183,127 @@ class MembersRelationManager extends RelationManager
     }
 
     /**
-     * Build the "Add member" header action: selects any user and upserts them
-     * onto this account as a tracked member. Uses `syncWithoutDetaching` on
-     * the all-rows `users()` relationship so it promotes an existing
-     * untracked contributor (updating the pivot) or inserts a brand-new
-     * member, never hitting the unique constraint.
+     * Build the "Add member" header action: selects any user and, depending
+     * on the `provision` toggle (default on), either hands off to
+     * {@see confirmProvisionMemberAction()} to grant them a fresh OAuth
+     * account (landing the membership at `Pending`) or upserts them directly
+     * as a `Tracked` member. Uses `syncWithoutDetaching` on the all-rows
+     * `users()` relationship for the toggle-off path so it promotes an
+     * existing untracked contributor (updating the pivot) or inserts a
+     * brand-new member, never hitting the unique constraint. Public so
+     * Filament's `{name}Action` convention can resolve it when a test or the
+     * UI mounts it directly.
      *
      * @return Action
      */
-    private function addMemberAction(): Action
+    public function addMemberAction(): Action
     {
         return Action::make('addMember')
             ->label('Add member')
             ->icon(Heroicon::OutlinedUserPlus)
+            ->modalSubmitActionLabel('Continue')
             ->schema([
                 Select::make('user_id')
                     ->label('User')
                     ->options(fn (): array => User::query()->orderBy('name')->pluck('email', 'id')->all())
                     ->searchable()
                     ->required(),
+                Toggle::make('provision')
+                    ->label('Provision an account for this user')
+                    ->default(true),
             ])
-            ->action(function (array $data): void {
+            ->action(function (array $data, Component $livewire): void {
+                if (! $data['provision']) {
+                    /** @var Account $account */
+                    $account = $this->getOwnerRecord();
+                    $account->users()->syncWithoutDetaching([
+                        $data['user_id'] => ['status' => MembershipStatus::Tracked->value],
+                    ]);
+                    CacheKeys::forgetAccountMembership($account->id);
+
+                    Notification::make()->success()->title('Member added')->send();
+
+                    return;
+                }
+
+                $started = app(AccountConnectService::class)->start();
+
+                $livewire->replaceMountedAction('confirmProvisionMember', [
+                    'userId' => $data['user_id'],
+                    'authorizeUrl' => $started['url'],
+                    'state' => $started['state'],
+                ]);
+            });
+    }
+
+    /**
+     * The follow-up "provision for this member" modal, mounted by name from
+     * {@see addMemberAction()} via `replaceMountedAction()` when the toggle is
+     * on. Resolved on demand by Filament's `{name}Action` method convention
+     * (never rendered as its own button). Exchanges the pasted code via
+     * {@see AccountProvisioningService::provisionFromCode()} — which writes
+     * the pivot as `Tracked` with `token_uuid`/`provisioned_at` set — then
+     * downgrades the pivot status to `Pending` so a freshly-provisioned
+     * member isn't counted as verified until they complete setup. Mirrors
+     * {@see ConnectsAccounts::connectAccountAction()}.
+     *
+     * @return Action
+     */
+    public function confirmProvisionMemberAction(): Action
+    {
+        return Action::make('confirmProvisionMember')
+            ->modalHeading('Provision a Claude account for this member')
+            ->modalDescription('Open the authorize URL, log in as the account to grant, approve, then paste the code back here.')
+            ->modalSubmitActionLabel('Provision')
+            ->fillForm(fn (array $arguments): array => [
+                'authorize_url' => $arguments['authorizeUrl'] ?? '',
+                'state' => $arguments['state'] ?? '',
+                'code' => '',
+            ])
+            ->schema([
+                TextInput::make('authorize_url')
+                    ->label('Authorize URL')
+                    ->readOnly()
+                    ->copyable(),
+                Hidden::make('state'),
+                TextInput::make('code')
+                    ->label('Paste the code here')
+                    ->required(),
+            ])
+            ->action(function (array $data, array $arguments): void {
                 /** @var Account $account */
                 $account = $this->getOwnerRecord();
-                $account->users()->syncWithoutDetaching([
-                    $data['user_id'] => ['status' => MembershipStatus::Tracked->value],
-                ]);
+                $user = User::query()->findOrFail($arguments['userId']);
+
+                try {
+                    $pivot = app(AccountProvisioningService::class)->provisionFromCode(
+                        $user,
+                        $account,
+                        $data['state'],
+                        $data['code'],
+                    );
+                } catch (AccountConnectException $exception) {
+                    Notification::make()
+                        ->danger()
+                        ->title('Provisioning failed')
+                        ->body(match ($exception->reason) {
+                            'connect_identity_mismatch' => $exception->getMessage(),
+                            'connect_state_expired' => 'This connect link expired or was already used. Start again.',
+                            default => 'Something went wrong completing the provisioning.',
+                        })
+                        ->send();
+
+                    return;
+                }
+
+                $pivot->forceFill(['status' => MembershipStatus::Pending->value])->save();
                 CacheKeys::forgetAccountMembership($account->id);
 
-                Notification::make()->success()->title('Member added')->send();
+                Notification::make()
+                    ->success()
+                    ->title('Member added')
+                    ->body("Provisioned {$user->displayHandle()} and added them as pending.")
+                    ->send();
             });
     }
 

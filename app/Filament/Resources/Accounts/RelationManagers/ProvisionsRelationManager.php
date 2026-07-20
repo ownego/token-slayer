@@ -2,16 +2,11 @@
 
 namespace App\Filament\Resources\Accounts\RelationManagers;
 
-use App\Exceptions\AccountConnectException;
 use App\Models\Account;
 use App\Models\User;
-use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
-use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
@@ -21,15 +16,14 @@ use Filament\Tables\Table;
 use Illuminate\Support\Carbon;
 
 /**
- * Per-user OAuth grants provisioned on this `Account` (`account_user` pivot
- * rows with `provisioned_at` set — see {@see Account::provisionedUsers()}).
- * An admin opens the "Provision for user" flow to hand a target user a fresh
- * grant (mirrors the connect UX in ConnectsAccounts, but exchanges the code via
- * {@see AccountProvisioningService::provisionFromCode()} instead of updating
- * this account's own probe grant) and can Revoke a row, which soft-revokes
- * the pivot and forgets the cached grant. The raw grant material itself is
- * NEVER shown here — it is never stored at rest, only cached encrypted with
- * a 24 h TTL until claimed.
+ * Per-user OAuth grants provisioned on this account's owner `Account`
+ * (`account_user` pivot rows with `provisioned_at` set — see
+ * {@see Account::provisionedUsers()}). Provisioning itself is
+ * started from the "Add member" flow on `MembersRelationManager`; this
+ * relation manager only lists the resulting grants and lets an admin Revoke
+ * a row, which soft-revokes the pivot and forgets the cached grant. The raw
+ * grant material itself is NEVER shown here — it is never stored at rest,
+ * only cached encrypted with a 24 h TTL until claimed.
  */
 class ProvisionsRelationManager extends RelationManager
 {
@@ -62,8 +56,8 @@ class ProvisionsRelationManager extends RelationManager
     /**
      * Build the provisions table: user identity, provisioned/claimed/revoked
      * timestamps, the handed-off grant's token_uuid (an opaque reference, not
-     * a secret — no token value is ever stored or shown), a "Provision for
-     * user" header action, and a per-row Revoke action.
+     * a secret — no token value is ever stored or shown), and a per-row
+     * Revoke action.
      *
      * @param  Table  $table  The table being configured by Filament.
      * @return Table
@@ -96,95 +90,11 @@ class ProvisionsRelationManager extends RelationManager
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->placeholder('—'),
             ])
-            ->headerActions([
-                $this->provisionForUserAction(),
-            ])
             ->recordActions([
                 ActionGroup::make([
                     $this->revokeAction(),
                 ]),
             ]);
-    }
-
-    /**
-     * Build the "Provision for user" header action: pick a target user (only
-     * users with a `hook_token`, since the grant is claimed via the hook
-     * endpoint), start a fresh PKCE attempt and show the authorize URL, then
-     * on submit exchange the pasted code via
-     * {@see AccountProvisioningService::provisionFromCode()} for THIS
-     * account. Mirrors {@see ConnectsAccounts::connectAccountAction()}.
-     *
-     * @return Action
-     */
-    private function provisionForUserAction(): Action
-    {
-        return Action::make('provisionForUser')
-            ->label('Provision for user')
-            ->icon(Heroicon::OutlinedUserPlus)
-            ->modalHeading('Provision a Claude account for a user')
-            ->modalDescription('Pick the user, open the authorize URL, log in as this account, approve, then paste the code back here.')
-            ->modalSubmitActionLabel('Provision')
-            ->fillForm(function (): array {
-                $started = app(AccountConnectService::class)->start();
-
-                return [
-                    'user_id' => null,
-                    'authorize_url' => $started['url'],
-                    'state' => $started['state'],
-                    'code' => '',
-                ];
-            })
-            ->schema([
-                Select::make('user_id')
-                    ->label('User')
-                    ->options(fn (): array => User::query()
-                        ->whereNotNull('hook_token')
-                        ->orderBy('name')
-                        ->pluck('email', 'id')
-                        ->all())
-                    ->searchable()
-                    ->required(),
-                TextInput::make('authorize_url')
-                    ->label('Authorize URL')
-                    ->readOnly()
-                    ->copyable(),
-                Hidden::make('state'),
-                TextInput::make('code')
-                    ->label('Paste the code here')
-                    ->required(),
-            ])
-            ->action(function (array $data): void {
-                $user = User::query()->findOrFail($data['user_id']);
-                /** @var Account $account */
-                $account = $this->getOwnerRecord();
-
-                try {
-                    app(AccountProvisioningService::class)->provisionFromCode(
-                        $user,
-                        $account,
-                        $data['state'],
-                        $data['code'],
-                    );
-                } catch (AccountConnectException $exception) {
-                    Notification::make()
-                        ->danger()
-                        ->title('Provisioning failed')
-                        ->body(match ($exception->reason) {
-                            'connect_identity_mismatch' => $exception->getMessage(),
-                            'connect_state_expired' => 'This connect link expired or was already used. Start again.',
-                            default => 'Something went wrong completing the provisioning.',
-                        })
-                        ->send();
-
-                    return;
-                }
-
-                Notification::make()
-                    ->success()
-                    ->title('Provisioned')
-                    ->body("Granted {$user->displayHandle()} access to this account.")
-                    ->send();
-            });
     }
 
     /**

@@ -23,6 +23,12 @@ enum MembershipStatus: string implements HasColor, HasLabel
     case Tracked = 'tracked';
 
     /**
+     * Provisioned (e.g. via an invite or auto-provisioning flow) but the user
+     * has not yet completed setup.
+     */
+    case Pending = 'pending';
+
+    /**
      * Human-readable label shown by Filament badges.
      *
      * @return string
@@ -32,6 +38,7 @@ enum MembershipStatus: string implements HasColor, HasLabel
         return match ($this) {
             self::Untracked => 'Untracked',
             self::Tracked => 'Tracked',
+            self::Pending => 'Pending setup',
         };
     }
 
@@ -45,6 +52,7 @@ enum MembershipStatus: string implements HasColor, HasLabel
         return match ($this) {
             self::Untracked => 'gray',
             self::Tracked => 'success',
+            self::Pending => 'warning',
         };
     }
 }
