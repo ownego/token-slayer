@@ -45,7 +45,7 @@ class Dashboard extends BaseDashboard
                 DatePicker::make('to')->visible(fn (callable $get): bool => $get('range') === 'custom'),
                 Toggle::make('total_across_accounts')
                     ->label('Total usage across accounts')
-                    ->helperText('Off: only usage attributed to each account. On: each member\'s combined total across all their accounts.'),
+                    ->helperText('Off: only the usage attributed to each account. On: each member\'s whole usage in this range — every account they used plus their private/unattributed usage — so it can exceed the account\'s own total.'),
             ]);
     }
 }

@@ -102,7 +102,12 @@ class UserResource extends Resource
                 TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge()
-                    ->default('—'),
+                    ->default('—')
+                    // Who holds which role is deliberately not part of
+                    // `ViewAny:User`: listing people is a broad permission,
+                    // seeing their privileges is not. super_admin passes via
+                    // Shield's Gate::before bypass.
+                    ->visible(fn (): bool => auth()->user()?->can('ViewAny:Role') ?? false),
                 TextColumn::make('total_tokens')
                     ->label('Total tokens')
                     ->numeric()

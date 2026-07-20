@@ -22,12 +22,15 @@ final class AccountContributorsQuery
      * but no membership pivot row is reported as untracked.
      *
      * The tokens shown are windowed to `$filters` (all-time when null). When
-     * `$totalAcrossAccounts` is true, each user's tokens are their total over
-     * every account in the window (the same figure in each of their cards)
-     * rather than the amount attributed to the account being viewed.
+     * `$totalAcrossAccounts` is true, each user's tokens become their whole
+     * footprint in the window — every event of theirs across every account
+     * they used, plus usage with no account attribution (private account or
+     * un-beaconed) — repeated in each of their cards. That figure can exceed
+     * the account's own usage; it answers "how much did this person burn",
+     * not "how much landed on this account".
      *
      * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
-     * @param  bool  $totalAcrossAccounts  show each user's cross-account total instead of the per-account amount
+     * @param  bool  $totalAcrossAccounts  show each user's whole-footprint total instead of the per-account amount
      * @return array<int, array<int, array{user_id:int, handle:string, avatar_url:?string, status:string, tokens:int}>>
      */
     public function get(?UsageFilters $filters = null, bool $totalAcrossAccounts = false): array
@@ -96,8 +99,12 @@ final class AccountContributorsQuery
     }
 
     /**
-     * Map each user id to their total attributed tokens across every account
-     * in the window (all-time when `$filters` is null).
+     * Map each user id to their TOTAL tokens in the window: every event that
+     * belongs to them, across every account they used AND any usage carrying
+     * no account attribution at all (their private account, or un-beaconed
+     * usage). Deliberately unfiltered by `account_id` — the toggle reports the
+     * person's whole footprint, so this figure can exceed the usage attributed
+     * to the account whose card it appears on.
      *
      * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
      * @return array<int, int>
@@ -105,7 +112,6 @@ final class AccountContributorsQuery
     private function userTotals(?UsageFilters $filters): array
     {
         return Event::query()
-            ->whereNotNull('events.account_id')
             ->when($filters !== null, fn ($q) => $q->whereBetween('events.created_at', [$filters->from, $filters->to]))
             ->groupBy('events.user_id')
             ->selectRaw('events.user_id as user_id')

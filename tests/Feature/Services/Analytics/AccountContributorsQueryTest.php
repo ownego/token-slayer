@@ -92,15 +92,33 @@ it('in total-across-accounts mode shows the same user total in each of their acc
 
     Event::factory()->for($user)->create(['account_id' => $accountA->id, 'tokens' => 100, 'created_at' => now()]);
     Event::factory()->for($user)->create(['account_id' => $accountB->id, 'tokens' => 200, 'created_at' => now()]);
+    // Private / un-beaconed usage (no account attribution) still belongs to
+    // this person, so the toggle must count it toward their total.
+    Event::factory()->for($user)->create(['account_id' => null, 'tokens' => 500, 'created_at' => now()]);
 
     $filters = UsageFilters::fromPageFilters(['range' => 'all']);
     $byAccount = app(AccountContributorsQuery::class)->get($filters, totalAcrossAccounts: true);
 
-    expect($byAccount[$accountA->id][0]['tokens'])->toBe(300)
-        ->and($byAccount[$accountB->id][0]['tokens'])->toBe(300);
+    expect($byAccount[$accountA->id][0]['tokens'])->toBe(800)   // 100 + 200 + 500 (private)
+        ->and($byAccount[$accountB->id][0]['tokens'])->toBe(800);
 
     // Default (per-account) mode keeps each card scoped to its own attribution.
     $perAccount = app(AccountContributorsQuery::class)->get($filters);
     expect($perAccount[$accountA->id][0]['tokens'])->toBe(100)
         ->and($perAccount[$accountB->id][0]['tokens'])->toBe(200);
+});
+
+it('still windows the total-across-accounts figure by the range', function () {
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 10, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => null, 'tokens' => 20, 'created_at' => now()]);
+    Event::factory()->for($user)->create(['account_id' => null, 'tokens' => 9000, 'created_at' => now()->subMonths(2)]);
+
+    $week = UsageFilters::fromPageFilters(['range' => 'week']);
+    $members = app(AccountContributorsQuery::class)->get($week, totalAcrossAccounts: true)[$account->id];
+
+    expect($members[0]['tokens'])->toBe(30); // 10 + 20 in range; the 2-month-old 9000 excluded
 });
