@@ -45,7 +45,9 @@ Route::get('/install', fn () => response(
     ['Content-Type' => 'text/x-shellscript; charset=utf-8'],
 ))->name('install-script');
 
-Route::get('/dist/slayer_cli-latest.whl', SlayerWheelController::class)->name('slayer-wheel');
+Route::get('/dist/slayer_cli-latest.whl', SlayerWheelController::class)
+    ->middleware('hook.token')
+    ->name('slayer-wheel');
 
 Route::get('/install-cowork', fn () => response(
     view('cowork-install-script', [
