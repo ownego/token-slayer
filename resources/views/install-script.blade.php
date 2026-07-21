@@ -534,7 +534,12 @@ case "${1:-}" in
 esac
 CLI_SH
 chmod +x "$HOME/.local/bin/token-slayer"
+# Every alias the CLI answers to gets a shim on PATH. These point at the shim
+# script above (which runs `python -m slayer_cli`), NOT at the wheel's console
+# scripts -- those live inside the venv, which is not on the user's PATH, so a
+# `[project.scripts]` entry alone never reaches the user.
 ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"
+ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/tok"
 
 # Register the machine's current Claude login as a base account slot, so a user
 # who already uses Claude Code sees their existing account in token-slayer right
