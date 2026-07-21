@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\SlackController;
 use App\Http\Controllers\AvatarProxyController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\SlayerWheelController;
+use App\Services\GitHub\ReleaseResolver;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -32,12 +33,14 @@ Route::get('/admin/{path?}', function (?string $path = null) {
     return redirect('/dashboard'.($path === null ? '' : '/'.$path).($query === null ? '' : '?'.$query));
 })->where('path', '.*');
 
-Route::get('/install', fn () => response(
+// clientVersion comes from ReleaseResolver directly, NOT the cache: the version
+// stamped into the served script must match the artifact being served.
+Route::get('/install', fn (ReleaseResolver $resolver) => response(
     view('install-script', [
         'baseUrl' => url('/api/events'),
         'apiBase' => url('/'),
         'namespace' => config('app.hook_namespace'),
-        'clientVersion' => config('token_slayer.client_version'),
+        'clientVersion' => $resolver->latest()['version'] ?? '',
         'installUrl' => route('install-script'),
         'slayerWheelUrl' => route('slayer-wheel'),
     ])->render(),

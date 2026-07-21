@@ -5,6 +5,7 @@ namespace App\Livewire;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\DamageTotals;
+use App\Services\GitHub\CachedLatestVersion;
 use Illuminate\Support\Str;
 use Livewire\Component;
 
@@ -25,24 +26,29 @@ class Profile extends Component
     }
 
     /**
-     * Snapshot of how the user's latest event was attributed, for the status block.
+     * Snapshot of how the user's latest event was attributed, for the status
+     * block. `latestVersion` is null when the latest release cannot be
+     * determined — the badge hides rather than the page erroring. It is read
+     * through the cache, so it may lag a fresh release by a few minutes; the
+     * badge is allowed to be approximate.
      *
      * @param  User  $user  the profile owner whose latest event is being inspected
-     * @return array{event:?Event, clientVersion:?string, latestVersion:string, outdated:bool}
+     * @param  CachedLatestVersion  $latest  supplies the latest released CLI version
+     * @return array{event:?Event, clientVersion:?string, latestVersion:?string, outdated:bool}
      */
-    private function attributionStatus(User $user): array
+    private function attributionStatus(User $user, CachedLatestVersion $latest): array
     {
-        $latestVersion = (string) config('token_slayer.client_version');
+        $latestVersion = $latest->get();
 
         return [
             'event' => Event::where('user_id', $user->id)->latest('id')->first(),
             'clientVersion' => $user->client_version,
             'latestVersion' => $latestVersion,
-            'outdated' => $user->client_version !== $latestVersion,
+            'outdated' => $latestVersion !== null && $user->client_version !== $latestVersion,
         ];
     }
 
-    public function render()
+    public function render(CachedLatestVersion $latest)
     {
         $namespace = config('app.hook_namespace');
         $envVar = strtoupper($namespace).'_TOKEN';
@@ -55,7 +61,7 @@ class Profile extends Component
             'globalUsage' => app(DamageTotals::class)->global(),
             'accountRows' => app(DamageTotals::class)->forUserByAccount(auth()->user()),
             'quotaBars' => fn (array $row): array => $this->quotaBars($row),
-            'attribution' => $this->attributionStatus(auth()->user()),
+            'attribution' => $this->attributionStatus(auth()->user(), $latest),
             'claudeSnippet' => view('partials.claude-snippet', [
                 'baseUrl' => url('/api/events'),
                 'namespace' => $namespace,

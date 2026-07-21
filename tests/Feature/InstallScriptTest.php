@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\Http;
+
 beforeEach(fn () => config(['app.hook_namespace' => 'token_slayer']));
 
 test('install.sh is publicly accessible as a shell script', function () {
@@ -243,14 +245,27 @@ it('merges account_org_id into the outgoing event body when resolved', function 
     expect($mergeBlock)->toContain('account_org_id');
 });
 
-it('stamps the client version (semver) into the script, UA, and version file', function () {
-    $version = config('token_slayer.client_version');
+it('stamps the resolver-derived client version (semver) into the script, UA, and version file', function () {
+    config(['github.token' => 'ghp_test', 'github.cli_repo' => 'acme/slayer-cli']);
+    Http::fake(['api.github.com/*' => Http::response([
+        'tag_name' => 'v1.2.3',
+        'assets' => [['id' => 1, 'name' => 'slayer_cli-latest.whl']],
+    ], 200)]);
+
     $script = $this->get(route('install-script'))->content();
 
-    expect($version)->toBe('1.0.0')
-        ->and($script)->toContain("CLIENT_VERSION='1.0.0'")
-        ->and($script)->toContain('token-slayer-hook/1.0.0')
-        ->and($script)->toContain("LATEST='1.0.0'");
+    expect($script)->toContain("CLIENT_VERSION='1.2.3'")
+        ->and($script)->toContain('token-slayer-hook/1.2.3')
+        ->and($script)->toContain("LATEST='1.2.3'");
+});
+
+it('stamps an empty client version when the release cannot be resolved (fail-soft render)', function () {
+    Http::fake(['api.github.com/*' => Http::response(['message' => 'down'], 500)]);
+
+    $script = $this->get(route('install-script'))->content();
+
+    // The script must still render and run — an empty stamp beats a stale wrong one.
+    expect($script)->toContain("CLIENT_VERSION=''");
 });
 
 it('tips users toward custom.sh to customize what their fighter shows, at the end of a successful install', function () {
@@ -502,18 +517,6 @@ it('symlinks slayer to the token-slayer shim', function () {
     expect($script)->toContain('ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"');
 });
 
-it('redirects the slayer-cli wheel route to the configured release asset URL', function () {
-    config(['token_slayer.slayer_cli_wheel_url' => 'https://example.com/slayer_cli-latest.whl']);
-
-    $response = $this->get('/dist/slayer_cli-latest.whl');
-
-    $response->assertRedirect('https://example.com/slayer_cli-latest.whl');
-});
-
-it('404s the slayer-cli wheel route when no release URL is configured', function () {
-    config(['token_slayer.slayer_cli_wheel_url' => '']);
-
-    $response = $this->get('/dist/slayer_cli-latest.whl');
-
-    $response->assertNotFound();
-});
+// The slayer-cli wheel route no longer redirects to a public asset URL; it
+// relays the wheel behind hook.token. That behavior is covered end-to-end in
+// tests/Feature/SlayerWheelTest.php.
