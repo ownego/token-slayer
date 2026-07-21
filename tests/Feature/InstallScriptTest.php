@@ -472,11 +472,11 @@ it('downloads the wheel to a PEP 427-valid temp name before pip-installing (pip 
     // to a spec-valid filename, then install that local file.
     expect($script)
         ->toContain('slayer_cli-0.0.0-py3-none-any.whl')
-        ->toContain('install --quiet "$SLAYER_WHL"');
+        ->toContain('install --quiet --break-system-packages "$SLAYER_WHL"');
 
     // The served wheel version may be unchanged between builds, so a plain
     // --upgrade would ship stale code; the package code is force-reinstalled.
-    expect($script)->toContain('install --quiet --force-reinstall --no-deps "$SLAYER_WHL"');
+    expect($script)->toContain('install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL"');
 
     // It must NOT pip-install straight from the wheel URL/route anymore.
     expect($script)->not->toContain('pip" install --quiet --upgrade "'.route('slayer-wheel').'"');
@@ -500,8 +500,8 @@ it('falls back to the old update/status behavior when the venv is missing, and n
     expect($script)
         ->toContain('already up to date')
         ->toContain('usage: token-slayer {update|status}')
-        ->toContain('venv setup skipped')
-        ->toContain('optional install skipped');
+        ->toContain('fall back to the old minimal')       // the venv-missing fallback comment
+        ->toContain('hook tracking is still installed');  // wheel/venv steps never block the install
 
     $execPosition = strpos($script, 'exec env SLAYER_NS');
     $fallbackPosition = strpos($script, 'already up to date');

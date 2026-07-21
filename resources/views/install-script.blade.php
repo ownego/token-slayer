@@ -464,7 +464,22 @@ fi
 SLAYER_WHL_DIR="$(mktemp -d 2>/dev/null || echo /tmp)"
 SLAYER_WHL="$SLAYER_WHL_DIR/slayer_cli-0.0.0-py3-none-any.whl"
 SLAYER_PIP="$HOME/.config/{{ $namespace }}/venv/bin/pip"
-if curl -fsSL "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL"; then
+
+# The wheel route now requires a valid hook token. Resolve it: the env var
+# passed on the install one-liner, else the token saved by a previous install
+# so `token-slayer update` (which re-runs this script with no env var) works.
+SLAYER_TOKEN="{!! $envCheck !!}"
+if [ -z "$SLAYER_TOKEN" ] && [ -s "$HOME/.config/{{ $namespace }}/token" ]; then
+  SLAYER_TOKEN="$(cat "$HOME/.config/{{ $namespace }}/token")"
+fi
+
+# No -f: we must read the status code, not fail silently. `|| echo "000"` keeps
+# a hard curl error from aborting the script under `set -e`.
+SLAYER_HTTP=$(curl -sSL -w '%{http_code}' \
+    -H "Authorization: Bearer $SLAYER_TOKEN" \
+    "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>/dev/null || echo "000")
+
+if [ "$SLAYER_HTTP" = "200" ]; then
   # Two steps on purpose: the served wheel is always "latest" and its version
   # may be UNCHANGED between builds, so a plain `--upgrade` is a no-op and ships
   # stale code. First install pulls deps (first run) / no-ops; then
@@ -476,10 +491,12 @@ if curl -fsSL "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL"; then
   else
     echo "slayer-cli: wheel install failed (see the error above) — CLI unavailable; hook tracking is still installed" >&2
   fi
-  rm -f "$SLAYER_WHL"
+elif [ "$SLAYER_HTTP" = "401" ]; then
+  echo "slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows." >&2
 else
-  echo "slayer-cli: optional download skipped"
+  echo "slayer-cli: could not download the CLI right now (server said $SLAYER_HTTP). Try again in a few minutes; hook tracking is still installed." >&2
 fi
+rm -f "$SLAYER_WHL"
 
 cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
 #!/usr/bin/env bash
