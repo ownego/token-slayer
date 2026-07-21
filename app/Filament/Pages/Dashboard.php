@@ -8,6 +8,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Pages\Dashboard as BaseDashboard;
 use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Schemas\Schema;
+use Illuminate\Support\HtmlString;
 
 /**
  * The admin panel home dashboard, extended with a shared filter form: a time
@@ -45,7 +46,10 @@ class Dashboard extends BaseDashboard
                 DatePicker::make('to')->visible(fn (callable $get): bool => $get('range') === 'custom'),
                 Toggle::make('total_across_accounts')
                     ->label('Total usage across accounts')
-                    ->helperText('Off: only the usage attributed to each account. On: each member\'s whole usage in this range — every account they used plus their private/unattributed usage — so it can exceed the account\'s own total.'),
+                    ->helperText(new HtmlString(
+                        '<span style="display:block"><strong>Off:</strong> usage attributed to this account only.</span>'
+                        .'<span style="display:block"><strong>On:</strong> each member\'s full usage, including other accounts and private.</span>'
+                    )),
             ]);
     }
 }

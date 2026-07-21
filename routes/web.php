@@ -23,9 +23,19 @@ Route::get('/admin/usage', fn () => view('admin-usage'))
     ->middleware(['auth', 'can:view_usage_analytics'])
     ->name('admin.usage');
 
+// The Filament panel moved from /admin to the friendlier /dashboard. Keep the
+// old URLs alive (bookmarks, Slack notification deep links) — registered after
+// /admin/usage so that route still wins.
+Route::get('/admin/{path?}', function (?string $path = null) {
+    $query = request()->getQueryString();
+
+    return redirect('/dashboard'.($path === null ? '' : '/'.$path).($query === null ? '' : '?'.$query));
+})->where('path', '.*');
+
 Route::get('/install', fn () => response(
     view('install-script', [
         'baseUrl' => url('/api/events'),
+        'apiBase' => url('/'),
         'namespace' => config('app.hook_namespace'),
         'clientVersion' => config('token_slayer.client_version'),
         'installUrl' => route('install-script'),

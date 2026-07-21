@@ -52,6 +52,26 @@ test('battlefield shows a link back to the profile page', function () {
         ->assertSee('Profile');
 });
 
+test('battlefield shows a link to the dashboard panel', function () {
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('href="'.route('filament.admin.pages.dashboard').'"')
+        ->assertSee('Dashboard');
+});
+
+test('battlefield hides both nav links in ide embed mode', function () {
+    Livewire::withQueryParams(['embed' => 'ide'])
+        ->test(Battlefield::class)
+        ->assertDontSeeHtml('href="'.route('filament.admin.pages.dashboard').'"')
+        ->assertDontSeeHtml('href="'.route('profile').'"');
+});
+
+test('battlefield surfaces a flashed error message', function () {
+    session()->flash('error', 'Slack sign-in did not complete. Please try again.');
+
+    Livewire::test(Battlefield::class)
+        ->assertSee('Slack sign-in did not complete. Please try again.');
+});
+
 test('battlefield seeds leaderboard with per-fighter damage for the current boss', function () {
     $previousBoss = Boss::factory()->defeated()->create(['number' => 6]);
     $boss = Boss::factory()->create(['number' => 7]);

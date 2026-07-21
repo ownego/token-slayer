@@ -5,6 +5,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\AbstractProvider;
+use Laravel\Socialite\Two\InvalidStateException;
 use SocialiteProviders\Manager\OAuth2\User as SlackUser;
 
 uses(RefreshDatabase::class);
@@ -118,4 +119,97 @@ test('slack callback falls back to the real name when users.info fails', functio
     $this->get('/auth/slack/callback')->assertRedirect('/profile');
 
     expect(User::sole()->display_name)->toBe('Real Name');
+});
+
+/**
+ * Bind a Slack provider whose user() call blows up the way a replayed or
+ * expired OAuth callback does.
+ */
+function bindSlackProviderThrowingInvalidState(): void
+{
+    $provider = Mockery::mock(AbstractProvider::class);
+    $provider->shouldReceive('user')->andThrow(new InvalidStateException);
+    Socialite::shouldReceive('driver')->with('slack')->andReturn($provider);
+}
+
+test('slack callback restarts the login flow when the oauth state is stale', function () {
+    bindSlackProviderThrowingInvalidState();
+
+    $this->get('/auth/slack/callback')->assertRedirect(route('slack.login'));
+
+    expect(User::count())->toBe(0);
+});
+
+test('restarting a stale-state login preserves the originally requested page', function () {
+    bindSlackProviderThrowingInvalidState();
+
+    // A guest sent here after being bounced off /dashboard already has the
+    // intended URL stashed; the restart must not discard it so the *next*
+    // (successful) callback lands them back on /dashboard.
+    $this->withSession(['url.intended' => url('/dashboard/accounts')])
+        ->get('/auth/slack/callback')
+        ->assertRedirect(route('slack.login'))
+        ->assertSessionHas('url.intended', url('/dashboard/accounts'));
+});
+
+test('a guest bounced off the dashboard still lands there after a stale-state retry', function () {
+    // Full round trip in one session: /dashboard stashes url.intended, the
+    // first callback blows up on a stale state and restarts, and the retry
+    // must deliver the user to /dashboard — not to a generic landing page.
+    Http::fake(['slack.com/api/users.info*' => Http::response(usersInfoResponse([]))]);
+
+    // One provider for the whole session: the first callback blows up on the
+    // stale state, the retry succeeds — mirroring a real replayed callback.
+    $calls = 0;
+    $provider = Mockery::mock(AbstractProvider::class);
+    $provider->shouldReceive('user')->andReturnUsing(function () use (&$calls) {
+        if (++$calls === 1) {
+            throw new InvalidStateException;
+        }
+
+        return fakeSlackUser();
+    });
+    Socialite::shouldReceive('driver')->with('slack')->andReturn($provider);
+
+    $this->get('/dashboard')->assertRedirect(route('slack.login'));
+    $this->get('/auth/slack/callback')->assertRedirect(route('slack.login'));
+    $this->get('/auth/slack/callback')->assertRedirect(url('/dashboard'));
+});
+
+test('slack callback stops retrying after one restart so it cannot loop', function () {
+    bindSlackProviderThrowingInvalidState();
+
+    $this->withSession(['slack_login_retried' => true])
+        ->get('/auth/slack/callback')
+        ->assertRedirect(route('battlefield'))
+        ->assertSessionHas('error');
+});
+
+test('slack callback sends an already authenticated visitor on instead of erroring', function () {
+    $user = User::factory()->create();
+    bindSlackProviderThrowingInvalidState();
+
+    $this->actingAs($user)
+        ->withSession(['url.intended' => url('/dashboard')])
+        ->get('/auth/slack/callback')
+        ->assertRedirect(url('/dashboard'));
+});
+
+test('slack callback restarts the flow when slack returns no user id', function () {
+    $slackUser = Mockery::mock(SlackUser::class);
+    $slackUser->shouldReceive('getId')->andReturn(null);
+    bindSlackProvider($slackUser);
+
+    $this->get('/auth/slack/callback')->assertRedirect(route('slack.login'));
+
+    expect(User::count())->toBe(0);
+});
+
+test('slack callback clears the retry flag once a login succeeds', function () {
+    Http::fake(['slack.com/api/users.info*' => Http::response(usersInfoResponse([]))]);
+    bindSlackProvider(fakeSlackUser());
+
+    $this->withSession(['slack_login_retried' => true])
+        ->get('/auth/slack/callback')
+        ->assertSessionMissing('slack_login_retried');
 });

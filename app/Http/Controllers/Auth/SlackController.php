@@ -10,10 +10,19 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\InvalidStateException;
 use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirectResponse;
 
 class SlackController extends Controller
 {
+    /**
+     * Session key marking that this visitor already had one OAuth round trip
+     * restarted, so a permanently broken session can't ping-pong forever.
+     *
+     * @var string
+     */
+    private const string RETRY_FLAG = 'slack_login_retried';
+
     public function __construct(private SlackProfileFetcher $profiles) {}
 
     public function redirect(Request $request): SymfonyRedirectResponse
@@ -33,15 +42,25 @@ class SlackController extends Controller
 
     public function callback(): RedirectResponse
     {
-        $slack = Socialite::driver('slack')->user();
+        try {
+            $slack = Socialite::driver('slack')->user();
+        } catch (InvalidStateException) {
+            return $this->restartLogin();
+        }
 
-        $existing = User::where('slack_user_id', $slack->getId())->first();
+        $slackUserId = $slack->getId();
+
+        if (! is_string($slackUserId) || $slackUserId === '') {
+            return $this->restartLogin();
+        }
+
+        $existing = User::where('slack_user_id', $slackUserId)->first();
 
         $attributes = [
             'name' => $slack->getName() ?? $slack->getNickname(),
-            'email' => $slack->getEmail() ?? $slack->getId().'@slack.local',
+            'email' => $slack->getEmail() ?? $slackUserId.'@slack.local',
             'slack_handle' => $slack->getNickname(),
-            'display_name' => $this->profiles->displayNameFor($slack->getId()) ?? $slack->getName(),
+            'display_name' => $this->profiles->displayNameFor($slackUserId) ?? $slack->getName(),
             'avatar_url' => $slack->getAvatar(),
         ];
 
@@ -50,7 +69,7 @@ class SlackController extends Controller
 
             $user = User::create([
                 ...$attributes,
-                'slack_user_id' => $slack->getId(),
+                'slack_user_id' => $slackUserId,
                 'hook_token' => hash('sha256', $plainToken),
             ]);
 
@@ -63,6 +82,7 @@ class SlackController extends Controller
         }
 
         auth()->login($user);
+        session()->forget(self::RETRY_FLAG);
 
         if (($ide = $this->consumeIdeFlowState()) !== null) {
             return $this->redirectToIde($user, $ide['state'], $ide['client'], $ide['redirect']);
@@ -72,6 +92,34 @@ class SlackController extends Controller
         // (stashed as `url.intended` when a guest hit a gated route), falling
         // back to the per-user default landing page.
         return redirect()->intended(route($defaultRoute));
+    }
+
+    /**
+     * Recover from a callback that cannot be completed: Socialite `pull()`s
+     * `state` out of the session on first read, so any replay of the callback
+     * URL (refresh, browser Back, a second tab overwriting `state`) fails the
+     * check — which used to surface as a 500. Same treatment for a Slack
+     * response carrying no user id.
+     *
+     * An already-authenticated visitor simply continues to where they were
+     * headed; a guest restarts the flow once, guarded by RETRY_FLAG.
+     *
+     * @return RedirectResponse
+     */
+    private function restartLogin(): RedirectResponse
+    {
+        if (auth()->check()) {
+            return redirect()->intended(route('battlefield'));
+        }
+
+        if (session()->pull(self::RETRY_FLAG) === true) {
+            return redirect()->route('battlefield')
+                ->with('error', 'Slack sign-in did not complete. Please try again.');
+        }
+
+        session()->put(self::RETRY_FLAG, true);
+
+        return redirect()->route('slack.login');
     }
 
     /**

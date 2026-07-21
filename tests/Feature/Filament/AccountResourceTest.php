@@ -45,12 +45,12 @@ it('still lists provisioned users and can revoke one from the provisions tab', f
 
 it('blocks non-admins from the panel', function () {
     $this->actingAs(User::factory()->create())
-        ->get('/admin')->assertForbidden();
+        ->get('/dashboard')->assertForbidden();
 });
 
 it('lets an admin into the panel dashboard', function () {
     $this->actingAs(User::factory()->admin()->create())
-        ->get('/admin')->assertOk();
+        ->get('/dashboard')->assertOk();
 });
 
 it('lets an admin create and list accounts', function () {
