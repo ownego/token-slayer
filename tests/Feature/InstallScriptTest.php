@@ -122,6 +122,29 @@ it('sources the user custom.sh before sending', function () {
     expect($customShPosition)->toBeLessThan($sendPosition);
 });
 
+it('filters the payload to usage fields when SLAYER_MINIMAL_PAYLOAD is set, after custom.sh and before sending', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && command -v jq >/dev/null 2>&1; then')
+        ->toContain('case "$FILTERED" in \'{\'*) BODY="$FILTERED" ;; esac');
+
+    $customShPosition = strpos($script, '[ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"');
+    $filterPosition = strpos($script, 'if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && command -v jq');
+    $sendPosition = strpos($script, 'curl -s --max-time 3 -X POST "$URL"');
+
+    expect($customShPosition)->toBeLessThan($filterPosition);
+    expect($filterPosition)->toBeLessThan($sendPosition);
+});
+
+it('keeps only usage and attribution fields in the minimal payload allowlist', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    foreach (['hook_event_name', 'session_id', 'tokens', 'tool_name', 'custom_activity', 'client_version', 'account_email', 'account_uuid', 'account_source', 'account_org_id'] as $kept) {
+        expect($script)->toContain($kept);
+    }
+});
+
 it('stores a sha256 checksum of send-hook.sh after writing it', function () {
     $script = $this->get(route('install-script'))->content();
 
