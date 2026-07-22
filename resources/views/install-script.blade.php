@@ -376,6 +376,18 @@ CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
 # their own private accounts here (exit 0 before POST) so those events never
 # leave the machine. Not active yet -- default is track everything.
 
+# Opt-in minimal payload: set SLAYER_MINIMAL_PAYLOAD=1 to send only the usage
+# and attribution fields the dashboard reads, dropping prompt text, tool_input,
+# tool_response, and the last assistant message so no session content leaves the
+# machine. Runs after custom.sh so a fighter's custom_activity still rides along.
+if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && command -v jq >/dev/null 2>&1; then
+  FILTERED=$(printf '%s' "$BODY" | jq -c '{
+    hook_event_name, session_id, tokens, tool_name, custom_activity,
+    client_version, account_email, account_uuid, account_source, account_org_id
+  } | with_entries(select(.value != null))' 2>/dev/null)
+  case "$FILTERED" in '{'*) BODY="$FILTERED" ;; esac
+fi
+
 curl -s --max-time 3 -X POST "$URL" \
   -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
   -H 'Content-Type: application/json' \
@@ -534,6 +546,11 @@ case "${1:-}" in
       echo "custom.sh: active"
     else
       echo "custom.sh: none"
+    fi
+    if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ]; then
+      echo "minimal payload: on (prompt and tool content dropped)"
+    else
+      echo "minimal payload: off (full event sent)"
     fi
     if [ -r "$NS_DIR/.hook-checksum" ]; then
       CURRENT_SHA=$(sha256 < "$NS_DIR/send-hook.sh" 2>/dev/null)
@@ -805,3 +822,4 @@ fi
 
 echo ""
 echo "Tip: create ~/.config/{{ $namespace }}/custom.sh to customize what your fighter shows -- it survives every install and update."
+echo "Tip: set SLAYER_MINIMAL_PAYLOAD=1 to send only usage and attribution fields, dropping prompt and tool content from every event."
