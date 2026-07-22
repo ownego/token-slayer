@@ -17,9 +17,34 @@
 
 set -e
 
-PY=$(command -v python3 || command -v python || true)
+# Pick a Python that ACTUALLY RUNS and has `venv`. `command -v python3` is not
+# enough on macOS: /usr/bin/python3 is an Xcode Command-Line-Tools stub that
+# exists on PATH but fails ("invalid active developer path") until the tools are
+# installed — which silently broke both the venv below and the settings.json
+# merges further down. Probing `import venv` rejects the stub and any Python
+# missing the module (e.g. Debian without python3-venv).
+PY=""
+# Probe each candidate for a Python that is >= 3.10 AND has a WORKING venv and
+# pyexpat. The pyexpat check rejects the broken Homebrew python@3.14 3.14.6
+# bottle (its pyexpat links against a libexpat symbol the resolved lib lacks,
+# which breaks ALL pip use); the version gate rejects the macOS system
+# python3.9 (too old for slayer and for get-pip). Versioned names are probed so
+# a healthy brew python3.12/3.13 is found even when the default `python3` is the
+# broken or too-old one.
+for _c in "${SLAYER_PYTHON:-}" python3 python3.13 python3.12 python3.11 python3.10 \
+          /opt/homebrew/bin/python3 /usr/local/bin/python3 python; do
+    [ -n "$_c" ] || continue
+    _p=$(command -v "$_c" 2>/dev/null) || continue
+    if "$_p" -c 'import sys, venv, pyexpat; sys.exit(0 if sys.version_info[:2] >= (3, 10) else 1)' >/dev/null 2>&1; then
+        PY="$_p"; break
+    fi
+done
 if [ -z "$PY" ]; then
-    echo "error: python3 (or python) is required to merge ~/.claude/settings.json" >&2
+    echo "error: no usable Python (>= 3.10 with a working venv + pyexpat) was found." >&2
+    case "$(uname -s)" in
+        Darwin) echo "  macOS: install a working Python, e.g. 'brew install python@3.12' (the Homebrew python@3.14 3.14.6 bottle ships a broken pyexpat) or from python.org, then re-run -- or set SLAYER_PYTHON to it." >&2 ;;
+        Linux)  echo "  Linux: install Python 3.10+ with venv, e.g. 'sudo apt install python3-venv'." >&2 ;;
+    esac
     exit 1
 fi
 
@@ -387,7 +412,50 @@ mkdir -p "$HOME/.local/bin"
 # slayer-cli: an isolated venv keeps its click/textual/pydantic/keyring/httpx
 # deps off the system Python. Every step is tolerant (|| echo "...skipped")
 # so a broken/missing Python venv NEVER blocks hook tracking below.
-"$PY" -m venv "$HOME/.config/{{ $namespace }}/venv" 2>/dev/null || echo "slayer-cli: venv setup skipped (python venv unavailable)"
+# stderr is NOT swallowed here on purpose: a hidden venv failure used to leave
+# the user with no CLI and no idea why.
+#
+# PEP 668: python.org / Homebrew / uv Pythons ship an EXTERNALLY-MANAGED marker.
+# pip normally SKIPS that check inside a venv, but some macOS python.org 3.14
+# framework builds fail to detect the venv, so ensurepip's internal
+# `pip install --upgrade pip` is refused ("externally-managed-environment") and
+# `python -m venv` exits non-zero. PIP_BREAK_SYSTEM_PACKAGES=1 is pip's official
+# override; ensurepip's pip subprocess inherits it (fixing the primary path),
+# and it is safe because every pip action here targets our OWN dedicated venv,
+# never the system Python.
+export PIP_BREAK_SYSTEM_PACKAGES=1
+SLAYER_VENV_DIR="$HOME/.config/{{ $namespace }}/venv"
+# Self-heal: a venv left over from a failed run or a since-removed/broken
+# interpreter can have a working-looking directory but no importable
+# slayer_cli. Rebuild it clean instead of reusing it, so simply re-running the
+# installer (or `token-slayer update`) repairs a broken install. A healthy venv
+# where slayer_cli already imports is left untouched, keeping updates fast.
+if [ -d "$SLAYER_VENV_DIR" ] && ! "$SLAYER_VENV_DIR/bin/python" -c 'import slayer_cli' >/dev/null 2>&1; then
+    rm -rf "$SLAYER_VENV_DIR"
+fi
+if ! "$PY" -m venv "$SLAYER_VENV_DIR"; then
+    # `python -m venv` runs `ensurepip` to bootstrap pip; that subprocess can
+    # fail on a base interpreter marked PEP-668 externally-managed even though
+    # the `venv` module itself works. Retry WITHOUT the bundled bootstrap, then
+    # fetch pip via the official PyPA get-pip.py with an explicit
+    # --break-system-packages (so PEP 668 can't block it even when pip fails to
+    # detect the venv). Each step is separate and errors are NOT suppressed, so
+    # a real failure (network/SSL/unsupported version) is visible in the output.
+    echo "slayer-cli: bundled pip bootstrap failed; retrying without it..." >&2
+    rm -rf "$SLAYER_VENV_DIR"
+    if ! "$PY" -m venv --without-pip "$SLAYER_VENV_DIR"; then
+        echo "slayer-cli: 'python -m venv --without-pip' failed (see error above) — CLI unavailable; hook tracking is still installed" >&2
+    elif ! curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/slayer-get-pip.py; then
+        echo "slayer-cli: could not download get-pip.py — CLI unavailable; hook tracking is still installed" >&2
+    elif _slayer_gp=$("$SLAYER_VENV_DIR/bin/python" /tmp/slayer-get-pip.py --break-system-packages 2>&1); then
+        rm -f /tmp/slayer-get-pip.py
+        echo "slayer-cli: pip bootstrapped via get-pip." >&2
+    else
+        printf '%s\n' "$_slayer_gp" >&2
+        rm -f /tmp/slayer-get-pip.py
+        echo "slayer-cli: get-pip bootstrap failed (see error above) — CLI unavailable; hook tracking is still installed" >&2
+    fi
+fi
 # pip refuses to install straight from {{ $slayerWheelUrl }}: its basename
 # (slayer_cli-latest.whl) is not a PEP 427 wheel filename (`latest` is not a
 # valid version), so `pip install <url>` fails with "not a valid wheel
@@ -396,15 +464,18 @@ mkdir -p "$HOME/.local/bin"
 SLAYER_WHL_DIR="$(mktemp -d 2>/dev/null || echo /tmp)"
 SLAYER_WHL="$SLAYER_WHL_DIR/slayer_cli-0.0.0-py3-none-any.whl"
 SLAYER_PIP="$HOME/.config/{{ $namespace }}/venv/bin/pip"
-if curl -fsSL "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>/dev/null; then
+if curl -fsSL "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL"; then
   # Two steps on purpose: the served wheel is always "latest" and its version
   # may be UNCHANGED between builds, so a plain `--upgrade` is a no-op and ships
   # stale code. First install pulls deps (first run) / no-ops; then
   # force-reinstall --no-deps refreshes ONLY the package code every time,
   # cheaply (deps untouched).
-  "$SLAYER_PIP" install --quiet "$SLAYER_WHL" 2>/dev/null \
-    && "$SLAYER_PIP" install --quiet --force-reinstall --no-deps "$SLAYER_WHL" 2>/dev/null \
-    || echo "slayer-cli: optional install skipped"
+  if "$SLAYER_PIP" install --quiet --break-system-packages "$SLAYER_WHL" \
+      && "$SLAYER_PIP" install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL"; then
+    :
+  else
+    echo "slayer-cli: wheel install failed (see the error above) — CLI unavailable; hook tracking is still installed" >&2
+  fi
   rm -f "$SLAYER_WHL"
 else
   echo "slayer-cli: optional download skipped"
@@ -463,7 +534,12 @@ case "${1:-}" in
 esac
 CLI_SH
 chmod +x "$HOME/.local/bin/token-slayer"
+# Every alias the CLI answers to gets a shim on PATH. These point at the shim
+# script above (which runs `python -m slayer_cli`), NOT at the wheel's console
+# scripts -- those live inside the venv, which is not on the user's PATH, so a
+# `[project.scripts]` entry alone never reaches the user.
 ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/slayer"
+ln -sf "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/tok"
 
 # Register the machine's current Claude login as a base account slot, so a user
 # who already uses Claude Code sees their existing account in token-slayer right
