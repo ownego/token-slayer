@@ -5,7 +5,10 @@
             <h1 class="text-2xl font-semibold">{{ $user->name }}</h1>
             <p class="text-gray-500">{{ $user->display_name }}</p>
         </div>
-        <a href="{{ route('battlefield') }}" class="px-3 py-2 bg-slate-800/80 text-white rounded text-sm font-mono">Battlefield →</a>
+        <nav class="flex flex-col items-stretch gap-1.5 text-center">
+            <a href="{{ route('battlefield') }}" class="px-3 py-2 bg-slate-800/80 text-white rounded text-sm font-mono">Battlefield →</a>
+            <a href="{{ route('filament.admin.pages.dashboard') }}" class="px-3 py-2 bg-slate-800/80 text-white rounded text-sm font-mono">Dashboard →</a>
+        </nav>
     </header>
 
     <section class="border rounded p-4">

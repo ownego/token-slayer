@@ -86,7 +86,7 @@ class AccountTokenRejectedNotification extends Notification
         try {
             return AccountResource::getUrl('edit', ['record' => $account->id], panel: 'admin');
         } catch (Throwable) {
-            return rtrim(config('app.url'), '/')."/admin/accounts/{$account->id}/edit";
+            return rtrim(config('app.url'), '/')."/dashboard/accounts/{$account->id}/edit";
         }
     }
 }

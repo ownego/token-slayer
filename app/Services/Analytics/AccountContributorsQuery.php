@@ -5,6 +5,7 @@ namespace App\Services\Analytics;
 use App\Enums\MembershipStatus;
 use App\Models\Event;
 use Illuminate\Database\Query\JoinClause;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Contributor breakdown per account: every user with events attributed to an
@@ -17,17 +18,21 @@ final class AccountContributorsQuery
 {
     /**
      * Build the per-account contributor lists, keyed by account id. Each
-     * account's list holds every user with events attributed to it (any
-     * membership status), sorted by token spend descending. A user with events
-     * but no membership pivot row is reported as untracked.
+     * account's list is the union of its tracked members (so a member appears
+     * even with no usage attributed to this account) and any other user with
+     * events attributed to the account (reported as their pivot status, or
+     * untracked when they have no membership row). Sorted by displayed tokens
+     * descending.
      *
-     * The tokens shown are windowed to `$filters` (all-time when null). When
-     * `$totalAcrossAccounts` is true, each user's tokens become their whole
-     * footprint in the window — every event of theirs across every account
-     * they used, plus usage with no account attribution (private account or
-     * un-beaconed) — repeated in each of their cards. That figure can exceed
-     * the account's own usage; it answers "how much did this person burn",
-     * not "how much landed on this account".
+     * The tokens shown are windowed to `$filters` (all-time when null). With
+     * `$totalAcrossAccounts` false, tokens are the amount attributed to THIS
+     * account (0 for a member who contributed nothing here). With it true, a
+     * user's tokens become their whole footprint in the window — every event
+     * of theirs across every account, plus usage with no account attribution
+     * (private account or un-beaconed) — so a provisioned member whose usage is
+     * all unattributed still surfaces with their real total. That figure can
+     * exceed the account's own usage; it answers "how much did this person
+     * burn", not "how much landed on this account".
      *
      * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
      * @param  bool  $totalAcrossAccounts  show each user's whole-footprint total instead of the per-account amount
@@ -35,7 +40,7 @@ final class AccountContributorsQuery
      */
     public function get(?UsageFilters $filters = null, bool $totalAcrossAccounts = false): array
     {
-        $rows = Event::query()
+        $eventRows = Event::query()
             ->join('users', 'users.id', '=', 'events.user_id')
             ->leftJoin('account_user', function (JoinClause $join): void {
                 $join->on('account_user.account_id', '=', 'events.account_id')
@@ -48,32 +53,86 @@ final class AccountContributorsQuery
             ->selectRaw('users.id as user_id, users.slack_handle, users.display_name, users.name, users.avatar_url')
             ->selectRaw('account_user.status as status')
             ->selectRaw('SUM(events.tokens) as tokens')
-            ->orderByRaw('SUM(events.tokens) DESC')
+            ->get();
+
+        $memberRows = DB::table('account_user')
+            ->join('users', 'users.id', '=', 'account_user.user_id')
+            ->where('account_user.status', MembershipStatus::Tracked->value)
+            ->select('account_user.account_id', 'account_user.status', 'users.id as user_id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url')
             ->get();
 
         $userTotals = $totalAcrossAccounts ? $this->userTotals($filters) : [];
 
+        // account_id => user_id => entry (with the per-account attributed tokens
+        // stashed under `_attributed` until the display value is finalized).
         $byAccount = [];
 
-        foreach ($rows as $row) {
+        // Seed tracked members first so they list even with zero attributed usage.
+        foreach ($memberRows as $row) {
+            $accountId = (int) $row->account_id;
             $userId = (int) $row->user_id;
-            $byAccount[(int) $row->account_id][] = [
+            $byAccount[$accountId][$userId] = [
                 'user_id' => $userId,
-                'handle' => $row->slack_handle ?: ($row->display_name ?: ($row->name ?: ('#'.$userId))),
+                'handle' => $this->displayHandle($row, $userId),
                 'avatar_url' => $row->avatar_url,
-                'status' => $row->status ?? MembershipStatus::Untracked->value,
-                'tokens' => $totalAcrossAccounts ? ($userTotals[$userId] ?? 0) : (int) $row->tokens,
+                'status' => MembershipStatus::Tracked->value,
+                '_attributed' => 0,
             ];
         }
 
-        if ($totalAcrossAccounts) {
-            foreach ($byAccount as &$members) {
-                usort($members, fn (array $a, array $b): int => $b['tokens'] <=> $a['tokens']);
+        // Overlay event contributors: set the attributed amount, and add any
+        // user who has events here but is not a tracked member.
+        foreach ($eventRows as $row) {
+            $accountId = (int) $row->account_id;
+            $userId = (int) $row->user_id;
+
+            if (isset($byAccount[$accountId][$userId])) {
+                $byAccount[$accountId][$userId]['_attributed'] = (int) $row->tokens;
+
+                continue;
             }
-            unset($members);
+
+            $byAccount[$accountId][$userId] = [
+                'user_id' => $userId,
+                'handle' => $this->displayHandle($row, $userId),
+                'avatar_url' => $row->avatar_url,
+                'status' => $row->status ?? MembershipStatus::Untracked->value,
+                '_attributed' => (int) $row->tokens,
+            ];
         }
 
-        return $byAccount;
+        $result = [];
+
+        foreach ($byAccount as $accountId => $members) {
+            $list = array_map(function (array $member) use ($totalAcrossAccounts, $userTotals): array {
+                return [
+                    'user_id' => $member['user_id'],
+                    'handle' => $member['handle'],
+                    'avatar_url' => $member['avatar_url'],
+                    'status' => $member['status'],
+                    'tokens' => $totalAcrossAccounts ? ($userTotals[$member['user_id']] ?? 0) : $member['_attributed'],
+                ];
+            }, array_values($members));
+
+            usort($list, fn (array $a, array $b): int => $b['tokens'] <=> $a['tokens']);
+
+            $result[$accountId] = $list;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Resolve a user's display handle from the available identity columns,
+     * falling back to a `#id` label.
+     *
+     * @param  object  $row  a row carrying slack_handle/display_name/name columns
+     * @param  int  $userId  the user's id, for the fallback label
+     * @return string
+     */
+    private function displayHandle(object $row, int $userId): string
+    {
+        return $row->slack_handle ?: ($row->display_name ?: ($row->name ?: ('#'.$userId)));
     }
 
     /**

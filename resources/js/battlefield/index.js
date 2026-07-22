@@ -3,6 +3,7 @@ import { BattlefieldScene } from './scene.js';
 import { LAYOUTS, BG_COLOR } from './config.js';
 import { bus } from './bus.js';
 import { snapshotState } from './snapshot.js';
+import { computeHudTop } from './hud-position.js';
 import { BusEvent, SCENE_KEY } from './constants.js';
 
 const ECHO_EVENT_MAP = {
@@ -90,6 +91,7 @@ function bootGame(mount, state, mode) {
       get mode() { return game.registry.get('mode'); },
       bossHp: () => scene.bossState?.currentHp,
       bossMaxHp: () => scene.bossState?.maxHp,
+      computeHudTop,
     };
   });
 

@@ -122,3 +122,42 @@ it('still windows the total-across-accounts figure by the range', function () {
 
     expect($members[0]['tokens'])->toBe(30); // 10 + 20 in range; the 2-month-old 9000 excluded
 });
+
+it('lists a tracked member with no attributed events: 0 tokens when off, whole usage when on', function () {
+    $account = Account::factory()->create();
+    $member = User::factory()->create(['slack_handle' => 'ghost']);
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+
+    // All of the member's usage is unattributed (no account_id) — none on $account.
+    Event::factory()->for($member)->create(['account_id' => null, 'tokens' => 5000, 'created_at' => now()]);
+
+    $off = app(AccountContributorsQuery::class)->get(null, false);
+    expect($off[$account->id])->toHaveCount(1)
+        ->and($off[$account->id][0]['user_id'])->toBe($member->id)
+        ->and($off[$account->id][0]['status'])->toBe(MembershipStatus::Tracked->value)
+        ->and($off[$account->id][0]['tokens'])->toBe(0);
+
+    $on = app(AccountContributorsQuery::class)->get(null, true);
+    expect($on[$account->id])->toHaveCount(1)
+        ->and($on[$account->id][0]['tokens'])->toBe(5000);
+});
+
+it('shows tracked members alongside event contributors when across-accounts is on', function () {
+    $account = Account::factory()->create();
+    $contributor = User::factory()->create(['slack_handle' => 'worker']);
+    $ghostMember = User::factory()->create(['slack_handle' => 'ghost']);
+
+    $account->users()->attach($contributor->id, ['status' => MembershipStatus::Tracked->value]);
+    $account->users()->attach($ghostMember->id, ['status' => MembershipStatus::Tracked->value]);
+
+    Event::factory()->for($contributor)->create(['account_id' => $account->id, 'tokens' => 100, 'created_at' => now()]);
+    Event::factory()->for($ghostMember)->create(['account_id' => null, 'tokens' => 9000, 'created_at' => now()]);
+
+    $on = app(AccountContributorsQuery::class)->get(null, true)[$account->id];
+
+    expect($on)->toHaveCount(2)
+        ->and($on[0]['user_id'])->toBe($ghostMember->id)   // sorted by whole usage desc
+        ->and($on[0]['tokens'])->toBe(9000)
+        ->and($on[1]['user_id'])->toBe($contributor->id)
+        ->and($on[1]['tokens'])->toBe(100);
+});

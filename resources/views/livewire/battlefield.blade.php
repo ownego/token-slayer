@@ -32,16 +32,33 @@
     </div>
 
     @unless (request('embed') === 'ide')
-        <a
-            href="{{ route('profile') }}"
-            class="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300"
-        >
-            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
-            </svg>
-            Profile
-        </a>
+        <nav id="bf-nav" class="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1.5">
+            <a
+                href="{{ route('profile') }}"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300"
+            >
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                </svg>
+                Profile
+            </a>
+            <a
+                href="{{ route('filament.admin.pages.dashboard') }}"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300"
+            >
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+                </svg>
+                Dashboard
+            </a>
+        </nav>
     @endunless
+
+    @if (session('error'))
+        <div class="absolute left-1/2 top-3 z-20 max-w-[90vw] -translate-x-1/2 rounded-lg border border-red-500/40 bg-red-950/85 px-4 py-2 text-center text-xs font-medium text-red-200 backdrop-blur-sm">
+            {{ session('error') }}
+        </div>
+    @endif
 
     {{-- Mirrors the in-canvas "▸ TOP DAMAGE" leaderboard panel (resources/js/battlefield/leaderboard.js). --}}
     <div
@@ -254,14 +271,19 @@
                     const parent = (this.$el.offsetParent || document.body).getBoundingClientRect();
                     const scale = rect.width / logicalW;
                     const LOGICAL_X = 12; // mirrors the panel's left inset
-                    // Landscape aligns the HUD top with the in-canvas TOP DAMAGE
-                    // panel (PANEL_TOP). Portrait hides that panel, so the HUD drops
-                    // below the top-left Profile link instead of colliding with it.
-                    const isPortrait = gameSize.height > logicalW;
-                    const LOGICAL_Y = isPortrait ? 56 : 5;
+                    // The HUD mirrors the in-canvas panel's y, but the top-left nav
+                    // stack occupies the same corner in every orientation, so clear
+                    // it whenever the canvas starts high enough to collide. Measured,
+                    // not hard-coded: the stack grows by a pill per added link.
+                    const navRect = document.getElementById('bf-nav')?.getBoundingClientRect();
                     this.$el.style.transformOrigin = 'top left';
                     this.$el.style.left = (rect.left - parent.left + LOGICAL_X * scale) + 'px';
-                    this.$el.style.top = (rect.top - parent.top + LOGICAL_Y * scale) + 'px';
+                    this.$el.style.top = bf.computeHudTop({
+                        navBottom: navRect ? navRect.bottom : null,
+                        canvasTop: rect.top,
+                        parentTop: parent.top,
+                        scale,
+                    }) + 'px';
                     this.$el.style.transform = `scale(${scale})`;
                 },
                 fmt(n) {

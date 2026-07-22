@@ -20,6 +20,8 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
+use Illuminate\Contracts\View\View;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -28,10 +30,15 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 /**
- * Registers the `/admin` Filament panel — account CRUD, member management,
+ * Registers the `/dashboard` Filament panel — account CRUD, member management,
  * and (in later phases) quota/usage dashboards. Access is gated by
- * `User::canAccessPanel()` (requires at least one assigned role); per-action
+ * `User::canAccessPanel()` — an assigned role, or any role flagged
+ * `is_default` (which every user carries implicitly); per-action
  * authorization inside the panel is enforced by Shield's generated Policies.
+ *
+ * The panel id stays `admin` (so every `filament.admin.*` route name and
+ * Shield permission keeps working) while the public path is the friendlier
+ * `/dashboard`; `routes/web.php` redirects the legacy `/admin/*` URLs.
  */
 class AdminPanelProvider extends PanelProvider
 {
@@ -61,7 +68,7 @@ class AdminPanelProvider extends PanelProvider
         return $panel
             ->default()
             ->id('admin')
-            ->path('admin')
+            ->path('dashboard')
             ->colors([
                 'primary' => Color::Amber,
             ])
@@ -73,6 +80,14 @@ class AdminPanelProvider extends PanelProvider
             ->resources([
                 RoleResource::class,
             ])
+            // The battlefield is the app's home; without this the only way out
+            // of the panel is the browser's Back button or logging out. It
+            // lives in the topbar next to the avatar rather than the sidebar,
+            // where it would read as just another admin section.
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                fn (): View => view('filament.topbar-battlefield-link'),
+            )
             // The panel has no global-search-worthy surface: accounts/users are
             // few and reachable from the nav, so the header search box is dead
             // weight.

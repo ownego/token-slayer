@@ -23,3 +23,16 @@ it('renders the dashboard with the time filter and total-across-accounts toggle'
         ->assertSee('This week')
         ->assertSee('Total usage across accounts');
 });
+
+it('explains the toggle on a separate line per case instead of one run-on block', function () {
+    $this->actingAs(User::factory()->admin()->create());
+
+    $this->get(Dashboard::getUrl(panel: 'admin'))
+        ->assertOk()
+        // Inline style, not a `block` utility class: the panel's Tailwind build
+        // omits utilities Filament doesn't use, so `class="block"` is inert and
+        // the two cases run together on one line.
+        ->assertSee('<span style="display:block"><strong>Off:</strong>', escape: false)
+        ->assertSee('<span style="display:block"><strong>On:</strong>', escape: false)
+        ->assertDontSee('&lt;span', escape: false);
+});

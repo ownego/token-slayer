@@ -26,6 +26,15 @@ test('profile shows a link to the battlefield page', function () {
         ->assertSee('href="'.route('battlefield').'"', escape: false);
 });
 
+test('profile shows a link to the dashboard panel', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('Dashboard', escape: false)
+        ->assertSee('href="'.route('filament.admin.pages.dashboard').'"', escape: false);
+});
+
 test('profile shows the plain token once when redirected from oauth', function () {
     $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
     $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
