@@ -36,21 +36,34 @@ $Bin  = Join-Path $Home_ ".local\bin"
 New-Item -ItemType Directory -Force -Path $Cfg, $Bin | Out-Null
 
 # --- Python detection -------------------------------------------------------
-# Pick a Python that ACTUALLY RUNS and has `venv`. A bare `python`/`python3` on
-# PATH can be the Microsoft Store's App Execution Alias stub, which does
-# nothing but pop the Store -- rejecting anything resolved from WindowsApps
-# and probing `import venv` catches both that and a too-old interpreter.
+# Pick a Python that ACTUALLY RUNS and has a WORKING `venv` and `pyexpat`. A
+# bare `python`/`python3` on PATH can be the Microsoft Store's App Execution
+# Alias stub, which does nothing but pop the Store -- rejecting anything
+# resolved from WindowsApps and probing `import venv` catches both that and a
+# too-old interpreter. `pyexpat` is probed too: pip imports `xml.parsers.expat`
+# -> `pyexpat`, and an interpreter whose pyexpat fails to load breaks EVERY pip
+# operation while `import venv` still succeeds -- a real, field-diagnosed
+# broken-stdlib build. Versioned `py -3.x` candidates are probed so a healthy
+# interpreter is found even when the default is broken or too old.
 function Find-Python {
   $cands = @()
   if ($env:SLAYER_PYTHON) { $cands += $env:SLAYER_PYTHON }
-  $cands += @('py -3', 'python', 'python3')
+  $cands += @('py -3', 'py -3.13', 'py -3.12', 'py -3.11', 'py -3.10', 'python', 'python3')
   foreach ($c in $cands) {
     $exe, $arg = ($c -split ' ',2)
     $resolved = (Get-Command $exe -ErrorAction SilentlyContinue)
     if (-not $resolved) { continue }
     $path = $resolved.Source
     if ($path -and $path -match 'WindowsApps') { continue }   # MS Store stub -> opens Store
-    $probe = & $exe $arg -c "import sys,venv; print('%d.%d' % sys.version_info[:2])" 2>$null
+    # Build the probe's argument list explicitly rather than passing $arg
+    # directly -- $arg is $null for the bare `python`/`python3` candidates,
+    # and passing $null as a native-command argument is version-dependent in
+    # PowerShell (see $PyPrefix below for the same fix applied after
+    # resolution).
+    $probeArgs = @()
+    if ($arg) { $probeArgs += $arg }
+    $probeArgs += @('-c', "import sys,venv,pyexpat; print('%d.%d' % sys.version_info[:2])")
+    $probe = & $exe @probeArgs 2>$null
     if ($LASTEXITCODE -eq 0 -and $probe) {
       $maj,$min = $probe.Trim() -split '\.'
       if ([int]$maj -gt 3 -or ([int]$maj -eq 3 -and [int]$min -ge 10)) {
@@ -58,9 +71,18 @@ function Find-Python {
       }
     }
   }
-  throw "No usable Python >= 3.10 found. Install from https://www.python.org/downloads/ or 'winget install Python.Python.3.12', then re-run.`n(If 'python' opens the Microsoft Store, disable the App Execution Alias or install real Python.)"
+  throw "No usable Python >= 3.10 with a working venv and pyexpat was found. Install from https://www.python.org/downloads/ or 'winget install Python.Python.3.12', then re-run -- or set SLAYER_PYTHON to a specific interpreter.`n(If 'python' opens the Microsoft Store, disable the App Execution Alias or install real Python.)"
 }
 $PyExe, $PyArg = Find-Python
+# $PyArg is the optional version selector for the resolved interpreter (e.g.
+# "-3.12" for a versioned `py` launch), $null for a bare `python`/`python3`
+# resolution. Splat $PyPrefix wherever $PyArg would otherwise be passed
+# directly as a native-command argument -- passing $null itself is
+# version-dependent in PowerShell and can surface as an empty string (""),
+# turning `python -m venv` into `python "" -m venv`, which fails. This makes
+# an empty argument impossible by construction at every call site.
+$PyPrefix = @()
+if ($PyArg) { $PyPrefix = @($PyArg) }
 
 # --- venv + PEP668 + get-pip fallback (Windows `Scripts\` layout) -----------
 # PIP_BREAK_SYSTEM_PACKAGES=1: pip's official override for the
@@ -69,11 +91,30 @@ $PyExe, $PyArg = Find-Python
 # system Python.
 $env:PIP_BREAK_SYSTEM_PACKAGES = '1'
 $VenvPy = Join-Path $Venv 'Scripts\python.exe'
-& $PyExe $PyArg -m venv $Venv
+
+# Self-heal: a venv left over from a failed run or a since-removed/broken
+# interpreter can have a working-looking directory but no importable
+# slayer_cli. Rebuild it clean instead of reusing it, so simply re-running
+# the installer (or `token-slayer update`) repairs a broken install. A
+# healthy venv where slayer_cli already imports is left untouched, keeping
+# updates fast. Guarded so a missing $VenvPy (a never-created or
+# half-deleted venv) can never throw here.
+if (Test-Path $Venv) {
+  $venvHealthy = $false
+  if (Test-Path $VenvPy) {
+    try {
+      & $VenvPy -c 'import slayer_cli' 2>$null
+      $venvHealthy = ($LASTEXITCODE -eq 0)
+    } catch { $venvHealthy = $false }
+  }
+  if (-not $venvHealthy) { Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue }
+}
+
+& $PyExe @PyPrefix -m venv $Venv
 if (-not (Test-Path $VenvPy)) {
   Write-Warning 'slayer-cli: bundled pip bootstrap failed; retrying with get-pip...'
   Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue
-  & $PyExe $PyArg -m venv --without-pip $Venv
+  & $PyExe @PyPrefix -m venv --without-pip $Venv
   if (Test-Path $VenvPy) {
     (Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py).Content | & $VenvPy -
   }
@@ -81,14 +122,45 @@ if (-not (Test-Path $VenvPy)) {
 if (-not (Test-Path (Join-Path $Venv 'Scripts\pip.exe'))) {
   Write-Warning 'slayer-cli: venv/pip setup failed -- CLI unavailable; hook tracking still installed'
 } else {
+  # The wheel route requires a valid hook token. Resolve it: the env var
+  # passed on the install one-liner, else the token saved by a previous
+  # install, so `token-slayer update` (which re-runs this script with no env
+  # var) still works. Never echoed.
+  $slayerToken = [Environment]::GetEnvironmentVariable($EnvVarName)
+  if (-not $slayerToken) {
+    $wheelTokenFile = Join-Path $Cfg 'token'
+    if ((Test-Path $wheelTokenFile) -and (Get-Item $wheelTokenFile).Length -gt 0) {
+      $slayerToken = (Get-Content -Raw -LiteralPath $wheelTokenFile).Trim()
+    }
+  }
+
   $whl = Join-Path $env:TEMP 'slayer_cli-0.0.0-py3-none-any.whl'
-  Invoke-WebRequest -UseBasicParsing $WheelUrl -OutFile $whl
-  # Two steps on purpose: the served wheel is always "latest" and its version
-  # may be UNCHANGED between builds, so a plain install is a no-op and ships
-  # stale code. First install pulls deps; force-reinstall --no-deps refreshes
-  # only the package code every time, cheaply (deps untouched).
-  & $VenvPy -m pip install --quiet $whl
-  & $VenvPy -m pip install --quiet --force-reinstall --no-deps $whl
+  # Invoke-WebRequest throws on a non-2xx status, and -SkipHttpErrorCheck
+  # does not exist on PowerShell 5.1 (this script requires 5.1), so the
+  # status is read from the exception in the catch. A request that never
+  # got a response at all (DNS/TLS failure, no connectivity) has no
+  # .Response and is treated as 0.
+  $slayerHttp = 0
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri $WheelUrl -OutFile $whl `
+      -Headers @{ Authorization = "Bearer $slayerToken" } | Out-Null
+    $slayerHttp = 200
+  } catch {
+    if ($_.Exception.Response) { $slayerHttp = [int]$_.Exception.Response.StatusCode } else { $slayerHttp = 0 }
+  }
+
+  if ($slayerHttp -eq 200) {
+    # Two steps on purpose: the served wheel is always "latest" and its version
+    # may be UNCHANGED between builds, so a plain install is a no-op and ships
+    # stale code. First install pulls deps; force-reinstall --no-deps refreshes
+    # only the package code every time, cheaply (deps untouched).
+    & $VenvPy -m pip install --quiet $whl
+    & $VenvPy -m pip install --quiet --force-reinstall --no-deps $whl
+  } elseif ($slayerHttp -eq 401) {
+    Write-Warning 'slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows.'
+  } else {
+    Write-Warning "slayer-cli: could not download the CLI right now (server said $slayerHttp). Try again in a few minutes; hook tracking is still installed."
+  }
   Remove-Item $whl -ErrorAction SilentlyContinue
 }
 
@@ -511,7 +583,7 @@ function Invoke-PyMerge($scriptBody, [string[]]$scriptArgs) {
   $tmp = [System.IO.Path]::GetTempFileName()
   try {
     [System.IO.File]::WriteAllText($tmp, $scriptBody)
-    Get-Content -Raw -LiteralPath $tmp | & $PyExe $PyArg - @scriptArgs
+    Get-Content -Raw -LiteralPath $tmp | & $PyExe @PyPrefix - @scriptArgs
   } finally {
     Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
   }
