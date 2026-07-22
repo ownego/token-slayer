@@ -2,27 +2,39 @@
 
 namespace App\Http\Controllers;
 
-use Symfony\Component\HttpFoundation\RedirectResponse;
+use App\Services\SlayerWheelProvider;
+use Illuminate\Http\Response;
 
 class SlayerWheelController extends Controller
 {
     /**
-     * Redirect the install script's wheel download to slayer-cli's latest
-     * GitHub Release asset. slayer-cli is built and released from its own
-     * repo now — this server holds no copy of the wheel to stream. 404s
-     * cleanly when no release URL is configured yet, so the install
-     * script's tolerant `|| echo "...skipped"` fallback degrades gracefully.
+     * Build the controller.
      *
-     * @return RedirectResponse
+     * @param  SlayerWheelProvider  $wheel  supplies the current wheel's bytes
+     * @return void
      */
-    public function __invoke(): RedirectResponse
-    {
-        $url = config('token_slayer.slayer_cli_wheel_url');
+    public function __construct(private readonly SlayerWheelProvider $wheel) {}
 
-        if (! $url) {
-            abort(404);
+    /**
+     * Serve the current slayer-cli wheel, behind the hook.token middleware.
+     * The client only ever talks to this server; the PAT and the GitHub URL
+     * stay server-side. Any failure aborts with a generic 503 whose message
+     * mentions neither GitHub nor credentials, so a failure of the server's
+     * OWN auth is never disclosed to the caller.
+     *
+     * @return Response
+     */
+    public function __invoke(): Response
+    {
+        $bytes = $this->wheel->bytes();
+
+        if ($bytes === null) {
+            abort(503, 'slayer-cli is temporarily unavailable. Try again shortly.');
         }
 
-        return redirect()->away($url);
+        return response($bytes, 200, [
+            'Content-Type' => 'application/octet-stream',
+            'Content-Disposition' => 'attachment; filename="slayer_cli-latest.whl"',
+        ]);
     }
 }

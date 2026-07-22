@@ -4,19 +4,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Client version
-    |--------------------------------------------------------------------------
-    |
-    | Version stamp rendered into the served install scripts and echoed back
-    | by hook clients on every event. Bump whenever the install script or
-    | hook helper changes so outdated clients become visible in the admin UI.
-    |
-    */
-
-    'client_version' => '1.0.0',
-
-    /*
-    |--------------------------------------------------------------------------
     | Anthropic OAuth (server-side quota probing)
     |--------------------------------------------------------------------------
     |
@@ -79,22 +66,5 @@ return [
     'snapshots' => [
         'retention_days' => (int) env('TOKEN_SLAYER_SNAPSHOT_RETENTION_DAYS', 30),
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | slayer-cli release source
-    |--------------------------------------------------------------------------
-    |
-    | slayer-cli now lives in its own repo and ships as a GitHub Release
-    | asset; this server never builds or stores the wheel itself, it only
-    | redirects the install script's download to the latest release.
-    |
-    | Set per environment via SLAYER_CLI_WHEEL_URL once the release repo is
-    | settled. Empty until configured — the controller 404s cleanly rather
-    | than redirecting nowhere.
-    |
-    */
-
-    'slayer_cli_wheel_url' => env('SLAYER_CLI_WHEEL_URL', ''),
 
 ];
