@@ -252,3 +252,38 @@ it('shows a collapsible custom.sh tool catalog reference in the CLI track', func
         ->assertSee('CommandLine')
         ->assertSee('no per-tool events today');
 });
+
+test('the Windows install command is pasteable into PowerShell without being double-parsed', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
+    $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee("\$env:TOKEN_SLAYER_TOKEN='plain-abc'; irm ".route('install-script-ps1').' | iex');
+});
+
+test('each Windows command is labelled with the shell it belongs to', function () {
+    // The two forms are not interchangeable: pasting the cmd one into
+    // PowerShell makes the outer shell expand $env:<VAR> -- unset at paste
+    // time -- so the child receives `='<token>'; ...`, errors on `=`, and
+    // installs with no token. Labels are what stop that mix-up.
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
+    $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('PowerShell')
+        ->assertSee('cmd.exe')
+        ->assertSee('not interchangeable');
+});
+
+test('cmd.exe users get the nested powershell form, which only works from cmd', function () {
+    // cmd.exe does not expand $env:<VAR>, so there the wrapper is correct --
+    // and required, since irm/iex are PowerShell cmdlets cmd cannot run.
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
+    $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('powershell -ExecutionPolicy ByPass -c "$env:TOKEN_SLAYER_TOKEN=\'plain-abc\'; irm '.route('install-script-ps1').' | iex"');
+});

@@ -140,9 +140,11 @@
         <p class="text-sm text-gray-500 mb-3">For developers using the CLI agents. Installs the hooks and saves your token to <code>{{ $tokenPath }}</code> in one step. Safe to re-run on rotation.</p>
         <p class="text-xs text-gray-500 mb-1">macOS / Linux (bash/zsh):</p>
         <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $combinedCommand }}</pre>
-        <p class="text-xs text-gray-500 mt-3 mb-1">Windows (PowerShell — native, no WSL needed):</p>
+        <p class="text-xs text-gray-500 mt-3 mb-1">Windows — paste into <strong>PowerShell</strong> (native, no WSL needed):</p>
         <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $windowsCommand }}</pre>
-        <p class="text-xs text-gray-500 mt-1">Needs Python 3.10+ (<code>winget install Python.Python.3.12</code>). Usage-tracking hooks additionally need Git for Windows; the account CLI works without it.</p>
+        <p class="text-xs text-gray-500 mt-1">In <strong>cmd.exe</strong> instead? Use this one — the two are not interchangeable:</p>
+        <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">{{ $windowsCmdCommand }}</pre>
+        <p class="text-xs text-gray-500 mt-1">Needs Python 3.10+ (<code>winget install Python.Python.3.12</code>) — install it from python.org or winget, <strong>not</strong> the Microsoft Store. Usage-tracking hooks additionally need Git for Windows; the account CLI works without it.</p>
         <p class="text-xs text-gray-500 mt-2">Or inspect the script first: <a href="{{ $installUrl }}" class="underline">{{ $installUrl }}</a></p>
         <p class="text-xs text-gray-500 mt-1">Already installed? Run <code>token-slayer update</code>.</p>
         <p class="text-xs text-gray-500 mt-1">The account you're currently logged into is set up for you automatically the moment install finishes — nothing else to do for it.</p>
