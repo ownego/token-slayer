@@ -8,6 +8,13 @@
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <!--
+        Since platform build 262 JCEF ships as a separate bundled plugin rather than
+        part of the core platform. Without this dependency the plugin classloader has
+        no parent exposing com.intellij.ui.jcef.*, and the battlefield tool window dies
+        with ClassNotFoundException: JBCefApp on IDEs 2026.2+.
+    -->
+    <depends>com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Token Slayer" anchor="right" icon="/META-INF/pluginIcon.svg"
