@@ -73,7 +73,14 @@ function Find-Python {
   }
   throw "No usable Python >= 3.10 with a working venv and pyexpat was found. Install from https://www.python.org/downloads/ or 'winget install Python.Python.3.12', then re-run -- or set SLAYER_PYTHON to a specific interpreter.`n(If 'python' opens the Microsoft Store, disable the App Execution Alias or install real Python.)"
 }
-$PyExe, $PyArg = Find-Python
+# Index the returned pair rather than destructuring it. Find-Python returns
+# `,@($exe, $arg)`: the leading comma deliberately keeps the pair intact as a
+# SINGLE output object, so `$a, $b = Find-Python` would bind the whole array
+# to $a and leave $b $null -- and `& $a` then stringifies the array into one
+# literal command name ("py -3"), which does not exist.
+$Py    = Find-Python
+$PyExe = $Py[0]
+$PyArg = $Py[1]
 # $PyArg is the optional version selector for the resolved interpreter (e.g.
 # "-3.12" for a versioned `py` launch), $null for a bare `python`/`python3`
 # resolution. Splat $PyPrefix wherever $PyArg would otherwise be passed
