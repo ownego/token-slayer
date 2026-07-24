@@ -1,0 +1,9 @@
+<!--
+    Loaded only when com.intellij.modules.jcef is present (platform build 262+, where
+    JCEF was split out of the core platform into its own bundled plugin). It declares
+    no extensions: the sole purpose is to make the JCEF plugin a resolved dependency
+    so com.intellij.ui.jcef.* is on the plugin classloader. On builds 241-261 the
+    module does not exist, this file is skipped, and JCEF resolves from the core
+    platform as before.
+-->
+<idea-plugin/>
