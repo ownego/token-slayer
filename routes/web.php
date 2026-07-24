@@ -48,6 +48,20 @@ Route::get('/install', fn (ReleaseResolver $resolver) => response(
     ['Content-Type' => 'text/x-shellscript; charset=utf-8'],
 ))->name('install-script');
 
+// Native-Windows PowerShell installer. Mirrors /install; `installUrl` points at
+// itself so `token-slayer update` on Windows re-fetches the PowerShell script.
+Route::get('/install.ps1', fn (ReleaseResolver $resolver) => response(
+    view('install-script-ps1', [
+        'baseUrl' => url('/api/events'),
+        'namespace' => config('app.hook_namespace'),
+        'clientVersion' => $resolver->latest()['version'] ?? '',
+        'installUrl' => route('install-script-ps1'),
+        'slayerWheelUrl' => route('slayer-wheel'),
+    ])->render(),
+    200,
+    ['Content-Type' => 'text/plain; charset=utf-8'],
+))->name('install-script-ps1');
+
 Route::get('/dist/slayer_cli-latest.whl', SlayerWheelController::class)
     ->middleware('hook.token')
     ->name('slayer-wheel');
