@@ -6,27 +6,45 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.ui.content.Content
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.util.Disposer
 import javax.swing.JLabel
 import javax.swing.JPanel
 import java.net.URI
+
+private val LOG = logger<BattlefieldToolWindowFactory>()
 
 class BattlefieldToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val svc = ApplicationManager.getApplication().getService(TokenSlayerService::class.java)
         val content = ContentFactory.getInstance()
 
-        if (!JBCefApp.isSupported()) {
-            val panel = JPanel().apply { add(JLabel("JCEF unavailable — open the battlefield in your browser.")) }
-            toolWindow.contentManager.addContent(content.createContent(panel, "", false))
-            return
+        // Touching JBCefApp links the whole com.intellij.ui.jcef package. When JCEF is
+        // absent that raises a LinkageError rather than returning false, and an uncaught
+        // one aborts createToolWindowContent — leaving a silently blank panel instead of
+        // the message below. Catch it so the tool window always renders something.
+        val browserContent = try {
+            if (JBCefApp.isSupported()) createBrowserContent(svc, content) else null
+        } catch (t: Throwable) {
+            LOG.warn("JCEF unavailable; falling back to the message panel", t)
+            null
         }
 
+        toolWindow.contentManager.addContent(browserContent ?: unavailableContent(content))
+    }
+
+    private fun unavailableContent(content: ContentFactory): Content {
+        val panel = JPanel().apply { add(JLabel("JCEF unavailable — open the battlefield in your browser.")) }
+        return content.createContent(panel, "", false)
+    }
+
+    private fun createBrowserContent(svc: TokenSlayerService, content: ContentFactory): Content {
         val uiContent = content.createContent(JPanel(), "", false)
         val browser = JBCefBrowser()
         Disposer.register(uiContent, browser)
@@ -55,7 +73,7 @@ class BattlefieldToolWindowFactory : ToolWindowFactory {
         reload(svc, browser)
 
         uiContent.component = browser.component
-        toolWindow.contentManager.addContent(uiContent)
+        return uiContent
     }
 
     private fun handleRelay(svc: TokenSlayerService, raw: String, reload: () -> Unit) {
