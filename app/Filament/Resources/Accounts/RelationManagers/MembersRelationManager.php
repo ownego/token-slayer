@@ -22,16 +22,20 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Livewire\Component;
 
 /**
- * All contributors of an `Account` in one tab, regardless of membership
- * status. Tracked members show a "Verified" badge; untracked contributors an
- * "Unverified" badge and can be verified (promoted) in place; a tracked
- * member can also be unverified (demoted) back to untracked. Replaces the
- * former separate `UsersRelationManager`/`UntrackedContributorsRelationManager`
- * tabs.
+ * All contributors of an `Account` in one tab. By default only Tracked/Pending
+ * members are shown; the "Unverified members" filter (off by default) reveals
+ * Untracked contributors too. Tracked members show a "Verified" badge;
+ * untracked contributors an "Unverified" badge and can be verified (promoted)
+ * in place; a tracked member can also be unverified (demoted) back to
+ * untracked. Replaces the former separate
+ * `UsersRelationManager`/`UntrackedContributorsRelationManager` tabs.
  */
 class MembersRelationManager extends RelationManager
 {
@@ -101,6 +105,23 @@ class MembersRelationManager extends RelationManager
                     ->dateTime()
                     ->placeholder('—'),
             ])
+            ->filters([
+                TernaryFilter::make('unverified')
+                    ->label('Unverified members')
+                    ->placeholder('Hidden')
+                    ->trueLabel('Shown')
+                    ->falseLabel('Hidden')
+                    ->default(false)
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query,
+                        false: fn (Builder $query): Builder => $query->whereIn(
+                            $this->pivotStatusColumn(), [MembershipStatus::Tracked->value, MembershipStatus::Pending->value]
+                        ),
+                        blank: fn (Builder $query): Builder => $query->whereIn(
+                            $this->pivotStatusColumn(), [MembershipStatus::Tracked->value, MembershipStatus::Pending->value]
+                        ),
+                    ),
+            ])
             ->headerActions([
                 $this->addMemberAction(),
                 $this->refreshAction(),
@@ -125,6 +146,26 @@ class MembersRelationManager extends RelationManager
         $account = $this->getOwnerRecord();
 
         return app(AccountMembershipCache::class)->allContributorAggregates($account);
+    }
+
+    /**
+     * The qualified `status` column on the `users()` pivot table, for use in
+     * filter query closures. The `Builder` those closures receive is the
+     * relation's plain query (`$relationship->getQuery()`), which does NOT
+     * expose `wherePivot`/`wherePivotIn` — those are methods on the
+     * `BelongsToMany` relation object itself, not on its query builder, so
+     * calling them here would silently fall through to Eloquent's dynamic
+     * `where{Column}` magic instead of throwing. Qualifying the column with
+     * the pivot table name sidesteps that trap entirely.
+     *
+     * @return string
+     */
+    private function pivotStatusColumn(): string
+    {
+        /** @var BelongsToMany $relationship */
+        $relationship = $this->getRelationship();
+
+        return $relationship->getTable().'.status';
     }
 
     /**

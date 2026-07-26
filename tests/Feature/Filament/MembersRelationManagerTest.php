@@ -24,6 +24,7 @@ it('lists tracked and untracked contributors with status and toggles them', func
 
     Livewire::actingAs($admin)
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->filterTable('unverified', true)
         ->assertCanSeeTableRecords([$tracked, $untracked])
         ->assertSee('Verified')
         ->assertSee('Unverified')
@@ -42,6 +43,7 @@ it('verifies an untracked contributor, dropping them from untrackedUsers() and f
 
     Livewire::actingAs($admin)
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->filterTable('unverified', true)
         ->callTableAction('verify', $contributor);
 
     expect($account->trackedUsers()->whereKey($contributor->id)->exists())->toBeTrue();
@@ -137,6 +139,7 @@ it('displays the cached event count and last-seen time for an untracked contribu
 
     Livewire::actingAs($admin)
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->filterTable('unverified', true)
         ->assertTableColumnStateSet('events', 3, $contributor)
         ->assertTableColumnStateSet('last_seen', (string) $latest->created_at, $contributor);
 });
