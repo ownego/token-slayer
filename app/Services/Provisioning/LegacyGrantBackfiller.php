@@ -50,7 +50,7 @@ final class LegacyGrantBackfiller
                 'updated_at' => now(),
             ]);
 
-            $legacySecret = Cache::get('provisioned:setup:'.$row['user_id'].':'.$row['account_id']);
+            $legacySecret = Cache::get(CacheKeys::legacyProvisionedSetup($row['user_id'], $row['account_id']));
             if ($legacySecret !== null && $status === GrantStatus::Pending) {
                 Cache::put(CacheKeys::provisionedGrant($grantId), $legacySecret, CacheKeys::PROVISIONED_GRANT_TTL_SECONDS);
             }

@@ -56,20 +56,7 @@ final class DeviceClaimResolver
                 ->lockForUpdate()
                 ->first();
             if ($placeholder !== null) {
-                try {
-                    $placeholder->update(['device_id' => $fingerprint]);
-
-                    return $placeholder;
-                } catch (QueryException $exception) {
-                    if ($exception->getCode() !== '23000') {
-                        throw $exception;
-                    }
-
-                    // Race: same fingerprint submitted twice concurrently.
-                    // The other thread bound a different placeholder row first.
-                    // Return the already-bound device.
-                    return $user->devices()->where('device_id', $fingerprint)->first();
-                }
+                return $this->bindOrRecoverRace($user, $placeholder, $fingerprint);
             }
 
             $default = $user->devices()
@@ -77,23 +64,40 @@ final class DeviceClaimResolver
                 ->lockForUpdate()
                 ->first();
             if ($default !== null) {
-                try {
-                    $default->update(['device_id' => $fingerprint]);
-
-                    return $default;
-                } catch (QueryException $exception) {
-                    if ($exception->getCode() !== '23000') {
-                        throw $exception;
-                    }
-
-                    // Race: same fingerprint submitted twice concurrently.
-                    // The other thread bound the default row first.
-                    // Return the already-bound device.
-                    return $user->devices()->where('device_id', $fingerprint)->first();
-                }
+                return $this->bindOrRecoverRace($user, $default, $fingerprint);
             }
 
             return null;
         });
+    }
+
+    /**
+     * Bind `$fingerprint` onto `$device`, recovering from the same-fingerprint
+     * concurrent-bind race: if another request already bound a different row
+     * to this fingerprint first, the resulting unique-constraint violation is
+     * caught and the race winner's already-committed device is returned
+     * instead of rethrowing. Any other database error still propagates.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @param  Device  $device  the locked placeholder or legacy default row to bind
+     * @param  string  $fingerprint  the client device fingerprint being bound
+     * @return Device|null the bound device, or the race winner's device
+     */
+    private function bindOrRecoverRace(User $user, Device $device, string $fingerprint): ?Device
+    {
+        try {
+            $device->update(['device_id' => $fingerprint]);
+
+            return $device;
+        } catch (QueryException $exception) {
+            if ($exception->getCode() !== '23000') {
+                throw $exception;
+            }
+
+            // Race: same fingerprint submitted twice concurrently.
+            // The other thread bound a different row first.
+            // Return the already-bound device.
+            return $user->devices()->where('device_id', $fingerprint)->first();
+        }
     }
 }

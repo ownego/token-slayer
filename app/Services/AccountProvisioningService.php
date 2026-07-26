@@ -221,36 +221,35 @@ final class AccountProvisioningService
         }
 
         $deprovisioned = 0;
-        foreach (array_unique($removedOrgUuids) as $orgUuid) {
-            if ($device === null) {
-                break;
-            }
-            $account = Account::query()->where('organization_uuid', $orgUuid)->first();
-            if ($account === null) {
-                continue; // unknown org — never create one from client input
-            }
-            $isMember = $user->accounts()->whereKey($account->id)->exists();
-            if (! $isMember) {
-                continue; // no membership row (any status) — never let a hook-token holder plant a tombstone by uuid alone
-            }
-            try {
-                $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
-                if ($grant !== null) {
-                    $grant->forceFill(['deprovisioned_at' => Carbon::now()])->save();
-                } else {
-                    $device->grants()->create([
-                        'account_id' => $account->id,
-                        'status' => GrantStatus::Revoked,
-                        'provisioned_at' => Carbon::now(),
-                        'revoked_at' => Carbon::now(),
-                        'deprovisioned_at' => Carbon::now(),
-                    ]);
+        if ($device !== null) {
+            foreach (array_unique($removedOrgUuids) as $orgUuid) {
+                $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+                if ($account === null) {
+                    continue; // unknown org — never create one from client input
                 }
-                $deprovisioned++;
-            } catch (Throwable $e) {
-                report($e);
+                $isMember = $user->accounts()->whereKey($account->id)->exists();
+                if (! $isMember) {
+                    continue; // no membership row (any status) — never let a hook-token holder plant a tombstone by uuid alone
+                }
+                try {
+                    $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
+                    if ($grant !== null) {
+                        $grant->forceFill(['deprovisioned_at' => Carbon::now()])->save();
+                    } else {
+                        $device->grants()->create([
+                            'account_id' => $account->id,
+                            'status' => GrantStatus::Revoked,
+                            'provisioned_at' => Carbon::now(),
+                            'revoked_at' => Carbon::now(),
+                            'deprovisioned_at' => Carbon::now(),
+                        ]);
+                    }
+                    $deprovisioned++;
+                } catch (Throwable $e) {
+                    report($e);
 
-                continue;
+                    continue;
+                }
             }
         }
 

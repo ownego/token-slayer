@@ -31,7 +31,7 @@ it('backfills one default device and mapped grants per legacy pivot row', functi
         'user_id' => $user->id, 'account_id' => $r[0], 'status' => 'tracked',
         'created_at' => now(), 'updated_at' => now(),
     ], $r[1]))->all();
-    Cache::put('provisioned:setup:'.$user->id.':'.$pendingAlive->id, 'ALIVE-SECRET', 3600);
+    Cache::put(CacheKeys::legacyProvisionedSetup($user->id, $pendingAlive->id), 'ALIVE-SECRET', 3600);
 
     app(LegacyGrantBackfiller::class)->backfill($legacy);
 

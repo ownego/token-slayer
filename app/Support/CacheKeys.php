@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Services\Provisioning\LegacyGrantBackfiller;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -84,6 +85,22 @@ final class CacheKeys
     public static function provisionedGrant(int $grantId): string
     {
         return "provisioned:grant:{$grantId}";
+    }
+
+    /**
+     * Build the legacy pre-device cache key for a stored provisioned grant,
+     * keyed by (user, account) rather than by grant id. Only read by
+     * {@see LegacyGrantBackfiller} while copying an
+     * in-flight (<24 h) secret onto its new per-grant key during the
+     * devices/grants migration; never written after that migration runs.
+     *
+     * @param  int  $userId  the provisioned user's id
+     * @param  int  $accountId  the granted account's id
+     * @return string
+     */
+    public static function legacyProvisionedSetup(int $userId, int $accountId): string
+    {
+        return "provisioned:setup:{$userId}:{$accountId}";
     }
 
     /**

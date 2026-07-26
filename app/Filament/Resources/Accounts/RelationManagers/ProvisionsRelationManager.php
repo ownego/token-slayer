@@ -225,15 +225,7 @@ class ProvisionsRelationManager extends RelationManager
                         $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
                     });
                 } catch (AccountConnectException $exception) {
-                    Notification::make()
-                        ->danger()
-                        ->title('Provisioning failed')
-                        ->body(match ($exception->reason) {
-                            'connect_identity_mismatch' => $exception->getMessage(),
-                            'connect_state_expired' => 'This connect link expired or was already used. Start again.',
-                            default => 'Something went wrong completing the provisioning.',
-                        })
-                        ->send();
+                    $this->notifyConnectFailure($exception, 'provisioning');
 
                     return;
                 }
@@ -307,15 +299,7 @@ class ProvisionsRelationManager extends RelationManager
                 try {
                     $service->provisionForDevice($grant->device->user, $account, $grant->device, $data['state'], $data['code']);
                 } catch (AccountConnectException $exception) {
-                    Notification::make()
-                        ->danger()
-                        ->title('Reissue failed')
-                        ->body(match ($exception->reason) {
-                            'connect_identity_mismatch' => $exception->getMessage(),
-                            'connect_state_expired' => 'This connect link expired or was already used. Start again.',
-                            default => 'Something went wrong completing the reissue.',
-                        })
-                        ->send();
+                    $this->notifyConnectFailure($exception, 'reissue');
 
                     return;
                 }
@@ -372,6 +356,30 @@ class ProvisionsRelationManager extends RelationManager
 
                 Notification::make()->success()->title('Device deleted')->send();
             });
+    }
+
+    /**
+     * Show the shared "connect failed" notification for
+     * {@see confirmAddDeviceAction()} and {@see confirmReissueAction()}: both
+     * exchange a pasted PKCE code via
+     * {@see AccountProvisioningService::provisionForDevice()} and differ only
+     * in what to call the failing step.
+     *
+     * @param  AccountConnectException  $exception  the connect failure raised mid-exchange
+     * @param  string  $action  the failing step's label, e.g. 'provisioning' or 'reissue' — used in the title and default body
+     * @return void
+     */
+    private function notifyConnectFailure(AccountConnectException $exception, string $action): void
+    {
+        Notification::make()
+            ->danger()
+            ->title(ucfirst($action).' failed')
+            ->body(match ($exception->reason) {
+                'connect_identity_mismatch' => $exception->getMessage(),
+                'connect_state_expired' => 'This connect link expired or was already used. Start again.',
+                default => "Something went wrong completing the {$action}.",
+            })
+            ->send();
     }
 
     /**
