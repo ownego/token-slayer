@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Models\Account;
@@ -36,12 +37,12 @@ test('connecting a brand-new identity opens the confirm-create modal, and confir
         ->setActionData(['code' => 'pasted-code'])
         ->callMountedAction()
         ->assertActionMounted('confirmCreateAccount')
-        ->setActionData(['plan' => 'max-20x', 'name' => 'New Org'])
+        ->setActionData(['plan' => AccountPlan::Max20x->value, 'name' => 'New Org'])
         ->callMountedAction();
 
     $account = Account::where('email', 'ongtung2212002@gmail.com')->first();
     expect($account)->not->toBeNull()
-        ->and($account->plan)->toBe('max-20x')
+        ->and($account->plan)->toBe(AccountPlan::Max20x)
         ->and($account->name)->toBe('New Org')
         ->and($account->status)->toBe(AccountStatus::Active);
 });
