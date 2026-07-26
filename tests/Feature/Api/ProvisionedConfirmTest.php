@@ -93,7 +93,9 @@ it('does not touch a membership on a different account absent from the list (add
     $untouched = AccountUser::query()
         ->where('user_id', $user->id)->where('account_id', $untouchedAccount->id)->firstOrFail();
     expect($untouched->status)->toBe(MembershipStatus::Untracked)
-        ->and($untouched->claimed_at)->toBeNull();
+        // Grant-layer equivalent of "additive only": confirming the OTHER
+        // account must not write any grant (claimed or otherwise) for this one.
+        ->and(AccountProvisionedGrant::query()->where('account_id', $untouchedAccount->id)->exists())->toBeFalse();
 });
 
 it('confirms only the provisioned org in a multi-org batch and ignores the unknown one', function () {
@@ -237,6 +239,26 @@ it('stamps nothing and counts zero when removing an org uuid the user holds no p
 
     expect(AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->exists())
         ->toBeFalse();
+});
+
+it('stamps nothing and counts zero when confirming a removal for an org the user has no membership on', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '40404040-4040-4040-8040-404040404040']);
+    // A resolvable device but NO account_user row at all — not even
+    // Untracked — so a hook-token holder who merely knows an org uuid
+    // cannot plant a tombstone grant on an account they aren't a member of.
+    Device::factory()->for($user)->legacyDefault()->create();
+
+    expect(AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->exists())
+        ->toBeFalse();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'removed' => [['org_uuid' => '40404040-4040-4040-8040-404040404040']],
+    ]);
+
+    $res->assertOk()->assertJsonPath('deprovisioned', 0);
+
+    expect(AccountProvisionedGrant::query()->where('account_id', $account->id)->exists())->toBeFalse();
 });
 
 it('still accepts the legacy {accounts:[...]} body as set_up (old clients)', function () {

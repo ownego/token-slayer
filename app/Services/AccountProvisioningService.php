@@ -143,25 +143,35 @@ final class AccountProvisioningService
     }
 
     /**
-     * The org accounts this DEVICE should remove: the user's Untracked orgs
-     * minus those the device already confirmed (its grant row carries
-     * `deprovisioned_at`). Per-device on purpose — with the old per-user
+     * The org accounts this request should be told to remove: the user's
+     * Untracked orgs minus those the resolved device already confirmed via
+     * its NEWEST grant per account (its `deprovisioned_at` stamp). Only the
+     * newest grant counts — an older, revoked grant (left behind by a
+     * Reissue) can carry a stale stamp from before the account was
+     * re-provisioned onto the same device, which must not silence a fresh
+     * removal instruction. Per-device on purpose — with the old per-user
      * stamp, the first machine to confirm silenced the instruction for
-     * every other machine, which then kept the slot forever.
+     * every other machine, which then kept the slot forever. When this
+     * request resolved no device (e.g. an unrecognized fingerprint), every
+     * one of the user's Untracked orgs is returned unconditionally — the
+     * client-side CLI safely no-ops a removal for a slot it doesn't have,
+     * and the broadcast self-terminates once the admin verifies or
+     * provisions the user.
      *
      * @param  User  $user  the hook-authenticated user
-     * @param  Device|null  $device  the resolved claiming device; null = nothing to instruct
+     * @param  Device|null  $device  the resolved claiming device; null = this request resolved no device
      * @return array<int, array{org_uuid: string}>
      */
     public function removable(User $user, ?Device $device): array
     {
-        if ($device === null) {
-            return [];
-        }
-
-        $confirmedAccountIds = $device->grants()
-            ->whereNotNull('deprovisioned_at')
-            ->pluck('account_id');
+        $confirmedAccountIds = $device === null
+            ? collect()
+            : $device->grants()
+                ->orderByDesc('id')
+                ->get()
+                ->unique('account_id')
+                ->whereNotNull('deprovisioned_at')
+                ->pluck('account_id');
 
         return $user->accounts()
             ->wherePivot('status', MembershipStatus::Untracked->value)
@@ -175,11 +185,14 @@ final class AccountProvisioningService
     /**
      * Confirm the CLI's reconcile: promote each `set_up` org Pending→Tracked
      * behind the live-grant guard, and stamp `deprovisioned_at` for each
-     * `removed` org on THIS device's grant (creating a Revoked tombstone row
-     * when the device holds no grant for the org, so event-materialized
-     * removals self-clear per device). Additive only; failures on one org
-     * are reported and swallowed so they cannot 500 the batch; uuids are
-     * deduped per list.
+     * `removed` org on THIS device's newest grant (creating a Revoked
+     * tombstone row when the device holds no grant for the org, so
+     * event-materialized removals self-clear per device) — but only when
+     * `$user` holds an `account_user` row for that account (any status);
+     * otherwise the org is skipped, so a hook-token holder cannot plant a
+     * tombstone on an account they aren't a member of just by knowing its
+     * org uuid. Additive only; failures on one org are reported and
+     * swallowed so they cannot 500 the batch; uuids are deduped per list.
      *
      * @param  User  $user  the hook-authenticated user
      * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
@@ -216,8 +229,12 @@ final class AccountProvisioningService
             if ($account === null) {
                 continue; // unknown org — never create one from client input
             }
+            $isMember = $user->accounts()->whereKey($account->id)->exists();
+            if (! $isMember) {
+                continue; // no membership row (any status) — never let a hook-token holder plant a tombstone by uuid alone
+            }
             try {
-                $grant = $device->grants()->where('account_id', $account->id)->first();
+                $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
                 if ($grant !== null) {
                     $grant->forceFill(['deprovisioned_at' => Carbon::now()])->save();
                 } else {
