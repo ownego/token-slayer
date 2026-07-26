@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ConfirmProvisionedSetupRequest;
 use App\Services\AccountProvisioningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,11 +30,14 @@ final class ProvisionedAccountController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user('hook');
+        $accounts = $this->provisioning->claim($user);
+        $memberships = $this->provisioning->memberships($user);
+        $remove = $this->provisioning->removable($user);
 
         return response()->json([
-            'accounts' => $this->provisioning->claim($user),
-            'memberships' => $this->provisioning->memberships($user),
-            'remove' => $this->provisioning->removable($user),
+            'accounts' => $accounts,
+            'memberships' => $memberships,
+            'remove' => $remove,
         ]);
     }
 
@@ -41,25 +45,17 @@ final class ProvisionedAccountController extends Controller
      * Confirm the CLI's reconcile. Accepts `{set_up:[{org_uuid}], removed:[{org_uuid}]}`;
      * also accepts the legacy `{accounts:[{org_uuid}]}` as `set_up` (old clients).
      *
-     * @param  Request  $request  carries the hook-authenticated user and the body
+     * @param  ConfirmProvisionedSetupRequest  $request  carries the hook-authenticated user and the validated body
      * @return JsonResponse {confirmed, deprovisioned}
      */
-    public function confirm(Request $request): JsonResponse
+    public function confirm(ConfirmProvisionedSetupRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'set_up' => ['required_without_all:accounts,removed', 'array'],
-            'set_up.*.org_uuid' => ['required_with:set_up', 'uuid'],
-            'removed' => ['required_without_all:accounts,set_up', 'array'],
-            'removed.*.org_uuid' => ['required_with:removed', 'uuid'],
-            'accounts' => ['required_without_all:set_up,removed', 'array'],
-            'accounts.*.org_uuid' => ['required_with:accounts', 'uuid'],
-        ]);
+        $user = $request->user('hook');
+        $setUp = $request->setUpOrgUuids();
+        $removed = $request->removedOrgUuids();
 
-        $setUp = array_column($validated['set_up'] ?? $validated['accounts'] ?? [], 'org_uuid');
-        $removed = array_column($validated['removed'] ?? [], 'org_uuid');
+        $result = $this->provisioning->confirmSetup($user, $setUp, $removed);
 
-        return response()->json(
-            $this->provisioning->confirmSetup($request->user('hook'), $setUp, $removed),
-        );
+        return response()->json($result);
     }
 }
