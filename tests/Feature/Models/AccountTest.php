@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Models\Account;
 use App\Models\User;
@@ -10,14 +11,14 @@ use Illuminate\Support\Facades\DB;
 uses(RefreshDatabase::class);
 
 test('an account has many member users', function () {
-    $account = Account::factory()->create(['email' => 'team-a@example.com', 'plan' => 'max-20x']);
+    $account = Account::factory()->max20x()->create(['email' => 'team-a@example.com']);
     $members = User::factory()->count(3)->create();
     User::factory()->create(); // unassigned
 
     $account->users()->attach($members->pluck('id'));
 
     expect($account->users)->toHaveCount(3)
-        ->and($account->plan)->toBe('max-20x');
+        ->and($account->plan)->toBe(AccountPlan::Max20x);
 });
 
 it('stores oauth tokens encrypted at rest', function () {

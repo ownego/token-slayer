@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Enums\MembershipStatus;
 use App\Support\CacheKeys;
@@ -163,6 +164,7 @@ class Account extends Model
     {
         return [
             'status' => AccountStatus::class,
+            'plan' => AccountPlan::class,
             'oauth_access_token' => 'encrypted',
             'oauth_refresh_token' => 'encrypted',
             'oauth_expires_at' => 'datetime',

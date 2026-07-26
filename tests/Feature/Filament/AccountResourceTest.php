@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Enums\MembershipStatus;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
@@ -57,7 +58,7 @@ it('lets an admin create and list accounts', function () {
 
     Livewire::actingAs($admin)
         ->test(CreateAccount::class)
-        ->fillForm(['email' => 'new@ownego.com', 'plan' => 'max-20x'])
+        ->fillForm(['email' => 'new@ownego.com', 'plan' => AccountPlan::Max20x->value])
         ->call('create')
         ->assertHasNoFormErrors()
         ->assertNotified();
@@ -71,7 +72,7 @@ it('rejects a duplicate account email on create', function () {
 
     Livewire::actingAs($admin)
         ->test(CreateAccount::class)
-        ->fillForm(['email' => 'dupe@ownego.com', 'plan' => 'max-20x'])
+        ->fillForm(['email' => 'dupe@ownego.com', 'plan' => AccountPlan::Max20x->value])
         ->call('create')
         ->assertHasFormErrors(['email']);
 });
@@ -94,7 +95,7 @@ it('lets an admin set the organization uuid when creating an account', function 
 
     Livewire::actingAs($admin)
         ->test(CreateAccount::class)
-        ->fillForm(['email' => 'uuid-on-create@ownego.com', 'plan' => 'max-20x', 'organization_uuid' => 'org-12345'])
+        ->fillForm(['email' => 'uuid-on-create@ownego.com', 'plan' => AccountPlan::Max20x->value, 'organization_uuid' => 'org-12345'])
         ->call('create')
         ->assertHasNoFormErrors();
 

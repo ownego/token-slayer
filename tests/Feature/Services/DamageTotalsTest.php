@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Boss;
@@ -138,8 +139,8 @@ test('counts a user active on two accounts toward each account correctly', funct
 });
 
 test('perAccount returns per-window sums, pivot member counts, and an unassigned row', function () {
-    $teamA = Account::factory()->create(['email' => 'team-a@example.com', 'plan' => 'max-20x']);
-    $teamB = Account::factory()->create(['email' => 'team-b@example.com', 'plan' => 'max-20x']);
+    $teamA = Account::factory()->max20x()->create(['email' => 'team-a@example.com']);
+    $teamB = Account::factory()->max20x()->create(['email' => 'team-b@example.com']);
 
     $a1 = User::factory()->create();
     $a2 = User::factory()->create();
@@ -201,8 +202,8 @@ test('perUser aggregates every distinct account email a user burned tokens throu
 });
 
 test('forUserByAccount returns rows for accounts the user is a member of or has events with', function () {
-    $memberOnly = Account::factory()->create(['email' => 'member-only@example.com', 'name' => 'Member Only', 'plan' => 'max-20x']);
-    $eventsOnly = Account::factory()->create(['email' => 'events-only@example.com', 'name' => 'Events Only', 'plan' => 'max-5x']);
+    $memberOnly = Account::factory()->max20x()->create(['email' => 'member-only@example.com', 'name' => 'Member Only']);
+    $eventsOnly = Account::factory()->max5x()->create(['email' => 'events-only@example.com', 'name' => 'Events Only']);
     $user = User::factory()->create();
     $other = User::factory()->create();
 
@@ -220,7 +221,7 @@ test('forUserByAccount returns rows for accounts the user is a member of or has 
     expect($memberRow)->toMatchArray([
         'email' => 'member-only@example.com',
         'name' => 'Member Only',
-        'plan' => 'max-20x',
+        'plan' => AccountPlan::Max20x,
         'memberCount' => 1,
         'isMember' => true,
         'hourly' => 0,
@@ -232,7 +233,7 @@ test('forUserByAccount returns rows for accounts the user is a member of or has 
     expect($eventsRow)->toMatchArray([
         'email' => 'events-only@example.com',
         'name' => 'Events Only',
-        'plan' => 'max-5x',
+        'plan' => AccountPlan::Max5x,
         'memberCount' => 1,
         'isMember' => false,
         'hourly' => 30,

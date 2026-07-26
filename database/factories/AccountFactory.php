@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Models\Account;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -19,7 +20,9 @@ class AccountFactory extends Factory
     {
         return [
             'email' => fake()->unique()->safeEmail(),
-            'plan' => 'max-20x',
+            'plan' => AccountPlan::Max20x,
+            'organization_type' => 'claude_max',
+            'rate_limit_tier' => 'default_claude_max_20x',
         ];
     }
 
@@ -62,5 +65,47 @@ class AccountFactory extends Factory
     public function withOrganizationUuid(string $uuid): static
     {
         return $this->state(fn (array $attributes): array => ['organization_uuid' => $uuid]);
+    }
+
+    /**
+     * A Claude Pro account.
+     *
+     * @return static
+     */
+    public function pro(): static
+    {
+        return $this->state(fn (): array => [
+            'plan' => AccountPlan::Pro,
+            'organization_type' => 'claude_pro',
+            'rate_limit_tier' => 'default_claude_ai',
+        ]);
+    }
+
+    /**
+     * A Claude Max 20x account.
+     *
+     * @return static
+     */
+    public function max20x(): static
+    {
+        return $this->state(fn (): array => [
+            'plan' => AccountPlan::Max20x,
+            'organization_type' => 'claude_max',
+            'rate_limit_tier' => 'default_claude_max_20x',
+        ]);
+    }
+
+    /**
+     * A Claude Max 5x account.
+     *
+     * @return static
+     */
+    public function max5x(): static
+    {
+        return $this->state(fn (): array => [
+            'plan' => AccountPlan::Max5x,
+            'organization_type' => 'claude_max',
+            'rate_limit_tier' => 'default_claude_max_5x',
+        ]);
     }
 }
