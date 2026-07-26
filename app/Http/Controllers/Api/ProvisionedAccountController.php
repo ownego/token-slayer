@@ -38,24 +38,28 @@ final class ProvisionedAccountController extends Controller
     }
 
     /**
-     * Confirm the org accounts the CLI actually finished setting up during
-     * `token-slayer setup`, promoting each to a tracked membership.
+     * Confirm the CLI's reconcile. Accepts `{set_up:[{org_uuid}], removed:[{org_uuid}]}`;
+     * also accepts the legacy `{accounts:[{org_uuid}]}` as `set_up` (old clients).
      *
-     * @param  Request  $request  carries the hook-authenticated user and the
-     *                            `{accounts: [{org_uuid}]}` confirmation body
-     * @return JsonResponse the confirmed count ({confirmed: <int>})
+     * @param  Request  $request  carries the hook-authenticated user and the body
+     * @return JsonResponse {confirmed, deprovisioned}
      */
     public function confirm(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'accounts' => ['required', 'array'],
-            'accounts.*.org_uuid' => ['required', 'uuid'],
+            'set_up' => ['required_without_all:accounts,removed', 'array'],
+            'set_up.*.org_uuid' => ['required_with:set_up', 'uuid'],
+            'removed' => ['required_without_all:accounts,set_up', 'array'],
+            'removed.*.org_uuid' => ['required_with:removed', 'uuid'],
+            'accounts' => ['required_without_all:set_up,removed', 'array'],
+            'accounts.*.org_uuid' => ['required_with:accounts', 'uuid'],
         ]);
 
-        $orgUuids = array_column($validated['accounts'], 'org_uuid');
+        $setUp = array_column($validated['set_up'] ?? $validated['accounts'] ?? [], 'org_uuid');
+        $removed = array_column($validated['removed'] ?? [], 'org_uuid');
 
-        return response()->json([
-            'confirmed' => $this->provisioning->confirmSetup($request->user('hook'), $orgUuids),
-        ]);
+        return response()->json(
+            $this->provisioning->confirmSetup($request->user('hook'), $setUp, $removed),
+        );
     }
 }

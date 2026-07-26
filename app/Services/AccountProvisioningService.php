@@ -151,70 +151,102 @@ final class AccountProvisioningService
     }
 
     /**
-     * Confirm the org accounts the CLI actually finished setting up, promoting
-     * each membership to {@see MembershipStatus::Tracked}. Unknown org uuids
-     * are skipped — this never creates an `Account` from client input.
+     * Confirm the CLI's reconcile: promote each `set_up` org Pending→Tracked, and
+     * stamp `deprovisioned_at` on each `removed` org. Both are scoped by the same
+     * self-graft guard (only an org the user actually holds a provisioned pivot
+     * for). Additive only; never demotes/deletes. Uuids are deduped.
      *
-     * Security scope: an org is only promoted if the user already holds a
+     * Security scope: an org is only promoted/stamped if the user already holds a
      * provisioned pivot for it (`account_user.provisioned_at` set and
-     * `revoked_at` null) — see {@see Account::provisionedUsers()}. Without
-     * that check a hook-token holder could self-graft membership onto any
-     * org uuid it sends; an org the user was never provisioned for is
-     * skipped exactly like an unknown org (not created, not counted).
+     * `revoked_at` null) — see {@see Account::provisionedUsers()} and
+     * {@see guardedProvisionedAccount()}. Without that check a hook-token holder
+     * could self-graft membership onto any org uuid it sends; an org the user
+     * was never provisioned for is skipped exactly like an unknown org (not
+     * created, not counted).
      *
      * A failure writing one org's pivot is reported and swallowed so it
      * can't 500 the rest of the batch. Additive only: orgs absent from
-     * `$orgUuids` are untouched, and nothing here is ever demoted, revoked,
+     * both lists are untouched, and nothing here is ever demoted, revoked,
      * or deleted. Incoming uuids are deduped so a repeated uuid can't
-     * double-count `confirmed`.
+     * double-count.
      *
      * Deliberately does NOT call {@see CacheKeys::forgetAccountMembership()}
      * (owner decision): that 1 h aggregate cache only feeds the Events/Last-seen
      * columns, the status badge reads `pivot.status` live, and the tab's
      * Refresh action already clears it on demand.
      *
-     * @param  User  $user  the hook-authenticated user confirming setup
-     * @param  array<int, string>  $orgUuids  organization uuids the CLI confirmed it set up
-     * @return int the number of memberships confirmed
+     * @param  User  $user  the hook-authenticated user
+     * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
+     * @param  array<int, string>  $removedOrgUuids  orgs the CLI removed the local slot for
+     * @return array{confirmed: int, deprovisioned: int}
      */
-    public function confirmSetup(User $user, array $orgUuids): int
+    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = []): array
     {
         $confirmed = 0;
-
-        foreach (array_unique($orgUuids) as $orgUuid) {
-            $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+        foreach (array_unique($setUpOrgUuids) as $orgUuid) {
+            $account = $this->guardedProvisionedAccount($user, $orgUuid);
             if ($account === null) {
-                continue; // unknown org — never create an account from client input
+                continue;
             }
-
-            $isProvisionedForUser = $account->provisionedUsers()
-                ->wherePivot('user_id', $user->id)
-                ->wherePivotNull('revoked_at')
-                ->exists();
-            if (! $isProvisionedForUser) {
-                continue; // never self-graft a membership the user wasn't provisioned for
-            }
-
             try {
                 $account->users()->syncWithoutDetaching([
                     $user->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
-
                 $pivot = AccountUser::query()
                     ->where('user_id', $user->id)->where('account_id', $account->id)->first();
                 if ($pivot !== null && $pivot->claimed_at === null) {
                     $pivot->forceFill(['claimed_at' => Carbon::now()])->save();
                 }
-
                 $confirmed++;
             } catch (Throwable $e) {
                 report($e);
 
-                continue; // one bad org must not 500 the whole confirmation request
+                continue;
             }
         }
 
-        return $confirmed;
+        $deprovisioned = 0;
+        foreach (array_unique($removedOrgUuids) as $orgUuid) {
+            $account = $this->guardedProvisionedAccount($user, $orgUuid);
+            if ($account === null) {
+                continue;
+            }
+            try {
+                AccountUser::query()
+                    ->where('user_id', $user->id)->where('account_id', $account->id)
+                    ->update(['deprovisioned_at' => Carbon::now()]);
+                $deprovisioned++;
+            } catch (Throwable $e) {
+                report($e);
+
+                continue;
+            }
+        }
+
+        return ['confirmed' => $confirmed, 'deprovisioned' => $deprovisioned];
+    }
+
+    /**
+     * Resolve the `Account` for `$orgUuid` only if `$user` holds a non-revoked
+     * provisioned pivot for it — the shared self-graft guard. Returns null for an
+     * unknown org or one the user was never provisioned for.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @param  string  $orgUuid  organization uuid from the client
+     * @return Account|null
+     */
+    private function guardedProvisionedAccount(User $user, string $orgUuid): ?Account
+    {
+        $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+        if ($account === null) {
+            return null;
+        }
+        $ok = $account->provisionedUsers()
+            ->wherePivot('user_id', $user->id)
+            ->wherePivotNull('revoked_at')
+            ->exists();
+
+        return $ok ? $account : null;
     }
 
     /**

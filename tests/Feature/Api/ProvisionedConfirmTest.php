@@ -170,3 +170,36 @@ it('rejects a malformed body with a 422', function () {
         ->postJson('/api/provisioned/confirm', [])
         ->assertStatus(422);
 });
+
+it('stamps deprovisioned_at for a removed untracked org the user holds a pivot for', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '33333333-3333-4333-8333-333333333333']);
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => MembershipStatus::Untracked->value, 'provisioned_at' => now()],
+    ]);
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'removed' => [['org_uuid' => '33333333-3333-4333-8333-333333333333']],
+    ]);
+
+    $res->assertOk()->assertJsonPath('deprovisioned', 1);
+
+    $pivot = AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->firstOrFail();
+    expect($pivot->deprovisioned_at)->not->toBeNull();
+});
+
+it('still accepts the legacy {accounts:[...]} body as set_up (old clients)', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '44444444-4444-4444-8444-444444444444']);
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => MembershipStatus::Pending->value, 'provisioned_at' => now()],
+    ]);
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'accounts' => [['org_uuid' => '44444444-4444-4444-8444-444444444444']],
+    ]);
+
+    $res->assertOk()->assertJsonPath('confirmed', 1);
+    $pivot = AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->firstOrFail();
+    expect($pivot->status)->toBe(MembershipStatus::Tracked);
+});
