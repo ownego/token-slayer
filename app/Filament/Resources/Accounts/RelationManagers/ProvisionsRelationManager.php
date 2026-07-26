@@ -69,7 +69,8 @@ class ProvisionsRelationManager extends RelationManager
      * placeholder), a status badge (surfacing TTL expiry on Pending rows),
      * the lifecycle timestamps, and the handed-off grant's token_uuid (an
      * opaque reference, not a secret — no token value is ever stored or
-     * shown). Eager-loads `device.user` to avoid N+1 across the columns.
+     * shown). Eager-loads `device.user` and `device.grants` to avoid N+1
+     * across the columns and the delete-device visibility check.
      *
      * @param  Table  $table  The table being configured by Filament.
      * @return Table
@@ -77,7 +78,7 @@ class ProvisionsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('device.user'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['device.user', 'device.grants']))
             ->columns([
                 TextColumn::make('user')
                     ->label('User')
@@ -345,6 +346,8 @@ class ProvisionsRelationManager extends RelationManager
     /**
      * Delete an orphaned device (a wiped machine): allowed only once every
      * grant on it is revoked; the FK cascade removes its grant history.
+     * Reads the visibility check off the `device.grants` relation eager-loaded
+     * by the `table()` method above rather than issuing a fresh query per row.
      *
      * @return Action
      */
@@ -356,7 +359,8 @@ class ProvisionsRelationManager extends RelationManager
             ->color('danger')
             ->requiresConfirmation()
             ->modalDescription('Removes this machine and its grant history. Only possible when no live grant remains on it.')
-            ->visible(fn (AccountProvisionedGrant $record): bool => ! $record->device->grants()->live()->exists())
+            ->visible(fn (AccountProvisionedGrant $record): bool => $record->device->grants
+                ->doesntContain(fn (AccountProvisionedGrant $grant): bool => $grant->status !== GrantStatus::Revoked))
             ->action(function (AccountProvisionedGrant $record): void {
                 $record->device->delete();
 
