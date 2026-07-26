@@ -85,3 +85,49 @@ it('rejects a pasted code whose authorized identity does not match the target ac
     expect(AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->exists())->toBeFalse()
         ->and(Cache::get($service->cacheKey($user->id, $account->id)))->toBeNull();
 });
+
+it('memberships lists only tracked orgs, including a tracked row with null provisioned_at', function () {
+    $svc = app(App\Services\AccountProvisioningService::class);
+    $user = App\Models\User::factory()->create();
+    $tracked = App\Models\Account::factory()->create(['organization_uuid' => 'org-tracked']);
+    $trackedNoProv = App\Models\Account::factory()->create(['organization_uuid' => 'org-tracked-noprov']);
+    $pending = App\Models\Account::factory()->create(['organization_uuid' => 'org-pending']);
+    $untracked = App\Models\Account::factory()->create(['organization_uuid' => 'org-untracked']);
+
+    $user->accounts()->syncWithoutDetaching([
+        $tracked->id       => ['status' => 'tracked', 'provisioned_at' => now()],
+        $trackedNoProv->id => ['status' => 'tracked', 'provisioned_at' => null],
+        $pending->id       => ['status' => 'pending', 'provisioned_at' => now()],
+        $untracked->id     => ['status' => 'untracked', 'provisioned_at' => now()],
+    ]);
+
+    $orgs = collect($svc->memberships($user))->pluck('org_uuid')->all();
+
+    expect($orgs)->toContain('org-tracked')
+        ->and($orgs)->toContain('org-tracked-noprov')
+        ->and($orgs)->not->toContain('org-pending')
+        ->and($orgs)->not->toContain('org-untracked');
+});
+
+it('removable lists untracked orgs regardless of provisioned_at, excluding already-deprovisioned', function () {
+    $svc = app(App\Services\AccountProvisioningService::class);
+    $user = App\Models\User::factory()->create();
+    $removed = App\Models\Account::factory()->create(['organization_uuid' => 'org-removed']);
+    $removedNoProv = App\Models\Account::factory()->create(['organization_uuid' => 'org-removed-noprov']);
+    $alreadyDeprov = App\Models\Account::factory()->create(['organization_uuid' => 'org-done']);
+    $tracked = App\Models\Account::factory()->create(['organization_uuid' => 'org-keep']);
+
+    $user->accounts()->syncWithoutDetaching([
+        $removed->id       => ['status' => 'untracked', 'provisioned_at' => now(), 'deprovisioned_at' => null],
+        $removedNoProv->id => ['status' => 'untracked', 'provisioned_at' => null, 'deprovisioned_at' => null],
+        $alreadyDeprov->id => ['status' => 'untracked', 'provisioned_at' => now(), 'deprovisioned_at' => now()],
+        $tracked->id       => ['status' => 'tracked', 'provisioned_at' => now()],
+    ]);
+
+    $orgs = collect($svc->removable($user))->pluck('org_uuid')->all();
+
+    expect($orgs)->toContain('org-removed')
+        ->and($orgs)->toContain('org-removed-noprov')
+        ->and($orgs)->not->toContain('org-done')
+        ->and($orgs)->not->toContain('org-keep');
+});

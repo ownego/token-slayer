@@ -230,4 +230,46 @@ final class AccountProvisioningService
         $pivot->forceFill(['revoked_at' => Carbon::now()])->save();
         Cache::forget($this->cacheKey($pivot->user_id, $pivot->account_id));
     }
+
+    /**
+     * The user's verified (Tracked) org memberships, as `[['org_uuid' => ...]]`.
+     * NOT filtered by `provisioned_at` — a member can be verified without ever
+     * being provisioned (an admin "verify" on an event contributor). Used by the
+     * client to prioritize which account to make active when the current one is
+     * being removed.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @return array<int, array{org_uuid: string}>
+     */
+    public function memberships(User $user): array
+    {
+        return $user->accounts()
+            ->wherePivot('status', MembershipStatus::Tracked->value)
+            ->whereNotNull('organization_uuid')
+            ->pluck('organization_uuid')
+            ->map(fn (string $org): array => ['org_uuid' => $org])
+            ->all();
+    }
+
+    /**
+     * The org accounts the user is no longer Tracked on and that the client has
+     * not yet confirmed removing, as `[['org_uuid' => ...]]`. Selector:
+     * `status=Untracked AND deprovisioned_at IS NULL AND organization_uuid NOT NULL`.
+     * Deliberately NOT filtered by `provisioned_at`: any Untracked org account
+     * should leave the user's machine; event-materialized rows self-clear once
+     * the client confirms (best-effort no-op) and `deprovisioned_at` is stamped.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @return array<int, array{org_uuid: string}>
+     */
+    public function removable(User $user): array
+    {
+        return $user->accounts()
+            ->wherePivot('status', MembershipStatus::Untracked->value)
+            ->wherePivotNull('deprovisioned_at')
+            ->whereNotNull('organization_uuid')
+            ->pluck('organization_uuid')
+            ->map(fn (string $org): array => ['org_uuid' => $org])
+            ->all();
+    }
 }
