@@ -55,6 +55,40 @@ it('add device with New device creates a placeholder holding a pending grant', f
         ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->not->toBeNull();
 });
 
+it('add device with a name creates a named placeholder', function () {
+    fakeAnthropic();
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+    $user = User::factory()->create();
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => 'tracked']]);
+
+    Livewire::actingAs($admin)
+        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addDevice')
+        ->setActionData(['user_id' => $user->id, 'device_pk' => null, 'device_name' => 'Alice Laptop'])
+        ->callMountedAction()
+        ->assertActionMounted('confirmAddDevice')
+        ->setActionData(['code' => 'pasted-code'])
+        ->callMountedAction()
+        ->assertNotified();
+
+    $placeholder = $user->devices()->whereNull('device_id')->firstOrFail();
+    expect($placeholder->name)->toBe('Alice Laptop');
+});
+
+it('shows the device name in the Device column with the fingerprint surfaced as a description', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create(['device_id' => 'fp-machine-a', 'name' => 'Alice Laptop']);
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertSee('Alice Laptop')
+        ->assertSee('fp-machine-a');
+});
+
 it('blocks opening a second placeholder while one is still awaiting a machine', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();

@@ -28,6 +28,7 @@ final class LegacyGrantBackfiller
         foreach ($legacyRows as $row) {
             $device = Device::query()->firstOrCreate(
                 ['user_id' => $row['user_id'], 'device_id' => Device::DEFAULT_NAME],
+                ['name' => 'Default'],
             );
 
             $status = GrantStatus::Pending;

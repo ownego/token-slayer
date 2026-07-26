@@ -86,7 +86,10 @@ class ProvisionsRelationManager extends RelationManager
                     ->state(fn (AccountProvisionedGrant $record): string => $record->device->user->email),
                 TextColumn::make('device')
                     ->label('Device')
-                    ->state(fn (AccountProvisionedGrant $record): string => $record->device->device_id ?? 'Awaiting device'),
+                    ->state(fn (AccountProvisionedGrant $record): string => $record->device->name ?? $record->device->device_id ?? 'Awaiting device')
+                    ->description(fn (AccountProvisionedGrant $record): ?string => $record->device->name !== null && $record->device->device_id !== null
+                        ? $record->device->device_id
+                        : null),
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
@@ -156,6 +159,10 @@ class ProvisionsRelationManager extends RelationManager
                     ->options(fn (Get $get): array => $this->deviceOptions($get('user_id')))
                     ->placeholder('New device')
                     ->helperText('Leave empty to open a door for a brand-new machine.'),
+                TextInput::make('device_name')
+                    ->label('Device name')
+                    ->maxLength(50)
+                    ->helperText('Only used when creating a new device.'),
             ])
             ->action(function (array $data, Component $livewire): void {
                 $user = User::query()->findOrFail($data['user_id']);
@@ -175,6 +182,7 @@ class ProvisionsRelationManager extends RelationManager
                 $livewire->replaceMountedAction('confirmAddDevice', [
                     'userId' => $user->id,
                     'devicePk' => $data['device_pk'] ?? null,
+                    'deviceName' => $data['device_name'] ?? null,
                     'authorizeUrl' => $started['url'],
                     'state' => $started['state'],
                 ]);
@@ -221,7 +229,7 @@ class ProvisionsRelationManager extends RelationManager
                     // code) rolls back the device insert too — otherwise a
                     // failed paste leaves an orphan placeholder device behind.
                     DB::transaction(function () use ($service, $user, $account, $arguments, $data): void {
-                        $device = $service->resolveProvisionTarget($user, $arguments['devicePk']);
+                        $device = $service->resolveProvisionTarget($user, $arguments['devicePk'], $arguments['deviceName'] ?? null);
                         $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
                     });
                 } catch (AccountConnectException $exception) {
@@ -398,8 +406,8 @@ class ProvisionsRelationManager extends RelationManager
 
     /**
      * The selected user's devices as `[id => label]`, for the "Add device"
-     * device select. A placeholder (`device_id` null) is labeled by its id
-     * since it has no fingerprint yet.
+     * device select. Labeled by name, falling back to the fingerprint, then
+     * to a per-id placeholder label when neither is set yet.
      *
      * @param  int|string|null  $userId  the selected user id, or null before one is chosen
      * @return array<int, string>
@@ -418,7 +426,9 @@ class ProvisionsRelationManager extends RelationManager
         return $user->devices()
             ->orderBy('id')
             ->get()
-            ->mapWithKeys(fn ($device): array => [$device->id => $device->device_id ?? 'Awaiting device #'.$device->id])
+            ->mapWithKeys(fn ($device): array => [
+                $device->id => $device->name ?? $device->device_id ?? 'Awaiting device #'.$device->id,
+            ])
             ->all();
     }
 }

@@ -41,4 +41,15 @@ class DeviceFactory extends Factory
     {
         return $this->state(fn (): array => ['device_id' => null]);
     }
+
+    /**
+     * Give the device a human-readable admin-facing label.
+     *
+     * @param  string  $name  the label to apply
+     * @return static
+     */
+    public function named(string $name): static
+    {
+        return $this->state(fn (): array => ['name' => $name]);
+    }
 }

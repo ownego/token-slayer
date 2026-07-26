@@ -30,3 +30,9 @@ it('exposes the legacy default sentinel via factory state', function () {
 
     expect($device->device_id)->toBe(Device::DEFAULT_NAME);
 });
+
+it('exposes a human-readable name via the named factory state', function () {
+    $device = Device::factory()->named('Work laptop')->create();
+
+    expect($device->name)->toBe('Work laptop');
+});

@@ -37,6 +37,7 @@ it('backfills one default device and mapped grants per legacy pivot row', functi
 
     $device = Device::query()->where('user_id', $user->id)->firstOrFail();
     expect($device->device_id)->toBe(Device::DEFAULT_NAME)
+        ->and($device->name)->toBe('Default')
         ->and(AccountProvisionedGrant::query()->count())->toBe(3);
 
     $byAccount = AccountProvisionedGrant::query()->get()->keyBy('account_id');

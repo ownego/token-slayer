@@ -41,18 +41,21 @@ final class AccountProvisioningService
      * must belong to the user; with no selection a fresh placeholder is
      * created, awaiting its first contact. The legacy `'default'` sentinel
      * is never minted here — it exists only from the backfill migration.
+     * `$name` is only applied when a new placeholder is created; it is
+     * ignored when an existing device is targeted by id.
      *
      * @param  User  $user  the user being provisioned
      * @param  int|null  $deviceId  an existing device id, or null for a new placeholder
+     * @param  string|null  $name  an admin-facing label for the new placeholder, if any
      * @return Device
      */
-    public function resolveProvisionTarget(User $user, ?int $deviceId): Device
+    public function resolveProvisionTarget(User $user, ?int $deviceId, ?string $name = null): Device
     {
         if ($deviceId !== null) {
             return $user->devices()->findOrFail($deviceId);
         }
 
-        return $user->devices()->create(['device_id' => null]);
+        return $user->devices()->create(['device_id' => null, 'name' => $name]);
     }
 
     /**
