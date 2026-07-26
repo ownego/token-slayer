@@ -6,6 +6,7 @@ use App\Enums\MembershipStatus;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
+use App\Filament\Resources\Accounts\Pages\ViewAccount;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
@@ -246,4 +247,14 @@ it('renders the plan label on the accounts table', function (): void {
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
         ->assertSee('Max 5x');
+});
+
+it('renders the resolved plan and raw profile fields on the account infolist', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->max5x()->create(['email' => 'maxuser@example.com']);
+
+    Livewire::actingAs($admin)
+        ->test(ViewAccount::class, ['record' => $account->getRouteKey()])
+        ->assertSee('Max 5x')
+        ->assertSee('default_claude_max_5x');
 });
