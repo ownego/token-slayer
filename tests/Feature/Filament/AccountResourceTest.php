@@ -8,7 +8,9 @@ use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
 use App\Models\AccountUsageSnapshot;
+use App\Models\Device;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -24,23 +26,20 @@ it('no longer exposes the provisionForUser header action on the provisions tab',
         ->assertActionDoesNotExist('provisionForUser');
 });
 
-it('still lists provisioned users and can revoke one from the provisions tab', function () {
+it('still lists provisioned grants and can revoke one from the provisions tab', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
     $user = User::factory()->create();
-    $user->accounts()->attach($account, [
-        'status' => MembershipStatus::Pending->value,
-        'provisioned_at' => now(),
-    ]);
+    $device = Device::factory()->for($user)->create();
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->pending()->create();
 
     Livewire::actingAs($admin)
         ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->assertCanSeeTableRecords([$user])
-        ->callTableAction('revoke', $user)
+        ->assertCanSeeTableRecords([$grant])
+        ->callTableAction('revoke', $grant)
         ->assertNotified();
 
-    $pivot = $account->provisionedUsers()->whereKey($user->id)->firstOrFail();
-    expect($pivot->pivot->revoked_at)->not->toBeNull();
+    expect($grant->fresh()->revoked_at)->not->toBeNull();
 });
 
 it('blocks non-admins from the panel', function () {
