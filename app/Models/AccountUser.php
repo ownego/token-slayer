@@ -35,10 +35,6 @@ class AccountUser extends Pivot
     {
         return [
             'status' => MembershipStatus::class,
-            'provisioned_at' => 'datetime',
-            'claimed_at' => 'datetime',
-            'revoked_at' => 'datetime',
-            'deprovisioned_at' => 'datetime',
         ];
     }
 }

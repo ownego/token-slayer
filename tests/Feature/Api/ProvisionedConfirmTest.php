@@ -17,7 +17,7 @@ it('flips a pending provisioned membership to tracked when the user holds a live
     $device = Device::factory()->for($user)->create();
     AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
     $user->accounts()->syncWithoutDetaching([
-        $account->id => ['status' => MembershipStatus::Pending->value, 'provisioned_at' => now()],
+        $account->id => ['status' => MembershipStatus::Pending->value],
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')
@@ -82,7 +82,7 @@ it('does not touch a membership on a different account absent from the list (add
     AccountProvisionedGrant::factory()->for($confirmedAccount)->for($device)->claimed()->create();
 
     $user->accounts()->syncWithoutDetaching([
-        $confirmedAccount->id => ['status' => MembershipStatus::Pending->value, 'provisioned_at' => now()],
+        $confirmedAccount->id => ['status' => MembershipStatus::Pending->value],
         $untouchedAccount->id => ['status' => MembershipStatus::Untracked->value],
     ]);
 
@@ -102,7 +102,7 @@ it('confirms only the provisioned org in a multi-org batch and ignores the unkno
     $device = Device::factory()->for($user)->create();
     AccountProvisionedGrant::factory()->for($knownAccount)->for($device)->claimed()->create();
     $user->accounts()->syncWithoutDetaching([
-        $knownAccount->id => ['status' => MembershipStatus::Pending->value, 'provisioned_at' => now()],
+        $knownAccount->id => ['status' => MembershipStatus::Pending->value],
     ]);
     $unknownOrgUuid = '66666666-6666-4666-8666-666666666666';
 
@@ -126,7 +126,7 @@ it('dedupes a repeated org uuid so it only counts once', function () {
     $device = Device::factory()->for($user)->create();
     AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
     $user->accounts()->syncWithoutDetaching([
-        $account->id => ['status' => MembershipStatus::Pending->value, 'provisioned_at' => now()],
+        $account->id => ['status' => MembershipStatus::Pending->value],
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')
@@ -150,7 +150,6 @@ it('leaves a device grant\'s claimed_at unchanged when set_up is reconfirmed', f
     $user->accounts()->syncWithoutDetaching([
         $account->id => [
             'status' => MembershipStatus::Pending->value,
-            'provisioned_at' => now()->subHours(2),
         ],
     ]);
 
@@ -190,7 +189,7 @@ it('stamps deprovisioned_at on the calling device\'s grant for a removed untrack
     $account = Account::factory()->create(['organization_uuid' => '33333333-3333-4333-8333-333333333333']);
     $device = Device::factory()->for($user)->legacyDefault()->create();
     $user->accounts()->syncWithoutDetaching([
-        $account->id => ['status' => MembershipStatus::Untracked->value, 'provisioned_at' => now()],
+        $account->id => ['status' => MembershipStatus::Untracked->value],
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
@@ -209,7 +208,7 @@ it('stamps deprovisioned_at on the calling device\'s grant for an event-material
     $account = Account::factory()->create(['organization_uuid' => '20202020-2020-4020-8020-202020202020']);
     $device = Device::factory()->for($user)->legacyDefault()->create();
     $user->accounts()->syncWithoutDetaching([
-        $account->id => ['status' => MembershipStatus::Untracked->value, 'provisioned_at' => null],
+        $account->id => ['status' => MembershipStatus::Untracked->value],
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
@@ -246,7 +245,7 @@ it('still accepts the legacy {accounts:[...]} body as set_up (old clients)', fun
     $device = Device::factory()->for($user)->create();
     AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
     $user->accounts()->syncWithoutDetaching([
-        $account->id => ['status' => MembershipStatus::Pending->value, 'provisioned_at' => now()],
+        $account->id => ['status' => MembershipStatus::Pending->value],
     ]);
 
     $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
