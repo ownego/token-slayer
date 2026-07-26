@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AccountProfileSyncResult;
 use App\Exceptions\UsageProbeException;
 use App\Models\Account;
+use App\Services\Accounts\PlanResolver;
 use Illuminate\Database\QueryException;
 
 /**
@@ -90,7 +91,12 @@ class AccountProfileSyncer
      */
     private function applyProfile(Account $account, array $profile): void
     {
-        $account->plan = $profile['organization']['organization_type'] ?? $account->plan;
+        $organizationType = $profile['organization']['organization_type'] ?? null;
+        $rateLimitTier = $profile['organization']['rate_limit_tier'] ?? null;
+
+        $account->organization_type = $organizationType ?? $account->organization_type;
+        $account->rate_limit_tier = $rateLimitTier ?? $account->rate_limit_tier;
+        $account->plan = (new PlanResolver)->resolve($organizationType, $rateLimitTier);
         $account->account_uuid = $profile['account']['uuid'] ?? $account->account_uuid;
         $account->organization_uuid = $profile['organization']['uuid'] ?? $account->organization_uuid;
         $account->probe_error = null;

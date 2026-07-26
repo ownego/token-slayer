@@ -1,6 +1,8 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountProfileSyncResult;
+use App\Enums\AccountStatus;
 use App\Models\Account;
 use App\Services\AccountProfileSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -13,7 +15,7 @@ test('sync applies plan and identity fields from a matching profile', function (
 
     $account = Account::factory()->connected()->create([
         'email' => 'ongtung2212002@gmail.com',
-        'plan' => 'max-20x',
+        'plan' => AccountPlan::Max20x,
         'account_uuid' => null,
         'organization_uuid' => null,
     ]);
@@ -23,7 +25,7 @@ test('sync applies plan and identity fields from a matching profile', function (
     $account->refresh();
 
     expect($result)->toBe(AccountProfileSyncResult::Synced)
-        ->and($account->plan)->toBe('claude_pro')
+        ->and($account->plan)->toBe(AccountPlan::Pro)
         ->and($account->account_uuid)->toBe('adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9')
         ->and($account->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
         ->and($account->probe_error)->toBeNull();
@@ -34,7 +36,7 @@ test('sync flags an email mismatch and leaves plan and uuids unchanged', functio
 
     $account = Account::factory()->connected()->create([
         'email' => 'someone-else@example.com',
-        'plan' => 'max-20x',
+        'plan' => AccountPlan::Max20x,
         'account_uuid' => 'original-uuid',
         'organization_uuid' => 'original-org-uuid',
     ]);
@@ -44,7 +46,7 @@ test('sync flags an email mismatch and leaves plan and uuids unchanged', functio
     $account->refresh();
 
     expect($result)->toBe(AccountProfileSyncResult::Mismatched)
-        ->and($account->plan)->toBe('max-20x')
+        ->and($account->plan)->toBe(AccountPlan::Max20x)
         ->and($account->account_uuid)->toBe('original-uuid')
         ->and($account->organization_uuid)->toBe('original-org-uuid')
         ->and($account->probe_error)->toContain('email mismatch');
@@ -86,4 +88,26 @@ test('sync handles an organization_uuid already claimed by another account', fun
     expect($result)->toBe(AccountProfileSyncResult::Synced)
         ->and($account->organization_uuid)->toBeNull()
         ->and($account->probe_error)->toBe('org uuid already claimed');
+});
+
+it('stores the raw plan fields and the normalized Max 20x plan on sync', function (): void {
+    fakeAnthropic([
+        'profile' => Http::response(
+            file_get_contents(base_path('tests/fixtures/anthropic/profile-max-20x.json')),
+            200,
+            ['Content-Type' => 'application/json'],
+        ),
+    ]);
+
+    $account = Account::factory()->pro()->connected()->create([
+        'email' => 'ongtung2212002@gmail.com',
+        'status' => AccountStatus::Active,
+    ]);
+
+    app(AccountProfileSyncer::class)->sync($account);
+    $account->refresh();
+
+    expect($account->plan)->toBe(AccountPlan::Max20x)
+        ->and($account->organization_type)->toBe('claude_max')
+        ->and($account->rate_limit_tier)->toBe('default_claude_max_20x');
 });
