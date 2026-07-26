@@ -20,15 +20,20 @@ final class ProvisionedAccountController extends Controller
     public function __construct(private readonly AccountProvisioningService $provisioning) {}
 
     /**
-     * Return the authenticated user's claimable grants and consume them.
+     * Return the authenticated user's claimable grants, verified memberships,
+     * and the org accounts to remove. Consumes the claimable grants.
      *
      * @param  Request  $request  carries the hook-authenticated user
-     * @return JsonResponse the grants payload ({accounts: [...]})
+     * @return JsonResponse {accounts, memberships, remove}
      */
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user('hook');
+
         return response()->json([
-            'accounts' => $this->provisioning->claim($request->user('hook')),
+            'accounts' => $this->provisioning->claim($user),
+            'memberships' => $this->provisioning->memberships($user),
+            'remove' => $this->provisioning->removable($user),
         ]);
     }
 

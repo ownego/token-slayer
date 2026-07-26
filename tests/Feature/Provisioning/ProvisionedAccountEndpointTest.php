@@ -74,3 +74,24 @@ it('excludes another user\'s, a revoked, and an expired-cache grant', function (
     $this->withHeader('Authorization', 'Bearer MINE')->getJson('/api/provisioned')
         ->assertOk()->assertJsonCount(0, 'accounts');
 });
+
+it('returns memberships (tracked) and remove (untracked) alongside accounts', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $pending = Account::factory()->create(['email' => 'p@org.com', 'organization_uuid' => 'org-pending']);
+    $tracked = Account::factory()->create(['organization_uuid' => 'org-tracked']);
+    $untracked = Account::factory()->create(['organization_uuid' => 'org-untracked']);
+
+    provisionRow($user, $pending, ['status' => MembershipStatus::Pending->value], secret: [
+        'name' => 'p@org.com', 'email' => 'p@org.com', 'org_uuid' => 'org-pending',
+        'access_token' => 'sk-ant-oat01-A', 'refresh_token' => 'sk-ant-ort01-R', 'expires_at' => 1_800_000_000,
+    ]);
+    provisionRow($user, $tracked, ['status' => MembershipStatus::Tracked->value]);
+    provisionRow($user, $untracked, ['status' => MembershipStatus::Untracked->value]);
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->getJson('/api/provisioned');
+
+    $res->assertOk()
+        ->assertJsonPath('accounts.0.org_uuid', 'org-pending')
+        ->assertJsonPath('memberships.0.org_uuid', 'org-tracked')
+        ->assertJsonPath('remove.0.org_uuid', 'org-untracked');
+});
