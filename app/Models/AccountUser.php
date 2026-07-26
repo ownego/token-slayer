@@ -38,6 +38,7 @@ class AccountUser extends Pivot
             'provisioned_at' => 'datetime',
             'claimed_at' => 'datetime',
             'revoked_at' => 'datetime',
+            'deprovisioned_at' => 'datetime',
         ];
     }
 }
