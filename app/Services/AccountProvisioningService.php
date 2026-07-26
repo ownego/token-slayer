@@ -79,6 +79,7 @@ final class AccountProvisioningService
                 'provisioned_at' => Carbon::now(),
                 'claimed_at' => null,
                 'revoked_at' => null,
+                'deprovisioned_at' => null,
             ],
         ]);
 

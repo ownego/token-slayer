@@ -109,6 +109,31 @@ it('memberships lists only tracked orgs, including a tracked row with null provi
         ->and($orgs)->not->toContain('org-untracked');
 });
 
+it('clears deprovisioned_at when an account is re-provisioned', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create([
+        'email' => 'ongtung2212002@gmail.com',
+        'organization_uuid' => '7f993a12-f480-45cd-8b99-1e3182d168bf',
+    ]);
+
+    // Seed the PKCE verifier the way start() would (real prefix: 'account-connect:').
+    $state = 'STATE789';
+    Cache::put('account-connect:'.$state, ['verifier' => 'VERIFIER'], now()->addMinutes(10));
+
+    fakeAnthropic();
+
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => 'untracked', 'provisioned_at' => now(), 'deprovisioned_at' => now()],
+    ]);
+
+    app(AccountProvisioningService::class)
+        ->provisionFromCode($user, $account, $state, 'THECODE#'.$state);
+
+    $pivot = AccountUser::query()
+        ->where('user_id', $user->id)->where('account_id', $account->id)->firstOrFail();
+    expect($pivot->deprovisioned_at)->toBeNull();
+});
+
 it('removable lists untracked orgs regardless of provisioned_at, excluding already-deprovisioned', function () {
     $svc = app(App\Services\AccountProvisioningService::class);
     $user = App\Models\User::factory()->create();
