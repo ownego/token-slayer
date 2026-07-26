@@ -90,6 +90,16 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The physical machines this user has been provisioned on.
+     *
+     * @return HasMany<Device, $this>
+     */
+    public function devices(): HasMany
+    {
+        return $this->hasMany(Device::class);
+    }
+
+    /**
      * Usage events this user has logged, across all accounts, in natural
      * order. Callers that need newest-first order the query explicitly.
      *
