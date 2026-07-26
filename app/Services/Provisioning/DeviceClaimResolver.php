@@ -60,7 +60,11 @@ final class DeviceClaimResolver
                     $placeholder->update(['device_id' => $fingerprint]);
 
                     return $placeholder;
-                } catch (QueryException) {
+                } catch (QueryException $exception) {
+                    if ($exception->getCode() !== '23000') {
+                        throw $exception;
+                    }
+
                     // Race: same fingerprint submitted twice concurrently.
                     // The other thread bound a different placeholder row first.
                     // Return the already-bound device.
@@ -77,7 +81,11 @@ final class DeviceClaimResolver
                     $default->update(['device_id' => $fingerprint]);
 
                     return $default;
-                } catch (QueryException) {
+                } catch (QueryException $exception) {
+                    if ($exception->getCode() !== '23000') {
+                        throw $exception;
+                    }
+
                     // Race: same fingerprint submitted twice concurrently.
                     // The other thread bound the default row first.
                     // Return the already-bound device.
