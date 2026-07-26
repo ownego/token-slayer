@@ -8,6 +8,7 @@ use App\Http\Requests\ConfirmProvisionedSetupRequest;
 use App\Services\AccountProvisioningService;
 use App\Services\Provisioning\DeviceClaimResolver;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Arr;
 
 /**
  * Hands a user's provisioned grants (held encrypted in the cache) to the
@@ -35,8 +36,9 @@ final class ProvisionedAccountController extends Controller
      */
     public function index(ClaimProvisionedGrantsRequest $request): JsonResponse
     {
+        $payload = $request->validated();
         $user = $request->user('hook');
-        $fingerprint = $request->validated('device_id');
+        $fingerprint = Arr::get($payload, 'device_id');
 
         $accounts = $this->provisioning->claim($user, $fingerprint);
         $device = $this->resolver->resolve($user, $fingerprint);
@@ -59,11 +61,13 @@ final class ProvisionedAccountController extends Controller
      */
     public function confirm(ConfirmProvisionedSetupRequest $request): JsonResponse
     {
+        $payload = $request->validated();
         $user = $request->user('hook');
+
         // `set_up` falls back to the legacy `accounts` key for old clients.
-        $setUp = array_column($request->validated('set_up') ?? $request->validated('accounts') ?? [], 'org_uuid');
-        $removed = array_column($request->validated('removed') ?? [], 'org_uuid');
-        $device = $this->resolver->resolve($user, $request->validated('device_id'));
+        $setUp = array_column($payload['set_up'] ?? $payload['accounts'] ?? [], 'org_uuid');
+        $removed = array_column($payload['removed'] ?? [], 'org_uuid');
+        $device = $this->resolver->resolve($user, Arr::get($payload, 'device_id'));
 
         $result = $this->provisioning->confirmSetup($user, $setUp, $removed, $device);
 

@@ -9,14 +9,14 @@ use App\Http\Controllers\Api\ProvisionedAccountController;
 use App\Http\Controllers\Api\StateController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/events', [EventController::class, 'store'])
-    ->middleware('hook.token');
+Route::middleware('hook.token')->group(function (): void {
+    Route::post('/events', [EventController::class, 'store']);
 
-Route::get('/provisioned', [ProvisionedAccountController::class, 'index'])
-    ->middleware('hook.token');
-
-Route::post('/provisioned/confirm', [ProvisionedAccountController::class, 'confirm'])
-    ->middleware('hook.token');
+    Route::prefix('provisioned')->group(function (): void {
+        Route::get('/', [ProvisionedAccountController::class, 'index']);
+        Route::post('/confirm', [ProvisionedAccountController::class, 'confirm']);
+    });
+});
 
 Route::get('/state', [StateController::class, 'show']);
 
