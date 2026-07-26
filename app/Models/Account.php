@@ -102,6 +102,17 @@ class Account extends Model
     }
 
     /**
+     * Every provisioned grant issued for this account, across all users'
+     * devices and statuses.
+     *
+     * @return HasMany<AccountProvisionedGrant, $this>
+     */
+    public function provisionedGrants(): HasMany
+    {
+        return $this->hasMany(AccountProvisionedGrant::class);
+    }
+
+    /**
      * Every quota-utilization snapshot recorded for this account by the
      * 5-minute prober, in natural (insertion) order. Callers that need
      * newest-first should order the query explicitly.
