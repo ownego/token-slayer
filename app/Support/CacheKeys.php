@@ -33,6 +33,15 @@ final class CacheKeys
     public const string ACCOUNTS_ORG_MAP = 'accounts:org-map';
 
     /**
+     * How long a provisioned grant's encrypted secret lives in the cache
+     * (24 hours). After expiry the raw grant is gone forever; Reissue is
+     * the only recovery path.
+     *
+     * @var int
+     */
+    public const int PROVISIONED_GRANT_TTL_SECONDS = 86400;
+
+    /**
      * Build the cache key for one account's tracked-members aggregate map.
      *
      * @param  int  $accountId  the owning account id
@@ -64,6 +73,17 @@ final class CacheKeys
     public static function membershipPairs(int $accountId): string
     {
         return "account:{$accountId}:membership-pairs";
+    }
+
+    /**
+     * Build the cache key holding one grant's encrypted raw secret.
+     *
+     * @param  int  $grantId  the account_provisioned_grants row id
+     * @return string
+     */
+    public static function provisionedGrant(int $grantId): string
+    {
+        return "provisioned:grant:{$grantId}";
     }
 
     /**
@@ -108,5 +128,16 @@ final class CacheKeys
     public static function forgetMembershipPairs(int $accountId): void
     {
         Cache::forget(self::membershipPairs($accountId));
+    }
+
+    /**
+     * Forget one grant's encrypted raw secret.
+     *
+     * @param  int  $grantId  the account_provisioned_grants row id
+     * @return void
+     */
+    public static function forgetProvisionedGrant(int $grantId): void
+    {
+        Cache::forget(self::provisionedGrant($grantId));
     }
 }
