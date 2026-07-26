@@ -104,3 +104,45 @@ it('revoke() marks the grant revoked and forgets its secret', function () {
         ->and($grant->fresh()->revoked_at)->not->toBeNull()
         ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->toBeNull();
 });
+
+it('claims pending grants for the resolved device and marks them claimed', function () {
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->legacyDefault()->create();
+    $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-a']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->pending()->create();
+    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
+        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-a',
+        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
+    ])), 86400);
+
+    $payloads = app(AccountProvisioningService::class)->claim($user, null);
+
+    expect($payloads)->toHaveCount(1)
+        ->and($payloads[0]['access_token'])->toBe('AT')
+        ->and($grant->fresh()->status)->toBe(GrantStatus::Claimed)
+        ->and($grant->fresh()->claimed_at)->not->toBeNull();
+
+    // Idempotent within the TTL: a second claim still serves it.
+    expect(app(AccountProvisioningService::class)->claim($user, null))->toHaveCount(1);
+});
+
+it('serves nothing for a dead cache, a revoked grant, or another device', function () {
+    $user = User::factory()->create();
+    $mine = Device::factory()->for($user)->create(['device_id' => 'fp-mine']);
+    $other = Device::factory()->for($user)->create(['device_id' => 'fp-other']);
+
+    AccountProvisionedGrant::factory()->for($mine)->pending()->create();     // no cache
+    $revoked = AccountProvisionedGrant::factory()->for($mine)->revoked()->create();
+    Cache::put(CacheKeys::provisionedGrant($revoked->id), Crypt::encryptString('{}'), 60);
+    $othersGrant = AccountProvisionedGrant::factory()->for($other)->pending()->create();
+    Cache::put(CacheKeys::provisionedGrant($othersGrant->id), Crypt::encryptString('{}'), 60);
+
+    expect(app(AccountProvisioningService::class)->claim($user, 'fp-mine'))->toBe([]);
+});
+
+it('claims nothing when no device resolves', function () {
+    $user = User::factory()->create();
+
+    expect(app(AccountProvisioningService::class)->claim($user, null))->toBe([])
+        ->and(app(AccountProvisioningService::class)->claim($user, 'fp-stranger'))->toBe([]);
+});

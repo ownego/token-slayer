@@ -7,9 +7,9 @@ use App\Enums\MembershipStatus;
 use App\Exceptions\AccountConnectException;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
-use App\Models\AccountUser;
 use App\Models\Device;
 use App\Models\User;
+use App\Services\Provisioning\DeviceClaimResolver;
 use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -25,12 +25,16 @@ use Throwable;
 final class AccountProvisioningService
 {
     /**
-     * Build the service with the connect flow it delegates the code exchange to.
+     * Build the service with the connect flow and the device resolver.
      *
      * @param  AccountConnectService  $connect  supplies the verifier-pull + code exchange
+     * @param  DeviceClaimResolver  $resolver  maps a claim fingerprint to a device
      * @return void
      */
-    public function __construct(private readonly AccountConnectService $connect) {}
+    public function __construct(
+        private readonly AccountConnectService $connect,
+        private readonly DeviceClaimResolver $resolver,
+    ) {}
 
     /**
      * The device an admin-driven provision should land on. An explicit id
@@ -106,31 +110,32 @@ final class AccountProvisioningService
     }
 
     /**
-     * Read and return every provisioned grant for a user whose encrypted cache
-     * secret is still present, decrypted into its payload. This is idempotent
-     * within the secret's 24 h TTL: the cache is NOT consumed, so re-running
-     * setup returns the same grants until the secret expires or the provision
-     * is revoked (which forgets the secret). The first successful read records
-     * {@see AccountUser::claimed_at}; later reads leave it unchanged. Rows whose
-     * cache entry is gone are skipped.
+     * Resolve the calling machine's device (spec §3) and serve every
+     * non-revoked grant on it whose encrypted cache secret is still alive.
+     * A Pending grant is marked Claimed on first serve; the secret is NOT
+     * consumed, so re-running setup stays idempotent for the 24 h TTL.
      *
      * @param  User  $user  the hook-authenticated user pulling grants
+     * @param  string|null  $fingerprint  the client device fingerprint; null = old CLI
      * @return array<int, array<string, mixed>> the decoded grant payloads
      */
-    public function claim(User $user): array
+    public function claim(User $user, ?string $fingerprint): array
     {
-        $payloads = [];
+        $device = $this->resolver->resolve($user, $fingerprint);
+        if ($device === null) {
+            return [];
+        }
 
-        foreach ($this->claimableFor($user) as $pivot) {
-            $key = $this->cacheKey($pivot->user_id, $pivot->account_id);
-            $raw = Cache::get($key);
+        $payloads = [];
+        foreach ($device->grants()->live()->get() as $grant) {
+            $raw = Cache::get(CacheKeys::provisionedGrant($grant->id));
             if ($raw === null) {
                 continue; // cache secret expired/revoked — nothing to hand off
             }
 
             $payloads[] = json_decode(Crypt::decryptString($raw), true);
-            if ($pivot->claimed_at === null) {
-                $pivot->forceFill(['claimed_at' => Carbon::now()])->save();
+            if ($grant->status === GrantStatus::Pending) {
+                $grant->forceFill(['status' => GrantStatus::Claimed, 'claimed_at' => Carbon::now()])->save();
             }
         }
 
@@ -138,49 +143,55 @@ final class AccountProvisioningService
     }
 
     /**
-     * Confirm the CLI's reconcile: promote each `set_up` org Pending→Tracked, and
-     * stamp `deprovisioned_at` on each `removed` org. Additive only; never
-     * demotes/deletes. Uuids are deduped per list.
+     * The org accounts this DEVICE should remove: the user's Untracked orgs
+     * minus those the device already confirmed (its grant row carries
+     * `deprovisioned_at`). Per-device on purpose — with the old per-user
+     * stamp, the first machine to confirm silenced the instruction for
+     * every other machine, which then kept the slot forever.
      *
-     * Security scope differs per loop:
-     * - `set_up` (promotion) is a privilege change, so it stays behind the strict
-     *   self-graft guard — an org is only promoted if the user already holds a
-     *   provisioned pivot for it (`account_user.provisioned_at` set and
-     *   `revoked_at` null); see {@see Account::provisionedUsers()} and
-     *   {@see guardedProvisionedAccount()}. Without that check a hook-token
-     *   holder could self-graft membership onto any org uuid it sends; an org
-     *   the user was never provisioned for is skipped exactly like an unknown
-     *   org (not created, not counted).
-     * - `removed` (stamping `deprovisioned_at`) is intentionally NOT behind that
-     *   guard: the update is scoped to `WHERE user_id = $user->id`, grants no
-     *   access, and only suppresses the caller's OWN future `remove`
-     *   instruction (see {@see removable()}), so there is no self-graft risk.
-     *   This also lets event-materialized pivots (`provisioned_at` null) that
-     *   {@see removable()} deliberately surfaces self-clear once confirmed —
-     *   gating them on the provisioned guard would make them reappear in
-     *   `remove` on every reconcile forever.
-     *
-     * A failure writing one org's pivot is reported and swallowed so it
-     * can't 500 the rest of the batch. Additive only: orgs absent from
-     * both lists are untouched, and nothing here is ever demoted, revoked,
-     * or deleted. Incoming uuids are deduped so a repeated uuid can't
-     * double-count.
-     *
-     * Deliberately does NOT call {@see CacheKeys::forgetAccountMembership()}
-     * (owner decision): that 1 h aggregate cache only feeds the Events/Last-seen
-     * columns, the status badge reads `pivot.status` live, and the tab's
-     * Refresh action already clears it on demand.
+     * @param  User  $user  the hook-authenticated user
+     * @param  Device|null  $device  the resolved claiming device; null = nothing to instruct
+     * @return array<int, array{org_uuid: string}>
+     */
+    public function removable(User $user, ?Device $device): array
+    {
+        if ($device === null) {
+            return [];
+        }
+
+        $confirmedAccountIds = $device->grants()
+            ->whereNotNull('deprovisioned_at')
+            ->pluck('account_id');
+
+        return $user->accounts()
+            ->wherePivot('status', MembershipStatus::Untracked->value)
+            ->whereNotNull('organization_uuid')
+            ->whereKeyNot($confirmedAccountIds)
+            ->pluck('organization_uuid')
+            ->map(fn (string $org): array => ['org_uuid' => $org])
+            ->all();
+    }
+
+    /**
+     * Confirm the CLI's reconcile: promote each `set_up` org Pending→Tracked
+     * behind the live-grant guard, and stamp `deprovisioned_at` for each
+     * `removed` org on THIS device's grant (creating a Revoked tombstone row
+     * when the device holds no grant for the org, so event-materialized
+     * removals self-clear per device). Additive only; failures on one org
+     * are reported and swallowed so they cannot 500 the batch; uuids are
+     * deduped per list.
      *
      * @param  User  $user  the hook-authenticated user
      * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
      * @param  array<int, string>  $removedOrgUuids  orgs the CLI removed the local slot for
+     * @param  Device|null  $device  the resolved claiming device; null = removed loop no-ops
      * @return array{confirmed: int, deprovisioned: int}
      */
-    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = []): array
+    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null): array
     {
         $confirmed = 0;
         foreach (array_unique($setUpOrgUuids) as $orgUuid) {
-            $account = $this->guardedProvisionedAccount($user, $orgUuid);
+            $account = $this->accountWithLiveGrantFor($user, $orgUuid);
             if ($account === null) {
                 continue;
             }
@@ -188,11 +199,6 @@ final class AccountProvisioningService
                 $account->users()->syncWithoutDetaching([
                     $user->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
-                $pivot = AccountUser::query()
-                    ->where('user_id', $user->id)->where('account_id', $account->id)->first();
-                if ($pivot !== null && $pivot->claimed_at === null) {
-                    $pivot->forceFill(['claimed_at' => Carbon::now()])->save();
-                }
                 $confirmed++;
             } catch (Throwable $e) {
                 report($e);
@@ -203,17 +209,27 @@ final class AccountProvisioningService
 
         $deprovisioned = 0;
         foreach (array_unique($removedOrgUuids) as $orgUuid) {
+            if ($device === null) {
+                break;
+            }
             $account = Account::query()->where('organization_uuid', $orgUuid)->first();
             if ($account === null) {
                 continue; // unknown org — never create one from client input
             }
             try {
-                $affected = AccountUser::query()
-                    ->where('user_id', $user->id)->where('account_id', $account->id)
-                    ->update(['deprovisioned_at' => Carbon::now()]);
-                if ($affected > 0) {
-                    $deprovisioned++;
+                $grant = $device->grants()->where('account_id', $account->id)->first();
+                if ($grant !== null) {
+                    $grant->forceFill(['deprovisioned_at' => Carbon::now()])->save();
+                } else {
+                    $device->grants()->create([
+                        'account_id' => $account->id,
+                        'status' => GrantStatus::Revoked,
+                        'provisioned_at' => Carbon::now(),
+                        'revoked_at' => Carbon::now(),
+                        'deprovisioned_at' => Carbon::now(),
+                    ]);
                 }
+                $deprovisioned++;
             } catch (Throwable $e) {
                 report($e);
 
@@ -225,27 +241,26 @@ final class AccountProvisioningService
     }
 
     /**
-     * Resolve the `Account` for `$orgUuid` only if `$user` holds a non-revoked
-     * provisioned pivot for it — the self-graft guard for the `set_up`
-     * (promotion) loop in {@see confirmSetup()}. Returns null for an unknown
-     * org or one the user was never provisioned for.
+     * Resolve the `Account` for `$orgUuid` only if `$user` holds a live
+     * (non-revoked) grant for it on any of their devices — the self-graft
+     * guard for the `set_up` promotion loop.
      *
      * @param  User  $user  the hook-authenticated user
      * @param  string  $orgUuid  organization uuid from the client
      * @return Account|null
      */
-    private function guardedProvisionedAccount(User $user, string $orgUuid): ?Account
+    private function accountWithLiveGrantFor(User $user, string $orgUuid): ?Account
     {
         $account = Account::query()->where('organization_uuid', $orgUuid)->first();
         if ($account === null) {
             return null;
         }
-        $isProvisionedForUser = $account->provisionedUsers()
-            ->wherePivot('user_id', $user->id)
-            ->wherePivotNull('revoked_at')
+
+        $isGranted = $account->provisionedGrants()->live()
+            ->whereHas('device', fn ($query) => $query->where('user_id', $user->id))
             ->exists();
 
-        return $isProvisionedForUser ? $account : null;
+        return $isGranted ? $account : null;
     }
 
     /**
@@ -276,28 +291,6 @@ final class AccountProvisioningService
     {
         return $user->accounts()
             ->wherePivot('status', MembershipStatus::Tracked->value)
-            ->whereNotNull('organization_uuid')
-            ->pluck('organization_uuid')
-            ->map(fn (string $org): array => ['org_uuid' => $org])
-            ->all();
-    }
-
-    /**
-     * The org accounts the user is no longer Tracked on and that the client has
-     * not yet confirmed removing, as `[['org_uuid' => ...]]`. Selector:
-     * `status=Untracked AND deprovisioned_at IS NULL AND organization_uuid NOT NULL`.
-     * Deliberately NOT filtered by `provisioned_at`: any Untracked org account
-     * should leave the user's machine; event-materialized rows self-clear once
-     * the client confirms (best-effort no-op) and `deprovisioned_at` is stamped.
-     *
-     * @param  User  $user  the hook-authenticated user
-     * @return array<int, array{org_uuid: string}>
-     */
-    public function removable(User $user): array
-    {
-        return $user->accounts()
-            ->wherePivot('status', MembershipStatus::Untracked->value)
-            ->wherePivotNull('deprovisioned_at')
             ->whereNotNull('organization_uuid')
             ->pluck('organization_uuid')
             ->map(fn (string $org): array => ['org_uuid' => $org])
