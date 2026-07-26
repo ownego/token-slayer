@@ -39,25 +39,4 @@ final class ConfirmProvisionedSetupRequest extends FormRequest
             'accounts.*.org_uuid' => ['required_with:accounts', 'uuid'],
         ];
     }
-
-    /**
-     * Org uuids to set up, from `set_up`, falling back to the legacy
-     * `accounts` key for old clients.
-     *
-     * @return array<int, string>
-     */
-    public function setUpOrgUuids(): array
-    {
-        return array_column($this->validated('set_up') ?? $this->validated('accounts') ?? [], 'org_uuid');
-    }
-
-    /**
-     * Org uuids to remove, from `removed`.
-     *
-     * @return array<int, string>
-     */
-    public function removedOrgUuids(): array
-    {
-        return array_column($this->validated('removed') ?? [], 'org_uuid');
-    }
 }

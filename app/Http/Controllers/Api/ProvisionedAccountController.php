@@ -51,8 +51,9 @@ final class ProvisionedAccountController extends Controller
     public function confirm(ConfirmProvisionedSetupRequest $request): JsonResponse
     {
         $user = $request->user('hook');
-        $setUp = $request->setUpOrgUuids();
-        $removed = $request->removedOrgUuids();
+        // `set_up` falls back to the legacy `accounts` key for old clients.
+        $setUp = array_column($request->validated('set_up') ?? $request->validated('accounts') ?? [], 'org_uuid');
+        $removed = array_column($request->validated('removed') ?? [], 'org_uuid');
 
         $result = $this->provisioning->confirmSetup($user, $setUp, $removed);
 
