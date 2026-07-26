@@ -254,12 +254,12 @@ final class AccountProvisioningService
         if ($account === null) {
             return null;
         }
-        $ok = $account->provisionedUsers()
+        $isProvisionedForUser = $account->provisionedUsers()
             ->wherePivot('user_id', $user->id)
             ->wherePivotNull('revoked_at')
             ->exists();
 
-        return $ok ? $account : null;
+        return $isProvisionedForUser ? $account : null;
     }
 
     /**
