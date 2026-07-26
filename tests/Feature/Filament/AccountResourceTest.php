@@ -238,3 +238,12 @@ it('shows the latest usage utilization in the account table', function () {
         ->assertTableColumnStateSet('latestUsageSnapshot.util_5h', 12, $account)
         ->assertTableColumnStateSet('latestUsageSnapshot.util_7d', 34, $account);
 });
+
+it('renders the plan label on the accounts table', function (): void {
+    Account::factory()->max5x()->create(['email' => 'maxuser@example.com']);
+    $admin = User::factory()->admin()->create();
+
+    Livewire::actingAs($admin)
+        ->test(ListAccounts::class)
+        ->assertSee('Max 5x');
+});

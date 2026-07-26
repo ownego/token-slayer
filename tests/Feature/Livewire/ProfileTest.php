@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Livewire\Profile;
 use App\Models\Account;
 use App\Models\Boss;
@@ -177,7 +178,7 @@ test('profile shows community and personal usage across hourly, daily, monthly',
 });
 
 test('profile shows the my-account block when the user has an account', function () {
-    $account = Account::factory()->create(['email' => 'team-rocket@example.com', 'plan' => 'max-20x']);
+    $account = Account::factory()->create(['email' => 'team-rocket@example.com', 'plan' => AccountPlan::Max20x]);
     $user = User::factory()->create();
     $account->users()->attach([$user->id, User::factory()->create()->id]);
     $this->actingAs($user);
@@ -187,7 +188,7 @@ test('profile shows the my-account block when the user has an account', function
     $this->get('/profile')
         ->assertOk()
         ->assertSee('team-rocket@example.com')
-        ->assertSee('max-20x')
+        ->assertSee('Max 20x')
         ->assertSee(number_format(55));
 });
 

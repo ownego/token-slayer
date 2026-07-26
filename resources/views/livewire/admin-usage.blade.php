@@ -18,7 +18,7 @@
                 @foreach ($accounts as $row)
                     <tr>
                         <td class="py-2 font-medium">{{ $row['email'] }}</td>
-                        <td class="text-gray-500">{{ $row['plan'] ?? '—' }}</td>
+                        <td class="text-gray-500">{{ $row['plan']?->getLabel() ?? '—' }}</td>
                         <td class="text-right font-mono">{{ $row['memberCount'] }}</td>
                         <td class="text-right font-mono">{{ number_format($row['hourly']) }}</td>
                         <td class="text-right font-mono">{{ number_format($row['daily']) }}</td>
