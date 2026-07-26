@@ -37,6 +37,7 @@ final class ConfirmProvisionedSetupRequest extends FormRequest
             'removed.*.org_uuid' => ['required_with:removed', 'uuid'],
             'accounts' => ['required_without_all:set_up,removed', 'array'],
             'accounts.*.org_uuid' => ['required_with:accounts', 'uuid'],
+            'device_id' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
 }
