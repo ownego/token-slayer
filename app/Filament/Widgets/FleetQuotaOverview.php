@@ -3,8 +3,10 @@
 namespace App\Filament\Widgets;
 
 use App\Services\Analytics\AccountContributorsQuery;
+use App\Services\Analytics\FleetUsageRefresher;
 use App\Services\Analytics\QuotaGaugesQuery;
 use App\Services\Analytics\UsageFilters;
+use Filament\Notifications\Notification;
 use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Filament\Widgets\Widget;
 
@@ -43,6 +45,24 @@ class FleetQuotaOverview extends Widget
     public static function canView(): bool
     {
         return auth()->user()?->can('View:FleetQuotaOverview') ?? false;
+    }
+
+    /**
+     * Re-probe every probeable account's usage and bust the analytics cache,
+     * then notify how many were refreshed. The subsequent Livewire re-render
+     * reads the fresh snapshots (the gauge and contributor queries run live).
+     *
+     * @return void
+     */
+    public function refreshFleet(): void
+    {
+        $count = app(FleetUsageRefresher::class)->refresh();
+
+        Notification::make()
+            ->success()
+            ->title('Fleet usage refreshed')
+            ->body("Re-probed {$count} accounts.")
+            ->send();
     }
 
     /**

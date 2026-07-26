@@ -1,5 +1,15 @@
 <x-filament-widgets::widget>
     <x-filament::section heading="Fleet quota">
+        <x-slot name="afterHeader">
+            <x-filament::icon-button
+                icon="heroicon-o-arrow-path"
+                label="Refresh"
+                wire:click="refreshFleet"
+                wire:loading.attr="disabled"
+                wire:target="refreshFleet"
+            />
+        </x-slot>
+
         <div style="display:flex; align-items:baseline; justify-content:space-between; gap:.5rem; margin-bottom:.75rem; padding-bottom:.6rem; border-bottom:1px solid rgba(120,120,140,.16);">
             <span style="font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; opacity:.6;">Total usage (all accounts)</span>
             <span style="font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace;">{{ number_format($totalUsage) }}</span>
