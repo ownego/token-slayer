@@ -69,6 +69,29 @@ it('provisions an account for the new member when the toggle is on, landing at p
         ->and($grant->provisioned_at)->not->toBeNull();
 });
 
+it('a failed provision (bad/expired code) leaves no orphan placeholder device or grant', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $newcomer = User::factory()->create();
+
+    // An unstarted/expired state: exchangeVerifiedToken() throws
+    // connect_state_expired before ever touching the network, so this
+    // exercises the rollback without needing fakeAnthropic().
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('confirmProvisionMember', [
+            'userId' => $newcomer->id,
+            'authorizeUrl' => 'https://example.test/authorize',
+            'state' => 'never-started-state',
+        ])
+        ->setActionData(['code' => 'bad-code'])
+        ->callMountedAction()
+        ->assertNotified();
+
+    expect($newcomer->devices()->count())->toBe(0)
+        ->and(AccountProvisionedGrant::query()->count())->toBe(0);
+});
+
 it('adds the member as tracked without provisioning when the toggle is off', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
@@ -86,5 +109,8 @@ it('adds the member as tracked without provisioning when the toggle is off', fun
         ->where('user_id', $newcomer->id)->where('account_id', $account->id)->firstOrFail();
 
     expect($pivot->status)->toBe(MembershipStatus::Tracked)
-        ->and($pivot->provisioned_at)->toBeNull();
+        // Grant-layer equivalent of "without provisioning": no device or
+        // grant row was created for the newcomer at all.
+        ->and($newcomer->devices()->doesntExist())->toBeTrue()
+        ->and(AccountProvisionedGrant::query()->whereHas('device', fn ($query) => $query->where('user_id', $newcomer->id))->doesntExist())->toBeTrue();
 });

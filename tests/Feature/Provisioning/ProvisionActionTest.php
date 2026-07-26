@@ -73,6 +73,31 @@ it('blocks opening a second placeholder while one is still awaiting a machine', 
     expect($user->devices()->whereNull('device_id')->count())->toBe(1);
 });
 
+it('a failed add-device provision (bad/expired code) leaves no orphan placeholder device or grant', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => 'tracked']]);
+
+    // An unstarted/expired state: exchangeVerifiedToken() throws
+    // connect_state_expired before ever touching the network, so this
+    // exercises the rollback without needing fakeAnthropic().
+    Livewire::actingAs($admin)
+        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('confirmAddDevice', [
+            'userId' => $user->id,
+            'devicePk' => null,
+            'authorizeUrl' => 'https://example.test/authorize',
+            'state' => 'never-started-state',
+        ])
+        ->setActionData(['code' => 'bad-code'])
+        ->callMountedAction()
+        ->assertNotified();
+
+    expect($user->devices()->count())->toBe(0)
+        ->and(AccountProvisionedGrant::query()->count())->toBe(0);
+});
+
 it('reissue revokes the old grant and mints a pending replacement on the same device', function () {
     fakeAnthropic();
     $admin = User::factory()->admin()->create();

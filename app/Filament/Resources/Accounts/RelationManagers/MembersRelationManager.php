@@ -27,6 +27,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 
 /**
@@ -324,8 +325,13 @@ class MembersRelationManager extends RelationManager
                 $service = app(AccountProvisioningService::class);
 
                 try {
-                    $device = $service->resolveProvisionTarget($user, null);
-                    $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
+                    // Wrapped so a throw from provisionForDevice() (bad/expired
+                    // code) rolls back the device insert too — otherwise a
+                    // failed paste leaves an orphan placeholder device behind.
+                    DB::transaction(function () use ($service, $user, $account, $data): void {
+                        $device = $service->resolveProvisionTarget($user, null);
+                        $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
+                    });
                 } catch (AccountConnectException $exception) {
                     Notification::make()
                         ->danger()
