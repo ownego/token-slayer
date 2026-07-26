@@ -74,7 +74,7 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->belongsToMany(Account::class)
             ->using(AccountUser::class)
-            ->withPivot('token_uuid', 'provisioned_at', 'claimed_at', 'revoked_at')
+            ->withPivot('status', 'token_uuid', 'provisioned_at', 'claimed_at', 'revoked_at')
             ->withTimestamps();
     }
 

@@ -2,40 +2,28 @@
 
 namespace App\Services;
 
+use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
 use App\Exceptions\AccountConnectException;
 use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
 use App\Models\AccountUser;
+use App\Models\Device;
 use App\Models\User;
 use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Throwable;
 
 /**
- * Provisions a per-user OAuth grant. Durable, non-secret tracking (token_uuid
- * + timestamps) is written to the account_user pivot; the raw grant itself is
- * held ONLY in the cache, encrypted, with a 24 h TTL — never at rest in the DB
- * long-term, and never on the account's own probe grant.
+ * Provisions a per-device OAuth grant. Durable, non-secret tracking lives on
+ * `account_provisioned_grants`; the raw grant itself is held ONLY in the
+ * cache, encrypted, with a 24 h TTL — never at rest in the DB long-term, and
+ * never on the account's own probe grant.
  */
 final class AccountProvisioningService
 {
-    /**
-     * Cache-key prefix for a stored provisioned grant.
-     *
-     * @var string
-     */
-    public const string CACHE_KEY_PREFIX = 'provisioned:setup:';
-
-    /**
-     * How long an unclaimed provisioned grant lives in the cache (24 hours).
-     *
-     * @var int
-     */
-    public const int CACHE_TTL_SECONDS = 86400;
-
     /**
      * Build the service with the connect flow it delegates the code exchange to.
      *
@@ -45,42 +33,59 @@ final class AccountProvisioningService
     public function __construct(private readonly AccountConnectService $connect) {}
 
     /**
-     * The cache key holding the encrypted raw grant for a (user, account) pair.
+     * The device an admin-driven provision should land on. An explicit id
+     * must belong to the user; with no selection a fresh placeholder is
+     * created, awaiting its first contact. The legacy `'default'` sentinel
+     * is never minted here — it exists only from the backfill migration.
      *
-     * @param  int  $userId  the provisioned user's id
-     * @param  int  $accountId  the granted account's id
-     * @return string the fully-qualified cache key
+     * @param  User  $user  the user being provisioned
+     * @param  int|null  $deviceId  an existing device id, or null for a new placeholder
+     * @return Device
      */
-    public function cacheKey(int $userId, int $accountId): string
+    public function resolveProvisionTarget(User $user, ?int $deviceId): Device
     {
-        return self::CACHE_KEY_PREFIX.$userId.':'.$accountId;
+        if ($deviceId !== null) {
+            return $user->devices()->findOrFail($deviceId);
+        }
+
+        return $user->devices()->create(['device_id' => null]);
     }
 
     /**
-     * Exchange a pasted PKCE code, write the tracking row to the (user, account)
-     * pivot, and stash the encrypted raw grant in the cache (24 h TTL).
+     * Exchange a pasted PKCE code and issue a Pending grant to `$device`.
+     * Any live grant already on the same (account, device) is revoked first
+     * — this enforces the one-live-grant invariant and doubles as the
+     * Reissue path. Membership is upserted to Tracked; callers that want a
+     * Pending membership (Add member flow) downgrade it afterwards. The raw
+     * secret is cached encrypted under the grant's key for 24 h.
      *
      * @param  User  $user  the user being granted access
      * @param  Account  $account  the account to grant
+     * @param  Device  $device  the machine this grant is issued to
      * @param  string  $state  the state from {@see AccountConnectService::start()}
      * @param  string  $pastedCode  the `code#state` the admin pasted
-     * @return AccountUser the written pivot tracking row
+     * @return AccountProvisionedGrant the new Pending grant
      *
      * @throws AccountConnectException 'connect_state_expired' | 'connect_no_identity' | 'connect_identity_mismatch' when the pasted code's authorized identity doesn't match `$account`
      */
-    public function provisionFromCode(User $user, Account $account, string $state, string $pastedCode): AccountUser
+    public function provisionForDevice(User $user, Account $account, Device $device, string $state, string $pastedCode): AccountProvisionedGrant
     {
         $token = $this->connect->exchangeVerifiedToken($state, $pastedCode, $account);
 
+        $previous = $account->provisionedGrants()->live()->where('device_id', $device->id)->get();
+        foreach ($previous as $stale) {
+            $this->revoke($stale);
+        }
+
+        $grant = $account->provisionedGrants()->create([
+            'device_id' => $device->id,
+            'status' => GrantStatus::Pending,
+            'token_uuid' => $token['token_uuid'] ?? null,
+            'provisioned_at' => Carbon::now(),
+        ]);
+
         $user->accounts()->syncWithoutDetaching([
-            $account->id => [
-                'status' => MembershipStatus::Tracked->value,
-                'token_uuid' => $token['token_uuid'] ?? null,
-                'provisioned_at' => Carbon::now(),
-                'claimed_at' => null,
-                'revoked_at' => null,
-                'deprovisioned_at' => null,
-            ],
+            $account->id => ['status' => MembershipStatus::Tracked->value],
         ]);
 
         $payload = [
@@ -92,31 +97,12 @@ final class AccountProvisioningService
             'expires_at' => Carbon::now()->addSeconds((int) $token['expires_in'])->timestamp,
         ];
         Cache::put(
-            $this->cacheKey($user->id, $account->id),
+            CacheKeys::provisionedGrant($grant->id),
             Crypt::encryptString(json_encode($payload)),
-            self::CACHE_TTL_SECONDS,
+            CacheKeys::PROVISIONED_GRANT_TTL_SECONDS,
         );
 
-        return AccountUser::query()
-            ->where('user_id', $user->id)->where('account_id', $account->id)->firstOrFail();
-    }
-
-    /**
-     * The user's grants that are provisioned and not revoked. Already-claimed
-     * rows are INCLUDED — availability is decided by whether the encrypted
-     * cache secret still exists (see {@see claim()}), so setup can be re-run
-     * idempotently for the 24 h the secret lives.
-     *
-     * @param  User  $user  the user pulling grants
-     * @return Collection<int, AccountUser>
-     */
-    public function claimableFor(User $user): Collection
-    {
-        return AccountUser::query()
-            ->where('user_id', $user->id)
-            ->whereNotNull('provisioned_at')
-            ->whereNull('revoked_at')
-            ->get();
+        return $grant;
     }
 
     /**
@@ -263,17 +249,17 @@ final class AccountProvisioningService
     }
 
     /**
-     * Soft-revoke a provision: mark it revoked and forget the cached grant so
-     * a future claim cannot re-serve it. (A grant already handed to a client
-     * must be deleted separately at claude.ai using its token_uuid.)
+     * Soft-revoke a grant: mark it Revoked and forget the cached secret so
+     * a future claim cannot re-serve it. (A grant already handed to a
+     * client must be deleted separately at claude.ai using its token_uuid.)
      *
-     * @param  AccountUser  $pivot  the provision to revoke
+     * @param  AccountProvisionedGrant  $grant  the grant to revoke
      * @return void
      */
-    public function revoke(AccountUser $pivot): void
+    public function revoke(AccountProvisionedGrant $grant): void
     {
-        $pivot->forceFill(['revoked_at' => Carbon::now()])->save();
-        Cache::forget($this->cacheKey($pivot->user_id, $pivot->account_id));
+        $grant->forceFill(['status' => GrantStatus::Revoked, 'revoked_at' => Carbon::now()])->save();
+        CacheKeys::forgetProvisionedGrant($grant->id);
     }
 
     /**
