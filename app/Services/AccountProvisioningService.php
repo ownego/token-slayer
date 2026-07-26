@@ -153,17 +153,26 @@ final class AccountProvisioningService
 
     /**
      * Confirm the CLI's reconcile: promote each `set_up` org Pending→Tracked, and
-     * stamp `deprovisioned_at` on each `removed` org. Both are scoped by the same
-     * self-graft guard (only an org the user actually holds a provisioned pivot
-     * for). Additive only; never demotes/deletes. Uuids are deduped.
+     * stamp `deprovisioned_at` on each `removed` org. Additive only; never
+     * demotes/deletes. Uuids are deduped per list.
      *
-     * Security scope: an org is only promoted/stamped if the user already holds a
-     * provisioned pivot for it (`account_user.provisioned_at` set and
-     * `revoked_at` null) — see {@see Account::provisionedUsers()} and
-     * {@see guardedProvisionedAccount()}. Without that check a hook-token holder
-     * could self-graft membership onto any org uuid it sends; an org the user
-     * was never provisioned for is skipped exactly like an unknown org (not
-     * created, not counted).
+     * Security scope differs per loop:
+     * - `set_up` (promotion) is a privilege change, so it stays behind the strict
+     *   self-graft guard — an org is only promoted if the user already holds a
+     *   provisioned pivot for it (`account_user.provisioned_at` set and
+     *   `revoked_at` null); see {@see Account::provisionedUsers()} and
+     *   {@see guardedProvisionedAccount()}. Without that check a hook-token
+     *   holder could self-graft membership onto any org uuid it sends; an org
+     *   the user was never provisioned for is skipped exactly like an unknown
+     *   org (not created, not counted).
+     * - `removed` (stamping `deprovisioned_at`) is intentionally NOT behind that
+     *   guard: the update is scoped to `WHERE user_id = $user->id`, grants no
+     *   access, and only suppresses the caller's OWN future `remove`
+     *   instruction (see {@see removable()}), so there is no self-graft risk.
+     *   This also lets event-materialized pivots (`provisioned_at` null) that
+     *   {@see removable()} deliberately surfaces self-clear once confirmed —
+     *   gating them on the provisioned guard would make them reappear in
+     *   `remove` on every reconcile forever.
      *
      * A failure writing one org's pivot is reported and swallowed so it
      * can't 500 the rest of the batch. Additive only: orgs absent from
@@ -208,15 +217,17 @@ final class AccountProvisioningService
 
         $deprovisioned = 0;
         foreach (array_unique($removedOrgUuids) as $orgUuid) {
-            $account = $this->guardedProvisionedAccount($user, $orgUuid);
+            $account = Account::query()->where('organization_uuid', $orgUuid)->first();
             if ($account === null) {
-                continue;
+                continue; // unknown org — never create one from client input
             }
             try {
-                AccountUser::query()
+                $affected = AccountUser::query()
                     ->where('user_id', $user->id)->where('account_id', $account->id)
                     ->update(['deprovisioned_at' => Carbon::now()]);
-                $deprovisioned++;
+                if ($affected > 0) {
+                    $deprovisioned++;
+                }
             } catch (Throwable $e) {
                 report($e);
 
@@ -229,8 +240,9 @@ final class AccountProvisioningService
 
     /**
      * Resolve the `Account` for `$orgUuid` only if `$user` holds a non-revoked
-     * provisioned pivot for it — the shared self-graft guard. Returns null for an
-     * unknown org or one the user was never provisioned for.
+     * provisioned pivot for it — the self-graft guard for the `set_up`
+     * (promotion) loop in {@see confirmSetup()}. Returns null for an unknown
+     * org or one the user was never provisioned for.
      *
      * @param  User  $user  the hook-authenticated user
      * @param  string  $orgUuid  organization uuid from the client

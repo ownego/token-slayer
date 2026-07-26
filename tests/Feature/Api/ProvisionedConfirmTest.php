@@ -188,6 +188,40 @@ it('stamps deprovisioned_at for a removed untracked org the user holds a pivot f
     expect($pivot->deprovisioned_at)->not->toBeNull();
 });
 
+it('stamps deprovisioned_at for an event-materialized untracked org (provisioned_at null) the user holds', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '20202020-2020-4020-8020-202020202020']);
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => MembershipStatus::Untracked->value, 'provisioned_at' => null],
+    ]);
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'removed' => [['org_uuid' => '20202020-2020-4020-8020-202020202020']],
+    ]);
+
+    $res->assertOk()->assertJsonPath('deprovisioned', 1);
+
+    $pivot = AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->firstOrFail();
+    expect($pivot->deprovisioned_at)->not->toBeNull();
+});
+
+it('stamps nothing and counts zero when removing an org uuid the user holds no pivot for', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '30303030-3030-4030-8030-303030303030']);
+
+    expect(AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->exists())
+        ->toBeFalse();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'removed' => [['org_uuid' => '30303030-3030-4030-8030-303030303030']],
+    ]);
+
+    $res->assertOk()->assertJsonPath('deprovisioned', 0);
+
+    expect(AccountUser::query()->where('user_id', $user->id)->where('account_id', $account->id)->exists())
+        ->toBeFalse();
+});
+
 it('still accepts the legacy {accounts:[...]} body as set_up (old clients)', function () {
     $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
     $account = Account::factory()->create(['organization_uuid' => '44444444-4444-4444-8444-444444444444']);
