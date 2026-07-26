@@ -4,6 +4,7 @@ namespace App\Services\Provisioning;
 
 use App\Models\Device;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -13,7 +14,9 @@ use Illuminate\Support\Facades\DB;
  * first, then binds an admin-opened placeholder (oldest first), then binds
  * the still-unbound `'default'`; anything else resolves to nothing — no
  * guessing. Binding runs inside a transaction under `lockForUpdate` so two
- * machines claiming simultaneously can never bind the same row.
+ * machines claiming simultaneously can never bind the same row. Same-fingerprint
+ * concurrent binds are idempotent: the loser of the race sees the winner's
+ * committed bind and returns it.
  */
 final class DeviceClaimResolver
 {
@@ -37,15 +40,32 @@ final class DeviceClaimResolver
         }
 
         return DB::transaction(function () use ($user, $fingerprint): ?Device {
+            // Re-check for exact match inside the transaction: if two calls raced,
+            // one wins and commits; the loser re-checks and sees the bound device.
+            $matched = $user->devices()
+                ->where('device_id', $fingerprint)
+                ->lockForUpdate()
+                ->first();
+            if ($matched !== null) {
+                return $matched;
+            }
+
             $placeholder = $user->devices()
                 ->whereNull('device_id')
                 ->orderBy('created_at')->orderBy('id')
                 ->lockForUpdate()
                 ->first();
             if ($placeholder !== null) {
-                $placeholder->update(['device_id' => $fingerprint]);
+                try {
+                    $placeholder->update(['device_id' => $fingerprint]);
 
-                return $placeholder;
+                    return $placeholder;
+                } catch (QueryException) {
+                    // Race: same fingerprint submitted twice concurrently.
+                    // The other thread bound a different placeholder row first.
+                    // Return the already-bound device.
+                    return $user->devices()->where('device_id', $fingerprint)->first();
+                }
             }
 
             $default = $user->devices()
@@ -53,9 +73,16 @@ final class DeviceClaimResolver
                 ->lockForUpdate()
                 ->first();
             if ($default !== null) {
-                $default->update(['device_id' => $fingerprint]);
+                try {
+                    $default->update(['device_id' => $fingerprint]);
 
-                return $default;
+                    return $default;
+                } catch (QueryException) {
+                    // Race: same fingerprint submitted twice concurrently.
+                    // The other thread bound the default row first.
+                    // Return the already-bound device.
+                    return $user->devices()->where('device_id', $fingerprint)->first();
+                }
             }
 
             return null;

@@ -78,3 +78,17 @@ it('never binds across users', function () {
 
     expect(app(DeviceClaimResolver::class)->resolve($me, 'fp-me'))->toBeNull();
 });
+
+it('resolves an already-bound fingerprint idempotently, without consuming another placeholder', function () {
+    $user = User::factory()->create();
+    $bound = Device::factory()->for($user)->create(['device_id' => 'fp-taken']);
+    $placeholder = Device::factory()->for($user)->placeholder()->create();
+
+    $resolver = app(DeviceClaimResolver::class);
+    $first = $resolver->resolve($user, 'fp-taken');
+    $second = $resolver->resolve($user, 'fp-taken');
+
+    expect($first?->id)->toBe($bound->id)
+        ->and($second?->id)->toBe($bound->id)
+        ->and($placeholder->fresh()->device_id)->toBeNull();
+});
