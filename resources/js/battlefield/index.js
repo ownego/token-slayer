@@ -14,6 +14,7 @@ const ECHO_EVENT_MAP = {
   FighterCharging: BusEvent.FIGHTER_CHARGING,
   FighterIdled:    BusEvent.FIGHTER_IDLED,
   FighterMoved:    BusEvent.FIGHTER_MOVED,
+  FighterChargeCleared: BusEvent.FIGHTER_CHARGE_CLEARED,
 };
 
 const ECHO_RETRY_INTERVAL_MS = 200;
@@ -21,6 +22,7 @@ const ECHO_RETRY_TIMEOUT_MS = 10_000;
 
 let echoChannel = null;
 let echoRetryInterval = null;
+let resyncBound = false;
 
 function attachEchoListeners() {
   if (echoChannel) {
@@ -32,6 +34,32 @@ function attachEchoListeners() {
   for (const [evt, key] of Object.entries(ECHO_EVENT_MAP)) {
     echoChannel.listen('.' + evt, payload => bus.emit(key, payload));
   }
+  bindResyncOnReconnect();
+}
+
+/**
+ * Wires a one-time listener so that whenever the Echo/Reverb connection
+ * (re)establishes, the Battlefield Livewire component is asked for the
+ * current authoritative fighter positions. Reverb broadcasts have no replay,
+ * so a `FighterMoved` that fired while this tab's WebSocket was disconnected
+ * is otherwise lost forever for this one client; requesting a resync repairs
+ * whatever drifted instead of leaving it wrong until the next full reload.
+ *
+ * @return {void}
+ */
+function bindResyncOnReconnect() {
+  if (resyncBound || !window.Echo?.connector?.pusher?.connection) {
+    return;
+  }
+  resyncBound = true;
+
+  window.Livewire.on('battlefield-resynced', ({ positions }) => {
+    bus.emit(BusEvent.POSITIONS_RESYNCED, { positions });
+  });
+
+  window.Echo.connector.pusher.connection.bind('connected', () => {
+    window.Livewire.dispatch('request-resync');
+  });
 }
 
 function subscribeEcho() {

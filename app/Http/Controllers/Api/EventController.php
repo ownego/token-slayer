@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
+use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
-use App\Events\FighterIdled;
 use App\Events\FighterJoined;
 use App\Events\HitDealt;
 use App\Http\Controllers\Controller;
@@ -117,10 +117,12 @@ class EventController extends Controller
                     $this->chargingCache->forget($user->id);
                 }
             } else {
-                // Nothing to damage with — still clear the charging visual
-                // so the fighter doesn't stay stuck mid-charge.
+                // Nothing to damage with — clear the charging visual only.
+                // FighterChargeCleared (not FighterIdled) because this is a
+                // routine "no tokens this turn" case, not genuine idleness —
+                // FighterIdled fully removes the fighter client-side.
                 $this->chargingCache->forget($user->id);
-                $this->dispatchSafely(new FighterIdled($user));
+                $this->dispatchSafely(new FighterChargeCleared($user));
             }
         }
 
