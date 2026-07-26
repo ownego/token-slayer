@@ -4,6 +4,8 @@ use App\Enums\MembershipStatus;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
+use App\Models\Device;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Accounts\AccountMembershipCache;
@@ -13,6 +15,34 @@ use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
+
+it('shows a per-user devices summary scoped to this account', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $otherAccount = Account::factory()->create();
+    $user = User::factory()->create();
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Tracked->value]]);
+    $a = Device::factory()->for($user)->create(['device_id' => 'fp-a']);
+    $b = Device::factory()->for($user)->create(['device_id' => 'fp-b']);
+    AccountProvisionedGrant::factory()->for($account)->for($a)->claimed()->create();
+    AccountProvisionedGrant::factory()->for($account)->for($b)->pending()->create();
+    AccountProvisionedGrant::factory()->for($otherAccount)->for($a)->claimed()->create(); // must not count
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertTableColumnStateSet('devices', '1/2 set up', record: $user);
+});
+
+it('shows a dash for members without grants', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $member = User::factory()->create();
+    $account->users()->syncWithoutDetaching([$member->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertTableColumnStateSet('devices', '—', record: $member);
+});
 
 it('lists tracked and untracked contributors with status and toggles them', function () {
     $admin = User::factory()->admin()->create();

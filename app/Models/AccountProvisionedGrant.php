@@ -68,4 +68,28 @@ class AccountProvisionedGrant extends Model
     {
         return $query->where('status', '!=', GrantStatus::Revoked->value);
     }
+
+    /**
+     * Per-user devices summary for one account: "claimed/total set up"
+     * counting non-revoked grants on the user's devices for that account,
+     * or null when the user holds none.
+     *
+     * @param  int  $accountId  the account being summarized
+     * @param  int  $userId  the member user
+     * @return string|null e.g. "1/2 set up"
+     */
+    public static function deviceSummaryFor(int $accountId, int $userId): ?string
+    {
+        $grants = self::query()->live()
+            ->where('account_id', $accountId)
+            ->whereHas('device', fn ($query) => $query->where('user_id', $userId))
+            ->get();
+        if ($grants->isEmpty()) {
+            return null;
+        }
+
+        $claimed = $grants->where('status', GrantStatus::Claimed)->count();
+
+        return "{$claimed}/{$grants->count()} set up";
+    }
 }

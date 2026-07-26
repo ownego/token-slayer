@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\Users\RelationManagers;
 
 use App\Filament\Resources\Users\Pages\ViewUser;
+use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -11,10 +13,12 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Read-only list of the org `Account`s a `User` is a member of
- * (`account_user` pivot, any status), with the pivot's membership status
- * and provisioning audit columns. No create/edit/delete — membership is
- * managed from the Account side (its own Users/Provisions relation
- * managers).
+ * (`account_user` pivot, any status), with the pivot's membership status and
+ * a per-account devices summary. The provisioning audit trail
+ * (provisioned/claimed/revoked timestamps) now lives per-grant on the
+ * Account's own Provisions tab ({@see ProvisionsRelationManager}), not here.
+ * No create/edit/delete — membership is managed from the Account side (its
+ * own Members/Provisions relation managers).
  */
 class AccountsRelationManager extends RelationManager
 {
@@ -58,7 +62,7 @@ class AccountsRelationManager extends RelationManager
 
     /**
      * Build the read-only accounts table: identity, plan, membership
-     * status, and the provisioning audit trail from the pivot.
+     * status, and a per-account devices summary.
      *
      * @param  Table  $table  The table being configured by Filament.
      * @return Table
@@ -76,21 +80,9 @@ class AccountsRelationManager extends RelationManager
                 TextColumn::make('pivot.status')
                     ->label('Membership')
                     ->badge(),
-                TextColumn::make('pivot.provisioned_at')
-                    ->label('Provisioned')
-                    ->dateTime()
-                    ->placeholder('—')
-                    ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('pivot.claimed_at')
-                    ->label('Claimed')
-                    ->dateTime()
-                    ->placeholder('—')
-                    ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('pivot.revoked_at')
-                    ->label('Revoked')
-                    ->dateTime()
-                    ->placeholder('—')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('devices')
+                    ->label('Devices')
+                    ->state(fn (Account $record): string => AccountProvisionedGrant::deviceSummaryFor($record->id, $this->getOwnerRecord()->getKey()) ?? '—'),
             ]);
     }
 }
