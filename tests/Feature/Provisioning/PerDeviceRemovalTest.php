@@ -7,7 +7,10 @@ use App\Models\AccountProvisionedGrant;
 use App\Models\Device;
 use App\Models\User;
 use App\Services\AccountProvisioningService;
+use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 
 uses(RefreshDatabase::class);
 
@@ -150,6 +153,56 @@ it('reissued-then-unverified device receives the removal instruction again', fun
     ]);
 
     expect($service->removable($user, $device))->toBe([['org_uuid' => 'org-reissue']]);
+});
+
+it('revokes the existing grant and forgets its cached secret when a device confirms removal', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['organization_uuid' => 'org-kill']);
+    untrackedMembership($user, $account);
+    $device = Device::factory()->for($user)->create(['device_id' => 'fp-a']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    Cache::put(CacheKeys::provisionedGrant($grant->id), 'secret', 60);
+
+    $service = app(AccountProvisioningService::class);
+    $result = $service->confirmSetup($user, [], ['org-kill'], $device);
+
+    expect($result['deprovisioned'])->toBe(1);
+    $fresh = $grant->fresh();
+    expect($fresh->status)->toBe(GrantStatus::Revoked)
+        ->and($fresh->revoked_at)->not->toBeNull()
+        ->and($fresh->deprovisioned_at)->not->toBeNull()
+        ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->toBeNull();
+});
+
+it('does not re-serve a claimed grant whose removal was already confirmed, even if its cache secret is still alive', function () {
+    // Belt for pre-fix data: legacy rows may have deprovisioned_at set
+    // without having been revoked, with the cache secret still alive
+    // inside its 24h TTL. claim() must not re-serve them regardless.
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['organization_uuid' => 'org-legacy']);
+    $device = Device::factory()->for($user)->create(['device_id' => 'fp-legacy']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'deprovisioned_at' => now(),
+    ]);
+    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString('{}'), 60);
+
+    $payloads = app(AccountProvisioningService::class)->claim($user, 'fp-legacy');
+
+    expect($payloads)->toBe([]);
+});
+
+it('still suppresses the removal instruction for the confirming device after its grant is revoked', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['organization_uuid' => 'org-suppress']);
+    untrackedMembership($user, $account);
+    $device = Device::factory()->for($user)->create(['device_id' => 'fp-a']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+
+    $service = app(AccountProvisioningService::class);
+    $service->confirmSetup($user, [], ['org-suppress'], $device);
+
+    expect($grant->fresh()->status)->toBe(GrantStatus::Revoked)
+        ->and($service->removable($user, $device))->toBe([]);
 });
 
 it('guards set_up promotion on holding a live grant via any of the user devices', function () {

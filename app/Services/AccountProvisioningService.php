@@ -114,9 +114,13 @@ final class AccountProvisioningService
 
     /**
      * Resolve the calling machine's device (spec §3) and serve every
-     * non-revoked grant on it whose encrypted cache secret is still alive.
-     * A Pending grant is marked Claimed on first serve; the secret is NOT
-     * consumed, so re-running setup stays idempotent for the 24 h TTL.
+     * non-revoked, non-deprovisioned grant on it whose encrypted cache
+     * secret is still alive. A Pending grant is marked Claimed on first
+     * serve; the secret is NOT consumed, so re-running setup stays
+     * idempotent for the 24 h TTL. The `deprovisioned_at` exclusion is a
+     * belt for legacy rows stamped before {@see confirmSetup()} started
+     * revoking on confirm — those rows can still be Claimed with a live
+     * cache secret, and must never be re-served.
      *
      * @param  User  $user  the hook-authenticated user pulling grants
      * @param  string|null  $fingerprint  the client device fingerprint; null = old CLI
@@ -130,7 +134,7 @@ final class AccountProvisioningService
         }
 
         $payloads = [];
-        foreach ($device->grants()->live()->get() as $grant) {
+        foreach ($device->grants()->live()->whereNull('deprovisioned_at')->get() as $grant) {
             $raw = Cache::get(CacheKeys::provisionedGrant($grant->id));
             if ($raw === null) {
                 continue; // cache secret expired/revoked — nothing to hand off
@@ -187,15 +191,21 @@ final class AccountProvisioningService
 
     /**
      * Confirm the CLI's reconcile: promote each `set_up` org Pending→Tracked
-     * behind the live-grant guard, and stamp `deprovisioned_at` for each
-     * `removed` org on THIS device's newest grant (creating a Revoked
-     * tombstone row when the device holds no grant for the org, so
-     * event-materialized removals self-clear per device) — but only when
-     * `$user` holds an `account_user` row for that account (any status);
-     * otherwise the org is skipped, so a hook-token holder cannot plant a
-     * tombstone on an account they aren't a member of just by knowing its
-     * org uuid. Additive only; failures on one org are reported and
-     * swallowed so they cannot 500 the batch; uuids are deduped per list.
+     * behind the live-grant guard, and for each `removed` org, kill THIS
+     * device's newest grant — revoked (status Revoked, `revoked_at` set,
+     * cached secret forgotten) AND stamped `deprovisioned_at` (creating a
+     * Revoked, already-deprovisioned tombstone row when the device holds no
+     * grant for the org, so event-materialized removals self-clear per
+     * device) — but only when `$user` holds an `account_user` row for that
+     * account (any status); otherwise the org is skipped, so a hook-token
+     * holder cannot plant a tombstone on an account they aren't a member of
+     * just by knowing its org uuid. A confirmed removal is terminal for that
+     * grant: it can never be re-served by {@see claim()}, even within its
+     * cache secret's 24 h TTL — a second claim before the fix would re-serve
+     * the still-Claimed, still-cached grant and the CLI would silently
+     * re-add the slot it had just deleted. Additive only; failures on one
+     * org are reported and swallowed so they cannot 500 the batch; uuids
+     * are deduped per list.
      *
      * @param  User  $user  the hook-authenticated user
      * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
@@ -237,7 +247,12 @@ final class AccountProvisioningService
                 try {
                     $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
                     if ($grant !== null) {
-                        $grant->forceFill(['deprovisioned_at' => Carbon::now()])->save();
+                        $grant->forceFill([
+                            'status' => GrantStatus::Revoked,
+                            'revoked_at' => Carbon::now(),
+                            'deprovisioned_at' => Carbon::now(),
+                        ])->save();
+                        CacheKeys::forgetProvisionedGrant($grant->id);
                     } else {
                         $device->grants()->create([
                             'account_id' => $account->id,
