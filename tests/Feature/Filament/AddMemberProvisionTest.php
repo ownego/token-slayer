@@ -215,3 +215,23 @@ it('a tracked member getting a new device keeps their Tracked membership instead
 
     expect($account->users()->find($member->id)->pivot->status)->toBe(MembershipStatus::Tracked);
 });
+
+it('a pending member getting a second device stays pending instead of being silently promoted to tracked', function () {
+    fakeAnthropic();
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
+    $member = User::factory()->create();
+    $account->users()->syncWithoutDetaching([$member->id => ['status' => MembershipStatus::Pending->value]]);
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->setActionData(['user_id' => $member->id, 'provision' => true, 'device_name' => 'Second Laptop'])
+        ->callMountedAction()
+        ->assertActionMounted('confirmProvisionMember')
+        ->setActionData(['code' => 'pasted-code'])
+        ->callMountedAction()
+        ->assertNotified();
+
+    expect($account->users()->find($member->id)->pivot->status)->toBe(MembershipStatus::Pending);
+});

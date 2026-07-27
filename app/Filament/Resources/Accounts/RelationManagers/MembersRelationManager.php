@@ -337,10 +337,13 @@ class MembersRelationManager extends RelationManager
      * `device_name`) — which writes the grant's own
      * `token_uuid`/`provisioned_at`, not the pivot.
      * `provisionForDevice()` unconditionally upserts the membership pivot to
-     * `Tracked`; this only downgrades it to `Pending` when the member's
-     * prior status (captured before the exchange) was absent or
-     * `Untracked`, so a already-`Tracked` member adding a second machine is
-     * never demoted. Mirrors {@see ConnectsAccounts::connectAccountAction()}.
+     * `Tracked`; this reverts it to `Pending` unless the member's prior
+     * status (captured before the exchange) was already `Tracked`. That
+     * means a `Pending` member getting a second device STAYS `Pending` —
+     * they still haven't completed setup, so a second device must not
+     * silently promote them — while an already-`Tracked` member adding a
+     * second machine is never demoted. Mirrors
+     * {@see ConnectsAccounts::connectAccountAction()}.
      *
      * @return Action
      */
@@ -398,7 +401,12 @@ class MembersRelationManager extends RelationManager
                     return;
                 }
 
-                $landsAtPending = $priorStatus === null || $priorStatus === MembershipStatus::Untracked;
+                // Only a prior Tracked status survives; absent, Untracked,
+                // AND Pending all land (or stay) at Pending — a Pending
+                // member hasn't finished setup, so a second device must not
+                // silently promote them via provisionForDevice()'s internal
+                // Tracked upsert.
+                $landsAtPending = $priorStatus !== MembershipStatus::Tracked;
                 if ($landsAtPending) {
                     $account->users()->syncWithoutDetaching([
                         $user->id => ['status' => MembershipStatus::Pending->value],
