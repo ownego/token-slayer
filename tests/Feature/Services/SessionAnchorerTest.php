@@ -6,6 +6,7 @@ use App\Services\SessionAnchorer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -55,4 +56,29 @@ test('a rejected anchor message returns false without throwing', function () {
     $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addHours(8)]);
 
     expect($this->anchorer->anchor($account))->toBeFalse();
+});
+
+test('a swallowed anchor failure is logged with the account and the failure reason', function () {
+    Log::spy();
+    fakeAnthropic(['messages' => Http::response('', 500)]);
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addHours(8)]);
+
+    $this->anchorer->anchor($account);
+
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->withArgs(fn (string $message, array $context) => str_contains($message, 'anchor')
+            && $context['account_id'] === $account->id
+            && $context['reason'] === 'http_error'
+        );
+});
+
+test('a successful anchor logs nothing', function () {
+    Log::spy();
+    fakeAnthropic();
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addHours(8)]);
+
+    $this->anchorer->anchor($account);
+
+    Log::shouldNotHaveReceived('warning');
 });
