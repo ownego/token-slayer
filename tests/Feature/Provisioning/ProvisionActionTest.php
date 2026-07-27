@@ -1,5 +1,11 @@
 <?php
 
+// "Add device" provisioning coverage (new placeholder, named placeholder,
+// second-placeholder guard, failed-code rollback) moved to
+// tests/Feature/Filament/AddMemberProvisionTest.php when the standalone "Add
+// device" header action on this tab was removed in favor of provisioning
+// exclusively through MembersRelationManager's "Add member" flow.
+
 use App\Enums\GrantStatus;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
@@ -30,52 +36,6 @@ it('lists one row per grant with its device fingerprint', function () {
         ->assertSee('fp-machine-b');
 });
 
-it('add device with New device creates a placeholder holding a pending grant', function () {
-    fakeAnthropic();
-    $admin = User::factory()->admin()->create();
-    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
-    $user = User::factory()->create();
-    Device::factory()->for($user)->create(['device_id' => 'fp-existing']);
-    $account->users()->syncWithoutDetaching([$user->id => ['status' => 'tracked']]);
-
-    Livewire::actingAs($admin)
-        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->mountAction('addDevice')
-        ->setActionData(['user_id' => $user->id, 'device_pk' => null])
-        ->callMountedAction()
-        ->assertActionMounted('confirmAddDevice')
-        ->setActionData(['code' => 'pasted-code'])
-        ->callMountedAction()
-        ->assertNotified();
-
-    $placeholder = $user->devices()->whereNull('device_id')->firstOrFail();
-    $grant = AccountProvisionedGrant::query()
-        ->where('account_id', $account->id)->where('device_id', $placeholder->id)->firstOrFail();
-    expect($grant->status)->toBe(GrantStatus::Pending)
-        ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->not->toBeNull();
-});
-
-it('add device with a name creates a named placeholder', function () {
-    fakeAnthropic();
-    $admin = User::factory()->admin()->create();
-    $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
-    $user = User::factory()->create();
-    $account->users()->syncWithoutDetaching([$user->id => ['status' => 'tracked']]);
-
-    Livewire::actingAs($admin)
-        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->mountAction('addDevice')
-        ->setActionData(['user_id' => $user->id, 'device_pk' => null, 'device_name' => 'Alice Laptop'])
-        ->callMountedAction()
-        ->assertActionMounted('confirmAddDevice')
-        ->setActionData(['code' => 'pasted-code'])
-        ->callMountedAction()
-        ->assertNotified();
-
-    $placeholder = $user->devices()->whereNull('device_id')->firstOrFail();
-    expect($placeholder->name)->toBe('Alice Laptop');
-});
-
 it('shows the device name in the Device column with the fingerprint surfaced as a description', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
@@ -87,49 +47,6 @@ it('shows the device name in the Device column with the fingerprint surfaced as 
         ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
         ->assertSee('Alice Laptop')
         ->assertSee('fp-machine-a');
-});
-
-it('blocks opening a second placeholder while one is still awaiting a machine', function () {
-    $admin = User::factory()->admin()->create();
-    $account = Account::factory()->create();
-    $user = User::factory()->create();
-    Device::factory()->for($user)->placeholder()->create();
-    $account->users()->syncWithoutDetaching([$user->id => ['status' => 'tracked']]);
-
-    Livewire::actingAs($admin)
-        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->mountAction('addDevice')
-        ->setActionData(['user_id' => $user->id, 'device_pk' => null])
-        ->callMountedAction()
-        ->assertNotified()                       // the danger "already awaiting" notification
-        ->assertActionNotMounted('confirmAddDevice');
-
-    expect($user->devices()->whereNull('device_id')->count())->toBe(1);
-});
-
-it('a failed add-device provision (bad/expired code) leaves no orphan placeholder device or grant', function () {
-    $admin = User::factory()->admin()->create();
-    $account = Account::factory()->create();
-    $user = User::factory()->create();
-    $account->users()->syncWithoutDetaching([$user->id => ['status' => 'tracked']]);
-
-    // An unstarted/expired state: exchangeVerifiedToken() throws
-    // connect_state_expired before ever touching the network, so this
-    // exercises the rollback without needing fakeAnthropic().
-    Livewire::actingAs($admin)
-        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
-        ->mountAction('confirmAddDevice', [
-            'userId' => $user->id,
-            'devicePk' => null,
-            'authorizeUrl' => 'https://example.test/authorize',
-            'state' => 'never-started-state',
-        ])
-        ->setActionData(['code' => 'bad-code'])
-        ->callMountedAction()
-        ->assertNotified();
-
-    expect($user->devices()->count())->toBe(0)
-        ->and(AccountProvisionedGrant::query()->count())->toBe(0);
 });
 
 it('reissue revokes the old grant and mints a pending replacement on the same device', function () {

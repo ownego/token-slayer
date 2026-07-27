@@ -6,32 +6,30 @@ use App\Enums\GrantStatus;
 use App\Exceptions\AccountConnectException;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
-use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 
 /**
  * Per-grant OAuth provisions on this account's owner `Account`: one row per
  * {@see AccountProvisionedGrant} (device × account), not per user — a single
- * user with multiple machines shows one row per machine. Provisioning is
- * driven entirely from this tab's header/row actions ("Add device",
- * "Reissue", "Revoke", "Delete device"); the raw grant material itself is
+ * user with multiple machines shows one row per machine. Provisioning a new
+ * device happens ONLY through `MembersRelationManager`'s "Add member" flow
+ * (see {@see MembersRelationManager::addMemberAction()});
+ * this tab drives only the per-grant row actions ("Reissue", "Revoke",
+ * "Delete device") over rows created there. The raw grant material itself is
  * NEVER shown here — it is never stored at rest, only cached encrypted with
  * a 24 h TTL until claimed.
  */
@@ -118,9 +116,6 @@ class ProvisionsRelationManager extends RelationManager
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->placeholder('—'),
             ])
-            ->headerActions([
-                $this->addDeviceAction(),
-            ])
             ->recordActions([
                 ActionGroup::make([
                     $this->reissueAction(),
@@ -128,118 +123,6 @@ class ProvisionsRelationManager extends RelationManager
                     $this->deleteDeviceAction(),
                 ]),
             ]);
-    }
-
-    /**
-     * Build the "Add device" header action: pick a tracked member and either
-     * an existing device of theirs or leave it blank to open a fresh
-     * placeholder awaiting its first machine. Refuses to open a second
-     * placeholder while one is already awaiting a machine. On success,
-     * hands off to {@see confirmAddDeviceAction()} to complete the PKCE
-     * exchange. Public so Filament's `{name}Action` convention can resolve
-     * it when a test or the UI mounts it directly.
-     *
-     * @return Action
-     */
-    public function addDeviceAction(): Action
-    {
-        return Action::make('addDevice')
-            ->label('Add device')
-            ->icon(Heroicon::OutlinedDevicePhoneMobile)
-            ->modalSubmitActionLabel('Continue')
-            ->schema([
-                Select::make('user_id')
-                    ->label('User')
-                    ->options(fn (): array => $this->memberOptions())
-                    ->searchable()
-                    ->live()
-                    ->required(),
-                Select::make('device_pk')
-                    ->label('Device')
-                    ->options(fn (Get $get): array => $this->deviceOptions($get('user_id')))
-                    ->placeholder('New device')
-                    ->helperText('Leave empty to open a door for a brand-new machine.'),
-                TextInput::make('device_name')
-                    ->label('Device name')
-                    ->maxLength(50)
-                    ->helperText('Only used when creating a new device.'),
-            ])
-            ->action(function (array $data, Component $livewire): void {
-                $user = User::query()->findOrFail($data['user_id']);
-
-                if (($data['device_pk'] ?? null) === null && $user->devices()->whereNull('device_id')->exists()) {
-                    Notification::make()
-                        ->danger()
-                        ->title('A placeholder is already awaiting a machine')
-                        ->body('Reuse the open "Awaiting device" slot (select it) instead of opening a second door.')
-                        ->send();
-
-                    return;
-                }
-
-                $started = app(AccountConnectService::class)->start();
-
-                $livewire->replaceMountedAction('confirmAddDevice', [
-                    'userId' => $user->id,
-                    'devicePk' => $data['device_pk'] ?? null,
-                    'deviceName' => $data['device_name'] ?? null,
-                    'authorizeUrl' => $started['url'],
-                    'state' => $started['state'],
-                ]);
-            });
-    }
-
-    /**
-     * The follow-up "paste the code" modal for {@see addDeviceAction()},
-     * mounted by name via `replaceMountedAction()`. Resolved on demand by
-     * Filament's `{name}Action` method convention (never rendered as its own
-     * button). Mirrors `MembersRelationManager::confirmProvisionMemberAction()`.
-     *
-     * @return Action
-     */
-    public function confirmAddDeviceAction(): Action
-    {
-        return Action::make('confirmAddDevice')
-            ->modalHeading('Provision a device')
-            ->modalDescription('Open the authorize URL, log in as the account to grant, approve, then paste the code back here.')
-            ->modalSubmitActionLabel('Provision')
-            ->fillForm(fn (array $arguments): array => [
-                'authorize_url' => $arguments['authorizeUrl'] ?? '',
-                'state' => $arguments['state'] ?? '',
-                'code' => '',
-            ])
-            ->schema([
-                TextInput::make('authorize_url')
-                    ->label('Authorize URL')
-                    ->readOnly()
-                    ->copyable(),
-                Hidden::make('state'),
-                TextInput::make('code')
-                    ->label('Paste the code here')
-                    ->required(),
-            ])
-            ->action(function (array $data, array $arguments): void {
-                /** @var Account $account */
-                $account = $this->getOwnerRecord();
-                $user = User::query()->findOrFail($arguments['userId']);
-                $service = app(AccountProvisioningService::class);
-
-                try {
-                    // Wrapped so a throw from provisionForDevice() (bad/expired
-                    // code) rolls back the device insert too — otherwise a
-                    // failed paste leaves an orphan placeholder device behind.
-                    DB::transaction(function () use ($service, $user, $account, $arguments, $data): void {
-                        $device = $service->resolveProvisionTarget($user, $arguments['devicePk'], $arguments['deviceName'] ?? null);
-                        $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
-                    });
-                } catch (AccountConnectException $exception) {
-                    $this->notifyConnectFailure($exception, 'provisioning');
-
-                    return;
-                }
-
-                Notification::make()->success()->title('Device provisioned')->send();
-            });
     }
 
     /**
@@ -368,13 +251,13 @@ class ProvisionsRelationManager extends RelationManager
 
     /**
      * Show the shared "connect failed" notification for
-     * {@see confirmAddDeviceAction()} and {@see confirmReissueAction()}: both
-     * exchange a pasted PKCE code via
-     * {@see AccountProvisioningService::provisionForDevice()} and differ only
-     * in what to call the failing step.
+     * {@see confirmReissueAction()}, which exchanges a pasted PKCE code via
+     * {@see AccountProvisioningService::provisionForDevice()}. Kept as a
+     * named helper (rather than inlined) so a future second PKCE-paste
+     * action on this tab can reuse the same wording.
      *
      * @param  AccountConnectException  $exception  the connect failure raised mid-exchange
-     * @param  string  $action  the failing step's label, e.g. 'provisioning' or 'reissue' — used in the title and default body
+     * @param  string  $action  the failing step's label, e.g. 'reissue' — used in the title and default body
      * @return void
      */
     private function notifyConnectFailure(AccountConnectException $exception, string $action): void
@@ -388,47 +271,5 @@ class ProvisionsRelationManager extends RelationManager
                 default => "Something went wrong completing the {$action}.",
             })
             ->send();
-    }
-
-    /**
-     * The owner account's tracked members as `[id => email]`, for the "Add
-     * device" user select.
-     *
-     * @return array<int, string>
-     */
-    private function memberOptions(): array
-    {
-        /** @var Account $account */
-        $account = $this->getOwnerRecord();
-
-        return $account->trackedUsers()->orderBy('email')->pluck('email', 'users.id')->all();
-    }
-
-    /**
-     * The selected user's devices as `[id => label]`, for the "Add device"
-     * device select. Labeled by name, falling back to the fingerprint, then
-     * to a per-id placeholder label when neither is set yet.
-     *
-     * @param  int|string|null  $userId  the selected user id, or null before one is chosen
-     * @return array<int, string>
-     */
-    private function deviceOptions(int|string|null $userId): array
-    {
-        if ($userId === null || $userId === '') {
-            return [];
-        }
-
-        $user = User::query()->find($userId);
-        if ($user === null) {
-            return [];
-        }
-
-        return $user->devices()
-            ->orderBy('id')
-            ->get()
-            ->mapWithKeys(fn ($device): array => [
-                $device->id => $device->name ?? $device->device_id ?? 'Awaiting device #'.$device->id,
-            ])
-            ->all();
     }
 }
