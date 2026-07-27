@@ -84,10 +84,9 @@ class ProvisionsRelationManager extends RelationManager
                     ->state(fn (AccountProvisionedGrant $record): string => $record->device->user->email),
                 TextColumn::make('device')
                     ->label('Device')
-                    ->state(fn (AccountProvisionedGrant $record): string => $record->device->name ?? $record->device->device_id ?? 'Awaiting device')
-                    ->description(fn (AccountProvisionedGrant $record): ?string => $record->device->name !== null && $record->device->device_id !== null
-                        ? $record->device->device_id
-                        : null),
+                    ->state(fn (AccountProvisionedGrant $record): string => $record->device->name
+                        ?? ($record->device->device_id !== null ? 'Unnamed device' : 'Awaiting device'))
+                    ->tooltip(fn (AccountProvisionedGrant $record): ?string => $record->device->device_id),
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
