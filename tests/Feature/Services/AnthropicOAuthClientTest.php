@@ -129,10 +129,20 @@ test('startSession posts a minimal one-token message to anchor the 5h window', f
             && $request->hasHeader('Authorization', 'Bearer an-access-token')
             && $request->hasHeader('anthropic-beta', config('token_slayer.anthropic.beta_header'))
             && $request->hasHeader('anthropic-version', config('token_slayer.anthropic.version_header'))
-            && $request['model'] === config('token_slayer.anthropic.session_anchor.model')
+            && $request['model'] === config('token_slayer.session_anchor.model')
             && $request['max_tokens'] === 1
             && is_array($request['messages'])
             && $request['messages'][0]['role'] === 'user';
+    });
+});
+
+test('startSession sends a non-empty model string so Anthropic cannot reject the anchor as invalid_request', function () {
+    fakeAnthropic();
+
+    $this->client->startSession('an-access-token');
+
+    Http::assertSent(function (Request $request) {
+        return is_string($request['model']) && $request['model'] !== '';
     });
 });
 
