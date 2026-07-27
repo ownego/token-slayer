@@ -285,6 +285,7 @@ class MembersRelationManager extends RelationManager
                     ->label('Device name')
                     ->maxLength(50)
                     ->visible(fn (Get $get): bool => (bool) $get('provision')
+                        && filled($get('user_id'))
                         && (! $this->userHasDevices($get('user_id')) || blank($get('device_pk')))),
             ])
             ->action(function (array $data, Component $livewire): void {

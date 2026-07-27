@@ -179,6 +179,16 @@ it('a user with devices sees the device select offering existing devices plus Ne
         ->and($grant->status)->toBe(GrantStatus::Pending);
 });
 
+it('keeps the device name field hidden until a user is selected', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->assertSchemaComponentHidden('device_name');
+});
+
 it('hides the device name field once an existing device is selected', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
