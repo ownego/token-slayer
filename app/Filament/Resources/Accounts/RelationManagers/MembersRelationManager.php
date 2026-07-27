@@ -275,7 +275,7 @@ class MembersRelationManager extends RelationManager
                 Select::make('device_pk')
                     ->label('Device')
                     ->options(fn (Get $get): array => $this->deviceOptionsFor($get('user_id')))
-                    ->placeholder('New device')
+                    ->placeholder('+ Create a new device…')
                     ->visible(fn (Get $get): bool => (bool) $get('provision') && $this->userHasDevices($get('user_id'))),
                 TextInput::make('device_name')
                     ->label('Device name')
