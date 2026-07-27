@@ -245,11 +245,14 @@ class MembersRelationManager extends RelationManager
      * brand-new member, never hitting the unique constraint. This is the
      * ONLY entry point for provisioning a device on this account — the
      * former standalone "Add device" action on the Provisions tab was
-     * removed in favor of it. When `provision` is on, `device_pk` (reactive
-     * on `user_id`, hidden entirely for a zero-device user) and
-     * `device_name` let the admin target an existing device or name a fresh
-     * placeholder; the one-open-door guard below refuses to open a second
-     * placeholder while one already awaits a machine. Public so Filament's
+     * removed in favor of it. When `provision` is on, `device_pk` (live, and
+     * hidden entirely for a zero-device user) lets the admin target an
+     * existing device, while `device_name` only appears while a NEW device
+     * will actually be created — a zero-device user, or `device_pk` left
+     * blank ("+ Create a new device…") — and disappears the instant an
+     * existing device is picked; the one-open-door guard below refuses to
+     * open a second placeholder while one already awaits a machine. Public
+     * so Filament's
      * `{name}Action` convention can resolve it when a test or the UI mounts
      * it directly.
      *
@@ -276,12 +279,13 @@ class MembersRelationManager extends RelationManager
                     ->label('Device')
                     ->options(fn (Get $get): array => $this->deviceOptionsFor($get('user_id')))
                     ->placeholder('+ Create a new device…')
+                    ->live()
                     ->visible(fn (Get $get): bool => (bool) $get('provision') && $this->userHasDevices($get('user_id'))),
                 TextInput::make('device_name')
                     ->label('Device name')
                     ->maxLength(50)
-                    ->helperText('Only used when creating a new device.')
-                    ->visible(fn (Get $get): bool => (bool) $get('provision')),
+                    ->visible(fn (Get $get): bool => (bool) $get('provision')
+                        && (! $this->userHasDevices($get('user_id')) || blank($get('device_pk')))),
             ])
             ->action(function (array $data, Component $livewire): void {
                 if (! $data['provision']) {

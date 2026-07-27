@@ -6,6 +6,7 @@ use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
 use App\Filament\Resources\Users\Pages\ViewUser;
 use App\Filament\Resources\Users\RelationManagers\AccountsRelationManager;
+use App\Filament\Resources\Users\RelationManagers\DevicesRelationManager;
 use App\Filament\Resources\Users\RelationManagers\EventsRelationManager;
 use App\Models\User;
 use BackedEnum;
@@ -163,8 +164,8 @@ class UserResource extends Resource
 
     /**
      * Register this resource's relation managers, shown as tabs on the
-     * View page: the accounts this user belongs to, and the events
-     * they've logged.
+     * View page: the accounts this user belongs to, the devices they've
+     * been provisioned on, and the events they've logged.
      *
      * @return array<int, class-string>
      */
@@ -172,6 +173,7 @@ class UserResource extends Resource
     {
         return [
             AccountsRelationManager::class,
+            DevicesRelationManager::class,
             EventsRelationManager::class,
         ];
     }

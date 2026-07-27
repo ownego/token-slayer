@@ -162,7 +162,7 @@ it('a user with devices sees the device select offering existing devices plus Ne
     $devicePk = $livewire->instance()->{$schemaName}->getFlatComponents(withHidden: true)['device_pk'];
 
     expect($devicePk->getOptions())->toBe([$existingDevice->id => 'Alice Laptop'])
-        ->and($devicePk->getPlaceholder())->toBe('New device');
+        ->and($devicePk->getPlaceholder())->toBe('+ Create a new device…');
 
     $livewire
         ->setActionData(['user_id' => $member->id, 'provision' => true, 'device_pk' => $existingDevice->id])
@@ -177,6 +177,36 @@ it('a user with devices sees the device select offering existing devices plus Ne
 
     expect($member->devices()->count())->toBe(1)
         ->and($grant->status)->toBe(GrantStatus::Pending);
+});
+
+it('hides the device name field once an existing device is selected', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $member = User::factory()->create();
+    $existingDevice = Device::factory()->for($member)->create(['device_id' => 'fp-existing', 'name' => 'Alice Laptop']);
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->setActionData(['user_id' => $member->id, 'provision' => true])
+        ->assertSchemaComponentVisible('device_name')
+        ->setActionData(['user_id' => $member->id, 'provision' => true, 'device_pk' => $existingDevice->id])
+        ->assertSchemaComponentHidden('device_name');
+});
+
+it('shows the device name field again once the device select is cleared back to "create a new device"', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $member = User::factory()->create();
+    $existingDevice = Device::factory()->for($member)->create(['device_id' => 'fp-existing']);
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->setActionData(['user_id' => $member->id, 'provision' => true, 'device_pk' => $existingDevice->id])
+        ->assertSchemaComponentHidden('device_name')
+        ->setActionData(['user_id' => $member->id, 'provision' => true, 'device_pk' => null])
+        ->assertSchemaComponentVisible('device_name');
 });
 
 it('blocks opening the PKCE modal when the selected user already has a placeholder awaiting a machine', function () {
