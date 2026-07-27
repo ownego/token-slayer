@@ -50,15 +50,69 @@ test('install.sh covers every antigravity CLI hook event', function () {
     }
 });
 
-test('install.sh writes to claude settings, codex config, and antigravity hooks and uses idempotent markers', function () {
+test('install.sh writes to claude settings, codex hooks, and antigravity hooks, and heals legacy codex config.toml with idempotent markers', function () {
     $script = $this->get('/install')->getContent();
 
     expect($script)
         ->toContain('$HOME/.claude/settings.json')
         ->toContain('$HOME/.codex/config.toml')
+        ->toContain('$HOME/.codex/hooks.json')
         ->toContain('$HOME/.gemini/config/hooks.json')
-        ->toContain('# >>> token_slayer hooks')
-        ->toContain('# <<< token_slayer hooks');
+        // The legacy-block-strip regex is a runtime python format string (the
+        // namespace is interpolated via `{ns}`, not Blade), so the rendered
+        // script contains this literal pattern, not the resolved marker text.
+        ->toContain('# >>> {ns} hooks')
+        ->toContain('# <<< {ns} hooks');
+});
+
+test('install.sh no longer writes [[hooks]] TOML into codex config.toml', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)
+        ->not->toContain('[[hooks]]')
+        ->not->toContain('cat >> "$CODEX_CONFIG"');
+});
+
+test('install.sh only heals an existing codex config.toml and never creates one', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)
+        ->toContain('if [ -f "$CODEX_CONFIG" ]')
+        ->not->toContain('touch "$CODEX_CONFIG"');
+});
+
+test('install.sh merges codex hooks into hooks.json in the modern shape', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)
+        ->toContain('CODEX_HOOKS="$HOME/.codex/hooks.json"')
+        ->toContain('events = ["SessionStart", "Stop"]')
+        ->toContain('"type": "command", "command": cmd')
+        ->toContain('installed Codex CLI hooks -> $CODEX_HOOKS');
+});
+
+test('install.sh dedupes codex hooks per namespace via a fingerprint substring match', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)
+        ->toContain('HOOK_FINGERPRINT="token_slayer/send-hook.sh"')
+        ->toContain('fingerprint not in json.dumps(h)')
+        ->toContain('if handlers:');
+});
+
+test('install.sh handles a missing or corrupt codex hooks.json without crashing the installer', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)
+        ->toContain('[ -s "$CODEX_HOOKS" ] || echo \'{"hooks": {}}\' > "$CODEX_HOOKS"')
+        ->toContain('except (ValueError, OSError):')
+        ->toContain('.bak.%d');
+});
+
+test('install.sh reminds the user to trust codex hooks via the /hooks command', function () {
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('Codex: run /hooks inside Codex once to trust the token-slayer hooks (required before they fire).');
 });
 
 test('install.sh saves TOKEN_SLAYER_TOKEN to the token file when present', function () {
@@ -70,7 +124,7 @@ test('install.sh saves TOKEN_SLAYER_TOKEN to the token file when present', funct
         ->toContain('chmod 600 "$TOKEN_FILE"');
 });
 
-test('install.sh uses the configured hook namespace in paths, env var, and markers', function () {
+test('install.sh uses the configured hook namespace in paths, env var, and the codex hooks fingerprint', function () {
     config(['app.hook_namespace' => 'acme']);
 
     $script = $this->get('/install')->getContent();
@@ -78,8 +132,7 @@ test('install.sh uses the configured hook namespace in paths, env var, and marke
     expect($script)
         ->toContain('~/.config/acme/token')
         ->toContain('${ACME_TOKEN:-}')
-        ->toContain('# >>> acme hooks')
-        ->toContain('# <<< acme hooks')
+        ->toContain('HOOK_FINGERPRINT="acme/send-hook.sh"')
         ->not->toContain('token_slayer')
         ->not->toContain('TOKEN_SLAYER_TOKEN');
 });

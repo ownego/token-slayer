@@ -714,13 +714,18 @@ PY
 
 echo "installed Claude Code session-tracking hook -> $SETTINGS"
 
-# --- Codex CLI: rewrite the {{ $namespace }} block in ~/.codex/config.toml ---
+# --- Codex CLI: heal legacy config.toml hooks, then merge into ~/.codex/hooks.json ---
 mkdir -p "$HOME/.codex"
 CODEX_CONFIG="$HOME/.codex/config.toml"
-touch "$CODEX_CONFIG"
 
-# Remove any previous {{ $namespace }} block (between markers) so we can append a fresh one.
-NAMESPACE="{{ $namespace }}" "$PY" - "$CODEX_CONFIG" <<'PY'
+# Modern Codex writes its own hook-trust state as `[hooks.state."<key>"]` -- a
+# TABLE named "hooks" -- into config.toml. A legacy hooks array-of-tables
+# block under that same key collides with it (TOML forbids one key being both
+# a table and an array-of-tables), making the whole config.toml unparseable
+# and breaking Codex entirely. Only heal a file that already exists -- never
+# create one, since config.toml is Codex's own and may hold unrelated config.
+if [ -f "$CODEX_CONFIG" ]; then
+    NAMESPACE="{{ $namespace }}" "$PY" - "$CODEX_CONFIG" <<'PY'
 import os, sys, re
 
 path = sys.argv[1]
@@ -737,20 +742,59 @@ text = re.sub(
 with open(path, "w") as f:
     f.write(text)
 PY
+fi
 
-cat >> "$CODEX_CONFIG" <<EOF
-# >>> {{ $namespace }} hooks
-[[hooks]]
-event = "session_start"
-command = "$CODEX_CMD"
+# Current Codex reads hooks from hooks.json, top-level "hooks" key, PascalCase
+# event names -- the array-of-tables TOML shape healed above is obsolete.
+CODEX_HOOKS="$HOME/.codex/hooks.json"
+[ -s "$CODEX_HOOKS" ] || echo '{"hooks": {}}' > "$CODEX_HOOKS"
 
-[[hooks]]
-event = "stop"
-command = "$CODEX_CMD"
-# <<< {{ $namespace }} hooks
-EOF
+CODEX_CMD="$CODEX_CMD" HOOK_FINGERPRINT="{{ $namespace }}/send-hook.sh" "$PY" - "$CODEX_HOOKS" <<'PY'
+import json, os, sys, time
 
-echo "installed Codex CLI hooks -> $CODEX_CONFIG"
+path = sys.argv[1]
+cmd = os.environ["CODEX_CMD"]
+fingerprint = os.environ["HOOK_FINGERPRINT"]
+events = ["SessionStart", "Stop"]
+
+try:
+    with open(path) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("hooks.json is not a JSON object")
+except (ValueError, OSError):
+    # A pre-existing malformed or missing hooks.json would otherwise crash the
+    # whole installer (the script runs under `set -e`). Preserve a bad file
+    # for inspection and start from an empty object so hook installation
+    # still succeeds rather than aborting the entire install.
+    try:
+        os.replace(path, path + ".bak.%d" % int(time.time()))
+    except OSError:
+        pass
+    data = {}
+
+data.setdefault("hooks", {})
+for event in events:
+    groups = []
+    for group in data["hooks"].get(event, []):
+        # Drop only OUR handler objects (identified by the fingerprint
+        # substring), keeping any other tool's entries in the same group.
+        handlers = [h for h in group.get("hooks", [])
+                    if fingerprint not in json.dumps(h)]
+        if handlers:
+            group = dict(group)
+            group["hooks"] = handlers
+            groups.append(group)
+    groups.append({"hooks": [{"type": "command", "command": cmd}]})
+    data["hooks"][event] = groups
+
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+
+echo "installed Codex CLI hooks -> $CODEX_HOOKS"
+echo "Codex: run /hooks inside Codex once to trust the token-slayer hooks (required before they fire)."
 
 # --- Antigravity CLI: merge into ~/.gemini/config/hooks.json ---
 mkdir -p "$HOME/.gemini/config"
