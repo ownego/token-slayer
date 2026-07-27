@@ -115,12 +115,22 @@ final class AccountProvisioningService
     /**
      * Resolve the calling machine's device (spec §3) and serve every
      * non-revoked, non-deprovisioned grant on it whose encrypted cache
-     * secret is still alive. A Pending grant is marked Claimed on first
-     * serve; the secret is NOT consumed, so re-running setup stays
-     * idempotent for the 24 h TTL. The `deprovisioned_at` exclusion is a
-     * belt for legacy rows stamped before {@see confirmSetup()} started
-     * revoking on confirm — those rows can still be Claimed with a live
-     * cache secret, and must never be re-served.
+     * secret is still alive AND whose account the user is not Untracked on.
+     * A Pending grant is marked Claimed on first serve; the secret is NOT
+     * consumed, so re-running setup stays idempotent for the 24 h TTL. The
+     * `deprovisioned_at` exclusion is a belt for legacy rows stamped before
+     * {@see confirmSetup()} started revoking on confirm — those rows can
+     * still be Claimed with a live cache secret, and must never be
+     * re-served. The Untracked exclusion closes the window between an admin
+     * Unverify and the device's first confirm: without it, a claim response
+     * could hand back an org's credential while {@see removable()} orders
+     * the same org removed, and the CLI would plan an add+delete of the
+     * same slot. Invariant: a claim response never contains an org that the
+     * same request's `removable()` list orders removed. A grant whose
+     * account has no membership row at all (legacy backfilled data — a
+     * missing row cannot happen for grants provisioned through the current
+     * flow, which always upserts Tracked) is still served, since treating
+     * "no row" as blocking would silently break those pre-existing grants.
      *
      * @param  User  $user  the hook-authenticated user pulling grants
      * @param  string|null  $fingerprint  the client device fingerprint; null = old CLI
@@ -133,8 +143,16 @@ final class AccountProvisioningService
             return [];
         }
 
+        $untrackedAccountIds = $user->accounts()
+            ->wherePivot('status', MembershipStatus::Untracked->value)
+            ->pluck('accounts.id');
+
         $payloads = [];
         foreach ($device->grants()->live()->whereNull('deprovisioned_at')->get() as $grant) {
+            if ($untrackedAccountIds->contains($grant->account_id)) {
+                continue; // user is Untracked on this org — must not contradict removable()
+            }
+
             $raw = Cache::get(CacheKeys::provisionedGrant($grant->id));
             if ($raw === null) {
                 continue; // cache secret expired/revoked — nothing to hand off

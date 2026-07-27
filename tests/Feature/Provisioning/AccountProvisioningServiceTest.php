@@ -146,3 +146,57 @@ it('claims nothing when no device resolves', function () {
     expect(app(AccountProvisioningService::class)->claim($user, null))->toBe([])
         ->and(app(AccountProvisioningService::class)->claim($user, 'fp-stranger'))->toBe([]);
 });
+
+it('never serves a grant for an org the user is untracked on, keeping it consistent with removable()', function () {
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->legacyDefault()->create();
+    $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-untracked']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
+        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-untracked',
+        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
+    ])), 86400);
+
+    // Admin unverifies the user while the grant's 24h cache secret is still alive.
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => MembershipStatus::Untracked->value],
+    ]);
+
+    $service = app(AccountProvisioningService::class);
+
+    expect($service->claim($user, null))->toBe([])
+        ->and($service->removable($user, $device))->toBe([['org_uuid' => 'org-untracked']]);
+});
+
+it('still serves grants for Tracked and Pending memberships', function (MembershipStatus $status) {
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->legacyDefault()->create();
+    $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-servable']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
+        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-servable',
+        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
+    ])), 86400);
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => $status->value],
+    ]);
+
+    expect(app(AccountProvisioningService::class)->claim($user, null))->toHaveCount(1);
+})->with([
+    'tracked' => MembershipStatus::Tracked,
+    'pending' => MembershipStatus::Pending,
+]);
+
+it('serves a legacy grant whose membership row is absent, without breaking backfilled grants', function () {
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->legacyDefault()->create();
+    $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-legacy-backfill']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
+        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-legacy-backfill',
+        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
+    ])), 86400);
+
+    // No account_user row at all for this (user, account) pair.
+    expect(app(AccountProvisioningService::class)->claim($user, null))->toHaveCount(1);
+});
