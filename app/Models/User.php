@@ -74,7 +74,7 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->belongsToMany(Account::class)
             ->using(AccountUser::class)
-            ->withPivot('token_uuid', 'provisioned_at', 'claimed_at', 'revoked_at')
+            ->withPivot('status')
             ->withTimestamps();
     }
 
@@ -87,6 +87,16 @@ class User extends Authenticatable implements FilamentUser
     public function trackedAccounts(): BelongsToMany
     {
         return $this->accounts()->wherePivot('status', MembershipStatus::Tracked->value);
+    }
+
+    /**
+     * The physical machines this user has been provisioned on.
+     *
+     * @return HasMany<Device, $this>
+     */
+    public function devices(): HasMany
+    {
+        return $this->hasMany(Device::class);
     }
 
     /**

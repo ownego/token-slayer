@@ -6,6 +6,8 @@ use App\Enums\MembershipStatus;
 use App\Exceptions\AccountConnectException;
 use App\Filament\Concerns\ConnectsAccounts;
 use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
+use App\Models\AccountUser;
 use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
@@ -19,19 +21,28 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 
 /**
- * All contributors of an `Account` in one tab, regardless of membership
- * status. Tracked members show a "Verified" badge; untracked contributors an
- * "Unverified" badge and can be verified (promoted) in place; a tracked
- * member can also be unverified (demoted) back to untracked. Replaces the
- * former separate `UsersRelationManager`/`UntrackedContributorsRelationManager`
- * tabs.
+ * All contributors of an `Account` in one tab. By default only Tracked/Pending
+ * members are shown; the "Unverified members" filter (off by default) reveals
+ * Untracked contributors too. Tracked members show a "Verified" badge;
+ * untracked contributors an "Unverified" badge and can be verified (promoted)
+ * in place; a tracked member can also be unverified (demoted) back to
+ * untracked. Replaces the former separate
+ * `UsersRelationManager`/`UntrackedContributorsRelationManager` tabs. This is
+ * also the sole entry point for provisioning a device on the account — see
+ * {@see addMemberAction()} — the standalone "Add device" action on
+ * {@see ProvisionsRelationManager} was removed in its favor.
  */
 class MembersRelationManager extends RelationManager
 {
@@ -92,6 +103,9 @@ class MembersRelationManager extends RelationManager
                         MembershipStatus::Pending => 'warning',
                         MembershipStatus::Untracked => 'warning',
                     }),
+                TextColumn::make('devices')
+                    ->label('Devices')
+                    ->state(fn (User $record): string => AccountProvisionedGrant::deviceSummaryFor($this->getOwnerRecord()->getKey(), $record->id) ?? '—'),
                 TextColumn::make('events')
                     ->label('Events')
                     ->state(fn (User $record): int => $aggregates[$record->id]['events'] ?? 0),
@@ -100,6 +114,23 @@ class MembersRelationManager extends RelationManager
                     ->state(fn (User $record): ?string => $aggregates[$record->id]['last_seen'] ?? null)
                     ->dateTime()
                     ->placeholder('—'),
+            ])
+            ->filters([
+                TernaryFilter::make('unverified')
+                    ->label('Unverified members')
+                    ->placeholder('Hidden')
+                    ->trueLabel('Shown')
+                    ->falseLabel('Hidden')
+                    ->default(false)
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query,
+                        false: fn (Builder $query): Builder => $query->whereIn(
+                            $this->pivotStatusColumn(), [MembershipStatus::Tracked->value, MembershipStatus::Pending->value]
+                        ),
+                        blank: fn (Builder $query): Builder => $query->whereIn(
+                            $this->pivotStatusColumn(), [MembershipStatus::Tracked->value, MembershipStatus::Pending->value]
+                        ),
+                    ),
             ])
             ->headerActions([
                 $this->addMemberAction(),
@@ -125,6 +156,26 @@ class MembersRelationManager extends RelationManager
         $account = $this->getOwnerRecord();
 
         return app(AccountMembershipCache::class)->allContributorAggregates($account);
+    }
+
+    /**
+     * The qualified `status` column on the `users()` pivot table, for use in
+     * filter query closures. The `Builder` those closures receive is the
+     * relation's plain query (`$relationship->getQuery()`), which does NOT
+     * expose `wherePivot`/`wherePivotIn` — those are methods on the
+     * `BelongsToMany` relation object itself, not on its query builder, so
+     * calling them here would silently fall through to Eloquent's dynamic
+     * `where{Column}` magic instead of throwing. Qualifying the column with
+     * the pivot table name sidesteps that trap entirely.
+     *
+     * @return string
+     */
+    private function pivotStatusColumn(): string
+    {
+        /** @var BelongsToMany $relationship */
+        $relationship = $this->getRelationship();
+
+        return $relationship->getTable().'.status';
     }
 
     /**
@@ -186,13 +237,24 @@ class MembersRelationManager extends RelationManager
      * Build the "Add member" header action: selects any user and, depending
      * on the `provision` toggle (default on), either hands off to
      * {@see confirmProvisionMemberAction()} to grant them a fresh OAuth
-     * account (landing the membership at `Pending`) or upserts them directly
+     * account (landing the membership at `Pending`, unless already `Tracked`
+     * — see {@see confirmProvisionMemberAction()}) or upserts them directly
      * as a `Tracked` member. Uses `syncWithoutDetaching` on the all-rows
      * `users()` relationship for the toggle-off path so it promotes an
      * existing untracked contributor (updating the pivot) or inserts a
-     * brand-new member, never hitting the unique constraint. Public so
-     * Filament's `{name}Action` convention can resolve it when a test or the
-     * UI mounts it directly.
+     * brand-new member, never hitting the unique constraint. This is the
+     * ONLY entry point for provisioning a device on this account — the
+     * former standalone "Add device" action on the Provisions tab was
+     * removed in favor of it. When `provision` is on, `device_pk` (live, and
+     * hidden entirely for a zero-device user) lets the admin target an
+     * existing device, while `device_name` only appears while a NEW device
+     * will actually be created — a zero-device user, or `device_pk` left
+     * blank ("+ Create a new device…") — and disappears the instant an
+     * existing device is picked; the one-open-door guard below refuses to
+     * open a second placeholder while one already awaits a machine. Public
+     * so Filament's
+     * `{name}Action` convention can resolve it when a test or the UI mounts
+     * it directly.
      *
      * @return Action
      */
@@ -207,10 +269,24 @@ class MembersRelationManager extends RelationManager
                     ->label('User')
                     ->options(fn (): array => User::query()->orderBy('name')->pluck('email', 'id')->all())
                     ->searchable()
+                    ->live()
                     ->required(),
                 Toggle::make('provision')
                     ->label('Provision an account for this user')
-                    ->default(true),
+                    ->default(true)
+                    ->live(),
+                Select::make('device_pk')
+                    ->label('Device')
+                    ->options(fn (Get $get): array => $this->deviceOptionsFor($get('user_id')))
+                    ->placeholder('+ Create a new device…')
+                    ->live()
+                    ->visible(fn (Get $get): bool => (bool) $get('provision') && $this->userHasDevices($get('user_id'))),
+                TextInput::make('device_name')
+                    ->label('Device name')
+                    ->maxLength(50)
+                    ->visible(fn (Get $get): bool => (bool) $get('provision')
+                        && filled($get('user_id'))
+                        && (! $this->userHasDevices($get('user_id')) || blank($get('device_pk')))),
             ])
             ->action(function (array $data, Component $livewire): void {
                 if (! $data['provision']) {
@@ -226,10 +302,28 @@ class MembersRelationManager extends RelationManager
                     return;
                 }
 
+                $user = User::query()->findOrFail($data['user_id']);
+                $devicePk = $data['device_pk'] ?? null;
+
+                // The one-open-door guard: refuse a second placeholder while
+                // one already awaits a machine, rather than letting the
+                // admin lose track of which slot claims which device.
+                if ($devicePk === null && $user->devices()->whereNull('device_id')->exists()) {
+                    Notification::make()
+                        ->danger()
+                        ->title('A placeholder is already awaiting a machine')
+                        ->body('Reuse the open "Awaiting device" slot (select it) instead of opening a second door.')
+                        ->send();
+
+                    return;
+                }
+
                 $started = app(AccountConnectService::class)->start();
 
                 $livewire->replaceMountedAction('confirmProvisionMember', [
-                    'userId' => $data['user_id'],
+                    'userId' => $user->id,
+                    'devicePk' => $devicePk,
+                    'deviceName' => $data['device_name'] ?? null,
                     'authorizeUrl' => $started['url'],
                     'state' => $started['state'],
                 ]);
@@ -241,10 +335,19 @@ class MembersRelationManager extends RelationManager
      * {@see addMemberAction()} via `replaceMountedAction()` when the toggle is
      * on. Resolved on demand by Filament's `{name}Action` method convention
      * (never rendered as its own button). Exchanges the pasted code via
-     * {@see AccountProvisioningService::provisionFromCode()} — which writes
-     * the pivot as `Tracked` with `token_uuid`/`provisioned_at` set — then
-     * downgrades the pivot status to `Pending` so a freshly-provisioned
-     * member isn't counted as verified until they complete setup. Mirrors
+     * {@see AccountProvisioningService::provisionForDevice()}, granting the
+     * device resolved by
+     * {@see AccountProvisioningService::resolveProvisionTarget()} (an
+     * existing device by id, or a fresh placeholder named from
+     * `device_name`) — which writes the grant's own
+     * `token_uuid`/`provisioned_at`, not the pivot.
+     * `provisionForDevice()` unconditionally upserts the membership pivot to
+     * `Tracked`; this reverts it to `Pending` unless the member's prior
+     * status (captured before the exchange) was already `Tracked`. That
+     * means a `Pending` member getting a second device STAYS `Pending` —
+     * they still haven't completed setup, so a second device must not
+     * silently promote them — while an already-`Tracked` member adding a
+     * second machine is never demoted. Mirrors
      * {@see ConnectsAccounts::connectAccountAction()}.
      *
      * @return Action
@@ -274,14 +377,21 @@ class MembersRelationManager extends RelationManager
                 /** @var Account $account */
                 $account = $this->getOwnerRecord();
                 $user = User::query()->findOrFail($arguments['userId']);
+                $service = app(AccountProvisioningService::class);
+
+                $priorStatus = AccountUser::query()
+                    ->where('account_id', $account->id)
+                    ->where('user_id', $user->id)
+                    ->first()?->status;
 
                 try {
-                    $pivot = app(AccountProvisioningService::class)->provisionFromCode(
-                        $user,
-                        $account,
-                        $data['state'],
-                        $data['code'],
-                    );
+                    // Wrapped so a throw from provisionForDevice() (bad/expired
+                    // code) rolls back the device insert too — otherwise a
+                    // failed paste leaves an orphan placeholder device behind.
+                    DB::transaction(function () use ($service, $user, $account, $arguments, $data): void {
+                        $device = $service->resolveProvisionTarget($user, $arguments['devicePk'] ?? null, $arguments['deviceName'] ?? null);
+                        $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
+                    });
                 } catch (AccountConnectException $exception) {
                     Notification::make()
                         ->danger()
@@ -296,13 +406,25 @@ class MembersRelationManager extends RelationManager
                     return;
                 }
 
-                $pivot->forceFill(['status' => MembershipStatus::Pending->value])->save();
+                // Only a prior Tracked status survives; absent, Untracked,
+                // AND Pending all land (or stay) at Pending — a Pending
+                // member hasn't finished setup, so a second device must not
+                // silently promote them via provisionForDevice()'s internal
+                // Tracked upsert.
+                $landsAtPending = $priorStatus !== MembershipStatus::Tracked;
+                if ($landsAtPending) {
+                    $account->users()->syncWithoutDetaching([
+                        $user->id => ['status' => MembershipStatus::Pending->value],
+                    ]);
+                }
                 CacheKeys::forgetAccountMembership($account->id);
 
                 Notification::make()
                     ->success()
                     ->title('Member added')
-                    ->body("Provisioned {$user->displayHandle()} and added them as pending.")
+                    ->body($landsAtPending
+                        ? "Provisioned {$user->displayHandle()} and added them as pending."
+                        : "Provisioned an additional device for {$user->displayHandle()}.")
                     ->send();
             });
     }
@@ -324,5 +446,52 @@ class MembersRelationManager extends RelationManager
 
                 Notification::make()->success()->title('Refreshed from database')->send();
             });
+    }
+
+    /**
+     * Whether the given user already has at least one device, used to decide
+     * whether {@see addMemberAction()}'s `device_pk` select should appear at
+     * all — a zero-device user sees only the `device_name` field, keeping
+     * the form as simple as before this field existed.
+     *
+     * @param  int|string|null  $userId  the selected user id, or null before one is chosen
+     * @return bool
+     */
+    private function userHasDevices(int|string|null $userId): bool
+    {
+        if ($userId === null || $userId === '') {
+            return false;
+        }
+
+        return User::query()->find($userId)?->devices()->exists() ?? false;
+    }
+
+    /**
+     * The selected user's devices as `[id => label]`, for
+     * {@see addMemberAction()}'s `device_pk` select. Labeled by name,
+     * falling back to the fingerprint, then to a per-id placeholder label
+     * when neither is set yet.
+     *
+     * @param  int|string|null  $userId  the selected user id, or null before one is chosen
+     * @return array<int, string>
+     */
+    private function deviceOptionsFor(int|string|null $userId): array
+    {
+        if ($userId === null || $userId === '') {
+            return [];
+        }
+
+        $user = User::query()->find($userId);
+        if ($user === null) {
+            return [];
+        }
+
+        return $user->devices()
+            ->orderBy('id')
+            ->get()
+            ->mapWithKeys(fn ($device): array => [
+                $device->id => $device->name ?? $device->device_id ?? 'Awaiting device #'.$device->id,
+            ])
+            ->all();
     }
 }

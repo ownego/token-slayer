@@ -2,84 +2,97 @@
 
 namespace App\Services;
 
+use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
 use App\Exceptions\AccountConnectException;
 use App\Models\Account;
-use App\Models\AccountUser;
+use App\Models\AccountProvisionedGrant;
+use App\Models\Device;
 use App\Models\User;
+use App\Services\Provisioning\DeviceClaimResolver;
 use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Throwable;
 
 /**
- * Provisions a per-user OAuth grant. Durable, non-secret tracking (token_uuid
- * + timestamps) is written to the account_user pivot; the raw grant itself is
- * held ONLY in the cache, encrypted, with a 24 h TTL — never at rest in the DB
- * long-term, and never on the account's own probe grant.
+ * Provisions a per-device OAuth grant. Durable, non-secret tracking lives on
+ * `account_provisioned_grants`; the raw grant itself is held ONLY in the
+ * cache, encrypted, with a 24 h TTL — never at rest in the DB long-term, and
+ * never on the account's own probe grant.
  */
 final class AccountProvisioningService
 {
     /**
-     * Cache-key prefix for a stored provisioned grant.
-     *
-     * @var string
-     */
-    public const string CACHE_KEY_PREFIX = 'provisioned:setup:';
-
-    /**
-     * How long an unclaimed provisioned grant lives in the cache (24 hours).
-     *
-     * @var int
-     */
-    public const int CACHE_TTL_SECONDS = 86400;
-
-    /**
-     * Build the service with the connect flow it delegates the code exchange to.
+     * Build the service with the connect flow and the device resolver.
      *
      * @param  AccountConnectService  $connect  supplies the verifier-pull + code exchange
+     * @param  DeviceClaimResolver  $resolver  maps a claim fingerprint to a device
      * @return void
      */
-    public function __construct(private readonly AccountConnectService $connect) {}
+    public function __construct(
+        private readonly AccountConnectService $connect,
+        private readonly DeviceClaimResolver $resolver,
+    ) {}
 
     /**
-     * The cache key holding the encrypted raw grant for a (user, account) pair.
+     * The device an admin-driven provision should land on. An explicit id
+     * must belong to the user; with no selection a fresh placeholder is
+     * created, awaiting its first contact. The legacy `'default'` sentinel
+     * is never minted here — it exists only from the backfill migration.
+     * `$name` is only applied when a new placeholder is created; it is
+     * ignored when an existing device is targeted by id.
      *
-     * @param  int  $userId  the provisioned user's id
-     * @param  int  $accountId  the granted account's id
-     * @return string the fully-qualified cache key
+     * @param  User  $user  the user being provisioned
+     * @param  int|null  $deviceId  an existing device id, or null for a new placeholder
+     * @param  string|null  $name  an admin-facing label for the new placeholder, if any
+     * @return Device
      */
-    public function cacheKey(int $userId, int $accountId): string
+    public function resolveProvisionTarget(User $user, ?int $deviceId, ?string $name = null): Device
     {
-        return self::CACHE_KEY_PREFIX.$userId.':'.$accountId;
+        if ($deviceId !== null) {
+            return $user->devices()->findOrFail($deviceId);
+        }
+
+        return $user->devices()->create(['device_id' => null, 'name' => $name]);
     }
 
     /**
-     * Exchange a pasted PKCE code, write the tracking row to the (user, account)
-     * pivot, and stash the encrypted raw grant in the cache (24 h TTL).
+     * Exchange a pasted PKCE code and issue a Pending grant to `$device`.
+     * Any live grant already on the same (account, device) is revoked first
+     * — this enforces the one-live-grant invariant and doubles as the
+     * Reissue path. Membership is upserted to Tracked; callers that want a
+     * Pending membership (Add member flow) downgrade it afterwards. The raw
+     * secret is cached encrypted under the grant's key for 24 h.
      *
      * @param  User  $user  the user being granted access
      * @param  Account  $account  the account to grant
+     * @param  Device  $device  the machine this grant is issued to
      * @param  string  $state  the state from {@see AccountConnectService::start()}
      * @param  string  $pastedCode  the `code#state` the admin pasted
-     * @return AccountUser the written pivot tracking row
+     * @return AccountProvisionedGrant the new Pending grant
      *
      * @throws AccountConnectException 'connect_state_expired' | 'connect_no_identity' | 'connect_identity_mismatch' when the pasted code's authorized identity doesn't match `$account`
      */
-    public function provisionFromCode(User $user, Account $account, string $state, string $pastedCode): AccountUser
+    public function provisionForDevice(User $user, Account $account, Device $device, string $state, string $pastedCode): AccountProvisionedGrant
     {
         $token = $this->connect->exchangeVerifiedToken($state, $pastedCode, $account);
 
+        $previous = $account->provisionedGrants()->live()->where('device_id', $device->id)->get();
+        foreach ($previous as $stale) {
+            $this->revoke($stale);
+        }
+
+        $grant = $account->provisionedGrants()->create([
+            'device_id' => $device->id,
+            'status' => GrantStatus::Pending,
+            'token_uuid' => $token['token_uuid'] ?? null,
+            'provisioned_at' => Carbon::now(),
+        ]);
+
         $user->accounts()->syncWithoutDetaching([
-            $account->id => [
-                'status' => MembershipStatus::Tracked->value,
-                'token_uuid' => $token['token_uuid'] ?? null,
-                'provisioned_at' => Carbon::now(),
-                'claimed_at' => null,
-                'revoked_at' => null,
-            ],
+            $account->id => ['status' => MembershipStatus::Tracked->value],
         ]);
 
         $payload = [
@@ -91,59 +104,63 @@ final class AccountProvisioningService
             'expires_at' => Carbon::now()->addSeconds((int) $token['expires_in'])->timestamp,
         ];
         Cache::put(
-            $this->cacheKey($user->id, $account->id),
+            CacheKeys::provisionedGrant($grant->id),
             Crypt::encryptString(json_encode($payload)),
-            self::CACHE_TTL_SECONDS,
+            CacheKeys::PROVISIONED_GRANT_TTL_SECONDS,
         );
 
-        return AccountUser::query()
-            ->where('user_id', $user->id)->where('account_id', $account->id)->firstOrFail();
+        return $grant;
     }
 
     /**
-     * The user's grants that are provisioned and not revoked. Already-claimed
-     * rows are INCLUDED — availability is decided by whether the encrypted
-     * cache secret still exists (see {@see claim()}), so setup can be re-run
-     * idempotently for the 24 h the secret lives.
-     *
-     * @param  User  $user  the user pulling grants
-     * @return Collection<int, AccountUser>
-     */
-    public function claimableFor(User $user): Collection
-    {
-        return AccountUser::query()
-            ->where('user_id', $user->id)
-            ->whereNotNull('provisioned_at')
-            ->whereNull('revoked_at')
-            ->get();
-    }
-
-    /**
-     * Read and return every provisioned grant for a user whose encrypted cache
-     * secret is still present, decrypted into its payload. This is idempotent
-     * within the secret's 24 h TTL: the cache is NOT consumed, so re-running
-     * setup returns the same grants until the secret expires or the provision
-     * is revoked (which forgets the secret). The first successful read records
-     * {@see AccountUser::claimed_at}; later reads leave it unchanged. Rows whose
-     * cache entry is gone are skipped.
+     * Resolve the calling machine's device (spec §3) and serve every
+     * non-revoked, non-deprovisioned grant on it whose encrypted cache
+     * secret is still alive AND whose account the user is not Untracked on.
+     * A Pending grant is marked Claimed on first serve; the secret is NOT
+     * consumed, so re-running setup stays idempotent for the 24 h TTL. The
+     * `deprovisioned_at` exclusion is a belt for legacy rows stamped before
+     * {@see confirmSetup()} started revoking on confirm — those rows can
+     * still be Claimed with a live cache secret, and must never be
+     * re-served. The Untracked exclusion closes the window between an admin
+     * Unverify and the device's first confirm: without it, a claim response
+     * could hand back an org's credential while {@see removable()} orders
+     * the same org removed, and the CLI would plan an add+delete of the
+     * same slot. Invariant: a claim response never contains an org that the
+     * same request's `removable()` list orders removed. A grant whose
+     * account has no membership row at all (legacy backfilled data — a
+     * missing row cannot happen for grants provisioned through the current
+     * flow, which always upserts Tracked) is still served, since treating
+     * "no row" as blocking would silently break those pre-existing grants.
      *
      * @param  User  $user  the hook-authenticated user pulling grants
+     * @param  string|null  $fingerprint  the client device fingerprint; null = old CLI
      * @return array<int, array<string, mixed>> the decoded grant payloads
      */
-    public function claim(User $user): array
+    public function claim(User $user, ?string $fingerprint): array
     {
-        $payloads = [];
+        $device = $this->resolver->resolve($user, $fingerprint);
+        if ($device === null) {
+            return [];
+        }
 
-        foreach ($this->claimableFor($user) as $pivot) {
-            $key = $this->cacheKey($pivot->user_id, $pivot->account_id);
-            $raw = Cache::get($key);
+        $untrackedAccountIds = $user->accounts()
+            ->wherePivot('status', MembershipStatus::Untracked->value)
+            ->pluck('accounts.id');
+
+        $payloads = [];
+        foreach ($device->grants()->live()->whereNull('deprovisioned_at')->get() as $grant) {
+            if ($untrackedAccountIds->contains($grant->account_id)) {
+                continue; // user is Untracked on this org — must not contradict removable()
+            }
+
+            $raw = Cache::get(CacheKeys::provisionedGrant($grant->id));
             if ($raw === null) {
                 continue; // cache secret expired/revoked — nothing to hand off
             }
 
             $payloads[] = json_decode(Crypt::decryptString($raw), true);
-            if ($pivot->claimed_at === null) {
-                $pivot->forceFill(['claimed_at' => Carbon::now()])->save();
+            if ($grant->status === GrantStatus::Pending) {
+                $grant->forceFill(['status' => GrantStatus::Claimed, 'claimed_at' => Carbon::now()])->save();
             }
         }
 
@@ -151,83 +168,184 @@ final class AccountProvisioningService
     }
 
     /**
-     * Confirm the org accounts the CLI actually finished setting up, promoting
-     * each membership to {@see MembershipStatus::Tracked}. Unknown org uuids
-     * are skipped — this never creates an `Account` from client input.
+     * The org accounts this request should be told to remove: the user's
+     * Untracked orgs minus those the resolved device already confirmed via
+     * its NEWEST grant per account (its `deprovisioned_at` stamp). Only the
+     * newest grant counts — an older, revoked grant (left behind by a
+     * Reissue) can carry a stale stamp from before the account was
+     * re-provisioned onto the same device, which must not silence a fresh
+     * removal instruction. Per-device on purpose — with the old per-user
+     * stamp, the first machine to confirm silenced the instruction for
+     * every other machine, which then kept the slot forever. When this
+     * request resolved no device (e.g. an unrecognized fingerprint), every
+     * one of the user's Untracked orgs is returned unconditionally — the
+     * client-side CLI safely no-ops a removal for a slot it doesn't have,
+     * and the broadcast self-terminates once the admin verifies or
+     * provisions the user.
      *
-     * Security scope: an org is only promoted if the user already holds a
-     * provisioned pivot for it (`account_user.provisioned_at` set and
-     * `revoked_at` null) — see {@see Account::provisionedUsers()}. Without
-     * that check a hook-token holder could self-graft membership onto any
-     * org uuid it sends; an org the user was never provisioned for is
-     * skipped exactly like an unknown org (not created, not counted).
-     *
-     * A failure writing one org's pivot is reported and swallowed so it
-     * can't 500 the rest of the batch. Additive only: orgs absent from
-     * `$orgUuids` are untouched, and nothing here is ever demoted, revoked,
-     * or deleted. Incoming uuids are deduped so a repeated uuid can't
-     * double-count `confirmed`.
-     *
-     * Deliberately does NOT call {@see CacheKeys::forgetAccountMembership()}
-     * (owner decision): that 1 h aggregate cache only feeds the Events/Last-seen
-     * columns, the status badge reads `pivot.status` live, and the tab's
-     * Refresh action already clears it on demand.
-     *
-     * @param  User  $user  the hook-authenticated user confirming setup
-     * @param  array<int, string>  $orgUuids  organization uuids the CLI confirmed it set up
-     * @return int the number of memberships confirmed
+     * @param  User  $user  the hook-authenticated user
+     * @param  Device|null  $device  the resolved claiming device; null = this request resolved no device
+     * @return array<int, array{org_uuid: string}>
      */
-    public function confirmSetup(User $user, array $orgUuids): int
+    public function removable(User $user, ?Device $device): array
+    {
+        $confirmedAccountIds = $device === null
+            ? collect()
+            : $device->grants()
+                ->orderByDesc('id')
+                ->get()
+                ->unique('account_id')
+                ->whereNotNull('deprovisioned_at')
+                ->pluck('account_id');
+
+        return $user->accounts()
+            ->wherePivot('status', MembershipStatus::Untracked->value)
+            ->whereNotNull('organization_uuid')
+            ->whereKeyNot($confirmedAccountIds)
+            ->pluck('organization_uuid')
+            ->map(fn (string $org): array => ['org_uuid' => $org])
+            ->all();
+    }
+
+    /**
+     * Confirm the CLI's reconcile: promote each `set_up` org Pending→Tracked
+     * behind the live-grant guard, and for each `removed` org, kill THIS
+     * device's newest grant — revoked (status Revoked, `revoked_at` set,
+     * cached secret forgotten) AND stamped `deprovisioned_at` (creating a
+     * Revoked, already-deprovisioned tombstone row when the device holds no
+     * grant for the org, so event-materialized removals self-clear per
+     * device) — but only when `$user` holds an `account_user` row for that
+     * account (any status); otherwise the org is skipped, so a hook-token
+     * holder cannot plant a tombstone on an account they aren't a member of
+     * just by knowing its org uuid. A confirmed removal is terminal for that
+     * grant: it can never be re-served by {@see claim()}, even within its
+     * cache secret's 24 h TTL — a second claim before the fix would re-serve
+     * the still-Claimed, still-cached grant and the CLI would silently
+     * re-add the slot it had just deleted. Additive only; failures on one
+     * org are reported and swallowed so they cannot 500 the batch; uuids
+     * are deduped per list.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
+     * @param  array<int, string>  $removedOrgUuids  orgs the CLI removed the local slot for
+     * @param  Device|null  $device  the resolved claiming device; null = removed loop no-ops
+     * @return array{confirmed: int, deprovisioned: int}
+     */
+    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null): array
     {
         $confirmed = 0;
-
-        foreach (array_unique($orgUuids) as $orgUuid) {
-            $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+        foreach (array_unique($setUpOrgUuids) as $orgUuid) {
+            $account = $this->accountWithLiveGrantFor($user, $orgUuid);
             if ($account === null) {
-                continue; // unknown org — never create an account from client input
+                continue;
             }
-
-            $isProvisionedForUser = $account->provisionedUsers()
-                ->wherePivot('user_id', $user->id)
-                ->wherePivotNull('revoked_at')
-                ->exists();
-            if (! $isProvisionedForUser) {
-                continue; // never self-graft a membership the user wasn't provisioned for
-            }
-
             try {
                 $account->users()->syncWithoutDetaching([
                     $user->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
-
-                $pivot = AccountUser::query()
-                    ->where('user_id', $user->id)->where('account_id', $account->id)->first();
-                if ($pivot !== null && $pivot->claimed_at === null) {
-                    $pivot->forceFill(['claimed_at' => Carbon::now()])->save();
-                }
-
                 $confirmed++;
             } catch (Throwable $e) {
                 report($e);
 
-                continue; // one bad org must not 500 the whole confirmation request
+                continue;
             }
         }
 
-        return $confirmed;
+        $deprovisioned = 0;
+        if ($device !== null) {
+            foreach (array_unique($removedOrgUuids) as $orgUuid) {
+                $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+                if ($account === null) {
+                    continue; // unknown org — never create one from client input
+                }
+                $isMember = $user->accounts()->whereKey($account->id)->exists();
+                if (! $isMember) {
+                    continue; // no membership row (any status) — never let a hook-token holder plant a tombstone by uuid alone
+                }
+                try {
+                    $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
+                    if ($grant !== null) {
+                        $grant->forceFill([
+                            'status' => GrantStatus::Revoked,
+                            'revoked_at' => Carbon::now(),
+                            'deprovisioned_at' => Carbon::now(),
+                        ])->save();
+                        CacheKeys::forgetProvisionedGrant($grant->id);
+                    } else {
+                        $device->grants()->create([
+                            'account_id' => $account->id,
+                            'status' => GrantStatus::Revoked,
+                            'provisioned_at' => Carbon::now(),
+                            'revoked_at' => Carbon::now(),
+                            'deprovisioned_at' => Carbon::now(),
+                        ]);
+                    }
+                    $deprovisioned++;
+                } catch (Throwable $e) {
+                    report($e);
+
+                    continue;
+                }
+            }
+        }
+
+        return ['confirmed' => $confirmed, 'deprovisioned' => $deprovisioned];
     }
 
     /**
-     * Soft-revoke a provision: mark it revoked and forget the cached grant so
-     * a future claim cannot re-serve it. (A grant already handed to a client
-     * must be deleted separately at claude.ai using its token_uuid.)
+     * Resolve the `Account` for `$orgUuid` only if `$user` holds a live
+     * (non-revoked) grant for it on any of their devices — the self-graft
+     * guard for the `set_up` promotion loop.
      *
-     * @param  AccountUser  $pivot  the provision to revoke
+     * @param  User  $user  the hook-authenticated user
+     * @param  string  $orgUuid  organization uuid from the client
+     * @return Account|null
+     */
+    private function accountWithLiveGrantFor(User $user, string $orgUuid): ?Account
+    {
+        $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+        if ($account === null) {
+            return null;
+        }
+
+        $isGranted = $account->provisionedGrants()->live()
+            ->whereHas('device', fn ($query) => $query->where('user_id', $user->id))
+            ->exists();
+
+        return $isGranted ? $account : null;
+    }
+
+    /**
+     * Soft-revoke a grant: mark it Revoked and forget the cached secret so
+     * a future claim cannot re-serve it. (A grant already handed to a
+     * client must be deleted separately at claude.ai using its token_uuid.)
+     *
+     * @param  AccountProvisionedGrant  $grant  the grant to revoke
      * @return void
      */
-    public function revoke(AccountUser $pivot): void
+    public function revoke(AccountProvisionedGrant $grant): void
     {
-        $pivot->forceFill(['revoked_at' => Carbon::now()])->save();
-        Cache::forget($this->cacheKey($pivot->user_id, $pivot->account_id));
+        $grant->forceFill(['status' => GrantStatus::Revoked, 'revoked_at' => Carbon::now()])->save();
+        CacheKeys::forgetProvisionedGrant($grant->id);
+    }
+
+    /**
+     * The user's verified (Tracked) org memberships, as `[['org_uuid' => ...]]`.
+     * NOT filtered by `provisioned_at` — a member can be verified without ever
+     * being provisioned (an admin "verify" on an event contributor). Used by the
+     * client to prioritize which account to make active when the current one is
+     * being removed.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @return array<int, array{org_uuid: string}>
+     */
+    public function memberships(User $user): array
+    {
+        return $user->accounts()
+            ->wherePivot('status', MembershipStatus::Tracked->value)
+            ->whereNotNull('organization_uuid')
+            ->pluck('organization_uuid')
+            ->map(fn (string $org): array => ['org_uuid' => $org])
+            ->all();
     }
 }

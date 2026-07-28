@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ClaimProvisionedGrantsRequest;
+use App\Http\Requests\ConfirmProvisionedSetupRequest;
 use App\Services\AccountProvisioningService;
+use App\Services\Provisioning\DeviceClaimResolver;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 
 /**
  * Hands a user's provisioned grants (held encrypted in the cache) to the
@@ -16,41 +19,58 @@ final class ProvisionedAccountController extends Controller
 {
     /**
      * @param  AccountProvisioningService  $provisioning  supplies + consumes the user's claimable grants
+     * @param  DeviceClaimResolver  $resolver  maps a claim fingerprint to a device
      */
-    public function __construct(private readonly AccountProvisioningService $provisioning) {}
+    public function __construct(
+        private readonly AccountProvisioningService $provisioning,
+        private readonly DeviceClaimResolver $resolver,
+    ) {}
 
     /**
-     * Return the authenticated user's claimable grants and consume them.
+     * Return the authenticated user's claimable grants for the calling
+     * device, their verified memberships, and the org accounts this device
+     * should remove.
      *
-     * @param  Request  $request  carries the hook-authenticated user
-     * @return JsonResponse the grants payload ({accounts: [...]})
+     * @param  ClaimProvisionedGrantsRequest  $request  carries the hook-authenticated user and optional device fingerprint
+     * @return JsonResponse {accounts, memberships, remove}
      */
-    public function index(Request $request): JsonResponse
+    public function index(ClaimProvisionedGrantsRequest $request): JsonResponse
     {
+        $payload = $request->validated();
+        $user = $request->user('hook');
+        $fingerprint = Arr::get($payload, 'device_id');
+
+        $accounts = $this->provisioning->claim($user, $fingerprint);
+        $device = $this->resolver->resolve($user, $fingerprint);
+        $memberships = $this->provisioning->memberships($user);
+        $remove = $this->provisioning->removable($user, $device);
+
         return response()->json([
-            'accounts' => $this->provisioning->claim($request->user('hook')),
+            'accounts' => $accounts,
+            'memberships' => $memberships,
+            'remove' => $remove,
         ]);
     }
 
     /**
-     * Confirm the org accounts the CLI actually finished setting up during
-     * `token-slayer setup`, promoting each to a tracked membership.
+     * Confirm the CLI's reconcile. Accepts `{set_up:[{org_uuid}], removed:[{org_uuid}], device_id?}`;
+     * also accepts the legacy `{accounts:[{org_uuid}]}` as `set_up` (old clients).
      *
-     * @param  Request  $request  carries the hook-authenticated user and the
-     *                            `{accounts: [{org_uuid}]}` confirmation body
-     * @return JsonResponse the confirmed count ({confirmed: <int>})
+     * @param  ConfirmProvisionedSetupRequest  $request  carries the hook-authenticated user and the validated body
+     * @return JsonResponse {confirmed, deprovisioned}
      */
-    public function confirm(Request $request): JsonResponse
+    public function confirm(ConfirmProvisionedSetupRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'accounts' => ['required', 'array'],
-            'accounts.*.org_uuid' => ['required', 'uuid'],
-        ]);
+        $payload = $request->validated();
+        $user = $request->user('hook');
 
-        $orgUuids = array_column($validated['accounts'], 'org_uuid');
+        // `set_up` falls back to the legacy `accounts` key for old clients.
+        $setUp = array_column($payload['set_up'] ?? $payload['accounts'] ?? [], 'org_uuid');
+        $removed = array_column($payload['removed'] ?? [], 'org_uuid');
+        $device = $this->resolver->resolve($user, Arr::get($payload, 'device_id'));
 
-        return response()->json([
-            'confirmed' => $this->provisioning->confirmSetup($request->user('hook'), $orgUuids),
-        ]);
+        $result = $this->provisioning->confirmSetup($user, $setUp, $removed, $device);
+
+        return response()->json($result);
     }
 }
