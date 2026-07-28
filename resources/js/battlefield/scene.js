@@ -166,6 +166,8 @@ export class BattlefieldScene extends Phaser.Scene {
       [BusEvent.FIGHTER_IDLED]:    payload => this.fighter.handleIdled(payload),
       [BusEvent.FIGHTER_JOINED]:   payload => this.fighter.handleFighterJoined(payload),
       [BusEvent.FIGHTER_MOVED]:    payload => this.fighter.handleFighterMoved(payload),
+      [BusEvent.POSITIONS_RESYNCED]: payload => this.fighter.reconcilePositions(payload.positions),
+      [BusEvent.FIGHTER_CHARGE_CLEARED]: payload => this.charge.handleChargeCleared(payload),
     };
 
     this.moveInput = new MoveInput(this);

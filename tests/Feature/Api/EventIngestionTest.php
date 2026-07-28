@@ -2,8 +2,8 @@
 
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
+use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
-use App\Events\FighterIdled;
 use App\Events\FighterJoined;
 use App\Events\HitDealt;
 use App\Models\Account;
@@ -121,8 +121,8 @@ test('Stop event still applies damage when a broadcast listener throws', functio
     expect(Boss::sole()->current_hp)->toBe(900_000);
 });
 
-test('Stop event with no tokens still broadcasts FighterIdled to clear charging state', function () {
-    Illuminate\Support\Facades\Event::fake([FighterIdled::class, HitDealt::class]);
+test('Stop event with no tokens still broadcasts FighterChargeCleared to clear charging state', function () {
+    Illuminate\Support\Facades\Event::fake([FighterChargeCleared::class, HitDealt::class]);
 
     $this->withHeader('Authorization', 'Bearer tok')
         ->postJson('/api/events', [
@@ -132,7 +132,7 @@ test('Stop event with no tokens still broadcasts FighterIdled to clear charging 
         ])
         ->assertCreated();
 
-    Illuminate\Support\Facades\Event::assertDispatched(FighterIdled::class, function ($e) {
+    Illuminate\Support\Facades\Event::assertDispatched(FighterChargeCleared::class, function ($e) {
         return $e->user->is($this->user);
     });
     Illuminate\Support\Facades\Event::assertNotDispatched(HitDealt::class);
@@ -316,7 +316,7 @@ test('user-prompt-submit uses the client-provided custom_activity over the defau
 });
 
 test('custom_activity has no effect on event types other than pre-tool-use and user-prompt-submit', function () {
-    Illuminate\Support\Facades\Event::fake([FighterIdled::class]);
+    Illuminate\Support\Facades\Event::fake([FighterChargeCleared::class]);
 
     $this->withHeader('Authorization', 'Bearer tok')
         ->postJson('/api/events', [

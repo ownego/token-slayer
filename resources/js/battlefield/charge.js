@@ -24,7 +24,7 @@ export class Charge {
   /**
    * Handles a fighter-charging event: creates or updates charge visuals.
    *
-   * @param {{ user_id: number, activity?: string, slack_handle?: string, avatar_url?: string, character?: string }} payload
+   * @param {{ user_id: number, activity?: string, slack_handle?: string, avatar_url?: string, character?: string, position?: {x: number, y: number}|null }} payload
    * @return {void}
    */
   handleCharging(payload) {
@@ -32,11 +32,15 @@ export class Charge {
       return;
     }
     if (!this.scene.fighters.has(payload.user_id)) {
+      // Synthesizes a client-side rejoin for a fighter this client doesn't
+      // have (e.g. its FighterJoined was missed, or it was previously swept
+      // idle) — carries the saved position so it doesn't snap to the grid.
       this.scene.fighter?.handleFighterJoined({
         user_id: payload.user_id,
         slack_handle: payload.slack_handle,
         avatar_url: payload.avatar_url,
         character: payload.character ?? null,
+        position: payload.position ?? null,
       });
     }
     const fighter = this.scene.fighters.get(payload.user_id);
@@ -226,6 +230,23 @@ export class Charge {
       fighter.body.setFlipX(false);
       fighter.body.play(fighter.ftype.key + '-idle');
     }
+  }
+
+  /**
+   * Handles the fighter-charge-cleared event: clears charging visuals only,
+   * without removing the fighter from the battlefield — the server fires
+   * this when a turn ends with no damage dealt (a very common, non-idle
+   * case), as opposed to `FighterIdled` which means the fighter has
+   * genuinely been idle past the sweep window and should be removed.
+   *
+   * @param {{ user_id: number|string }} payload
+   * @return {void}
+   */
+  handleChargeCleared(payload) {
+    if (!payload || payload.user_id == null) {
+      return;
+    }
+    this.clearCharge(payload.user_id);
   }
 
   /**
