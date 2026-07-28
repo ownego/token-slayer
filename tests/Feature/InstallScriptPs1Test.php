@@ -156,3 +156,15 @@ it('bakes SLAYER_INSTALL_URL and SLAYER_NS into the Windows .cmd shims', functio
         ->toContain('setlocal')
         ->toContain('-m slayer_cli %*');
 });
+
+it('falls back to WindowsApps interpreters instead of rejecting them by path', function () {
+    // %LOCALAPPDATA%\Microsoft\WindowsApps holds BOTH the Store stub and the
+    // working shims of the Python Install Manager, so path alone cannot tell
+    // them apart — only the probe can. Real installs are still preferred.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('foreach ($allowStoreAlias in @($false, $true))')
+        ->toContain('WindowsApps')
+        ->not->toContain("if (\$path -and \$path -match 'WindowsApps') { continue }");
+});

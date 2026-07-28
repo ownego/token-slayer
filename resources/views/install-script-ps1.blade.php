@@ -49,12 +49,21 @@ function Find-Python {
   $cands = @()
   if ($env:SLAYER_PYTHON) { $cands += $env:SLAYER_PYTHON }
   $cands += @('py -3', 'py -3.13', 'py -3.12', 'py -3.11', 'py -3.10', 'python', 'python3')
+  # Two passes. %LOCALAPPDATA%\Microsoft\WindowsApps holds BOTH the Store stub
+  # that only offers to install Python AND the working shims of the Python
+  # Install Manager (real interpreter under \AppData\Local\Python\pythoncore-*),
+  # so the path cannot tell them apart -- only the probe below can. A real
+  # install elsewhere is still preferred, hence store aliases come second.
+  # The stub only opens the Store when run with NO arguments; the probe always
+  # passes -c, so it just exits non-zero and falls through.
+  foreach ($allowStoreAlias in @($false, $true)) {
   foreach ($c in $cands) {
     $exe, $arg = ($c -split ' ',2)
     $resolved = (Get-Command $exe -ErrorAction SilentlyContinue)
     if (-not $resolved) { continue }
     $path = $resolved.Source
-    if ($path -and $path -match 'WindowsApps') { continue }   # MS Store stub -> opens Store
+    $isStoreAlias = [bool]($path -and $path -match 'WindowsApps')
+    if ($isStoreAlias -ne $allowStoreAlias) { continue }
     # Build the probe's argument list explicitly rather than passing $arg
     # directly -- $arg is $null for the bare `python`/`python3` candidates,
     # and passing $null as a native-command argument is version-dependent in
@@ -70,6 +79,7 @@ function Find-Python {
         return ,@($exe, $arg)
       }
     }
+  }
   }
   throw "No usable Python >= 3.10 with a working venv and pyexpat was found. Install from https://www.python.org/downloads/ or 'winget install Python.Python.3.12', then re-run -- or set SLAYER_PYTHON to a specific interpreter.`n(If 'python' opens the Microsoft Store, disable the App Execution Alias or install real Python.)"
 }
