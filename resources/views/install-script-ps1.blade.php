@@ -225,6 +225,38 @@ $Helper = Join-Path $Cfg 'send-hook.sh'
 $ChecksumFile = Join-Path $Cfg '.hook-checksum'
 $HelperBash = $Helper -replace '\\','/'
 
+# `Get-Command bash` is unusable for finding Git Bash: on Windows it resolves
+# C:\Windows\System32\bash.exe -- the WSL launcher -- long before Git Bash, and
+# on a machine with no or broken WSL distro that binary fails outright. Resolve
+# the real thing by known install locations and from git.exe's own path, and
+# reject anything under System32. Returns $null when Git Bash is absent.
+function Find-GitBash {
+  $cands = @()
+  if ($env:CLAUDE_CODE_GIT_BASH_PATH) { $cands += $env:CLAUDE_CODE_GIT_BASH_PATH }
+  $git = Get-Command git -ErrorAction SilentlyContinue
+  if ($git -and $git.Source) {
+    # ...\Git\cmd\git.exe -> ...\Git\bin\bash.exe
+    $cands += (Join-Path (Split-Path (Split-Path $git.Source -Parent) -Parent) 'bin\bash.exe')
+  }
+  foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if ($base) { $cands += (Join-Path $base 'Git\bin\bash.exe') }
+  }
+  if ($env:LOCALAPPDATA) { $cands += (Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe') }
+  foreach ($c in $cands) {
+    if (-not $c) { continue }
+    if ($c -match '\\System32\\') { continue }
+    if (Test-Path -LiteralPath $c) { return $c }
+  }
+  return $null
+}
+$gitBash = Find-GitBash
+
+# The hook commands invoke bash by ABSOLUTE path when Git Bash was found: a
+# bare `bash` resolves through PATH, where the System32 WSL launcher shadows
+# Git Bash. (Claude Code's own outer shell lookup is separate -- point it at
+# the same binary with CLAUDE_CODE_GIT_BASH_PATH if it picks the wrong one.)
+$BashExe = if ($gitBash) { ($gitBash -replace '\\','/') } else { 'bash' }
+
 function Get-Sha256Hex($text) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
   try {
@@ -594,9 +626,9 @@ if ($hookBackup) {
   Write-Host ""
 }
 
-$ClaudeCmd = "bash `"$HelperBash`""
-$CodexCmd  = "PROVIDER=codex bash `"$HelperBash`""
-$AgyCmd    = "PROVIDER=antigravity bash `"$HelperBash`""
+$ClaudeCmd = "`"$BashExe`" `"$HelperBash`""
+$CodexCmd  = "PROVIDER=codex `"$BashExe`" `"$HelperBash`""
+$AgyCmd    = "PROVIDER=antigravity `"$BashExe`" `"$HelperBash`""
 
 # Save the token now if the caller pre-set it, e.g.
 #   $env:TOKEN_SLAYER_TOKEN = "xxx"; iex (irm $InstallUrl)
@@ -836,19 +868,33 @@ with open(path, "w") as f:
 Write-Host "installed Antigravity CLI hooks -> $AgyHooks"
 
 # --- Git for Windows check ---------------------------------------------------
-if (-not (Get-Command git -ErrorAction SilentlyContinue) -and -not (Get-Command bash -ErrorAction SilentlyContinue)) {
-  Write-Warning 'Attribution hooks need Git for Windows (Git Bash) to run. The CLI works without it; install Git for Windows to enable usage tracking.'
+# Deliberately keyed on Find-GitBash, not `Get-Command bash`: the WSL launcher
+# in System32 answers to `bash` and would silence this warning on a machine
+# that cannot run the hooks at all.
+if (-not $gitBash) {
+  Write-Warning 'Attribution hooks need Git for Windows (Git Bash) to run -- a WSL bash does not count. The CLI works without it; install Git for Windows (winget install Git.Git) to enable usage tracking.'
 }
 
 # --- jq check ----------------------------------------------------------------
 # jq has to be on Git Bash's PATH, not PowerShell's -- the hook runs under bash,
 # so probing Get-Command jq here would pass while the hook still records
 # nothing. Without jq every hook answers 201 and no damage is ever recorded.
-$bashExe = (Get-Command bash -ErrorAction SilentlyContinue)
-if ($bashExe) {
-  # -c, not -lc: the hook runs as a non-login bash, and a login shell sources
-  # /etc/profile into a wider PATH that would hide a jq the hook cannot see.
-  $jqFound = & $bashExe.Source -c 'command -v jq >/dev/null 2>&1 && echo yes' 2>$null
+# An advisory check must never be able to kill the install: the script runs
+# under $ErrorActionPreference='Stop', where anything the probed shell writes
+# to stderr is promoted to a terminating NativeCommandError. Scoped Continue +
+# try/catch makes that impossible; a failed probe is treated as "no jq".
+if ($gitBash) {
+  $jqFound = $null
+  try {
+    $ErrorActionPreference = 'Continue'
+    # -c, not -lc: the hook runs as a non-login bash, and a login shell sources
+    # /etc/profile into a wider PATH that would hide a jq the hook cannot see.
+    $jqFound = & $gitBash -c 'command -v jq >/dev/null 2>&1 && echo yes' 2>$null
+  } catch {
+    $jqFound = $null
+  } finally {
+    $ErrorActionPreference = 'Stop'
+  }
   if ($jqFound -notcontains 'yes') {
     Write-Host ""
     Write-Host "=========================================================="

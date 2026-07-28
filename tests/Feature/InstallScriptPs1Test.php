@@ -168,3 +168,25 @@ it('falls back to WindowsApps interpreters instead of rejecting them by path', f
         ->toContain('WindowsApps')
         ->not->toContain("if (\$path -and \$path -match 'WindowsApps') { continue }");
 });
+
+it('resolves Git Bash by path and never lets the jq probe abort the install', function () {
+    // `Get-Command bash` finds C:\Windows\System32\bash.exe (the WSL launcher)
+    // first. On a box with a broken WSL that probe writes to stderr, which
+    // under $ErrorActionPreference='Stop' becomes a terminating error and
+    // killed the installer after the hooks were written.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('function Find-GitBash')
+        ->toContain('System32')
+        ->toContain('$ErrorActionPreference = \'Continue\'')
+        ->toContain('$gitBash = Find-GitBash');
+});
+
+it('writes hook commands that invoke Git Bash by absolute path', function () {
+    // A bare `bash` in the hook command resolves through PATH, where the WSL
+    // launcher in System32 shadows Git Bash.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)->toContain('$BashExe = if ($gitBash) { ($gitBash -replace \'\\\\\',\'/\') } else { \'bash\' }');
+});
