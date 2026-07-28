@@ -143,3 +143,16 @@ it('warns at the end of install.ps1 when Git Bash cannot find jq', function () {
         ->toContain('winget install jqlang.jq')
         ->toContain('usage tracking will record nothing');
 });
+
+it('bakes SLAYER_INSTALL_URL and SLAYER_NS into the Windows .cmd shims', function () {
+    // The POSIX shim execs through `env SLAYER_NS=… SLAYER_INSTALL_URL=…`;
+    // without the same on Windows `token-slayer update` aborts with
+    // "SLAYER_INSTALL_URL is not set" and the hook is never refreshed.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('SLAYER_NS=$Ns')
+        ->toContain('SLAYER_INSTALL_URL=$InstallUrl')
+        ->toContain('setlocal')
+        ->toContain('-m slayer_cli %*');
+});

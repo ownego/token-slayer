@@ -173,7 +173,18 @@ if (-not (Test-Path (Join-Path $Venv 'Scripts\pip.exe'))) {
 
 # --- Shims (3 .cmd, absolute venv path) -------------------------------------
 # Absolute $VenvPy avoids %~dp0 layout coupling.
-$shim = "@echo off`r`n`"$VenvPy`" -m slayer_cli %*`r`n"
+# The two env vars mirror what the POSIX shim execs through: without
+# SLAYER_INSTALL_URL, `token-slayer update` aborts before re-running the
+# installer, so the hook can never be refreshed on Windows. `setlocal` keeps
+# both inside this cmd process instead of leaking into the machine.
+# CRLF throughout: cmd.exe is not reliable on LF-only batch files.
+$shim = (@(
+  '@echo off',
+  'setlocal',
+  "set `"SLAYER_NS=$Ns`"",
+  "set `"SLAYER_INSTALL_URL=$InstallUrl`"",
+  "`"$VenvPy`" -m slayer_cli %*"
+) -join "`r`n") + "`r`n"
 foreach ($n in 'tok','slayer','token-slayer') {
   Set-Content -Path (Join-Path $Bin "$n.cmd") -Value $shim -Encoding Ascii -NoNewline
 }
