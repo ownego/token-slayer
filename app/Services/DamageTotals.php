@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AccountPlan;
 use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
@@ -84,7 +85,7 @@ final class DamageTotals
      * "tokens of its members". Single grouped query for the sums; accounts
      * with no recent activity still appear at zero.
      *
-     * @return array<int, array{account_id:?int, email:string, plan:?string, memberCount:int, hourly:int, daily:int, monthly:int}>
+     * @return array<int, array{account_id:?int, email:string, plan:?AccountPlan, memberCount:int, hourly:int, daily:int, monthly:int}>
      */
     public function perAccount(): array
     {
@@ -219,7 +220,7 @@ final class DamageTotals
      * account the user is a member of plus any they actually burned tokens through.
      *
      * @param  User  $user  the user whose per-account breakdown is being built
-     * @return array<int, array{account_id:int, email:string, name:?string, plan:?string, memberCount:int, isMember:bool, util_5h:?int, util_7d:?int, lastProbedAt:?Carbon, hourly:int, daily:int, monthly:int}>
+     * @return array<int, array{account_id:int, email:string, name:?string, plan:?AccountPlan, memberCount:int, isMember:bool, util_5h:?int, util_7d:?int, lastProbedAt:?Carbon, hourly:int, daily:int, monthly:int}>
      */
     public function forUserByAccount(User $user): array
     {

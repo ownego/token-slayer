@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Exceptions\AccountConnectException;
 use App\Models\Account;
@@ -47,7 +48,7 @@ test('resolve updates an existing account matched by email and marks it active, 
         ->and($account->oauth_refresh_token)->toBe('sk-ant-ort01-REDACTED')
         ->and($account->account_uuid)->toBe('adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9')
         ->and($account->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
-        ->and($account->plan)->toBe('claude_pro')
+        ->and($account->plan)->toBe(AccountPlan::Pro)
         ->and($account->status)->toBe(AccountStatus::Active)
         ->and($account->last_probed_at)->not->toBeNull();
 
@@ -110,7 +111,7 @@ test('resolve returns a pending draft and stashes token material for a brand-new
     expect($resolution->isExisting())->toBeFalse()
         ->and($resolution->draft->email)->toBe('ongtung2212002@gmail.com')
         ->and($resolution->draft->orgUuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
-        ->and($resolution->draft->plan)->toBe('claude_pro')
+        ->and($resolution->draft->plan)->toBe(AccountPlan::Pro)
         ->and($resolution->draft->handoffKey)->not->toBeEmpty();
 
     $stashed = Cache::get("account-connect-pending:{$resolution->draft->handoffKey}");
@@ -187,12 +188,12 @@ test('createFromPending creates a new active account with the edited plan and na
     $started = $this->service->start();
     $draft = $this->service->resolve($started['state'], 'pasted-code')->draft;
 
-    $account = $this->service->createFromPending($draft->handoffKey, 'max-5x', 'Custom Name');
+    $account = $this->service->createFromPending($draft->handoffKey, AccountPlan::Max5x->value, 'Custom Name');
 
     expect($account->exists)->toBeTrue()
         ->and($account->email)->toBe('ongtung2212002@gmail.com')
         ->and($account->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
-        ->and($account->plan)->toBe('max-5x')
+        ->and($account->plan)->toBe(AccountPlan::Max5x)
         ->and($account->name)->toBe('Custom Name')
         ->and($account->oauth_access_token)->toBe('sk-ant-oat01-REDACTED')
         ->and($account->status)->toBe(AccountStatus::Active)
@@ -209,7 +210,7 @@ test('createFromPending updates an existing row instead of duplicating when a ra
     // Simulate another admin creating the same identity in the meantime.
     $racer = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
 
-    $account = $this->service->createFromPending($draft->handoffKey, 'max-20x', 'Whatever');
+    $account = $this->service->createFromPending($draft->handoffKey, AccountPlan::Max20x->value, 'Whatever');
 
     expect($account->id)->toBe($racer->id)
         ->and(Account::where('email', 'ongtung2212002@gmail.com')->count())->toBe(1)
@@ -217,7 +218,7 @@ test('createFromPending updates an existing row instead of duplicating when a ra
 });
 
 test('createFromPending throws state expired when the handoff key is unknown', function () {
-    expect(fn () => $this->service->createFromPending('no-such-key', 'max-20x', null))
+    expect(fn () => $this->service->createFromPending('no-such-key', AccountPlan::Max20x->value, null))
         ->toThrow(AccountConnectException::class);
 });
 
@@ -231,4 +232,28 @@ test('disconnect wipes the stored grant and marks the account needing re-auth', 
         ->and($account->oauth_refresh_token)->toBeNull()
         ->and($account->status)->toBe(AccountStatus::NeedsReauth)
         ->and($account->probe_error)->toBe('disconnected by admin');
+});
+
+it('persists the raw plan fields and resolved plan when creating from a pending draft', function (): void {
+    fakeAnthropic([
+        'profile' => Http::response(
+            file_get_contents(base_path('tests/fixtures/anthropic/profile-max-20x.json')),
+            200,
+            ['Content-Type' => 'application/json'],
+        ),
+    ]);
+
+    $service = app(AccountConnectService::class);
+    $start = $service->start();
+    $resolution = $service->resolve($start['state'], 'auth-code', null);
+    $draft = $resolution->draft;
+
+    expect($draft->organizationType)->toBe('claude_max')
+        ->and($draft->rateLimitTier)->toBe('default_claude_max_20x');
+
+    $account = $service->createFromPending($draft->handoffKey, $draft->plan->value, $draft->name);
+
+    expect($account->plan)->toBe(AccountPlan::Max20x)
+        ->and($account->organization_type)->toBe('claude_max')
+        ->and($account->rate_limit_tier)->toBe('default_claude_max_20x');
 });

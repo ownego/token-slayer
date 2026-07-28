@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Models\Account;
 use Illuminate\Console\Scheduling\Schedule;
@@ -13,7 +14,7 @@ test('happy path updates plan, account_uuid, and organization_uuid from a matchi
 
     $account = Account::factory()->connected()->create([
         'email' => 'ongtung2212002@gmail.com',
-        'plan' => 'max-20x',
+        'plan' => AccountPlan::Max20x,
         'account_uuid' => null,
         'organization_uuid' => null,
     ]);
@@ -22,7 +23,7 @@ test('happy path updates plan, account_uuid, and organization_uuid from a matchi
 
     $account->refresh();
 
-    expect($account->plan)->toBe('claude_pro')
+    expect($account->plan)->toBe(AccountPlan::Pro)
         ->and($account->account_uuid)->toBe('adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9')
         ->and($account->organization_uuid)->toBe('7f993a12-f480-45cd-8b99-1e3182d168bf')
         ->and($account->probe_error)->toBeNull();
@@ -33,7 +34,7 @@ test('a mismatched profile email records a probe_error and leaves plan and uuids
 
     $account = Account::factory()->connected()->create([
         'email' => 'someone-else@example.com',
-        'plan' => 'max-20x',
+        'plan' => AccountPlan::Max20x,
         'account_uuid' => 'original-uuid',
         'organization_uuid' => 'original-org-uuid',
     ]);
@@ -43,7 +44,7 @@ test('a mismatched profile email records a probe_error and leaves plan and uuids
     $account->refresh();
 
     expect($account->probe_error)->toBe('profile email mismatch: ongtung2212002@gmail.com')
-        ->and($account->plan)->toBe('max-20x')
+        ->and($account->plan)->toBe(AccountPlan::Max20x)
         ->and($account->account_uuid)->toBe('original-uuid')
         ->and($account->organization_uuid)->toBe('original-org-uuid');
 });
@@ -65,13 +66,13 @@ test('a profile API error records a safe probe_error without crashing', function
 
     $account = Account::factory()->connected()->create([
         'email' => 'ongtung2212002@gmail.com',
-        'plan' => 'max-20x',
+        'plan' => AccountPlan::Max20x,
     ]);
 
     $this->artisan('accounts:sync-profiles')->assertSuccessful();
 
     expect($account->fresh()->probe_error)->toBe('profile sync failed: unauthorized')
-        ->and($account->fresh()->plan)->toBe('max-20x');
+        ->and($account->fresh()->plan)->toBe(AccountPlan::Max20x);
 });
 
 test('an organization uuid collision records a claimed-elsewhere probe_error without throwing', function () {
@@ -83,7 +84,7 @@ test('an organization uuid collision records a claimed-elsewhere probe_error wit
 
     $account = Account::factory()->connected()->create([
         'email' => 'ongtung2212002@gmail.com',
-        'plan' => 'max-20x',
+        'plan' => AccountPlan::Max20x,
         'account_uuid' => null,
         'organization_uuid' => null,
     ]);
@@ -94,7 +95,7 @@ test('an organization uuid collision records a claimed-elsewhere probe_error wit
 
     expect($account->probe_error)->toBe('org uuid already claimed')
         ->and($account->organization_uuid)->toBeNull()
-        ->and($account->plan)->toBe('claude_pro')
+        ->and($account->plan)->toBe(AccountPlan::Pro)
         ->and($account->account_uuid)->toBe('adfeaf9f-dd9c-4c03-93c2-0bb05c7278b9');
 });
 

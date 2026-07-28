@@ -2,10 +2,12 @@
 
 namespace App\Filament\Concerns;
 
+use App\Enums\AccountPlan;
 use App\Exceptions\AccountConnectException;
 use App\Services\AccountConnectService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Livewire\Component;
@@ -86,7 +88,7 @@ trait ConnectsAccounts
                     'key' => $draft->handoffKey,
                     'email' => $draft->email,
                     'orgUuid' => $draft->orgUuid,
-                    'plan' => $draft->plan,
+                    'plan' => $draft->plan->value,
                     'name' => $draft->name,
                 ]);
             });
@@ -110,7 +112,7 @@ trait ConnectsAccounts
             ->fillForm(fn (array $arguments): array => [
                 'email' => $arguments['email'] ?? '',
                 'organization_uuid' => $arguments['orgUuid'] ?? null,
-                'plan' => $arguments['plan'] ?? 'max-20x',
+                'plan' => $arguments['plan'] ?? AccountPlan::Max20x->value,
                 'name' => $arguments['name'] ?? null,
             ])
             ->schema([
@@ -120,9 +122,9 @@ trait ConnectsAccounts
                 TextInput::make('organization_uuid')
                     ->label('Organization UUID')
                     ->readOnly(),
-                TextInput::make('plan')
-                    ->required()
-                    ->maxLength(255),
+                Select::make('plan')
+                    ->options(AccountPlan::class)
+                    ->required(),
                 TextInput::make('name')
                     ->maxLength(255),
             ])

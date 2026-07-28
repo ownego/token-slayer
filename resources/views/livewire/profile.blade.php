@@ -84,7 +84,7 @@
                                 <span class="text-sm font-medium">{{ $row['email'] }}</span>
                                 <span class="text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5">{{ $row['memberCount'] }} {{ Str::plural('member', $row['memberCount']) }}</span>
                             </div>
-                            <p class="text-xs text-gray-400 mb-2">{{ $row['plan'] ?? 'no plan on file' }}</p>
+                            <p class="text-xs text-gray-400 mb-2">{{ $row['plan']?->getLabel() ?? 'no plan on file' }}</p>
                             @unless ($row['isMember'])
                                 <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">You're not a member of this account — usage was attributed here but you may lose access.</p>
                             @endunless

@@ -64,7 +64,7 @@ class AccountTokenRejectedNotification extends Notification
             ->sectionBlock(function (SectionBlock $block) use ($account, $reason): void {
                 $block->field("*Account*\n{$account->email}")->markdown();
                 $block->field("*Org*\n".($account->organization_uuid ?? '—'))->markdown();
-                $block->field("*Plan*\n".($account->plan ?? '—'))->markdown();
+                $block->field("*Plan*\n".($account->plan?->getLabel() ?? '—'))->markdown();
                 $block->field("*Reason*\n{$reason}")->markdown();
                 $block->field("*Detected*\n".now()->toDayDateTimeString())->markdown();
             })

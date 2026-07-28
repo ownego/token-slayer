@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Exceptions\AccountConnectException;
 use App\Models\Account;
+use App\Services\Accounts\PlanResolver;
 use App\Services\Connect\ConnectDraft;
 use App\Services\Connect\ConnectResolution;
 use Illuminate\Database\QueryException;
@@ -245,17 +247,18 @@ class AccountConnectService
      * if the same identity was created between {@see resolve()} and now
      * (a race) — update that existing row instead of duplicating. Pulls and
      * single-use invalidates the pending stash, writes the grant with the
-     * admin-confirmed plan and name, flips the account Active, learns its
-     * organization uuid, and best-effort probes it.
+     * admin-confirmed plan and name plus the stashed raw plan fields (never
+     * from admin input), flips the account Active, learns its organization
+     * uuid, and best-effort probes it.
      *
      * @param  string  $handoffKey  the draft's handoff key from {@see resolve()}
-     * @param  string  $plan  the admin-confirmed plan
+     * @param  AccountPlan|string  $plan  the admin-confirmed plan: an {@see AccountPlan} instance (Filament's Select auto-casts `options(AccountPlan::class)` state) or its raw value string (direct callers/tests)
      * @param  ?string  $name  the admin-confirmed display name
      * @return Account the created or updated, freshly persisted account
      *
      * @throws AccountConnectException 'connect_state_expired' when the stash is missing/expired
      */
-    public function createFromPending(string $handoffKey, string $plan, ?string $name): Account
+    public function createFromPending(string $handoffKey, AccountPlan|string $plan, ?string $name): Account
     {
         $cacheKey = self::PENDING_KEY_PREFIX.$handoffKey;
         $pending = Cache::get($cacheKey);
@@ -275,7 +278,9 @@ class AccountConnectService
         $this->reconcileIdentity($account, $pending['email'], $name);
 
         $account->name = $name;
-        $account->plan = $plan;
+        $account->plan = $plan instanceof AccountPlan ? $plan : (AccountPlan::tryFrom($plan) ?? AccountPlan::Unknown);
+        $account->organization_type = $pending['organization_type'] ?? $account->organization_type;
+        $account->rate_limit_tier = $pending['rate_limit_tier'] ?? $account->rate_limit_tier;
         $account->account_uuid = $pending['account_uuid'] ?? $account->account_uuid;
         $this->writeGrant($account, $pending['access_token'], $pending['refresh_token'], $pending['expires_in']);
         $account->save();
@@ -330,7 +335,10 @@ class AccountConnectService
     /**
      * Stash the exchanged token material for a not-yet-created account under a
      * random single-use handoff key and return the profile-derived draft the
-     * confirm-and-create step fills in.
+     * confirm-and-create step fills in. The raw `organization_type`/
+     * `rate_limit_tier` pair is stashed alongside the token material so
+     * {@see createFromPending()} can persist it verbatim, never from admin
+     * input.
      *
      * @param  array<string, mixed>  $token  the token response (access/refresh/expires_in)
      * @param  array<string, mixed>  $profile  the authorized profile response
@@ -341,7 +349,9 @@ class AccountConnectService
     private function stashPending(array $token, array $profile, string $email, ?string $orgUuid): ConnectDraft
     {
         $key = $this->generateState();
-        $plan = $profile['organization']['organization_type'] ?? 'max-20x';
+        $organizationType = $profile['organization']['organization_type'] ?? null;
+        $rateLimitTier = $profile['organization']['rate_limit_tier'] ?? null;
+        $plan = (new PlanResolver)->resolve($organizationType, $rateLimitTier);
 
         Cache::put(
             self::PENDING_KEY_PREFIX.$key,
@@ -351,6 +361,8 @@ class AccountConnectService
                 'expires_in' => $token['expires_in'],
                 'account_uuid' => $profile['account']['uuid'] ?? null,
                 'organization_uuid' => $orgUuid,
+                'organization_type' => $organizationType,
+                'rate_limit_tier' => $rateLimitTier,
                 'email' => $email,
             ],
             now()->addMinutes(self::CACHE_TTL_MINUTES),
@@ -360,6 +372,8 @@ class AccountConnectService
             email: $email,
             orgUuid: $orgUuid,
             plan: $plan,
+            organizationType: $organizationType,
+            rateLimitTier: $rateLimitTier,
             name: $profile['organization']['name'] ?? ($profile['account']['full_name'] ?? null),
             handoffKey: $key,
         );
@@ -368,6 +382,8 @@ class AccountConnectService
     /**
      * Write an exchanged grant and profile identity onto an existing account,
      * flip it Active, learn its organization uuid, and best-effort probe it.
+     * The raw `organization_type`/`rate_limit_tier` pair is stored verbatim
+     * and the plan is re-resolved from it via {@see PlanResolver}.
      *
      * @param  Account  $account  the account to update
      * @param  array<string, mixed>  $token  the token response (access/refresh/expires_in)
@@ -378,7 +394,11 @@ class AccountConnectService
     {
         $this->writeGrant($account, $token['access_token'], $token['refresh_token'], $token['expires_in']);
         $account->account_uuid = $profile['account']['uuid'] ?? ($token['account']['uuid'] ?? $account->account_uuid);
-        $account->plan = $profile['organization']['organization_type'] ?? $account->plan;
+        $organizationType = $profile['organization']['organization_type'] ?? null;
+        $rateLimitTier = $profile['organization']['rate_limit_tier'] ?? null;
+        $account->organization_type = $organizationType ?? $account->organization_type;
+        $account->rate_limit_tier = $rateLimitTier ?? $account->rate_limit_tier;
+        $account->plan = (new PlanResolver)->resolve($organizationType, $rateLimitTier);
         $this->reconcileIdentity(
             $account,
             $profile['account']['email'] ?? null,

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\AccountPlan;
 use App\Models\Account;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -18,7 +19,7 @@ class AccountSeeder extends Seeder
         foreach ($unassigned->chunk(5) as $index => $chunk) {
             $account = Account::create([
                 'email' => 'account'.($index + 1).'@example.com',
-                'plan' => 'max-20x',
+                'plan' => AccountPlan::Max20x,
             ]);
 
             User::whereIn('id', $chunk->pluck('id'))->update(['account_id' => $account->id]);

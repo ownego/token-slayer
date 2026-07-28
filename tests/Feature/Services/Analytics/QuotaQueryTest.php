@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Services\Analytics\AccountQuotaHistoryQuery;
@@ -7,6 +8,14 @@ use App\Services\Analytics\QuotaGaugesQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+it('includes the account plan in each gauge row', function (): void {
+    Account::factory()->max5x()->create();
+
+    $rows = app(QuotaGaugesQuery::class)->get();
+
+    expect($rows[0]['plan'])->toBe(AccountPlan::Max5x);
+});
 
 test('it builds a gauge row per account with a near-cap flag and projections', function () {
     $hot = Account::factory()->create(['email' => 'hot@example.com']);

@@ -5,13 +5,15 @@ namespace App\Services;
 use App\Enums\AccountProfileSyncResult;
 use App\Exceptions\UsageProbeException;
 use App\Models\Account;
+use App\Services\Accounts\PlanResolver;
 use Illuminate\Database\QueryException;
 
 /**
- * Syncs a single account's `plan`, `account_uuid`, and `organization_uuid`
- * from Anthropic's profile API. Extracted from the `accounts:sync-profiles`
- * command so the command stays a thin iterate-and-tally loop and the per-
- * account logic is testable in isolation (the project's thin-entrypoint rule).
+ * Syncs a single account's resolved `plan`, raw `organization_type` and
+ * `rate_limit_tier`, `account_uuid`, and `organization_uuid` from Anthropic's
+ * profile API. Extracted from the `accounts:sync-profiles` command so the
+ * command stays a thin iterate-and-tally loop and the per-account logic is
+ * testable in isolation (the project's thin-entrypoint rule).
  *
  * A profile call failure records a safe {@see UsageProbeException::$reason} in
  * `probe_error` and never flips account status (that is the usage prober's
@@ -78,10 +80,12 @@ class AccountProfileSyncer
     }
 
     /**
-     * Apply the profile's plan, account_uuid, and organization_uuid to the
-     * account and save. `organization_uuid` is unique; a race where another
-     * account already claims the same organization uuid is caught and recorded
-     * as `probe_error` rather than allowed to bubble up, mirroring
+     * Apply the profile's raw `organization_type` and `rate_limit_tier`, the
+     * `plan` resolved from that pair via {@see PlanResolver}, and the
+     * `account_uuid`/`organization_uuid` to the account, then save.
+     * `organization_uuid` is unique; a race where another account already
+     * claims the same organization uuid is caught and recorded as
+     * `probe_error` rather than allowed to bubble up, mirroring
      * {@see AccountResolver::learnOrganizationUuid}.
      *
      * @param  Account  $account  the account being synced
@@ -90,7 +94,12 @@ class AccountProfileSyncer
      */
     private function applyProfile(Account $account, array $profile): void
     {
-        $account->plan = $profile['organization']['organization_type'] ?? $account->plan;
+        $organizationType = $profile['organization']['organization_type'] ?? null;
+        $rateLimitTier = $profile['organization']['rate_limit_tier'] ?? null;
+
+        $account->organization_type = $organizationType ?? $account->organization_type;
+        $account->rate_limit_tier = $rateLimitTier ?? $account->rate_limit_tier;
+        $account->plan = (new PlanResolver)->resolve($organizationType, $rateLimitTier);
         $account->account_uuid = $profile['account']['uuid'] ?? $account->account_uuid;
         $account->organization_uuid = $profile['organization']['uuid'] ?? $account->organization_uuid;
         $account->probe_error = null;

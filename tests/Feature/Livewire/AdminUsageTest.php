@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
@@ -56,7 +57,7 @@ test('admin users can view the admin usage page', function () {
 });
 
 test('admin usage renders account and user rows with token figures', function () {
-    $account = Account::factory()->create(['email' => 'team-a@example.com', 'plan' => 'max-20x']);
+    $account = Account::factory()->create(['email' => 'team-a@example.com', 'plan' => AccountPlan::Max20x]);
     $member = User::factory()->create(['slack_handle' => 'member-one']);
     $admin = User::factory()->admin()->create(['slack_handle' => 'the-admin']);
     $account->users()->attach([$member->id, $admin->id]);

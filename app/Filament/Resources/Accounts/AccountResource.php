@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Accounts;
 
+use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
 use App\Exceptions\AccountConnectException;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
@@ -13,6 +14,7 @@ use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
 use App\Services\AccountConnectService;
+use App\Services\Accounts\PlanResolver;
 use App\Services\UsageProber;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -25,6 +27,7 @@ use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
@@ -82,11 +85,11 @@ class AccountResource extends Resource
                     ->disabledOn('edit'),
                 TextInput::make('name')
                     ->maxLength(255),
-                TextInput::make('plan')
+                Select::make('plan')
+                    ->options(AccountPlan::class)
                     ->required()
-                    ->default('max-20x')
-                    ->maxLength(255)
-                    ->helperText('From Claude (organization type).')
+                    ->default(AccountPlan::Max20x)
+                    ->helperText('From Claude (organization type × rate limit tier).')
                     ->disabledOn('edit'),
                 Select::make('status')
                     ->options(AccountStatus::class)
@@ -113,8 +116,7 @@ class AccountResource extends Resource
                     ->searchable()
                     ->toggleable(),
                 TextColumn::make('plan')
-                    ->badge()
-                    ->color('gray'),
+                    ->badge(),
                 TextColumn::make('tracked_users_count')
                     ->counts('trackedUsers')
                     ->label('Members')
@@ -137,6 +139,12 @@ class AccountResource extends Resource
                     ->sortable(),
                 TextColumn::make('organization_uuid')
                     ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('organization_type')
+                    ->label('Org type')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('rate_limit_tier')
+                    ->label('Rate limit tier')
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 //
@@ -156,6 +164,40 @@ class AccountResource extends Resource
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                 ]),
+            ]);
+    }
+
+    /**
+     * Build the read-only detail schema shown on {@see ViewAccount}: identity,
+     * the resolved plan badge alongside the raw `organization_type` ×
+     * `rate_limit_tier` pair it was derived from (useful when
+     * {@see PlanResolver} can't narrow past
+     * {@see AccountPlan::Unknown}), connection status, and probe
+     * recency. Filament v5's `ViewRecord` picks this up automatically.
+     *
+     * @param  Schema  $schema  The schema being configured by Filament.
+     * @return Schema
+     */
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema
+            ->components([
+                TextEntry::make('email'),
+                TextEntry::make('name')
+                    ->placeholder('—'),
+                TextEntry::make('plan')
+                    ->badge(),
+                TextEntry::make('organization_type')
+                    ->label('Org type')
+                    ->placeholder('—'),
+                TextEntry::make('rate_limit_tier')
+                    ->label('Rate limit tier')
+                    ->placeholder('—'),
+                TextEntry::make('status')
+                    ->badge(),
+                TextEntry::make('last_probed_at')
+                    ->since()
+                    ->placeholder('Never'),
             ]);
     }
 

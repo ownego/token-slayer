@@ -37,7 +37,7 @@ The user's machine finishes the handoff: `token-slayer setup` pulls each provisi
 
 ## Quota tracking
 
-Server holds an **independent PKCE OAuth grant per account** (admin-driven code-paste connect flow; no collision with developers' own tokens). Constants in `config/token_slayer.php` (`anthropic.*`). A 5-minute `accounts:probe` command refreshes tokens (4 h headroom) and hits the free usage API → `account_usage_snapshots` (util 5h/7d as percent 0–100 + resets + raw JSON, pruned after 30 days). Refresh-token death → `accounts.status = needs_reauth`. A daily profile sync auto-updates `accounts.plan` from `organizationRateLimitTier`.
+Server holds an **independent PKCE OAuth grant per account** (admin-driven code-paste connect flow; no collision with developers' own tokens). Constants in `config/token_slayer.php` (`anthropic.*`). A 5-minute `accounts:probe` command refreshes tokens (4 h headroom) and hits the free usage API → `account_usage_snapshots` (util 5h/7d as percent 0–100 + resets + raw JSON, pruned after 30 days). Refresh-token death → `accounts.status = needs_reauth`. A daily profile sync stores the raw `organization_type` and `rate_limit_tier` from `/api/oauth/profile` and derives the normalized `accounts.plan` (an `AccountPlan` enum: free/pro/max_5x/max_20x/max/unknown) from that `organization_type` × `rate_limit_tier` pair via `PlanResolver`.
 
 ## Invariants
 
