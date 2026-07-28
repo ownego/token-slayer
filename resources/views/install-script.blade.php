@@ -376,10 +376,15 @@ CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
 # their own private accounts here (exit 0 before POST) so those events never
 # leave the machine. Not active yet -- default is track everything.
 
-curl -s --max-time 3 -X POST "$URL" \
+# The body goes over stdin, never as an argv argument: under Git Bash the
+# native curl.exe receives argv through a Win32 codepage conversion that
+# mangles every non-ASCII byte, and the server then drops the event with
+# "Malformed UTF-8". A single argument is also length-capped (~32 KB on
+# Windows, 128 KB per arg on Linux) while a long assistant message is not.
+printf '%s' "$BODY" | curl -s --max-time 3 -X POST "$URL" \
   -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
   -H 'Content-Type: application/json' \
-  -d "$BODY" >/dev/null 2>&1 &
+  --data-binary @- >/dev/null 2>&1 &
 HOOK_SH
 chmod +x "$HELPER"
 
@@ -801,6 +806,28 @@ echo "installed Antigravity CLI hooks -> $AGY_HOOKS"
 if [ -z "{!! $envCheck !!}" ] && [ ! -s "$HOME/.config/{{ $namespace }}/token" ]; then
     echo ""
     echo "Next: save your token from the profile page into ~/.config/{{ $namespace }}/token."
+fi
+
+# --- jq check --------------------------------------------------------------
+# The hook reads the token count out of the transcript with jq, and adds
+# client_version/account fields with it too. Without jq every hook still
+# answers 201 while recording NOTHING -- no damage, no attribution, no error
+# anywhere -- so this has to be loud. macOS ships no jq at all, which is how a
+# fresh Mac ends up tracking zero without anyone noticing.
+if ! command -v jq >/dev/null 2>&1; then
+    case "$(uname -s)" in
+        Darwin) JQ_HINT="brew install jq" ;;
+        *)      JQ_HINT="sudo apt install jq   (or: sudo dnf install jq / sudo pacman -S jq)" ;;
+    esac
+    echo ""
+    echo "=========================================================="
+    echo "WARNING: jq is NOT installed -- usage tracking will record"
+    echo "nothing. Hooks keep answering 201 and your fighter stays"
+    echo "silent: no damage, no account attribution, no error."
+    echo ""
+    echo "Install it, then start a new session:"
+    echo "  $JQ_HINT"
+    echo "=========================================================="
 fi
 
 echo ""
