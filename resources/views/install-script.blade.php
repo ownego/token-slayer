@@ -808,5 +808,27 @@ if [ -z "{!! $envCheck !!}" ] && [ ! -s "$HOME/.config/{{ $namespace }}/token" ]
     echo "Next: save your token from the profile page into ~/.config/{{ $namespace }}/token."
 fi
 
+# --- jq check --------------------------------------------------------------
+# The hook reads the token count out of the transcript with jq, and adds
+# client_version/account fields with it too. Without jq every hook still
+# answers 201 while recording NOTHING -- no damage, no attribution, no error
+# anywhere -- so this has to be loud. macOS ships no jq at all, which is how a
+# fresh Mac ends up tracking zero without anyone noticing.
+if ! command -v jq >/dev/null 2>&1; then
+    case "$(uname -s)" in
+        Darwin) JQ_HINT="brew install jq" ;;
+        *)      JQ_HINT="sudo apt install jq   (or: sudo dnf install jq / sudo pacman -S jq)" ;;
+    esac
+    echo ""
+    echo "=========================================================="
+    echo "WARNING: jq is NOT installed -- usage tracking will record"
+    echo "nothing. Hooks keep answering 201 and your fighter stays"
+    echo "silent: no damage, no account attribution, no error."
+    echo ""
+    echo "Install it, then start a new session:"
+    echo "  $JQ_HINT"
+    echo "=========================================================="
+fi
+
 echo ""
 echo "Tip: create ~/.config/{{ $namespace }}/custom.sh to customize what your fighter shows -- it survives every install and update."

@@ -132,3 +132,14 @@ it('pipes the event body into curl over stdin in the bundled hook, not as an arg
         ->toContain('--data-binary @-')
         ->not->toContain('-d "$BODY"');
 });
+
+it('warns at the end of install.ps1 when Git Bash cannot find jq', function () {
+    // The hook runs under Git Bash, so jq must be on THAT PATH — checking
+    // PowerShell's own PATH would pass while the hook still records nothing.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('command -v jq')
+        ->toContain('winget install jqlang.jq')
+        ->toContain('usage tracking will record nothing');
+});

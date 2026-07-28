@@ -819,6 +819,25 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue) -and -not (Get-Command 
   Write-Warning 'Attribution hooks need Git for Windows (Git Bash) to run. The CLI works without it; install Git for Windows to enable usage tracking.'
 }
 
+# --- jq check ----------------------------------------------------------------
+# jq has to be on Git Bash's PATH, not PowerShell's -- the hook runs under bash,
+# so probing Get-Command jq here would pass while the hook still records
+# nothing. Without jq every hook answers 201 and no damage is ever recorded.
+$bashExe = (Get-Command bash -ErrorAction SilentlyContinue)
+if ($bashExe) {
+  # -c, not -lc: the hook runs as a non-login bash, and a login shell sources
+  # /etc/profile into a wider PATH that would hide a jq the hook cannot see.
+  $jqFound = & $bashExe.Source -c 'command -v jq >/dev/null 2>&1 && echo yes' 2>$null
+  if ($jqFound -notcontains 'yes') {
+    Write-Host ""
+    Write-Host "=========================================================="
+    Write-Warning 'jq is NOT available to Git Bash -- usage tracking will record nothing. Hooks keep answering 201 and your fighter stays silent: no damage, no account attribution, no error.'
+    Write-Host "Install it, then open a new terminal:"
+    Write-Host "  winget install jqlang.jq"
+    Write-Host "=========================================================="
+  }
+}
+
 # --- Register the machine's current Claude login as a base account slot ----
 # (best-effort, never blocks the install)
 if (Test-Path $VenvPy) {

@@ -534,3 +534,20 @@ it('symlinks slayer to the token-slayer shim', function () {
 // The slayer-cli wheel route no longer redirects to a public asset URL; it
 // relays the wheel behind hook.token. That behavior is covered end-to-end in
 // tests/Feature/SlayerWheelTest.php.
+
+it('warns loudly at the end of the install when jq is missing, with an OS-specific install command', function () {
+    // Without jq the hook adds neither tokens nor client_version, so every
+    // event answers 201 and records nothing — silently, forever. macOS ships
+    // no jq at all, which is how a fresh Mac install ends up tracking zero.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('if ! command -v jq >/dev/null 2>&1; then')
+        ->toContain('brew install jq')
+        ->toContain('apt install jq');
+
+    $hookWritten = strpos($script, 'sha256 < "$HELPER" > "$CHECKSUM_FILE"');
+    $warning = strpos($script, 'if ! command -v jq >/dev/null 2>&1; then');
+
+    expect($hookWritten)->toBeLessThan($warning);
+});
