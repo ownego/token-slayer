@@ -120,3 +120,15 @@ it('stamps an empty client version into install.ps1 when the release cannot be r
     // Fail-soft: an empty stamp still yields a runnable script.
     expect($script)->toContain("\$ClientVersion = ''");
 });
+
+it('pipes the event body into curl over stdin in the bundled hook, not as an argv argument', function () {
+    // The hook this installer writes is the one Windows actually runs, so it
+    // is the file where the argv codepage conversion corrupts every non-ASCII
+    // byte of the payload — see the matching test for the POSIX installer.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('printf \'%s\' "$BODY" | curl -s --max-time 3 -X POST "$URL"')
+        ->toContain('--data-binary @-')
+        ->not->toContain('-d "$BODY"');
+});

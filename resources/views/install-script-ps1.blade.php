@@ -534,10 +534,15 @@ CUSTOM_SH="$HOME/.config/__TS_NAMESPACE__/custom.sh"
 # their own private accounts here (exit 0 before POST) so those events never
 # leave the machine. Not active yet -- default is track everything.
 
-curl -s --max-time 3 -X POST "$URL" \
+# The body goes over stdin, never as an argv argument: Git Bash hands argv to
+# the native curl.exe through a Win32 codepage conversion that mangles every
+# non-ASCII byte, and the server then drops the event with "Malformed UTF-8".
+# A single argument is also capped near 32 KB, well under a long assistant
+# message.
+printf '%s' "$BODY" | curl -s --max-time 3 -X POST "$URL" \
   -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
   -H 'Content-Type: application/json' \
-  -d "$BODY" >/dev/null 2>&1 &
+  --data-binary @- >/dev/null 2>&1 &
 '@
 $hookSh = $hookShTemplate.Replace('__TS_BASE_URL__', $BaseUrl).Replace('__TS_NAMESPACE__', $Ns).Replace('__TS_CLIENT_VERSION__', $ClientVersion)
 # LF line endings (not CRLF) -- this file is executed by bash.
