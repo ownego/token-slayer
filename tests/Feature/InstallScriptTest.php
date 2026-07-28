@@ -145,6 +145,21 @@ it('keeps only usage and attribution fields in the minimal payload allowlist', f
     }
 });
 
+it('pipes the event body into curl over stdin instead of passing it as an argv argument', function () {
+    // Windows Git Bash converts argv through the ANSI codepage before spawning
+    // the native curl.exe: every non-ASCII byte of the payload is mangled, and
+    // the server rejects the request as malformed UTF-8 (observed on prod).
+    // Passing a multi-KB body as one argument also risks E2BIG. stdin is
+    // neither converted nor length-capped.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('printf \'%s\' "$BODY" | curl -s --max-time 3 -X POST "$URL"')
+        ->toContain('--data-binary @-')
+        ->not->toContain('-d "$BODY"');
+>>>>>>> origin/master
+});
+
 it('stores a sha256 checksum of send-hook.sh after writing it', function () {
     $script = $this->get(route('install-script'))->content();
 
@@ -543,3 +558,20 @@ it('symlinks slayer to the token-slayer shim', function () {
 // The slayer-cli wheel route no longer redirects to a public asset URL; it
 // relays the wheel behind hook.token. That behavior is covered end-to-end in
 // tests/Feature/SlayerWheelTest.php.
+
+it('warns loudly at the end of the install when jq is missing, with an OS-specific install command', function () {
+    // Without jq the hook adds neither tokens nor client_version, so every
+    // event answers 201 and records nothing — silently, forever. macOS ships
+    // no jq at all, which is how a fresh Mac install ends up tracking zero.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('if ! command -v jq >/dev/null 2>&1; then')
+        ->toContain('brew install jq')
+        ->toContain('apt install jq');
+
+    $hookWritten = strpos($script, 'sha256 < "$HELPER" > "$CHECKSUM_FILE"');
+    $warning = strpos($script, 'if ! command -v jq >/dev/null 2>&1; then');
+
+    expect($hookWritten)->toBeLessThan($warning);
+});

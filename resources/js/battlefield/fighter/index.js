@@ -5,6 +5,7 @@ import { AnimState, AttackType, TextureKey } from '@battlefield/constants.js';
 import { Boss } from '@battlefield/boss.js';
 import { planRoute } from '@battlefield/move-geometry.js';
 import { resolveFighterPlacement } from '@battlefield/fighter-placement.js';
+import { driftedPositions } from '@battlefield/resync.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture } from './avatar.js';
 
 // Tiny RPG sprite geometry constants — do not change without re-measuring the atlas.
@@ -394,6 +395,36 @@ export class Fighter {
     };
 
     step(0);
+  }
+
+  /**
+   * Repairs any fighters whose local position has drifted from the
+   * server-authoritative snapshot returned by `Battlefield::resync()` — the
+   * fix for Reverb's lack of event replay, where a `FighterMoved` broadcast
+   * that fires while this client is disconnected is otherwise lost forever
+   * for this one viewer. Silently corrects only the fighters that actually
+   * drifted, leaving everyone already in sync untouched.
+   *
+   * @param {Array<{user_id: number|string, x: number, y: number}>} serverPositions
+   * @return {void}
+   */
+  reconcilePositions(serverPositions) {
+    if (!Array.isArray(serverPositions) || serverPositions.length === 0) {
+      return;
+    }
+    const L = this.scene.layout;
+    const localFighters = [];
+    for (const [id, entry] of this.scene.fighters.entries()) {
+      localFighters.push({
+        id,
+        x: entry.pos.x / L.logicalWidth,
+        y: entry.pos.y / L.logicalHeight,
+        waypointMoving: entry.waypointMoving,
+      });
+    }
+    for (const server of driftedPositions(localFighters, serverPositions)) {
+      this.handleFighterMoved({ user_id: server.user_id, x: server.x, y: server.y });
+    }
   }
 
   /**

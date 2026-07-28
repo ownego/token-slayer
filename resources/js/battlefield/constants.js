@@ -18,6 +18,8 @@ export const BusEvent = {
   FIGHTER_CHARGING: 'fighter-charging',
   FIGHTER_IDLED:    'fighter-idled',
   FIGHTER_MOVED:    'fighter-moved',
+  POSITIONS_RESYNCED: 'positions-resynced',
+  FIGHTER_CHARGE_CLEARED: 'fighter-charge-cleared',
 };
 
 /** Animation state identifiers shared across scene and managers. */

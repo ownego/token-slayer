@@ -75,6 +75,32 @@ class Battlefield extends Component
     }
 
     /**
+     * Returns the current authoritative position of every active fighter, so
+     * a client can repair its own state after its WebSocket reconnects.
+     * Reverb broadcasts have no replay, so a `FighterMoved` that fired while
+     * this client was disconnected would otherwise be lost forever for that
+     * one viewer; this lets the client re-request the truth instead.
+     *
+     * @return void
+     */
+    #[Renderless]
+    #[On('request-resync')]
+    public function resync(FighterPositionCache $positionCache): void
+    {
+        $userIds = User::where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
+            ->pluck('id')
+            ->all();
+
+        $positions = collect($positionCache->many($userIds))
+            ->filter()
+            ->map(fn (array $pos, int $userId) => ['user_id' => $userId, 'x' => $pos['x'], 'y' => $pos['y']])
+            ->values()
+            ->all();
+
+        $this->dispatch('battlefield-resynced', positions: $positions);
+    }
+
+    /**
      * @return array<int, array{userId: int, handle: ?string, damage: int}>
      */
     public function leaderboardForCurrentBoss(): array
