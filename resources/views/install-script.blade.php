@@ -376,10 +376,15 @@ CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
 # their own private accounts here (exit 0 before POST) so those events never
 # leave the machine. Not active yet -- default is track everything.
 
-curl -s --max-time 3 -X POST "$URL" \
+# The body goes over stdin, never as an argv argument: under Git Bash the
+# native curl.exe receives argv through a Win32 codepage conversion that
+# mangles every non-ASCII byte, and the server then drops the event with
+# "Malformed UTF-8". A single argument is also length-capped (~32 KB on
+# Windows, 128 KB per arg on Linux) while a long assistant message is not.
+printf '%s' "$BODY" | curl -s --max-time 3 -X POST "$URL" \
   -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
   -H 'Content-Type: application/json' \
-  -d "$BODY" >/dev/null 2>&1 &
+  --data-binary @- >/dev/null 2>&1 &
 HOOK_SH
 chmod +x "$HELPER"
 

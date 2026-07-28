@@ -122,6 +122,20 @@ it('sources the user custom.sh before sending', function () {
     expect($customShPosition)->toBeLessThan($sendPosition);
 });
 
+it('pipes the event body into curl over stdin instead of passing it as an argv argument', function () {
+    // Windows Git Bash converts argv through the ANSI codepage before spawning
+    // the native curl.exe: every non-ASCII byte of the payload is mangled, and
+    // the server rejects the request as malformed UTF-8 (observed on prod).
+    // Passing a multi-KB body as one argument also risks E2BIG. stdin is
+    // neither converted nor length-capped.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('printf \'%s\' "$BODY" | curl -s --max-time 3 -X POST "$URL"')
+        ->toContain('--data-binary @-')
+        ->not->toContain('-d "$BODY"');
+});
+
 it('stores a sha256 checksum of send-hook.sh after writing it', function () {
     $script = $this->get(route('install-script'))->content();
 
