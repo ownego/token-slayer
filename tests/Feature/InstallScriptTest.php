@@ -157,7 +157,6 @@ it('pipes the event body into curl over stdin instead of passing it as an argv a
         ->toContain('printf \'%s\' "$BODY" | curl -s --max-time 3 -X POST "$URL"')
         ->toContain('--data-binary @-')
         ->not->toContain('-d "$BODY"');
->>>>>>> origin/master
 });
 
 it('stores a sha256 checksum of send-hook.sh after writing it', function () {
