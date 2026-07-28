@@ -124,7 +124,7 @@ class AnthropicOAuthClient
                 ])
                 ->asJson()
                 ->post(config('token_slayer.anthropic.messages_endpoint'), [
-                    'model' => config('token_slayer.anthropic.session_anchor.model'),
+                    'model' => config('token_slayer.session_anchor.model'),
                     'max_tokens' => 1,
                     'messages' => [['role' => 'user', 'content' => '.']],
                 ]);
