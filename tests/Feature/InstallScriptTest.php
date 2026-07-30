@@ -562,14 +562,32 @@ it('downloads the wheel to a PEP 427-valid temp name before pip-installing (pip 
     // to a spec-valid filename, then install that local file.
     expect($script)
         ->toContain('slayer_cli-0.0.0-py3-none-any.whl')
-        ->toContain('install --quiet --break-system-packages "$SLAYER_WHL"');
+        ->toContain('install --quiet "$SLAYER_WHL"');
 
     // The served wheel version may be unchanged between builds, so a plain
     // --upgrade would ship stale code; the package code is force-reinstalled.
-    expect($script)->toContain('install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL"');
+    expect($script)->toContain('install --quiet --force-reinstall --no-deps "$SLAYER_WHL"');
 
     // It must NOT pip-install straight from the wheel URL/route anymore.
     expect($script)->not->toContain('pip" install --quiet --upgrade "'.route('slayer-wheel').'"');
+});
+
+it('does not pass --break-system-packages as a pip CLI flag to the wheel install (older pip lacks the option entirely)', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // pip < 23.0.1 has no --break-system-packages option at all and hard-fails
+    // with "no such option" if it's passed on the command line -- unlike an
+    // unrecognized env var, which old pip simply ignores. The exported
+    // PIP_BREAK_SYSTEM_PACKAGES=1 env var already covers the PEP 668 bypass
+    // for pip versions that understand it, so the wheel install commands must
+    // rely on that alone, not repeat the flag explicitly.
+    expect($script)->toContain('export PIP_BREAK_SYSTEM_PACKAGES=1');
+
+    $startPos = strpos($script, 'SLAYER_WHL_DIR="$(mktemp');
+    $endPos = strpos($script, 'rm -f "$SLAYER_WHL"');
+    expect($startPos)->not->toBeFalse()->and($endPos)->not->toBeFalse();
+    $installBlock = substr($script, $startPos, $endPos - $startPos);
+    expect($installBlock)->not->toContain('--break-system-packages');
 });
 
 it('does not let a malformed existing settings.json abort the whole installer', function () {
