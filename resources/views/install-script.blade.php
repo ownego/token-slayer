@@ -502,8 +502,13 @@ if [ "$SLAYER_HTTP" = "200" ]; then
   # stale code. First install pulls deps (first run) / no-ops; then
   # force-reinstall --no-deps refreshes ONLY the package code every time,
   # cheaply (deps untouched).
-  if "$SLAYER_PIP" install --quiet --break-system-packages "$SLAYER_WHL" \
-      && "$SLAYER_PIP" install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL"; then
+  # Deliberately no PEP-668-bypass CLI flag here: pip older than 23.0.1 has no
+  # such option at all and hard-fails with "no such option" when passed one,
+  # unlike an unrecognized env var, which old pip just ignores.
+  # PIP_BREAK_SYSTEM_PACKAGES=1 (exported above) already covers the bypass for
+  # pip versions that understand it, so it alone is enough here.
+  if "$SLAYER_PIP" install --quiet "$SLAYER_WHL" \
+      && "$SLAYER_PIP" install --quiet --force-reinstall --no-deps "$SLAYER_WHL"; then
     :
   else
     echo "slayer-cli: wheel install failed (see the error above) — CLI unavailable; hook tracking is still installed" >&2
