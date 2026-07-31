@@ -54,3 +54,17 @@ test('characterForBoss rotates through all fifteen fighters across consecutive b
 
     expect($characters)->toHaveCount(15);
 });
+
+test('characterForBoss returns the equipped character when one is set, ignoring the boss id', function () {
+    $user = User::factory()->create(['equipped_character' => FighterCharacter::Werebear]);
+
+    expect($user->characterForBoss(1))->toBe(FighterCharacter::Werebear->value)
+        ->and($user->characterForBoss(999))->toBe(FighterCharacter::Werebear->value)
+        ->and($user->characterForBoss(null))->toBe(FighterCharacter::Werebear->value);
+});
+
+test('characterForBoss falls back to the deterministic assignment when nothing is equipped', function () {
+    $user = User::factory()->create(['equipped_character' => null]);
+
+    expect($user->characterForBoss(7))->toBe(FighterCharacter::forUserAndBoss($user->id, 7)->value);
+});
