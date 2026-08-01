@@ -1,5 +1,5 @@
 <div
-    x-data="characterSelectModal(@js($characters()), @entangle('equipped'))"
+    x-data="characterSelectModal(@js($this->characters()), @js($equipped), @entangle('equippedKey'))"
     @open-character-select.window="open()"
 >
     <div
@@ -32,26 +32,27 @@
                 type="button"
                 @click="equip()"
                 class="w-full rounded-lg bg-amber-500/90 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-400"
-                x-text="currentKey() === equipped ? 'Equipped' : 'Equip'"
-                :disabled="currentKey() === equipped"
+                x-text="currentKey() === equippedKey ? 'Equipped' : 'Equip'"
+                :disabled="currentKey() === equippedKey"
             ></button>
         </div>
     </div>
 </div>
 
 <script>
-    window.characterSelectModal = function (characters, equipped) {
+    window.characterSelectModal = function (characters, startingCharacter, equippedKey) {
         return {
             characters,
-            equipped,
+            startingCharacter,
+            equippedKey,
             isOpen: false,
             index: 0,
             init() {
-                this.index = Math.max(0, this.characters.indexOf(this.equipped));
+                this.index = Math.max(0, this.characters.indexOf(this.startingCharacter));
                 this.$nextTick(() => this.redraw());
             },
             open() {
-                this.index = Math.max(0, this.characters.indexOf(this.equipped));
+                this.index = Math.max(0, this.characters.indexOf(this.startingCharacter));
                 this.isOpen = true;
                 this.$nextTick(() => this.redraw());
             },
@@ -75,7 +76,7 @@
                 bf.drawFighterPreview(bf.game, this.$refs.preview, this.currentKey());
             },
             equip() {
-                if (this.currentKey() === this.equipped) {
+                if (this.currentKey() === this.equippedKey) {
                     return;
                 }
                 this.$wire.equip(this.currentKey());

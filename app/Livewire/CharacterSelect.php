@@ -18,14 +18,30 @@ class CharacterSelect extends Component
     /**
      * The character value currently shown as equipped: the user's explicit
      * choice if any, otherwise today's deterministic per-boss assignment.
+     * Used ONLY to seed the carousel's starting index on open — for the
+     * true persisted equip state, see $equippedKey.
      *
      * @var string
      */
     public string $equipped = '';
 
     /**
+     * The user's explicitly persisted equipped character, or null when the
+     * user has never explicitly equipped one (still relying on the
+     * deterministic per-boss fallback). Drives the "Equipped"/"Equip"
+     * label and disabled state in the modal — unlike $equipped, this is
+     * never the deterministic fallback.
+     *
+     * @var string|null
+     */
+    public ?string $equippedKey = null;
+
+    /**
      * Resolves the starting equipped value from the current boss context,
-     * mirroring App\Livewire\Battlefield::mount()'s use of BossArena.
+     * mirroring App\Livewire\Battlefield::mount()'s use of BossArena, and
+     * the true persisted equip state for the modal's equip-status display.
+     * Guarded against a null user for defense-in-depth, even though the
+     * auth-only Blade wrapper makes this currently unreachable as a guest.
      *
      * @param  BossArena  $arena  supplies the current boss, used only to
      *                            resolve the deterministic fallback for
@@ -34,7 +50,14 @@ class CharacterSelect extends Component
      */
     public function mount(BossArena $arena): void
     {
-        $this->equipped = auth()->user()->characterForBoss($arena->current()->id);
+        $user = auth()->user();
+
+        if (! $user) {
+            return;
+        }
+
+        $this->equipped = $user->characterForBoss($arena->current()->id);
+        $this->equippedKey = $user->equipped_character?->value;
     }
 
     /**
@@ -42,6 +65,9 @@ class CharacterSelect extends Component
      * and broadcasts the change so every live viewer re-skins the sprite.
      * Unknown keys are silently rejected — the modal only ever sends keys
      * from characters(), so an unknown key implies a stale/tampered request.
+     * Also returns early on a guest/stale session: Livewire snapshots are
+     * signed but not session-bound, so an expired or replayed session can
+     * reach this method with no authenticated user.
      *
      * @param  string  $key  a FighterCharacter enum value
      * @return void
@@ -55,8 +81,14 @@ class CharacterSelect extends Component
         }
 
         $user = auth()->user();
+
+        if (! $user) {
+            return;
+        }
+
         $user->forceFill(['equipped_character' => $character])->save();
         $this->equipped = $character->value;
+        $this->equippedKey = $character->value;
 
         FighterCharacterChanged::dispatch($user);
     }

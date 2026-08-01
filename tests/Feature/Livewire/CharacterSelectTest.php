@@ -48,3 +48,21 @@ test('characters returns all fifteen fighter character keys', function () {
 
     expect((new CharacterSelect)->characters())->toBe(array_column(FighterCharacter::cases(), 'value'));
 });
+
+test('a user who has never equipped a character has a null equippedKey even though a deterministic character is shown', function () {
+    $user = User::factory()->create(['equipped_character' => null]);
+
+    Livewire::actingAs($user)
+        ->test(CharacterSelect::class)
+        ->assertSet('equippedKey', null)
+        ->assertSet('equipped', $user->characterForBoss(Boss::first()->id));
+});
+
+test('equipping a character sets equippedKey to the persisted value', function () {
+    $user = User::factory()->create(['equipped_character' => null]);
+
+    Livewire::actingAs($user)
+        ->test(CharacterSelect::class)
+        ->call('equip', 'werebear')
+        ->assertSet('equippedKey', FighterCharacter::Werebear->value);
+});
