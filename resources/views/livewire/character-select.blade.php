@@ -79,6 +79,7 @@
                 if (this.currentKey() === this.equippedKey) {
                     return;
                 }
+                this.startingCharacter = this.currentKey();
                 this.$wire.equip(this.currentKey());
                 this.isOpen = false;
             },
