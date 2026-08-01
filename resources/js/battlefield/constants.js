@@ -20,6 +20,7 @@ export const BusEvent = {
   FIGHTER_MOVED:    'fighter-moved',
   POSITIONS_RESYNCED: 'positions-resynced',
   FIGHTER_CHARGE_CLEARED: 'fighter-charge-cleared',
+  CHARACTER_CHANGED: 'character-changed',
 };
 
 /** Animation state identifiers shared across scene and managers. */

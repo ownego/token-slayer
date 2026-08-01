@@ -12,6 +12,7 @@ describe('BusEvent', () => {
     expect(BusEvent.FIGHTER_MOVED).toBe('fighter-moved');
     expect(BusEvent.POSITIONS_RESYNCED).toBe('positions-resynced');
     expect(BusEvent.FIGHTER_CHARGE_CLEARED).toBe('fighter-charge-cleared');
+    expect(BusEvent.CHARACTER_CHANGED).toBe('character-changed');
   });
 });
 
