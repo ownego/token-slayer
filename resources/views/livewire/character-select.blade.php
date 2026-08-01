@@ -1,7 +1,6 @@
 <div
     x-data="characterSelectModal(@js($characters()), @entangle('equipped'))"
     @open-character-select.window="open()"
-    x-init="init()"
 >
     <div
         x-show="isOpen"
