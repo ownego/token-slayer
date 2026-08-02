@@ -205,3 +205,15 @@ it('verifies the downloaded jq.exe checksum via Get-FileHash before trusting it'
         ->toContain('Get-FileHash -LiteralPath $path -Algorithm SHA256')
         ->toContain('checksum mismatch');
 });
+
+it('throws immediately if the venv or wheel bootstrap fails on Windows, surfacing the real error', function () {
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->not->toContain('hook tracking still installed')
+        ->not->toContain('CLI unavailable')
+        ->toContain('throw "slayer-cli: \'python -m venv --without-pip\' failed -- see the error above."')
+        ->toContain("if (-not (Test-Path (Join-Path \$Venv 'Scripts\\pip.exe'))) {\n  throw")
+        ->toContain('if ($LASTEXITCODE -ne 0) { throw')
+        ->toContain('$slayerErr = $_.Exception.Message');
+});

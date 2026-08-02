@@ -174,59 +174,71 @@ if (Test-Path $Venv) {
   if (-not $venvHealthy) { Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue }
 }
 
+# A failure anywhere in this chain now stops the whole install: a broken
+# slayer-cli venv used to be tolerated so a Python problem never bricked hook
+# tracking, but every install step is now required to actually work.
 & $PyExe @PyPrefix -m venv $Venv
 if (-not (Test-Path $VenvPy)) {
   Write-Warning 'slayer-cli: bundled pip bootstrap failed; retrying with get-pip...'
   Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue
   & $PyExe @PyPrefix -m venv --without-pip $Venv
-  if (Test-Path $VenvPy) {
-    (Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py).Content | & $VenvPy -
+  if (-not (Test-Path $VenvPy)) {
+    throw "slayer-cli: 'python -m venv --without-pip' failed -- see the error above."
   }
+  (Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py).Content | & $VenvPy -
 }
 if (-not (Test-Path (Join-Path $Venv 'Scripts\pip.exe'))) {
-  Write-Warning 'slayer-cli: venv/pip setup failed -- CLI unavailable; hook tracking still installed'
-} else {
-  # The wheel route requires a valid hook token. Resolve it: the env var
-  # passed on the install one-liner, else the token saved by a previous
-  # install, so `token-slayer update` (which re-runs this script with no env
-  # var) still works. Never echoed.
-  $slayerToken = [Environment]::GetEnvironmentVariable($EnvVarName)
-  if (-not $slayerToken) {
-    $wheelTokenFile = Join-Path $Cfg 'token'
-    if ((Test-Path $wheelTokenFile) -and (Get-Item $wheelTokenFile).Length -gt 0) {
-      $slayerToken = (Get-Content -Raw -LiteralPath $wheelTokenFile).Trim()
-    }
-  }
-
-  $whl = Join-Path $env:TEMP 'slayer_cli-0.0.0-py3-none-any.whl'
-  # Invoke-WebRequest throws on a non-2xx status, and -SkipHttpErrorCheck
-  # does not exist on PowerShell 5.1 (this script requires 5.1), so the
-  # status is read from the exception in the catch. A request that never
-  # got a response at all (DNS/TLS failure, no connectivity) has no
-  # .Response and is treated as 0.
-  $slayerHttp = 0
-  try {
-    Invoke-WebRequest -UseBasicParsing -Uri $WheelUrl -OutFile $whl `
-      -Headers @{ Authorization = "Bearer $slayerToken" } | Out-Null
-    $slayerHttp = 200
-  } catch {
-    if ($_.Exception.Response) { $slayerHttp = [int]$_.Exception.Response.StatusCode } else { $slayerHttp = 0 }
-  }
-
-  if ($slayerHttp -eq 200) {
-    # Two steps on purpose: the served wheel is always "latest" and its version
-    # may be UNCHANGED between builds, so a plain install is a no-op and ships
-    # stale code. First install pulls deps; force-reinstall --no-deps refreshes
-    # only the package code every time, cheaply (deps untouched).
-    & $VenvPy -m pip install --quiet $whl
-    & $VenvPy -m pip install --quiet --force-reinstall --no-deps $whl
-  } elseif ($slayerHttp -eq 401) {
-    Write-Warning 'slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows.'
-  } else {
-    Write-Warning "slayer-cli: could not download the CLI right now (server said $slayerHttp). Try again in a few minutes; hook tracking is still installed."
-  }
-  Remove-Item $whl -ErrorAction SilentlyContinue
+  throw 'slayer-cli: venv/pip setup failed -- see the error above.'
 }
+
+# The wheel route requires a valid hook token. Resolve it: the env var
+# passed on the install one-liner, else the token saved by a previous
+# install, so `token-slayer update` (which re-runs this script with no env
+# var) still works. Never echoed.
+$slayerToken = [Environment]::GetEnvironmentVariable($EnvVarName)
+if (-not $slayerToken) {
+  $wheelTokenFile = Join-Path $Cfg 'token'
+  if ((Test-Path $wheelTokenFile) -and (Get-Item $wheelTokenFile).Length -gt 0) {
+    $slayerToken = (Get-Content -Raw -LiteralPath $wheelTokenFile).Trim()
+  }
+}
+
+$whl = Join-Path $env:TEMP 'slayer_cli-0.0.0-py3-none-any.whl'
+# Invoke-WebRequest throws on a non-2xx status, and -SkipHttpErrorCheck
+# does not exist on PowerShell 5.1 (this script requires 5.1), so the
+# status is read from the exception in the catch. A request that never
+# got a response at all (DNS/TLS failure, no connectivity) has no
+# .Response and is treated as 0; the exception message is kept so a
+# transport failure is diagnosable instead of just "0".
+$slayerHttp = 0
+$slayerErr = $null
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri $WheelUrl -OutFile $whl `
+    -Headers @{ Authorization = "Bearer $slayerToken" } | Out-Null
+  $slayerHttp = 200
+} catch {
+  $slayerErr = $_.Exception.Message
+  if ($_.Exception.Response) { $slayerHttp = [int]$_.Exception.Response.StatusCode } else { $slayerHttp = 0 }
+}
+
+if ($slayerHttp -eq 200) {
+  # Two steps on purpose: the served wheel is always "latest" and its version
+  # may be UNCHANGED between builds, so a plain install is a no-op and ships
+  # stale code. First install pulls deps; force-reinstall --no-deps refreshes
+  # only the package code every time, cheaply (deps untouched). pip's own
+  # exit code is checked explicitly -- a native exe's non-zero exit is NOT a
+  # terminating error under $ErrorActionPreference='Stop' the way a cmdlet's
+  # is, so a failed install would otherwise be silently ignored.
+  & $VenvPy -m pip install --quiet $whl
+  if ($LASTEXITCODE -ne 0) { throw 'slayer-cli: wheel install failed -- see the error above.' }
+  & $VenvPy -m pip install --quiet --force-reinstall --no-deps $whl
+  if ($LASTEXITCODE -ne 0) { throw 'slayer-cli: wheel force-reinstall failed -- see the error above.' }
+} elseif ($slayerHttp -eq 401) {
+  throw 'slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows.'
+} else {
+  throw "slayer-cli: could not download the CLI (server said $slayerHttp): $slayerErr"
+}
+Remove-Item $whl -ErrorAction SilentlyContinue
 
 # --- Shims (3 .cmd, absolute venv path) -------------------------------------
 # Absolute $VenvPy avoids %~dp0 layout coupling.
