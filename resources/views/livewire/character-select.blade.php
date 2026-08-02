@@ -414,18 +414,26 @@
             },
 
             _bootPreview() {
+                if (!this.isOpen) {
+                    return;
+                }
                 const bf = window.__battlefield;
                 if (!bf?.createCharacterPreview) {
                     setTimeout(() => this._bootPreview(), 50);
                     return;
                 }
+                if (this.previewGame) {
+                    return;
+                }
                 this.previewGame = bf.createCharacterPreview(this.$refs.previewMount);
                 this.previewGame.events.once('preview-ready', () => {
+                    if (!this.isOpen) {
+                        return;
+                    }
                     this.previewScene = this.previewGame.scene.getScene('character-preview');
                     this._applyCharacter(this.previewKey);
                 });
                 this._drawStaticThumbnails();
-                this._refreshAnimatedTiles();
             },
 
             close() {
