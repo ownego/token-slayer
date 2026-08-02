@@ -1,14 +1,7 @@
 {{-- resources/views/partials/setup/cowork-track.blade.php --}}
 <div x-show="track === 'cowork'" x-cloak x-data="{ platform: null, plainTokenGenerated: false }">
     {{-- Step 2: platform (macOS/Windows only — Cowork has no Linux build) --}}
-    <div x-show="step === 2"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="direction === 1 ? 'opacity-0 translate-x-6' : 'opacity-0 -translate-x-6'"
-        x-transition:enter-end="'opacity-100 translate-x-0'"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="'opacity-100 translate-x-0'"
-        x-transition:leave-end="direction === 1 ? 'opacity-0 -translate-x-6' : 'opacity-0 translate-x-6'"
-    >
+    <x-setup.step :n="2">
         <p class="text-xs font-semibold text-orange-600 mb-1">Step 2 / 4</p>
         <h2 class="text-xl font-bold text-gray-900 mb-4">Choose your platform</h2>
         <div class="grid grid-cols-2 gap-3">
@@ -16,17 +9,10 @@
             <button type="button" @click="platform = 'windows'; direction = 1; step = 3" class="cursor-pointer border-2 rounded-lg py-4 text-sm font-semibold transition" :class="platform === 'windows' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">Windows</button>
         </div>
         <button type="button" @click="direction = -1; track = null" class="cursor-pointer mt-4 text-sm font-semibold text-gray-500 hover:text-orange-600 transition inline-flex items-center gap-1">← Back</button>
-    </div>
+    </x-setup.step>
 
     {{-- Step 3: python note (no branch — cowork just needs any python3/python) --}}
-    <div x-show="step === 3"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="direction === 1 ? 'opacity-0 translate-x-6' : 'opacity-0 -translate-x-6'"
-        x-transition:enter-end="'opacity-100 translate-x-0'"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="'opacity-100 translate-x-0'"
-        x-transition:leave-end="direction === 1 ? 'opacity-0 -translate-x-6' : 'opacity-0 translate-x-6'"
-    >
+    <x-setup.step :n="3">
         <p class="text-xs font-semibold text-orange-600 mb-1">Step 3 / 4</p>
         <h2 class="text-xl font-bold text-gray-900 mb-4">Python requirement</h2>
         <p class="text-sm text-gray-600 mb-4">The Cowork watcher just needs <b>any</b> Python 3 already on your machine — it doesn't require 3.10+ like the CLI track, and most machines already have one.</p>
@@ -34,17 +20,10 @@
             <button type="button" @click="direction = -1; step = 2" class="cursor-pointer text-sm font-semibold text-gray-500 hover:text-orange-600 transition inline-flex items-center gap-1">← Back</button>
             <button type="button" @click="direction = 1; step = 4" class="cursor-pointer bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-700 transition">Continue →</button>
         </div>
-    </div>
+    </x-setup.step>
 
     {{-- Step 4: install + verify + attribution caveat --}}
-    <div x-show="step === 4"
-        x-transition:enter="transition ease-out duration-300"
-        x-transition:enter-start="direction === 1 ? 'opacity-0 translate-x-6' : 'opacity-0 -translate-x-6'"
-        x-transition:enter-end="'opacity-100 translate-x-0'"
-        x-transition:leave="transition ease-in duration-200"
-        x-transition:leave-start="'opacity-100 translate-x-0'"
-        x-transition:leave-end="direction === 1 ? 'opacity-0 -translate-x-6' : 'opacity-0 translate-x-6'"
-    >
+    <x-setup.step :n="4">
         <p class="text-xs font-semibold text-orange-600 mb-1">Step 4 / 4</p>
         <h2 class="text-xl font-bold text-gray-900 mb-4">Install</h2>
 
@@ -64,5 +43,5 @@
         </div>
 
         <button type="button" @click="direction = -1; step = 3" class="cursor-pointer text-sm font-semibold text-gray-500 hover:text-orange-600 transition inline-flex items-center gap-1">← Back</button>
-    </div>
+    </x-setup.step>
 </div>

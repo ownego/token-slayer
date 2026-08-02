@@ -95,7 +95,7 @@ test('cli track verify step mentions the tok alias and links to the guide', func
         ->assertSee('href="'.route('guide').'"', escape: false);
 });
 
-test('cli track back button is present on every step and preserves entered state', function () {
+test('cli track renders a back control on the platform step', function () {
     $this->actingAs(User::factory()->create());
 
     $this->get('/setup')

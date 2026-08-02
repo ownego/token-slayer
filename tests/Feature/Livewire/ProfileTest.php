@@ -199,7 +199,7 @@ test('profile does not double-wrap the account nav in its own width constraint',
 
     $html = $this->get('/profile')->getContent();
 
-    $navPos = strpos($html, 'account-nav') !== false ? strpos($html, '<nav') : strpos($html, '<nav');
+    $navPos = strpos($html, '<nav');
     $wrapperPos = strpos($html, 'p-8 max-w-3xl mx-auto space-y-6');
 
     expect($navPos)->not->toBeFalse()

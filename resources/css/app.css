@@ -44,6 +44,24 @@
     to { transform: scaleX(1); }
 }
 
+.step-in-fwd {
+    animation: step-in-fwd 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.step-in-back {
+    animation: step-in-back 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes step-in-fwd {
+    from { opacity: 0; transform: translateX(1.5rem); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes step-in-back {
+    from { opacity: 0; transform: translateX(-1.5rem); }
+    to { opacity: 1; transform: none; }
+}
+
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../**/*.blade.php';
