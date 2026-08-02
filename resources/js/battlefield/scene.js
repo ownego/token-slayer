@@ -11,6 +11,7 @@ import { Charge } from './charge.js';
 import { Bubble } from './bubble.js';
 import { MoveInput } from './move-input.js';
 import { Fighter } from './fighter.js';
+import { ensureSparkTexture } from './spark-texture.js';
 
 /** Phaser scene coordinator — wires all battlefield managers and handles the Phaser lifecycle. */
 export class BattlefieldScene extends Phaser.Scene {
@@ -125,7 +126,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const L = this.layout;
 
     this.add.rectangle(L.logicalWidth / 2, L.logicalHeight / 2, L.logicalWidth, L.logicalHeight, BG_COLOR);
-    this.makeSparkTexture();
+    ensureSparkTexture(this);
     this.add.image(L.logicalWidth / 2, L.logicalHeight / 2, this.makeVignetteTexture());
 
     const state = this.game.registry.get('initialState');
@@ -247,16 +248,4 @@ export class BattlefieldScene extends Phaser.Scene {
     return key;
   }
 
-  /** Creates and registers the spark particle texture used by charge and attack effects. */
-  makeSparkTexture() {
-    if (this.textures.exists(TextureKey.SPARK)) {
-      return;
-    }
-    const g = this.make.graphics({ add: false });
-    g.fillStyle(0xffffff, 1);
-    // Thin triangle — tip at right (24,3), base at left
-    g.fillTriangle(24, 3, 0, 0, 0, 6);
-    g.generateTexture(TextureKey.SPARK, 24, 6);
-    g.destroy();
-  }
 }
