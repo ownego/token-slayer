@@ -120,7 +120,7 @@ test('cowork track offers macOS and Windows only, not Linux', function () {
     $this->get('/setup')
         ->assertOk()
         ->assertSeeInOrder(['macOS', 'Windows'])
-        ->assertSee('không gắn được account cụ thể');
+        ->assertSee("can't attribute it to a specific account", escape: false);
 });
 
 test('cowork track shows the attribution caveat', function () {
@@ -128,7 +128,7 @@ test('cowork track shows the attribution caveat', function () {
 
     $this->get('/setup')
         ->assertOk()
-        ->assertSee('không gắn được account cụ thể')
+        ->assertSee("can't attribute it to a specific account", escape: false)
         ->assertSee('5h/7d');
 });
 

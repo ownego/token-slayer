@@ -1,41 +1,68 @@
 {{-- resources/views/partials/setup/cowork-track.blade.php --}}
 <div x-show="track === 'cowork'" x-cloak x-data="{ platform: null, plainTokenGenerated: false }">
     {{-- Step 2: platform (macOS/Windows only — Cowork has no Linux build) --}}
-    <div x-show="step === 2">
-        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 2 / 4</p>
-        <h2 class="text-xl font-bold text-gray-900 mb-4">Chọn nền tảng</h2>
+    <div x-show="step === 2"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="direction === 1 ? 'opacity-0 translate-x-6' : 'opacity-0 -translate-x-6'"
+        x-transition:enter-end="'opacity-100 translate-x-0'"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="'opacity-100 translate-x-0'"
+        x-transition:leave-end="direction === 1 ? 'opacity-0 -translate-x-6' : 'opacity-0 translate-x-6'"
+    >
+        <p class="text-xs font-semibold text-orange-600 mb-1">Step 2 / 4</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Choose your platform</h2>
         <div class="grid grid-cols-2 gap-3">
-            <button type="button" @click="platform = 'macos'; step = 3" class="border-2 rounded-lg py-4 text-sm font-semibold" :class="platform === 'macos' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">macOS</button>
-            <button type="button" @click="platform = 'windows'; step = 3" class="border-2 rounded-lg py-4 text-sm font-semibold" :class="platform === 'windows' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">Windows</button>
+            <button type="button" @click="platform = 'macos'; direction = 1; step = 3" class="cursor-pointer border-2 rounded-lg py-4 text-sm font-semibold transition" :class="platform === 'macos' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">macOS</button>
+            <button type="button" @click="platform = 'windows'; direction = 1; step = 3" class="cursor-pointer border-2 rounded-lg py-4 text-sm font-semibold transition" :class="platform === 'windows' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">Windows</button>
         </div>
+        <button type="button" @click="direction = -1; track = null" class="cursor-pointer mt-4 text-sm font-semibold text-gray-500 hover:text-orange-600 transition inline-flex items-center gap-1">← Back</button>
     </div>
 
     {{-- Step 3: python note (no branch — cowork just needs any python3/python) --}}
-    <div x-show="step === 3">
-        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 3 / 4</p>
-        <h2 class="text-xl font-bold text-gray-900 mb-4">Yêu cầu Python</h2>
-        <p class="text-sm text-gray-600 mb-4">Watcher Cowork chỉ cần <b>bất kỳ</b> bản Python 3 nào đã cài sẵn trên máy — không đòi bản 3.10+ như track CLI, hầu hết máy đều có sẵn.</p>
-        <button type="button" @click="step = 4" class="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg">Tiếp tục →</button>
+    <div x-show="step === 3"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="direction === 1 ? 'opacity-0 translate-x-6' : 'opacity-0 -translate-x-6'"
+        x-transition:enter-end="'opacity-100 translate-x-0'"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="'opacity-100 translate-x-0'"
+        x-transition:leave-end="direction === 1 ? 'opacity-0 -translate-x-6' : 'opacity-0 translate-x-6'"
+    >
+        <p class="text-xs font-semibold text-orange-600 mb-1">Step 3 / 4</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Python requirement</h2>
+        <p class="text-sm text-gray-600 mb-4">The Cowork watcher just needs <b>any</b> Python 3 already on your machine — it doesn't require 3.10+ like the CLI track, and most machines already have one.</p>
+        <div class="flex items-center justify-between">
+            <button type="button" @click="direction = -1; step = 2" class="cursor-pointer text-sm font-semibold text-gray-500 hover:text-orange-600 transition inline-flex items-center gap-1">← Back</button>
+            <button type="button" @click="direction = 1; step = 4" class="cursor-pointer bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-700 transition">Continue →</button>
+        </div>
     </div>
 
     {{-- Step 4: install + verify + attribution caveat --}}
-    <div x-show="step === 4">
-        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 4 / 4</p>
-        <h2 class="text-xl font-bold text-gray-900 mb-4">Cài đặt</h2>
+    <div x-show="step === 4"
+        x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="direction === 1 ? 'opacity-0 translate-x-6' : 'opacity-0 -translate-x-6'"
+        x-transition:enter-end="'opacity-100 translate-x-0'"
+        x-transition:leave="transition ease-in duration-200"
+        x-transition:leave-start="'opacity-100 translate-x-0'"
+        x-transition:leave-end="direction === 1 ? 'opacity-0 -translate-x-6' : 'opacity-0 translate-x-6'"
+    >
+        <p class="text-xs font-semibold text-orange-600 mb-1">Step 4 / 4</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Install</h2>
 
         <template x-if="!plainTokenGenerated">
-            <button type="button" @click="$wire.generateToken().then(() => plainTokenGenerated = true)" class="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg mb-2">Generate token</button>
+            <button type="button" @click="$wire.generateToken().then(() => plainTokenGenerated = true)" class="cursor-pointer bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg mb-2 hover:bg-gray-700 transition">Generate token</button>
         </template>
-        <p class="text-xs text-amber-700 mb-4">Tạo token mới ở đây sẽ làm mất hiệu lực token cũ trên mọi máy khác (kể cả track Claude CLI trên chính máy này) đang dùng token đó.</p>
+        <p class="text-xs text-amber-700 mb-4">Generating a new token here invalidates the old one everywhere else it's used — including the Claude CLI track on this same machine.</p>
 
         <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-2" @click="copy('cowork-install', '{{ addslashes($installCowork) }}')">
             {{ $installCowork }}
             <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'cowork-install' ? 'Copied' : 'Copy'"></span>
         </div>
-        <p x-show="platform === 'windows'" x-cloak class="text-xs text-amber-700 mb-4">Windows: tự động lên lịch chạy watcher chưa được hỗ trợ — bạn cần tự chạy lại lệnh trên theo chu kỳ.</p>
+        <p x-show="platform === 'windows'" x-cloak class="text-xs text-amber-700 mb-4">Windows: automatic watcher scheduling isn't supported yet — you'll need to re-run the command above on your own schedule.</p>
 
-        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-            Cowork tính đúng token thật (Cowork chạy Claude Code thật trong VM, trừ đúng vào quota 5h/7d của account đó) — nhưng watcher <b>không gắn được account cụ thể</b>, nên usage luôn hiện là cá nhân trên <code>/profile</code> dù bạn dùng account nào trong Cowork.
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 mb-4">
+            Cowork's token usage is real (Cowork runs actual Claude Code in a VM, counting against that account's 5h/7d quota) — but the watcher <b>can't attribute it to a specific account</b>, so it always shows as personal usage on <code>/profile</code> no matter which account you use inside Cowork.
         </div>
+
+        <button type="button" @click="direction = -1; step = 3" class="cursor-pointer text-sm font-semibold text-gray-500 hover:text-orange-600 transition inline-flex items-center gap-1">← Back</button>
     </div>
 </div>
