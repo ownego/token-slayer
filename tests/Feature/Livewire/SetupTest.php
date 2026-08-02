@@ -131,3 +131,13 @@ test('cowork track bakes the token into the cowork install command', function ()
         ->call('generateToken')
         ->assertSee('curl -fsSL '.route('cowork-install-script'), escape: false);
 });
+
+test('claude chat track lists tampermonkey, the chrome flag, and the userscript install', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSee('Tampermonkey')
+        ->assertSee('Allow user scripts')
+        ->assertSee(route('userscript'));
+});

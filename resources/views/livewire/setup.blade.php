@@ -46,6 +46,7 @@
         </div>
         <div x-show="track === 'chat'" x-cloak>
             @include('partials.setup.stepper', ['labels' => ['Công cụ', 'Cài đặt', 'Xong']])
+            @include('partials.setup.chat-track')
         </div>
     </div>
 </div>

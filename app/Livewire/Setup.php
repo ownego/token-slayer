@@ -62,6 +62,7 @@ class Setup extends Component
             'codexSnippet' => view('partials.codex-snippet', ['baseUrl' => url('/api/events').'?provider=codex', 'namespace' => $namespace])->render(),
             'antigravitySnippet' => view('partials.antigravity-snippet', ['baseUrl' => url('/api/events'), 'namespace' => $namespace])->render(),
             'installCowork' => $presenter->cowork(route('cowork-install-script')),
+            'userscriptUrl' => route('userscript'),
         ]);
     }
 }
