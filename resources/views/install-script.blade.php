@@ -522,19 +522,25 @@ if ! "$PY" -m venv "$SLAYER_VENV_DIR"; then
     # --break-system-packages (so PEP 668 can't block it even when pip fails to
     # detect the venv). Each step is separate and errors are NOT suppressed, so
     # a real failure (network/SSL/unsupported version) is visible in the output.
+    # A failure anywhere in this chain now stops the whole install: a broken
+    # slayer-cli venv used to be tolerated so a Python problem never bricked
+    # hook tracking, but every install step is now required to actually work.
     echo "slayer-cli: bundled pip bootstrap failed; retrying without it..." >&2
     rm -rf "$SLAYER_VENV_DIR"
     if ! "$PY" -m venv --without-pip "$SLAYER_VENV_DIR"; then
-        echo "slayer-cli: 'python -m venv --without-pip' failed (see error above) — CLI unavailable; hook tracking is still installed" >&2
+        echo "slayer-cli: 'python -m venv --without-pip' failed (see error above)." >&2
+        exit 1
     elif ! curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/slayer-get-pip.py; then
-        echo "slayer-cli: could not download get-pip.py — CLI unavailable; hook tracking is still installed" >&2
+        echo "slayer-cli: could not download get-pip.py (see error above)." >&2
+        exit 1
     elif _slayer_gp=$("$SLAYER_VENV_DIR/bin/python" /tmp/slayer-get-pip.py --break-system-packages 2>&1); then
         rm -f /tmp/slayer-get-pip.py
         echo "slayer-cli: pip bootstrapped via get-pip." >&2
     else
         printf '%s\n' "$_slayer_gp" >&2
         rm -f /tmp/slayer-get-pip.py
-        echo "slayer-cli: get-pip bootstrap failed (see error above) — CLI unavailable; hook tracking is still installed" >&2
+        echo "slayer-cli: get-pip bootstrap failed (see error above)." >&2
+        exit 1
     fi
 fi
 # pip refuses to install straight from {{ $slayerWheelUrl }}: its basename
@@ -555,29 +561,42 @@ if [ -z "$SLAYER_TOKEN" ] && [ -s "$HOME/.config/{{ $namespace }}/token" ]; then
 fi
 
 # No -f: we must read the status code, not fail silently. `|| echo "000"` keeps
-# a hard curl error from aborting the script under `set -e`.
+# a hard curl error from aborting the script under `set -e`. curl's own
+# stderr (DNS/TLS/timeout detail) is captured rather than discarded, so a
+# "000" (curl itself failed, not just a non-2xx response) is diagnosable.
+SLAYER_CURL_ERR="$SLAYER_WHL_DIR/curl-stderr"
 SLAYER_HTTP=$(curl -sSL -w '%{http_code}' \
     -H "Authorization: Bearer $SLAYER_TOKEN" \
-    "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>/dev/null || echo "000")
+    "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>"$SLAYER_CURL_ERR" || echo "000")
 
 if [ "$SLAYER_HTTP" = "200" ]; then
   # Two steps on purpose: the served wheel is always "latest" and its version
   # may be UNCHANGED between builds, so a plain `--upgrade` is a no-op and ships
   # stale code. First install pulls deps (first run) / no-ops; then
   # force-reinstall --no-deps refreshes ONLY the package code every time,
-  # cheaply (deps untouched).
-  if "$SLAYER_PIP" install --quiet --break-system-packages "$SLAYER_WHL" \
-      && "$SLAYER_PIP" install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL"; then
+  # cheaply (deps untouched). --quiet keeps successful-run output short; on
+  # failure stderr is captured explicitly and printed in full below rather
+  # than trusting --quiet to have shown enough on its own.
+  if SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --break-system-packages "$SLAYER_WHL" 2>&1) \
+      && SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL" 2>&1); then
     :
   else
-    echo "slayer-cli: wheel install failed (see the error above) — CLI unavailable; hook tracking is still installed" >&2
+    printf '%s\n' "$SLAYER_PIP_ERR" >&2
+    echo "slayer-cli: wheel install failed (see the error above)." >&2
+    exit 1
   fi
 elif [ "$SLAYER_HTTP" = "401" ]; then
   echo "slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows." >&2
+  exit 1
+elif [ "$SLAYER_HTTP" = "000" ]; then
+  cat "$SLAYER_CURL_ERR" >&2
+  echo "slayer-cli: could not reach the wheel download URL (see error above)." >&2
+  exit 1
 else
-  echo "slayer-cli: could not download the CLI right now (server said $SLAYER_HTTP). Try again in a few minutes; hook tracking is still installed." >&2
+  echo "slayer-cli: could not download the CLI (server said $SLAYER_HTTP)." >&2
+  exit 1
 fi
-rm -f "$SLAYER_WHL"
+rm -f "$SLAYER_WHL" "$SLAYER_CURL_ERR"
 
 cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
 #!/usr/bin/env bash

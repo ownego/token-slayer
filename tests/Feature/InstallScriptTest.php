@@ -584,21 +584,39 @@ it('does not let a malformed existing settings.json abort the whole installer', 
         ->toContain('was invalid JSON');
 });
 
-it('falls back to the old update/status behavior when the venv is missing, and never blocks on a python failure', function () {
+it('stops the install immediately if the venv or wheel bootstrap fails, surfacing the real error', function () {
     $script = $this->get(route('install-script'))->content();
 
     expect($script)
-        ->toContain('already up to date')
+        ->toContain('already up to date')          // token-slayer CLI's own update/status subcommand, unrelated to install-time failure handling
         ->toContain('usage: token-slayer {update|status}')
-        ->toContain('fall back to the old minimal')       // the venv-missing fallback comment
-        ->toContain('hook tracking is still installed');  // wheel/venv steps never block the install
+        ->not->toContain('hook tracking is still installed')
+        ->not->toContain('CLI unavailable');
 
-    $execPosition = strpos($script, 'exec env SLAYER_NS');
-    $fallbackPosition = strpos($script, 'already up to date');
+    // Every venv/get-pip/wheel failure branch now exits instead of just logging.
+    foreach ([
+        "'python -m venv --without-pip' failed",
+        'could not download get-pip.py',
+        'get-pip bootstrap failed',
+        'wheel install failed',
+        'your token is missing or no longer valid',
+    ] as $failureMessage) {
+        $msgPos = strpos($script, $failureMessage);
+        expect($msgPos)->not->toBeFalse("expected to find failure message: $failureMessage");
+        $exitPos = strpos($script, 'exit 1', $msgPos);
+        expect($exitPos)->not->toBeFalse()
+            ->and($exitPos - $msgPos)->toBeLessThan(160);
+    }
+});
 
-    expect($execPosition)->not->toBeFalse()
-        ->and($fallbackPosition)->not->toBeFalse()
-        ->and($execPosition)->toBeLessThan($fallbackPosition);
+it('captures and prints the real curl/pip error instead of discarding it on failure', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('2>"$SLAYER_CURL_ERR"')
+        ->toContain('cat "$SLAYER_CURL_ERR" >&2')
+        ->toContain('SLAYER_PIP_ERR=$("$SLAYER_PIP" install')
+        ->toContain('printf \'%s\n\' "$SLAYER_PIP_ERR" >&2');
 });
 
 it('symlinks slayer to the token-slayer shim', function () {
