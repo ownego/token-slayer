@@ -105,6 +105,7 @@ export class CharacterPreviewScene extends Phaser.Scene {
     if (skill.loop) {
       return;
     }
+    this.sprite.off(Phaser.Animations.Events.ANIMATION_COMPLETE);
     this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, onComplete);
 
     if (skill.effectAnimKey) {
@@ -115,7 +116,8 @@ export class CharacterPreviewScene extends Phaser.Scene {
         .play(skill.effectAnimKey);
       effect.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => effect.destroy());
 
-      this.time.delayedCall(getProjectileLaunchDelay(skill.durationMs), () => {
+      this._pendingProjectileTimer?.remove(false);
+      this._pendingProjectileTimer = this.time.delayedCall(getProjectileLaunchDelay(skill.durationMs), () => {
         spawnPreviewProjectile(this, {
           fromX: this.centerX,
           fromY: this.centerY,
