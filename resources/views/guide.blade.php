@@ -2,6 +2,8 @@
 @extends('layouts.app')
 
 @section('content')
+    @include('partials.account-nav', ['active' => 'guide'])
+
 <div class="max-w-3xl mx-auto p-8 space-y-8">
     <h1 class="text-2xl font-bold text-gray-900">CLI command reference</h1>
     <p class="text-sm text-gray-500">Everything <code class="text-gray-700">token-slayer</code> can do once it's installed, and how to customize what your fighter shows.</p>

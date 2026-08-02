@@ -17,6 +17,16 @@ test('profile redirects guests to the slack login route', function () {
     $this->get('/profile')->assertRedirect(route('slack.login'));
 });
 
+test('profile shows the shared account nav with profile active', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/profile')
+        ->assertOk()
+        ->assertSee('href="'.route('profile').'"', escape: false)
+        ->assertSee('href="'.route('setup').'"', escape: false)
+        ->assertSee('href="'.route('guide').'"', escape: false);
+});
+
 test('profile shows a link to the battlefield page', function () {
     $user = User::factory()->create();
     $this->actingAs($user);

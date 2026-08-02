@@ -46,3 +46,13 @@ test('guide reflects the configured hook namespace in the custom.sh path', funct
         ->assertSee('~/.config/acme/custom.sh')
         ->assertDontSee('token_slayer');
 });
+
+test('guide shows the shared account nav with guide active', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/guide')
+        ->assertOk()
+        ->assertSee('href="'.route('profile').'"', escape: false)
+        ->assertSee('href="'.route('setup').'"', escape: false)
+        ->assertSee('href="'.route('guide').'"', escape: false);
+});

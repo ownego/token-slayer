@@ -24,6 +24,8 @@ Route::get('/guide', fn () => view('guide', [
     'namespace' => config('app.hook_namespace'),
 ]))->middleware('auth')->name('guide');
 
+Route::get('/setup', fn () => view('setup'))->middleware('auth')->name('setup');
+
 Route::get('/admin/usage', fn () => view('admin-usage'))
     ->middleware(['auth', 'can:view_usage_analytics'])
     ->name('admin.usage');

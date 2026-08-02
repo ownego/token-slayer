@@ -1,4 +1,6 @@
 <div class="p-8 max-w-3xl mx-auto space-y-6">
+    @include('partials.account-nav', ['active' => 'profile'])
+
     <header class="flex items-center gap-4">
         <img src="{{ $user->avatar_url }}" class="w-16 h-16 rounded-full">
         <div class="flex-1">
