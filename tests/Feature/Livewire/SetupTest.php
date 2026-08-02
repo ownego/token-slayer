@@ -150,3 +150,11 @@ test('claude chat track lists tampermonkey, the chrome flag, and the userscript 
         ->assertSee('Allow user scripts')
         ->assertSee(route('userscript'));
 });
+
+test('claude chat track has a back button on both steps', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSeeInOrder(['Tampermonkey', '← Back']);
+});
