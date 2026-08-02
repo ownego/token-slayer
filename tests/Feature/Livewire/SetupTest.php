@@ -53,3 +53,25 @@ test('cli track python fix branch never suggests re-running the homebrew install
 
     $this->get('/setup')->assertOk()->assertDontSee('.zshrc');
 });
+
+test('cli track step 4 offers three token states', function () {
+    config(['app.hook_namespace' => 'token_slayer']);
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSee('token-slayer status')
+        ->assertSee('cat ~/.config/token_slayer/token')
+        ->assertSee('Get-Content $HOME\.config\token_slayer\token', escape: false);
+});
+
+test('generateToken mints a fresh token via HookTokenRotator', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'old')]);
+    $original = $user->hook_token;
+
+    Livewire::actingAs($user)
+        ->test(Setup::class)
+        ->call('generateToken');
+
+    expect($user->fresh()->hook_token)->not->toBe($original);
+});

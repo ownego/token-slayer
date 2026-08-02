@@ -90,4 +90,66 @@
             <button type="button" @click="pythonOk = true; step = 4" class="mt-4 bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg">Xong, tiếp tục →</button>
         </div>
     </div>
+
+    {{-- Step 4: token source --}}
+    <div x-show="step === 4">
+        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 4 / 6</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Bạn đã có token-slayer token chưa?</h2>
+
+        <div class="grid gap-3 mb-3">
+            <button type="button" @click="tokenSource = 'fresh'; step = 5" class="text-left border-2 border-gray-200 hover:border-orange-400 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-900">Chưa, đây là máy đầu tiên</div>
+                <div class="text-xs text-gray-500">Bước tiếp theo sẽ tạo token mới cho bạn</div>
+            </button>
+            <button type="button" @click="tokenSource = 'here'; step = 5" class="text-left border-2 border-gray-200 hover:border-orange-400 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-900">Rồi, đang cài lại/update trên máy này</div>
+                <div class="text-xs text-gray-500">Check trạng thái hiện tại trước</div>
+            </button>
+            <button type="button" @click="tokenSource = 'elsewhere'" class="text-left border-2 border-gray-200 hover:border-orange-400 rounded-lg p-4">
+                <div class="text-sm font-semibold text-gray-900">Rồi, nhưng ở máy khác (đang cài máy thứ 2)</div>
+                <div class="text-xs text-gray-500">Không tạo token mới — dùng lại token cũ</div>
+            </button>
+        </div>
+
+        <div x-show="tokenSource === 'here'" x-cloak class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <p class="text-sm font-semibold text-gray-700 mb-1">Kiểm tra máy này đã cài chưa</p>
+            <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('status-check', 'token-slayer status')">
+                $ token-slayer status
+                <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'status-check' ? 'Copied' : 'Copy'"></span>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">Báo "command not found"? Coi như chưa cài — chọn lại "Chưa, đây là máy đầu tiên" ở trên.</p>
+            <button type="button" @click="step = 5" class="mt-3 bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg">Tiếp tục →</button>
+        </div>
+
+        <div x-show="tokenSource === 'elsewhere'" x-cloak class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <p class="text-sm font-semibold text-gray-700 mb-2">Máy đang giữ token là:</p>
+            <div class="flex gap-2 mb-3">
+                <button type="button" @click="sourcePlatform = 'unix'" class="flex-1 border-2 rounded-lg py-2 text-sm font-semibold" :class="sourcePlatform === 'unix' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700'">macOS / Linux</button>
+                <button type="button" @click="sourcePlatform = 'windows'" class="flex-1 border-2 rounded-lg py-2 text-sm font-semibold" :class="sourcePlatform === 'windows' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700'">Windows</button>
+            </div>
+
+            <div x-show="sourcePlatform === 'unix'" x-cloak>
+                <p class="text-xs text-gray-500 mb-1">Chạy trên máy đó:</p>
+                <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('retrieve-unix', 'cat ~/.config/{{ $namespace }}/token')">
+                    $ cat ~/.config/{{ $namespace }}/token
+                    <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'retrieve-unix' ? 'Copied' : 'Copy'"></span>
+                </div>
+            </div>
+            <div x-show="sourcePlatform === 'windows'" x-cloak>
+                <p class="text-xs text-gray-500 mb-1">Chạy trên máy đó (PowerShell):</p>
+                <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('retrieve-win', 'Get-Content $HOME\.config\{{ $namespace }}\token')">
+                    $ Get-Content $HOME\.config\{{ $namespace }}\token
+                    <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'retrieve-win' ? 'Copied' : 'Copy'"></span>
+                </div>
+            </div>
+
+            <template x-if="sourcePlatform">
+                <div class="mt-3">
+                    <label class="text-xs text-gray-500 block mb-1">Dán token vừa lấy được vào đây:</label>
+                    <input type="text" x-model="pastedToken" placeholder="token dán vào đây" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono">
+                    <button type="button" @click="step = 5" x-bind:disabled="!pastedToken" class="mt-3 bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-40">Tiếp tục →</button>
+                </div>
+            </template>
+        </div>
+    </div>
 </div>
