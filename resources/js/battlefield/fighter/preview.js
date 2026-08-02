@@ -1,3 +1,5 @@
+import { PREVIEW_SPRITE_SCALE } from '@battlefield/constants.js';
+
 /**
  * Finds the tight bounding box of non-transparent pixels in an RGBA pixel
  * buffer (e.g. ImageData.data). Pure and DOM-free so it's directly
@@ -30,20 +32,24 @@ export function findOpaqueBounds(data, width, height) {
 }
 
 /**
- * Computes a centered "cover" destination rect for drawing a
- * sourceWidth x sourceHeight region into a destWidth x destHeight canvas —
- * scaled uniformly (same factor on both axes, never stretched/warped) so it
- * fully covers the destination, cropping the excess on whichever axis
- * doesn't match. Pure and DOM-free so it's directly unit-testable.
+ * Computes a centered destination rect for drawing a sourceWidth x
+ * sourceHeight region into a destWidth x destHeight canvas at a fixed
+ * scale — never stretched/warped, and never forced to fill the
+ * destination, so every thumbnail renders a character at the exact same
+ * size regardless of its own trimmed silhouette's aspect ratio. Whichever
+ * axis exceeds the destination is simply clipped by the canvas's own
+ * bounds when drawn, the 2D-canvas equivalent of the live Phaser preview
+ * tiles' overflow:hidden crop. Pure and DOM-free so it's directly
+ * unit-testable.
  *
  * @param {number} sourceWidth
  * @param {number} sourceHeight
+ * @param {number} scale
  * @param {number} destWidth
  * @param {number} destHeight
  * @return {{x: number, y: number, width: number, height: number}}
  */
-export function coverFit(sourceWidth, sourceHeight, destWidth, destHeight) {
-  const scale = Math.max(destWidth / sourceWidth, destHeight / sourceHeight);
+export function centeredScaleFit(sourceWidth, sourceHeight, scale, destWidth, destHeight) {
   const width = sourceWidth * scale;
   const height = sourceHeight * scale;
   return { x: (destWidth - width) / 2, y: (destHeight - height) / 2, width, height };
@@ -60,15 +66,16 @@ export function coverFit(sourceWidth, sourceHeight, destWidth, destHeight) {
  * soldier's idle frame). Stretching the untrimmed slot to fill a thumbnail
  * canvas left the character looking tiny inside a mostly-empty circle, so
  * this probes the frame's real bounds (via findOpaqueBounds) and draws
- * only that region, scaled uniformly via coverFit rather than stretched to
- * the destination's exact aspect ratio — a trimmed bounding box's aspect
- * ratio varies per frame (a mid-swing attack frame is wider than an idle
- * frame), so a plain stretch-to-fill warped the character differently on
- * every frame/character. The destination canvas itself is reused as
- * scratch space for the probe — document.createElement is unavailable
- * under this project's Vitest setup (no jsdom/canvas polyfill, a
- * deliberate, documented convention), so a second canvas element isn't an
- * option here.
+ * only that region at PREVIEW_SPRITE_SCALE — the same fixed multiple the
+ * live Phaser preview tiles render their sprite at — rather than force-
+ * scaling it to fill the destination canvas: a trimmed bounding box's size
+ * varies per frame and character, so filling the box unconditionally made
+ * every static thumbnail visibly bigger than the live animated tile right
+ * next to it, which renders at this same fixed scale. The destination
+ * canvas itself is reused as scratch space for the probe —
+ * document.createElement is unavailable under this project's Vitest setup
+ * (no jsdom/canvas polyfill, a deliberate, documented convention), so a
+ * second canvas element isn't an option here.
  *
  * @param {Phaser.Game|null} game the booted battlefield game, or null if not ready yet
  * @param {HTMLCanvasElement} canvas destination canvas; drawn at its current width/height
@@ -104,7 +111,7 @@ export function drawFighterFrame(game, canvas, frameName) {
   canvas.height = destHeight;
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, destWidth, destHeight);
-  const dest = coverFit(bounds.width, bounds.height, destWidth, destHeight);
+  const dest = centeredScaleFit(bounds.width, bounds.height, PREVIEW_SPRITE_SCALE, destWidth, destHeight);
   ctx.drawImage(
     source.image,
     cutX + bounds.x, cutY + bounds.y, bounds.width, bounds.height,

@@ -53,3 +53,16 @@ export const DreadknightAttack = {
   SPIN:      'spin',
   DASH:      'dash',
 };
+
+/**
+ * Uniform scale applied to a fighter sprite's native 100x100 atlas frame in
+ * the character-select preview modal. Shared by character-preview/scene.js
+ * (the live Phaser tiles) and fighter/preview.js (the static 2D-canvas
+ * thumbnails) so both render a character at the exact same size — the v52
+ * design mockup's own move-thumb/preview-sprite CSS rules render each
+ * fighter frame at a fixed multiple of its native size and let the crop
+ * circle/box clip the excess, never stretching to fill it.
+ *
+ * @type {number}
+ */
+export const PREVIEW_SPRITE_SCALE = 2.4;

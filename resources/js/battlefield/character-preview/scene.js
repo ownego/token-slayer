@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { FIGHTER_TYPES } from '@battlefield/config.js';
-import { TextureKey } from '@battlefield/constants.js';
+import { PREVIEW_SPRITE_SCALE, TextureKey } from '@battlefield/constants.js';
 import { registerFighterAnimations } from '@battlefield/fighter/animations.js';
 import { buildMoveset } from './moveset.js';
 import { createSkillLoop } from './skill-loop.js';
@@ -40,7 +40,7 @@ export class CharacterPreviewScene extends Phaser.Scene {
     this.centerY = height / 2;
     this.projectileTarget = { x: this.centerX + 95, y: this.centerY - 25 };
 
-    this.sprite = this.add.sprite(this.centerX, this.centerY, TextureKey.FIGHTERS).setScale(2.4);
+    this.sprite = this.add.sprite(this.centerX, this.centerY, TextureKey.FIGHTERS).setScale(PREVIEW_SPRITE_SCALE);
     this.currentKey = null;
     this.moveset = null;
 
