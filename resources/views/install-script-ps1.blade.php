@@ -320,10 +320,14 @@ TOKEN_FILE="$HOME/.config/__TS_NAMESPACE__/token"
 BODY=$(cat)
 [ -r "$TOKEN_FILE" ] || exit 0
 
-if command -v jq >/dev/null 2>&1; then
-  TRANSCRIPT=$(printf '%s' "$BODY" | jq -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
+# Always the pinned binary installed by the bootstrap above -- never a
+# system jq -- so hook behavior can never drift between machines.
+JQ="$HOME/.config/__TS_NAMESPACE__/bin/jq.exe"
+
+if [ -n "$JQ" ]; then
+  TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
   if [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ]; then
-    TOKENS=$(jq -sr '
+    TOKENS=$("$JQ" -sr '
       . as $a
       | (length - 1) as $end
       | reduce range($end; -1; -1) as $i ({t:0, stop:false};
@@ -341,7 +345,7 @@ if command -v jq >/dev/null 2>&1; then
       | .t
     ' "$TRANSCRIPT" 2>/dev/null)
     if [ -n "${TOKENS:-}" ]; then
-      BODY=$(printf '%s' "$BODY" | jq -c --argjson t "$TOKENS" '. + {tokens:$t}' 2>/dev/null || printf '%s' "$BODY")
+      BODY=$(printf '%s' "$BODY" | "$JQ" -c --argjson t "$TOKENS" '. + {tokens:$t}' 2>/dev/null || printf '%s' "$BODY")
     fi
   fi
 fi
@@ -368,11 +372,11 @@ current_access_token() {
   fi
   for f in "${CLAUDE_CONFIG_DIR:-}/.credentials.json" "$HOME/.claude/.credentials.json"; do
     [ -r "$f" ] || continue
-    jq -r '.claudeAiOauth.accessToken // ""' "$f" 2>/dev/null && return
+    "$JQ" -r '.claudeAiOauth.accessToken // ""' "$f" 2>/dev/null && return
   done
   if [ "$(uname)" = "Darwin" ]; then
     security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-      | jq -r '.claudeAiOauth.accessToken // ""' 2>/dev/null
+      | "$JQ" -r '.claudeAiOauth.accessToken // ""' 2>/dev/null
   fi
 }
 
@@ -404,11 +408,11 @@ provider_account() {
   fi
   [ -n "$_pv" ] || return 1
 
-  _org=$(jq -r '.org_uuid // ""' "$_pv" 2>/dev/null)
+  _org=$("$JQ" -r '.org_uuid // ""' "$_pv" 2>/dev/null)
   [ -n "$_org" ] || return 1
   ACC_ORG_ID="$_org"
-  ACC_EMAIL=$(jq -r '.email // ""' "$_pv" 2>/dev/null)
-  ACC_UUID=$(jq -r '.uuid // ""' "$_pv" 2>/dev/null)
+  ACC_EMAIL=$("$JQ" -r '.email // ""' "$_pv" 2>/dev/null)
+  ACC_UUID=$("$JQ" -r '.uuid // ""' "$_pv" 2>/dev/null)
   ACC_SOURCE="provider"
   return 0
 }
@@ -421,14 +425,14 @@ detector_scan() {
   _cfg="$NS_DIR/detector-config.json"
   [ -r "$_cfg" ] || return 1
 
-  for _mgr in $(jq -r 'keys[]' "$_cfg" 2>/dev/null); do
-    _join=$(jq -r --arg k "$_mgr" '.[$k].join // ""' "$_cfg" 2>/dev/null)
+  for _mgr in $("$JQ" -r 'keys[]' "$_cfg" 2>/dev/null); do
+    _join=$("$JQ" -r --arg k "$_mgr" '.[$k].join // ""' "$_cfg" 2>/dev/null)
     case "$_join" in
       session)
         [ -n "${SESSION_ID:-}" ] || continue
-        _pat=$(jq -r --arg k "$_mgr" '.[$k].account_pattern // ""' "$_cfg" 2>/dev/null)
+        _pat=$("$JQ" -r --arg k "$_mgr" '.[$k].account_pattern // ""' "$_cfg" 2>/dev/null)
         [ -n "$_pat" ] || continue
-        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+        for _glob in $("$JQ" -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
           _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
           for _f in $_glob; do
             [ -r "$_f" ] || continue
@@ -448,17 +452,17 @@ detector_scan() {
         ;;
       ts_tokens)
         DETECTOR_WINDOW_SECS=120
-        _af=$(jq -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
-        _tf=$(jq -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
+        _af=$("$JQ" -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
+        _tf=$("$JQ" -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
         [ -n "$_af" ] || continue
         _now=$(date +%s)
         _lo=$((_now - DETECTOR_WINDOW_SECS))
-        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+        for _glob in $("$JQ" -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
           _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
           for _f in $_glob; do
             [ -r "$_f" ] || continue
             # SAFE rule: one distinct account in the window -> attribute; more -> NULL.
-            _acct=$(jq -rs --arg af "$_af" --arg tf "$_tf" \
+            _acct=$("$JQ" -rs --arg af "$_af" --arg tf "$_tf" \
               --argjson lo "$_lo" --argjson hi "$_now" '
                 [ .[] | select((.[$tf] // 0) >= $lo and (.[$tf] // 0) <= $hi) | .[$af] ]
                 | map(select(. != null and . != "")) | unique
@@ -486,8 +490,8 @@ resolve_account() {
 
   # 1. Manual override: wins over credential/proxy/auto (a provider still precedes it).
   if [ -r "$NS_DIR/account.json" ]; then
-    ACC_EMAIL=$(jq -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
-    ACC_UUID=$(jq -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
+    ACC_EMAIL=$("$JQ" -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
+    ACC_UUID=$("$JQ" -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
     [ -n "$ACC_EMAIL" ] && { ACC_SOURCE="manual"; return; }
   fi
 
@@ -520,17 +524,17 @@ resolve_account() {
 
     CACHED_STATUS="" CACHED_CHECKED_AT=0
     if [ -r "$CACHE" ]; then
-      CACHED_STATUS=$(jq -r --arg fp "$FP" '.[$fp].status // ""' "$CACHE" 2>/dev/null)
-      CACHED_CHECKED_AT=$(jq -r --arg fp "$FP" '.[$fp].checked_at // 0' "$CACHE" 2>/dev/null)
+      CACHED_STATUS=$("$JQ" -r --arg fp "$FP" '.[$fp].status // ""' "$CACHE" 2>/dev/null)
+      CACHED_CHECKED_AT=$("$JQ" -r --arg fp "$FP" '.[$fp].checked_at // 0' "$CACHE" 2>/dev/null)
     fi
     : "${CACHED_CHECKED_AT:=0}"
 
     SHOULD_LOOKUP=1
     case "$CACHED_STATUS" in
       ok)
-        ACC_ORG_ID=$(jq -r --arg fp "$FP" '.[$fp].org_id // ""' "$CACHE" 2>/dev/null)
-        ACC_EMAIL=$(jq -r --arg fp "$FP" '.[$fp].email // ""' "$CACHE" 2>/dev/null)
-        ACC_UUID=$(jq -r --arg fp "$FP" '.[$fp].uuid // ""' "$CACHE" 2>/dev/null)
+        ACC_ORG_ID=$("$JQ" -r --arg fp "$FP" '.[$fp].org_id // ""' "$CACHE" 2>/dev/null)
+        ACC_EMAIL=$("$JQ" -r --arg fp "$FP" '.[$fp].email // ""' "$CACHE" 2>/dev/null)
+        ACC_UUID=$("$JQ" -r --arg fp "$FP" '.[$fp].uuid // ""' "$CACHE" 2>/dev/null)
         SHOULD_LOOKUP=0
         ;;
       restricted)
@@ -554,14 +558,14 @@ resolve_account() {
           # proved identity via the org id.
           PROFILE=$(curl -sf --max-time 5 -A "$HOOK_UA" "https://api.anthropic.com/api/oauth/profile" \
             -H "Authorization: Bearer $OAUTH_TOKEN" -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
-          ACC_EMAIL=$(printf '%s' "$PROFILE" | jq -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
-          ACC_UUID=$(printf '%s' "$PROFILE" | jq -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
+          ACC_EMAIL=$(printf '%s' "$PROFILE" | "$JQ" -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
+          ACC_UUID=$(printf '%s' "$PROFILE" | "$JQ" -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
         fi
       else
         STATUS="error"
       fi
 
-      TMP=$(mktemp) && jq --arg fp "$FP" --arg o "$ACC_ORG_ID" --arg e "$ACC_EMAIL" \
+      TMP=$(mktemp) && "$JQ" --arg fp "$FP" --arg o "$ACC_ORG_ID" --arg e "$ACC_EMAIL" \
         --arg u "$ACC_UUID" --arg st "$STATUS" --argjson t "$NOW" \
         '. + {($fp): {org_id: $o, email: $e, uuid: $u, status: $st, checked_at: $t}}' \
         "$CACHE" 2>/dev/null > "$TMP" \
@@ -577,16 +581,16 @@ resolve_account() {
   CJ="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
   [ -r "$CJ" ] || CJ="$HOME/.claude.json"
   if [ -r "$CJ" ]; then
-    ACC_EMAIL=$(jq -r '.oauthAccount.emailAddress // ""' "$CJ" 2>/dev/null)
-    ACC_UUID=$(jq -r '.oauthAccount.accountUuid // ""' "$CJ" 2>/dev/null)
+    ACC_EMAIL=$("$JQ" -r '.oauthAccount.emailAddress // ""' "$CJ" 2>/dev/null)
+    ACC_UUID=$("$JQ" -r '.oauthAccount.accountUuid // ""' "$CJ" 2>/dev/null)
     [ -n "$ACC_EMAIL" ] && ACC_SOURCE="auto"
   fi
 }
 
-if command -v jq >/dev/null 2>&1; then
-  SESSION_ID=$(printf '%s' "$BODY" | jq -r '.session_id // .sessionId // ""' 2>/dev/null)
+if [ -n "$JQ" ]; then
+  SESSION_ID=$(printf '%s' "$BODY" | "$JQ" -r '.session_id // .sessionId // ""' 2>/dev/null)
   resolve_account
-  BODY=$(printf '%s' "$BODY" | jq -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
+  BODY=$(printf '%s' "$BODY" | "$JQ" -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
     --arg s "$ACC_SOURCE" --arg v "$CLIENT_VERSION" --arg o "$ACC_ORG_ID" \
     '. + {client_version: $v} + (if $s != "" then {account_source: $s} else {} end)
        + (if $e != "" then {account_email: $e, account_uuid: $u} else {} end)
@@ -883,27 +887,11 @@ with open(path, "w") as f:
 Write-Host "installed Antigravity CLI hooks -> $AgyHooks"
 
 # --- Git for Windows check ---------------------------------------------------
+# Every hook command shells out via bash (Git Bash); without it nothing this
+# installer just set up can ever run, so this stops the install rather than
+# just warning.
 if (-not (Get-Command git -ErrorAction SilentlyContinue) -and -not (Get-Command bash -ErrorAction SilentlyContinue)) {
-  Write-Warning 'Attribution hooks need Git for Windows (Git Bash) to run. The CLI works without it; install Git for Windows to enable usage tracking.'
-}
-
-# --- jq check ----------------------------------------------------------------
-# jq has to be on Git Bash's PATH, not PowerShell's -- the hook runs under bash,
-# so probing Get-Command jq here would pass while the hook still records
-# nothing. Without jq every hook answers 201 and no damage is ever recorded.
-$bashExe = (Get-Command bash -ErrorAction SilentlyContinue)
-if ($bashExe) {
-  # -c, not -lc: the hook runs as a non-login bash, and a login shell sources
-  # /etc/profile into a wider PATH that would hide a jq the hook cannot see.
-  $jqFound = & $bashExe.Source -c 'command -v jq >/dev/null 2>&1 && echo yes' 2>$null
-  if ($jqFound -notcontains 'yes') {
-    Write-Host ""
-    Write-Host "=========================================================="
-    Write-Warning 'jq is NOT available to Git Bash -- usage tracking will record nothing. Hooks keep answering 201 and your fighter stays silent: no damage, no account attribution, no error.'
-    Write-Host "Install it, then open a new terminal:"
-    Write-Host "  winget install jqlang.jq"
-    Write-Host "=========================================================="
-  }
+  throw 'Attribution hooks need Git for Windows (Git Bash) to run. Install Git for Windows (https://git-scm.com/downloads/win), then re-run this installer.'
 }
 
 # --- Register the machine's current Claude login as a base account slot ----

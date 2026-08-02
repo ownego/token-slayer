@@ -133,15 +133,18 @@ it('pipes the event body into curl over stdin in the bundled hook, not as an arg
         ->not->toContain('-d "$BODY"');
 });
 
-it('warns at the end of install.ps1 when Git Bash cannot find jq', function () {
-    // The hook runs under Git Bash, so jq must be on THAT PATH — checking
-    // PowerShell's own PATH would pass while the hook still records nothing.
+it('never falls back to a system jq inside the Windows hook -- every jq call resolves to the bundled jq.exe', function () {
     $script = $this->get(route('install-script-ps1'))->content();
 
     expect($script)
-        ->toContain('command -v jq')
-        ->toContain('winget install jqlang.jq')
-        ->toContain('usage tracking will record nothing');
+        ->not->toContain('command -v jq')
+        ->toContain('JQ="$HOME/.config/__TS_NAMESPACE__/bin/jq.exe"');
+
+    $resolverPos = strpos($script, 'JQ="$HOME/.config/__TS_NAMESPACE__/bin/jq.exe"');
+    $firstJqCallPos = strpos($script, '"$JQ" -r \'.transcript_path');
+    expect($resolverPos)->not->toBeFalse()
+        ->and($firstJqCallPos)->not->toBeFalse()
+        ->and($resolverPos)->toBeLessThan($firstJqCallPos);
 });
 
 it('bakes SLAYER_INSTALL_URL and SLAYER_NS into the Windows .cmd shims', function () {
