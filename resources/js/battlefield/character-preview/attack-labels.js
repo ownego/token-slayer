@@ -5,7 +5,7 @@ export const ATTACK_LABELS = {
   [AttackType.SLASH]:    ['⚔ Slash Combo', '⚔ Spinning Slash', '⚔ Slash Finisher'],
   [AttackType.BLADE]:    ['🗡️ Blade Strike', '🗡️ Blade Flurry', '🗡️ Blade Finisher'],
   [AttackType.SHURIKEN]: ['✴ Shuriken Toss', '✴ Shuriken Storm'],
-  [AttackType.ARROW]:    ['🏹 Quick Shot', '🏹 Arrow Volley'],
+  [AttackType.ARROW]:    ['🏹 Quick Shot', '🏹 Arrow Volley', '🏹 Piercing Shot'],
   [AttackType.BLAST]:    ['🔥 Fireball', '🔥 Blast Wave', '🔥 Meteor'],
 };
 

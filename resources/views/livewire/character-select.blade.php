@@ -112,12 +112,14 @@
 /* --- Card shell --- */
 .cs-outer {
     position: relative;
-    width: clamp(320px, 82vw, 1440px);
+    width: clamp(288px, 82vw, 1440px);
+    max-height: 92vh;
     box-sizing: border-box;
     padding: 3px;
     background: linear-gradient(135deg, rgba(249,158,11,0.5), rgba(249,115,22,0.15) 30%, rgba(20,184,166,0.15) 70%, rgba(45,212,191,0.4));
     border-radius: 18px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     box-shadow: 0 25px 70px -15px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04), 0 0 90px -20px rgba(249,115,22,0.25);
 }
 .cs-grain {
@@ -194,6 +196,7 @@
 .orb.is-preview .halo { visibility: visible; }
 @keyframes halo-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 0.8; } }
 .orb.is-preview .orb-crop { box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255,255,255,0.6); }
+.orb:not(.is-preview):not(.is-equipped) .orb-crop { opacity: 0.72; }
 .check {
     position: absolute; top: -4px; right: 10px; width: 16px; height: 16px; border-radius: 50%;
     background: #2dd4bf; color: #042f2e; font-size: 9px; font-weight: bold;
@@ -346,7 +349,16 @@
     transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.4s ease, filter 0.2s ease;
     animation: equip-breathe 2.2s ease-in-out infinite;
 }
-.btn-equip:disabled { cursor: default; }
+.btn-equip:disabled {
+    cursor: default;
+    opacity: 0.6;
+    filter: grayscale(0.4);
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.btn-equip:disabled .core,
+.btn-equip:disabled .sheen,
+.btn-equip:disabled .sword-fx { animation: none; opacity: 0; }
 .btn-equip .core { position: absolute; inset: 0; border-radius: 999px; background: radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%); animation: core-pulse 2.2s ease-in-out infinite; }
 @keyframes core-pulse { 0%,100% { opacity: 0; transform: scale(0.6); } 50% { opacity: 0.55; transform: scale(1.15); } }
 @keyframes equip-breathe {
@@ -386,6 +398,9 @@
     .preview-frame { transform: scale(0.85); }
     .preview-label { transform: scale(0.9); }
 }
+@media (max-height: 640px) {
+    .cs-root { min-height: 0; }
+}
 </style>
 
 <script>
@@ -402,6 +417,8 @@
             previewScene: null,
             equippedTileGame: null,
             previewTileGame: null,
+            _previewTileKey: null,
+            _equippedTileKey: null,
 
             init() {
                 // no-op until open() — the preview game only exists while the modal is open.
@@ -444,6 +461,8 @@
                 this.previewScene = null;
                 this.previewTileGame = null;
                 this.equippedTileGame = null;
+                this._previewTileKey = null;
+                this._equippedTileKey = null;
                 this.isOpen = false;
             },
 
@@ -482,6 +501,9 @@
             // The other 13 (non-animated) tiles use the existing static-frame
             // renderer — unchanged from the shipped modal.
             _drawStaticThumbnails() {
+                if (!this.isOpen) {
+                    return;
+                }
                 const bf = window.__battlefield;
                 if (!bf?.game) {
                     setTimeout(() => this._drawStaticThumbnails(), 50);
@@ -509,12 +531,23 @@
                 if (!bf?.createCharacterPreview) {
                     return;
                 }
-                bf.destroyCharacterPreview(this.previewTileGame);
-                bf.destroyCharacterPreview(this.equippedTileGame);
-                this.previewTileGame = this._mountAnimatedTile(this.previewKey);
-                this.equippedTileGame = this.equippedKey && this.equippedKey !== this.previewKey
-                    ? this._mountAnimatedTile(this.equippedKey)
-                    : null;
+                if (this._previewTileKey !== this.previewKey) {
+                    bf.destroyCharacterPreview(this.previewTileGame);
+                    this.previewTileGame = this._mountAnimatedTile(this.previewKey);
+                    this._previewTileKey = this.previewKey;
+                }
+                const wantEquippedTile = this.equippedKey && this.equippedKey !== this.previewKey;
+                if (wantEquippedTile) {
+                    if (this._equippedTileKey !== this.equippedKey) {
+                        bf.destroyCharacterPreview(this.equippedTileGame);
+                        this.equippedTileGame = this._mountAnimatedTile(this.equippedKey);
+                        this._equippedTileKey = this.equippedKey;
+                    }
+                } else if (this.equippedTileGame) {
+                    bf.destroyCharacterPreview(this.equippedTileGame);
+                    this.equippedTileGame = null;
+                    this._equippedTileKey = null;
+                }
                 this._drawStaticThumbnails();
             },
 
@@ -538,7 +571,6 @@
                 }
                 this.$wire.equip(this.previewKey);
                 this.equippedKey = this.previewKey;
-                this._refreshAnimatedTiles();
                 this.close();
             },
         };

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { BG_COLOR, LAYOUTS, BOSS_TYPES, FIGHTER_TYPES } from '@battlefield/config.js';
-import { AnimState, BusEvent, TextureKey, SCENE_KEY } from '@battlefield/constants.js';
+import { BG_COLOR, LAYOUTS, BOSS_TYPES } from '@battlefield/config.js';
+import { BusEvent, TextureKey, SCENE_KEY } from '@battlefield/constants.js';
 import { bus } from './bus.js';
 import { Leaderboard } from './leaderboard.js';
 import { Impact } from './impact.js';

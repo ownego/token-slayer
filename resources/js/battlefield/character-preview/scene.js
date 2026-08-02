@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { FIGHTER_TYPES } from '@battlefield/config.js';
 import { TextureKey } from '@battlefield/constants.js';
-import { ensureSparkTexture } from '@battlefield/spark-texture.js';
 import { registerFighterAnimations } from '@battlefield/fighter/animations.js';
 import { buildMoveset } from './moveset.js';
 import { createSkillLoop } from './skill-loop.js';
@@ -35,7 +34,6 @@ export class CharacterPreviewScene extends Phaser.Scene {
   /** @return {void} */
   create() {
     this.textures.get(TextureKey.FIGHTERS)?.setFilter(Phaser.Textures.FilterMode.NEAREST);
-    ensureSparkTexture(this);
 
     const { width, height } = this.sys.game.config;
     this.centerX = width / 2;
@@ -101,6 +99,9 @@ export class CharacterPreviewScene extends Phaser.Scene {
    * @return {void}
    */
   _playSkill(skill, onComplete) {
+    this._pendingProjectileTimer?.remove(false);
+    this._pendingProjectileTimer = null;
+
     this.sprite.play(skill.animKey);
     if (skill.loop) {
       return;
@@ -116,14 +117,14 @@ export class CharacterPreviewScene extends Phaser.Scene {
         .play(skill.effectAnimKey);
       effect.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => effect.destroy());
 
-      this._pendingProjectileTimer?.remove(false);
+      const attackType = this.moveset.attackType;
       this._pendingProjectileTimer = this.time.delayedCall(getProjectileLaunchDelay(skill.durationMs), () => {
         spawnPreviewProjectile(this, {
           fromX: this.centerX,
           fromY: this.centerY,
           toX: this.projectileTarget.x,
           toY: this.projectileTarget.y,
-          attackType: this.moveset.attackType,
+          attackType,
         });
       });
     }
