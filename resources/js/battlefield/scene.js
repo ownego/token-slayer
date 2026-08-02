@@ -12,6 +12,7 @@ import { Bubble } from './bubble.js';
 import { MoveInput } from './move-input.js';
 import { Fighter } from './fighter.js';
 import { ensureSparkTexture } from './spark-texture.js';
+import { registerAllFighterAnimations } from './fighter/animations.js';
 
 /** Phaser scene coordinator — wires all battlefield managers and handles the Phaser lifecycle. */
 export class BattlefieldScene extends Phaser.Scene {
@@ -65,52 +66,7 @@ export class BattlefieldScene extends Phaser.Scene {
       }
       // Fighter atlas: NEAREST filter + register all animations from named frames
       this.textures.get(TextureKey.FIGHTERS)?.setFilter(Phaser.Textures.FilterMode.NEAREST);
-      for (const ft of FIGHTER_TYPES) {
-        for (const [state, anim] of Object.entries(ft.animations)) {
-          const animKey = `${ft.key}-${state}`;
-          if (!this.anims.exists(animKey)) {
-            this.anims.create({
-              key: animKey,
-              frames: this.anims.generateFrameNames(TextureKey.FIGHTERS, {
-                prefix: `${ft.key}-${state}-`,
-                start: 0,
-                end: anim.frames - 1,
-              }),
-              frameRate: anim.rate,
-              repeat: (state === AnimState.IDLE || state === AnimState.WALK) ? -1 : 0,
-            });
-          }
-        }
-        for (let i = 0; i < (ft.attacks?.length ?? 0); i++) {
-          const atk = ft.attacks[i];
-          const atkKey = `${ft.key}-attack${i + 1}`;
-          const effKey = `${ft.key}-effect${i + 1}`;
-          if (!this.anims.exists(atkKey)) {
-            this.anims.create({
-              key: atkKey,
-              frames: this.anims.generateFrameNames(TextureKey.FIGHTERS, {
-                prefix: `${ft.key}-attack${i + 1}-`,
-                start: 0,
-                end: atk.frames - 1,
-              }),
-              frameRate: atk.rate,
-              repeat: 0,
-            });
-          }
-          if (atk.effectFrames && !this.anims.exists(effKey)) {
-            this.anims.create({
-              key: effKey,
-              frames: this.anims.generateFrameNames(TextureKey.FIGHTERS, {
-                prefix: `${ft.key}-effect${i + 1}-`,
-                start: 0,
-                end: atk.effectFrames - 1,
-              }),
-              frameRate: atk.rate,
-              repeat: 0,
-            });
-          }
-        }
-      }
+      registerAllFighterAnimations(this);
     });
   }
 
