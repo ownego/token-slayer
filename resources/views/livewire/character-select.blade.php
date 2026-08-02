@@ -11,7 +11,7 @@
         x-transition:leave="transition ease-in duration-150"
         x-transition:leave-start="opacity-100"
         x-transition:leave-end="opacity-0"
-        @click.self="isOpen = false"
+        @click.self="close()"
         class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
     >
         <div class="cs-outer" id="cardRoot" x-bind:style="`--accent:${accent}`">
@@ -39,7 +39,7 @@
                                     @keydown.enter="selectCharacter(character)"
                                 >
                                     <span class="halo"></span>
-                                    <div class="orb-crop" x-ref="`orbCrop-${character}`"></div>
+                                    <div class="orb-crop" x-bind:data-character="character"></div>
                                     <span class="orb-label" x-text="character"></span>
                                     <span class="check" x-show="character === equippedKey">✓</span>
                                 </div>
@@ -392,70 +392,146 @@
     window.characterSelectModal = function (characters, startingCharacter, equippedKey) {
         return {
             characters,
-            startingCharacter,
             equippedKey,
-            isOpen: false,
-            index: 0,
+            previewKey: startingCharacter,
+            accent: '#fbbf24',
             skills: [],
-            activeSkillId: undefined,
-
-            get previewKey() {
-                return this.currentKey();
-            },
-            get accent() {
-                return this.accentFor(this.previewKey);
-            },
+            activeSkillId: 'idle',
+            isOpen: false,
+            previewGame: null,
+            previewScene: null,
+            equippedTileGame: null,
+            previewTileGame: null,
 
             init() {
-                this.index = Math.max(0, this.characters.indexOf(this.startingCharacter));
-                this.$nextTick(() => this.redraw());
+                // no-op until open() — the preview game only exists while the modal is open.
             },
+
             open() {
-                this.index = Math.max(0, this.characters.indexOf(this.startingCharacter));
+                this.previewKey = this.equippedKey ?? this.previewKey;
                 this.isOpen = true;
-                this.$nextTick(() => this.redraw());
+                this.$nextTick(() => this._bootPreview());
             },
-            currentKey() {
-                return this.characters[this.index];
-            },
-            prev() {
-                this.index = (this.index - 1 + this.characters.length) % this.characters.length;
-                this.redraw();
-            },
-            next() {
-                this.index = (this.index + 1) % this.characters.length;
-                this.redraw();
-            },
-            selectCharacter(character) {
-                const idx = this.characters.indexOf(character);
-                if (idx !== -1) {
-                    this.index = idx;
-                    this.redraw();
+
+            _bootPreview() {
+                const bf = window.__battlefield;
+                if (!bf?.createCharacterPreview) {
+                    setTimeout(() => this._bootPreview(), 50);
+                    return;
                 }
+                this.previewGame = bf.createCharacterPreview(this.$refs.previewMount);
+                this.previewGame.events.once('preview-ready', () => {
+                    this.previewScene = this.previewGame.scene.getScene('character-preview');
+                    this._applyCharacter(this.previewKey);
+                });
+                this._drawStaticThumbnails();
+                this._refreshAnimatedTiles();
             },
-            accentFor(character) {
-                const idx = this.characters.indexOf(character);
-                const hue = (idx * 360 / this.characters.length) % 360;
-                return `hsl(${hue}, 70%, 55%)`;
+
+            close() {
+                window.__battlefield?.destroyCharacterPreview?.(this.previewGame);
+                window.__battlefield?.destroyCharacterPreview?.(this.previewTileGame);
+                window.__battlefield?.destroyCharacterPreview?.(this.equippedTileGame);
+                this.previewGame = null;
+                this.previewScene = null;
+                this.previewTileGame = null;
+                this.equippedTileGame = null;
+                this.isOpen = false;
             },
+
+            selectCharacter(key) {
+                if (key === this.previewKey) {
+                    return;
+                }
+                this.previewKey = key;
+                this._applyCharacter(key);
+            },
+
+            _applyCharacter(key) {
+                this.accent = this.accentFor(key);
+                this.previewScene?.setCharacter(key);
+                this.skills = this.previewScene?.getMoveset()?.skills ?? [];
+                this.activeSkillId = 'idle';
+                this._refreshAnimatedTiles();
+            },
+
             selectSkill(skillId) {
                 this.activeSkillId = skillId;
+                this.previewScene?.selectSkill(skillId);
             },
-            redraw() {
+
+            accentFor(key) {
+                const ACCENTS = {
+                    soldier: '#ffbb00', knight: '#ffbb00', swordsman: '#ffbb00', axeman: '#ffbb00',
+                    orc: '#88ee44', 'armored-orc': '#88ee44', 'elite-orc': '#88ee44',
+                    skeleton: '#aaddff', 'armored-skeleton': '#aaddff', 'greatsword-skeleton': '#aaddff',
+                    slime: '#ddff44', archer: '#ffee44', werewolf: '#cc88ff', werebear: '#cc88ff',
+                    'orc-rider': '#88ee44',
+                };
+                return ACCENTS[key] ?? '#fbbf24';
+            },
+
+            // The other 13 (non-animated) tiles use the existing static-frame
+            // renderer — unchanged from the shipped modal.
+            _drawStaticThumbnails() {
                 const bf = window.__battlefield;
                 if (!bf?.game) {
-                    setTimeout(() => this.redraw(), 50);
+                    setTimeout(() => this._drawStaticThumbnails(), 50);
                     return;
                 }
-                bf.drawFighterPreview(bf.game, this.$refs.previewMount, this.currentKey());
+                this.$root.querySelectorAll('.orb-crop').forEach(el => {
+                    const key = el.dataset.character;
+                    if (key === this.previewKey || key === this.equippedKey) {
+                        return; // these two get an animated tile instead
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 64;
+                    canvas.height = 64;
+                    el.replaceChildren(canvas);
+                    bf.drawFighterPreview(bf.game, canvas, key);
+                });
             },
-            equip() {
-                if (this.currentKey() === this.equippedKey) {
+
+            // Previewed + equipped tiles each get their own tiny idle-looping
+            // Phaser.Game — a plan-time decision (see spec's Technical
+            // architecture section) favoring two small decoupled games over
+            // sharing coordinate space with the main preview panel.
+            _refreshAnimatedTiles() {
+                const bf = window.__battlefield;
+                if (!bf?.createCharacterPreview) {
                     return;
                 }
-                this.startingCharacter = this.currentKey();
-                this.$wire.equip(this.currentKey());
-                this.isOpen = false;
+                bf.destroyCharacterPreview(this.previewTileGame);
+                bf.destroyCharacterPreview(this.equippedTileGame);
+                this.previewTileGame = this._mountAnimatedTile(this.previewKey);
+                this.equippedTileGame = this.equippedKey && this.equippedKey !== this.previewKey
+                    ? this._mountAnimatedTile(this.equippedKey)
+                    : null;
+                this._drawStaticThumbnails();
+            },
+
+            _mountAnimatedTile(key) {
+                const bf = window.__battlefield;
+                const el = this.$root.querySelector(`.orb-crop[data-character="${key}"]`);
+                if (!el) {
+                    return null;
+                }
+                el.replaceChildren();
+                const game = bf.createCharacterPreview(el);
+                game.events.once('preview-ready', () => {
+                    game.scene.getScene('character-preview').setCharacter(key);
+                });
+                return game;
+            },
+
+            equip() {
+                if (this.previewKey === this.equippedKey) {
+                    return;
+                }
+                this.$wire.equip(this.previewKey);
+                this.equippedKey = this.previewKey;
+                this._refreshAnimatedTiles();
+                this.close();
             },
         };
     };
