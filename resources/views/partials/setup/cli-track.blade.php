@@ -152,4 +152,76 @@
             </template>
         </div>
     </div>
+
+    {{-- Step 5: install --}}
+    <div x-show="step === 5">
+        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 5 / 6</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Cài đặt</h2>
+
+        <template x-if="tokenSource !== 'elsewhere' && !plainTokenGenerated">
+            <button type="button" @click="$wire.generateToken().then(() => plainTokenGenerated = true)" class="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg mb-4">Generate token</button>
+        </template>
+
+        <template x-if="platform === 'macos' || platform === 'linux'">
+            <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('install', tokenSource === 'elsewhere' ? '{{ addslashes($installUnix) }}'.replace('<your-token>', pastedToken) : '{{ addslashes($installUnix) }}')">
+                {{ $installUnix }}
+                <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install' ? 'Copied' : 'Copy'"></span>
+            </div>
+        </template>
+        <template x-if="platform === 'windows'">
+            <div>
+                <p class="text-xs text-gray-500 mb-1">PowerShell:</p>
+                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('install-ps', '{{ addslashes($installWinPs) }}')">
+                    {{ $installWinPs }}
+                    <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install-ps' ? 'Copied' : 'Copy'"></span>
+                </div>
+                <p class="text-xs text-gray-500 mb-1">cmd.exe (không dùng lẫn với PowerShell ở trên):</p>
+                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer" @click="copy('install-cmd', '{{ addslashes($installWinCmd) }}')">
+                    {{ $installWinCmd }}
+                    <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install-cmd' ? 'Copied' : 'Copy'"></span>
+                </div>
+            </div>
+        </template>
+
+        <p class="text-xs text-gray-500 mt-2">Terminal im lặng vài giây sau khi Enter là bình thường — đang cài, không phải treo.</p>
+
+        <details class="mt-4">
+            <summary class="text-sm font-medium text-gray-600 cursor-pointer">Muốn cấu hình thủ công thay vì chạy script?</summary>
+            <div class="mt-3 space-y-3">
+                <div>
+                    <p class="text-sm text-gray-600 mb-1">1. Lưu token vào <code>{{ $tokenPath }}</code>:</p>
+                    <pre class="bg-gray-900 text-amber-300 rounded-lg p-3 text-xs overflow-x-auto">{{ $tokenSaveCommand }}</pre>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600 mb-1">2. Dán vào <code>~/.claude/settings.json</code> ở cấp cao nhất:</p>
+                    <pre class="bg-gray-900 text-amber-300 rounded-lg p-3 text-xs overflow-x-auto">{{ $claudeSnippet }}</pre>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600 mb-1">3. Thêm vào <code>~/.codex/config.toml</code>:</p>
+                    <pre class="bg-gray-900 text-amber-300 rounded-lg p-3 text-xs overflow-x-auto">{{ $codexSnippet }}</pre>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-600 mb-1">4. Dán/merge vào <code>~/.gemini/config/hooks.json</code>:</p>
+                    <pre class="bg-gray-900 text-amber-300 rounded-lg p-3 text-xs overflow-x-auto">{{ $antigravitySnippet }}</pre>
+                </div>
+            </div>
+        </details>
+
+        <button type="button" @click="step = 6" class="mt-4 bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg">Tiếp tục →</button>
+    </div>
+
+    {{-- Step 6: verify --}}
+    <div x-show="step === 6">
+        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 6 / 6</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Kiểm tra & bước tiếp theo</h2>
+
+        <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('verify', 'token-slayer status')">
+            $ token-slayer status
+            <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'verify' ? 'Copied' : 'Copy'"></span>
+        </div>
+
+        <p class="text-sm text-gray-500 mb-3">Bản mới có alias ngắn <code>tok</code> — nếu gõ <code>tok</code> không ra gì, dùng <code>token-slayer</code> đầy đủ.</p>
+        <p class="text-sm text-gray-500 mb-3">Có account công ty? Chạy <code>token-slayer setup</code>. Nhiều account cá nhân? <code>token-slayer switch NAME</code>.</p>
+        <a href="{{ route('guide') }}" class="text-sm text-orange-600 underline font-medium">Xem toàn bộ lệnh token-slayer →</a>
+    </div>
 </div>

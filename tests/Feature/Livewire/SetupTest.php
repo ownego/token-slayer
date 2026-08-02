@@ -75,3 +75,33 @@ test('generateToken mints a fresh token via HookTokenRotator', function () {
 
     expect($user->fresh()->hook_token)->not->toBe($original);
 });
+
+test('cli track install step shows commands for all three platforms with the fresh token embedded', function () {
+    config(['app.hook_namespace' => 'token_slayer']);
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
+    $this->actingAs($user);
+
+    Livewire::test(Setup::class)
+        ->call('generateToken')
+        ->assertSee('TOKEN_SLAYER_TOKEN=', escape: false);
+});
+
+test('cli track verify step mentions the tok alias and links to the guide', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSee('token-slayer status')
+        ->assertSee('tok')
+        ->assertSee('href="'.route('guide').'"', escape: false);
+});
+
+test('cli track offers the manual hook config fallback with all three provider snippets', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSee('UserPromptSubmit') // claude snippet
+        ->assertSee('config.toml') // codex snippet
+        ->assertSee('hooks.json'); // antigravity snippet
+});
