@@ -6,7 +6,7 @@ use App\Models\Event;
 use App\Models\User;
 use App\Services\DamageTotals;
 use App\Services\GitHub\CachedLatestVersion;
-use Illuminate\Support\Str;
+use App\Services\HookTokenRotator;
 use Livewire\Component;
 
 class Profile extends Component
@@ -18,11 +18,12 @@ class Profile extends Component
         $this->plainToken = session()->pull('hook_token_plain');
     }
 
-    public function regenerate(): void
+    /**
+     * @param  HookTokenRotator  $rotator  mints and persists the fresh token
+     */
+    public function regenerate(HookTokenRotator $rotator): void
     {
-        $plain = Str::random(48);
-        auth()->user()->forceFill(['hook_token' => hash('sha256', $plain)])->save();
-        $this->plainToken = $plain;
+        $this->plainToken = $rotator->rotate(auth()->user());
     }
 
     /**
