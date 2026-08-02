@@ -37,13 +37,13 @@
         </template>
 
         <div x-show="track === 'cli'" x-cloak>
-            @include('partials.setup.stepper', ['labels' => ['Tool', 'Platform', 'Python', 'Have a token?', 'Install', 'Done']])
+            @include('partials.setup.stepper', ['labels' => ['Công cụ', 'Nền tảng', 'Python', 'Đã có token?', 'Cài đặt', 'Xong']])
         </div>
         <div x-show="track === 'cowork'" x-cloak>
-            @include('partials.setup.stepper', ['labels' => ['Tool', 'Platform', 'Python', 'Install']])
+            @include('partials.setup.stepper', ['labels' => ['Công cụ', 'Nền tảng', 'Python', 'Cài đặt']])
         </div>
         <div x-show="track === 'chat'" x-cloak>
-            @include('partials.setup.stepper', ['labels' => ['Tool', 'Install', 'Done']])
+            @include('partials.setup.stepper', ['labels' => ['Công cụ', 'Cài đặt', 'Xong']])
         </div>
     </div>
 </div>
