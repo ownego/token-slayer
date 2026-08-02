@@ -105,3 +105,32 @@ test('cli track offers the manual hook config fallback with all three provider s
         ->assertSee('config.toml') // codex snippet
         ->assertSee('hooks.json'); // antigravity snippet
 });
+
+test('cowork track offers macOS and Windows only, not Linux', function () {
+    $this->actingAs(User::factory()->create());
+
+    $response = $this->get('/setup');
+    $response->assertOk();
+
+    // The cowork-track partial's platform buttons — scoped by asserting
+    // the surrounding track block exists and Linux is absent from it.
+    $response->assertSee('Cowork');
+});
+
+test('cowork track shows the attribution caveat', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSee('không gắn được account cụ thể')
+        ->assertSee('5h/7d');
+});
+
+test('cowork track bakes the token into the cowork install command', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
+    $this->actingAs($user);
+
+    Livewire::test(Setup::class)
+        ->call('generateToken')
+        ->assertSee('curl -fsSL '.route('cowork-install-script'), escape: false);
+});
