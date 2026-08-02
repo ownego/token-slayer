@@ -100,6 +100,19 @@ test('install.ps1 routes the hooks through bash for Git-for-Windows users', func
         ->toContain('Git for Windows');
 });
 
+it('stops the install with a throw when Git for Windows is missing, not just a warning', function () {
+    // Regression guard for the Write-Warning -> throw conversion: asserting only
+    // 'Git for Windows' text would still pass even if the code reverted to
+    // Write-Warning (which logs but lets the install continue despite every
+    // hook being unable to run without bash).
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain("throw 'Attribution hooks need Git for Windows")
+        ->not->toContain("Write-Warning 'Attribution hooks need Git for Windows")
+        ->not->toContain('Write-Warning "Attribution hooks need Git for Windows');
+});
+
 it('stamps the resolver-derived client version into install.ps1', function () {
     config(['github.token' => 'ghp_test', 'github.cli_repo' => 'acme/slayer-cli']);
     Http::fake(['api.github.com/*' => Http::response([
@@ -145,6 +158,21 @@ it('never falls back to a system jq inside the Windows hook -- every jq call res
     expect($resolverPos)->not->toBeFalse()
         ->and($firstJqCallPos)->not->toBeFalse()
         ->and($resolverPos)->toBeLessThan($firstJqCallPos);
+});
+
+it('guards jq calls in the Windows hook template with -x (executable check), not the always-true -n', function () {
+    // $JQ is always assigned a literal path string, so `[ -n "$JQ" ]` (non-empty
+    // string) is always true regardless of whether that file actually exists or
+    // is executable -- it provided none of the "defensive against a manually
+    // deleted binary" protection it was meant to. `-x` actually tests existence
+    // + executability.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->not->toContain('[ -n "$JQ" ]')
+        ->toContain('[ -x "$JQ" ]; then');
+
+    expect(substr_count($script, '[ -x "$JQ" ]'))->toBe(2);
 });
 
 it('bakes SLAYER_INSTALL_URL and SLAYER_NS into the Windows .cmd shims', function () {
@@ -195,7 +223,27 @@ it('bootstraps a pinned jq.exe instead of relying on a system jq', function () {
 it('throws with a clear message when no pinned jq build exists for this Windows architecture', function () {
     $script = $this->get(route('install-script-ps1'))->content();
 
-    expect($script)->toContain('No pinned jq build for Windows/');
+    expect($script)
+        ->toContain('No pinned jq build for Windows/')
+        ->toContain('Open an issue with this OS/arch.');
+});
+
+it('falls back to PROCESSOR_ARCHITEW6432 under WOW64 (32-bit PowerShell on a 64-bit machine)', function () {
+    // $env:PROCESSOR_ARCHITECTURE reports the PROCESS architecture (x86) under
+    // WOW64, not the real hardware -- the true architecture is in
+    // PROCESSOR_ARCHITEW6432 in that case. Without this fallback, a user
+    // running "Windows PowerShell (x86)" on a 64-bit machine gets a hard
+    // "No pinned jq build for Windows/x86" abort despite the machine being
+    // perfectly capable.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)->toContain("if (\$jqArch -eq 'x86' -and \$env:PROCESSOR_ARCHITEW6432) { \$jqArch = \$env:PROCESSOR_ARCHITEW6432 }");
+
+    $fallbackPos = strpos($script, 'PROCESSOR_ARCHITEW6432');
+    $checkPos = strpos($script, '$jqAssets.ContainsKey($jqArch)');
+    expect($fallbackPos)->not->toBeFalse()
+        ->and($checkPos)->not->toBeFalse()
+        ->and($fallbackPos)->toBeLessThan($checkPos);
 });
 
 it('verifies the downloaded jq.exe checksum via Get-FileHash before trusting it', function () {

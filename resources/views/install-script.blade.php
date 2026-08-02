@@ -158,7 +158,7 @@ BODY=$(cat)
 # system jq -- so hook behavior can never drift between machines.
 JQ="$HOME/.config/{{ $namespace }}/bin/jq"
 
-if [ -n "$JQ" ]; then
+if [ -x "$JQ" ]; then
   TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
   if [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ]; then
     TOKENS=$("$JQ" -sr '
@@ -421,7 +421,7 @@ resolve_account() {
   fi
 }
 
-if [ -n "$JQ" ]; then
+if [ -x "$JQ" ]; then
   SESSION_ID=$(printf '%s' "$BODY" | "$JQ" -r '.session_id // .sessionId // ""' 2>/dev/null)
   resolve_account
   BODY=$(printf '%s' "$BODY" | "$JQ" -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
@@ -444,7 +444,7 @@ CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
 # and attribution fields the dashboard reads, dropping prompt text, tool_input,
 # tool_response, and the last assistant message so no session content leaves the
 # machine. Runs after custom.sh so a fighter's custom_activity still rides along.
-if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -n "$JQ" ]; then
+if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then
   FILTERED=$(printf '%s' "$BODY" | "$JQ" -c '{
     hook_event_name, session_id, tokens, tool_name, custom_activity,
     client_version, account_email, account_uuid, account_source, account_org_id
@@ -560,14 +560,21 @@ if [ -z "$SLAYER_TOKEN" ] && [ -s "$HOME/.config/{{ $namespace }}/token" ]; then
   SLAYER_TOKEN="$(cat "$HOME/.config/{{ $namespace }}/token")"
 fi
 
-# No -f: we must read the status code, not fail silently. `|| echo "000"` keeps
-# a hard curl error from aborting the script under `set -e`. curl's own
+# No -f: we must read the status code, not fail silently. curl's own -w
+# status output is unreliable as a hard-failure signal: on a hard transport
+# failure (DNS/TLS/timeout) curl still writes SOMETHING to stdout via -w,
+# just not a clean "000" -- so curl's own exit status is checked directly
+# via `if !` instead of pattern-matching the printed body. curl's own
 # stderr (DNS/TLS/timeout detail) is captured rather than discarded, so a
-# "000" (curl itself failed, not just a non-2xx response) is diagnosable.
+# transport failure is diagnosable.
 SLAYER_CURL_ERR="$SLAYER_WHL_DIR/curl-stderr"
-SLAYER_HTTP=$(curl -sSL -w '%{http_code}' \
+if ! SLAYER_HTTP=$(curl -sSL -w '%{http_code}' \
     -H "Authorization: Bearer $SLAYER_TOKEN" \
-    "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>"$SLAYER_CURL_ERR" || echo "000")
+    "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>"$SLAYER_CURL_ERR"); then
+  cat "$SLAYER_CURL_ERR" >&2
+  echo "slayer-cli: could not reach the wheel download URL (see error above)." >&2
+  exit 1
+fi
 
 if [ "$SLAYER_HTTP" = "200" ]; then
   # Two steps on purpose: the served wheel is always "latest" and its version
@@ -587,10 +594,6 @@ if [ "$SLAYER_HTTP" = "200" ]; then
   fi
 elif [ "$SLAYER_HTTP" = "401" ]; then
   echo "slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows." >&2
-  exit 1
-elif [ "$SLAYER_HTTP" = "000" ]; then
-  cat "$SLAYER_CURL_ERR" >&2
-  echo "slayer-cli: could not reach the wheel download URL (see error above)." >&2
   exit 1
 else
   echo "slayer-cli: could not download the CLI (server said $SLAYER_HTTP)." >&2

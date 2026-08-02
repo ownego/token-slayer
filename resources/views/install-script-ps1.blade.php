@@ -116,8 +116,13 @@ $jqAssets = @{
   'ARM64' = @{ Name = 'jq-windows-arm64.exe'; Sha256 = '083b5377392bc57cf27052b6d20a2d927770683bca844632901ff38b4b7b0ac7' }
 }
 $jqArch = $env:PROCESSOR_ARCHITECTURE
+# Under WOW64 (32-bit PowerShell running on a 64-bit machine -- some
+# corporate images default to "Windows PowerShell (x86)"), PROCESSOR_ARCHITECTURE
+# reports the process architecture (x86), not the real hardware; the true
+# architecture is in PROCESSOR_ARCHITEW6432 in that case.
+if ($jqArch -eq 'x86' -and $env:PROCESSOR_ARCHITEW6432) { $jqArch = $env:PROCESSOR_ARCHITEW6432 }
 if (-not $jqAssets.ContainsKey($jqArch)) {
-  throw "No pinned jq build for Windows/$jqArch -- token-slayer cannot install without a known-good jq for this platform."
+  throw "No pinned jq build for Windows/$jqArch -- token-slayer cannot install without a known-good jq for this platform. Open an issue with this OS/arch."
 }
 $jqAsset = $jqAssets[$jqArch]
 
@@ -336,7 +341,7 @@ BODY=$(cat)
 # system jq -- so hook behavior can never drift between machines.
 JQ="$HOME/.config/__TS_NAMESPACE__/bin/jq.exe"
 
-if [ -n "$JQ" ]; then
+if [ -x "$JQ" ]; then
   TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
   if [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ]; then
     TOKENS=$("$JQ" -sr '
@@ -599,7 +604,7 @@ resolve_account() {
   fi
 }
 
-if [ -n "$JQ" ]; then
+if [ -x "$JQ" ]; then
   SESSION_ID=$(printf '%s' "$BODY" | "$JQ" -r '.session_id // .sessionId // ""' 2>/dev/null)
   resolve_account
   BODY=$(printf '%s' "$BODY" | "$JQ" -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \

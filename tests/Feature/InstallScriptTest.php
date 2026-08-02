@@ -179,11 +179,11 @@ it('filters the payload to usage fields when SLAYER_MINIMAL_PAYLOAD is set, afte
     $script = $this->get(route('install-script'))->content();
 
     expect($script)
-        ->toContain('if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -n "$JQ" ]; then')
+        ->toContain('if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then')
         ->toContain('case "$FILTERED" in \'{\'*) BODY="$FILTERED" ;; esac');
 
     $customShPosition = strpos($script, '[ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"');
-    $filterPosition = strpos($script, 'if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -n "$JQ" ]');
+    $filterPosition = strpos($script, 'if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]');
     $sendPosition = strpos($script, 'curl -s --max-time 3 -X POST "$URL"');
 
     expect($customShPosition)->toBeLessThan($filterPosition);
@@ -619,6 +619,37 @@ it('captures and prints the real curl/pip error instead of discarding it on fail
         ->toContain('printf \'%s\n\' "$SLAYER_PIP_ERR" >&2');
 });
 
+it('checks curl\'s own exit status for the wheel download instead of pattern-matching a printed "000"', function () {
+    // `curl -w '%{http_code}' ... || echo "000"` is broken: curl writes SOMETHING
+    // to stdout via -w even on a hard transport failure (DNS/TLS/timeout), so the
+    // clean string "000" the old `elif` branch looked for never actually appears
+    // -- the real curl stderr was captured but never printed. Checking curl's own
+    // exit status directly (`if !`) is the only way to reliably detect that case.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('if ! SLAYER_HTTP=$(curl -sSL -w \'%{http_code}\'')
+        ->not->toContain('|| echo "000"')
+        ->toContain('could not reach the wheel download URL (see error above)');
+
+    // The failure branch that prints the captured curl stderr must be the `if !`
+    // guard around the curl call itself, not a separate "000" status check.
+    $ifNotPos = strpos($script, 'if ! SLAYER_HTTP=$(curl -sSL');
+    $catErrPos = strpos($script, 'cat "$SLAYER_CURL_ERR" >&2');
+    expect($ifNotPos)->not->toBeFalse()
+        ->and($catErrPos)->not->toBeFalse()
+        ->and($catErrPos)->toBeGreaterThan($ifNotPos)
+        ->and($catErrPos - $ifNotPos)->toBeLessThan(300);
+
+    // The http-status dispatch is a plain if/elif/else over 200/401/else --
+    // no more explicit "000" branch (that case is now handled above, by `if !`).
+    expect($script)
+        ->toContain('if [ "$SLAYER_HTTP" = "200" ]; then')
+        ->toContain('elif [ "$SLAYER_HTTP" = "401" ]; then')
+        ->not->toContain('elif [ "$SLAYER_HTTP" = "000" ]; then')
+        ->not->toContain('$SLAYER_HTTP" = "000"');
+});
+
 it('symlinks slayer to the token-slayer shim', function () {
     $script = $this->get(route('install-script'))->content();
 
@@ -699,6 +730,23 @@ it('uses the resolved $JQ variable in every call site inside the hook, including
         ->toContain('"$JQ" -r \'.org_uuid')
         ->toContain('"$JQ" -r \'.email // ""\' "$NS_DIR/account.json"')
         ->toContain('"$JQ" -r \'keys[]\'')
-        ->toContain('[ -n "$JQ" ]; then')
+        ->toContain('[ -x "$JQ" ]; then')
         ->toContain('"$JQ" -c \'{');
+});
+
+it('guards jq calls with -x (executable check), not the always-true -n', function () {
+    // $JQ is always assigned a literal path string, so `[ -n "$JQ" ]` (non-empty
+    // string) is always true regardless of whether that file actually exists or
+    // is executable -- it provided none of the "defensive against a manually
+    // deleted binary" protection it was meant to. `-x` actually tests existence
+    // + executability. Three guards: transcript-enrichment, post-resolve_account
+    // body-merge, and the minimal-payload guard's `-x "$JQ"` half of the `&&`.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->not->toContain('[ -n "$JQ" ]')
+        ->toContain('[ -x "$JQ" ]; then')
+        ->toContain('[ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then');
+
+    expect(substr_count($script, '-x "$JQ"'))->toBe(3);
 });
