@@ -179,11 +179,11 @@ it('filters the payload to usage fields when SLAYER_MINIMAL_PAYLOAD is set, afte
     $script = $this->get(route('install-script'))->content();
 
     expect($script)
-        ->toContain('if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && command -v jq >/dev/null 2>&1; then')
+        ->toContain('if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -n "$JQ" ]; then')
         ->toContain('case "$FILTERED" in \'{\'*) BODY="$FILTERED" ;; esac');
 
     $customShPosition = strpos($script, '[ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"');
-    $filterPosition = strpos($script, 'if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && command -v jq');
+    $filterPosition = strpos($script, 'if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -n "$JQ" ]');
     $sendPosition = strpos($script, 'curl -s --max-time 3 -X POST "$URL"');
 
     expect($customShPosition)->toBeLessThan($filterPosition);
@@ -328,7 +328,7 @@ it('merges account_org_id into the outgoing event body when resolved', function 
 
     expect($script)->toContain('account_org_id');
 
-    $bodyAssignPosition = strpos($script, 'BODY=$(printf \'%s\' "$BODY" | jq -c --arg e "$ACC_EMAIL"');
+    $bodyAssignPosition = strpos($script, 'BODY=$(printf \'%s\' "$BODY" | "$JQ" -c --arg e "$ACC_EMAIL"');
     expect($bodyAssignPosition)->not->toBeFalse();
 
     $mergeBlock = substr($script, $bodyAssignPosition, 700);
@@ -654,19 +654,33 @@ it('verifies the downloaded jq checksum before trusting it, and self-heals a mis
         ->toContain('chmod +x "$JQ_BIN"');
 });
 
-it('warns loudly at the end of the install when jq is missing, with an OS-specific install command', function () {
-    // Without jq the hook adds neither tokens nor client_version, so every
-    // event answers 201 and records nothing — silently, forever. macOS ships
-    // no jq at all, which is how a fresh Mac install ends up tracking zero.
+it('never falls back to a system jq inside the hook -- every jq call resolves to the bundled binary', function () {
     $script = $this->get(route('install-script'))->content();
 
     expect($script)
-        ->toContain('if ! command -v jq >/dev/null 2>&1; then')
-        ->toContain('brew install jq')
-        ->toContain('apt install jq');
+        ->not->toContain('command -v jq')
+        ->toContain('JQ="$HOME/.config/token_slayer/bin/jq"');
 
-    $hookWritten = strpos($script, 'sha256 < "$HELPER" > "$CHECKSUM_FILE"');
-    $warning = strpos($script, 'if ! command -v jq >/dev/null 2>&1; then');
+    // The resolver is declared before BODY is read and before the first jq
+    // call site (transcript token enrichment).
+    $resolverPos = strpos($script, 'JQ="$HOME/.config/token_slayer/bin/jq"');
+    $firstJqCallPos = strpos($script, '"$JQ" -r \'.transcript_path');
+    expect($resolverPos)->not->toBeFalse()
+        ->and($firstJqCallPos)->not->toBeFalse()
+        ->and($resolverPos)->toBeLessThan($firstJqCallPos);
+});
 
-    expect($hookWritten)->toBeLessThan($warning);
+it('uses the resolved $JQ variable in every call site inside the hook, including account resolution', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // Spot-check a representative call from each function that used to guard
+    // on `command -v jq` -- resolve_account, detector_scan, provider_account,
+    // and the final body-merge/minimal-payload filters.
+    expect($script)
+        ->toContain('"$JQ" -r \'.claudeAiOauth.accessToken')
+        ->toContain('"$JQ" -r \'.org_uuid')
+        ->toContain('"$JQ" -r \'.email // ""\' "$NS_DIR/account.json"')
+        ->toContain('"$JQ" -r \'keys[]\'')
+        ->toContain('[ -n "$JQ" ]; then')
+        ->toContain('"$JQ" -c \'{');
 });
