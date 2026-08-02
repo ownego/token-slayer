@@ -38,6 +38,7 @@
 
         <div x-show="track === 'cli'" x-cloak>
             @include('partials.setup.stepper', ['labels' => ['Công cụ', 'Nền tảng', 'Python', 'Đã có token?', 'Cài đặt', 'Xong']])
+            @include('partials.setup.cli-track')
         </div>
         <div x-show="track === 'cowork'" x-cloak>
             @include('partials.setup.stepper', ['labels' => ['Công cụ', 'Nền tảng', 'Python', 'Cài đặt']])

@@ -26,3 +26,30 @@ test('setup renders as a livewire full-page component', function () {
 
     Livewire::test(Setup::class)->assertOk();
 });
+
+test('cli track step 2 offers macOS, Linux, and Windows', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSeeInOrder(['macOS', 'Linux', 'Windows']);
+});
+
+test('cli track step 3 checks python and flags the broken 3.14 homebrew bottle', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSee('python3 --version')
+        ->assertSee('3.10')
+        ->assertSee('3.14')
+        ->assertSee('brew install python@3.12')
+        ->assertSee('python3.12 --version')
+        ->assertSee('brew --version');
+});
+
+test('cli track python fix branch never suggests re-running the homebrew installer unconditionally', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')->assertOk()->assertDontSee('.zshrc');
+});

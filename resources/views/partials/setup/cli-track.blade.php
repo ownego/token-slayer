@@ -1,0 +1,93 @@
+{{-- resources/views/partials/setup/cli-track.blade.php --}}
+<div x-show="track === 'cli'" x-cloak x-data="{ platform: null, pythonOk: null, pyFix: false, tokenSource: null, sourcePlatform: null, pastedToken: '', plainTokenGenerated: false }">
+    {{-- Step 2: platform --}}
+    <div x-show="step === 2">
+        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 2 / 6</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Chọn nền tảng</h2>
+        <div class="grid grid-cols-3 gap-3">
+            <button type="button" @click="platform = 'macos'; step = 3" class="border-2 rounded-lg py-4 text-sm font-semibold" :class="platform === 'macos' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">macOS</button>
+            <button type="button" @click="platform = 'linux'; step = 3" class="border-2 rounded-lg py-4 text-sm font-semibold" :class="platform === 'linux' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">Linux</button>
+            <button type="button" @click="platform = 'windows'; step = 3" class="border-2 rounded-lg py-4 text-sm font-semibold" :class="platform === 'windows' ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'">Windows</button>
+        </div>
+    </div>
+
+    {{-- Step 3: python check --}}
+    <div x-show="step === 3">
+        <p class="text-xs font-semibold text-orange-600 mb-1">Bước 3 / 6</p>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Kiểm tra Python</h2>
+        <p class="text-sm text-gray-500 mb-3">Copy lệnh, dán vào terminal, xem kết quả rồi chọn bên dưới.</p>
+
+        <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('py-check', 'python3 --version')">
+            $ python3 --version
+            <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" :class="copied === 'py-check' && 'bg-emerald-800 text-emerald-300'" x-text="copied === 'py-check' ? 'Copied' : 'Copy'"></span>
+        </div>
+
+        <div class="flex gap-3 mb-2">
+            <button type="button" @click="pythonOk = true; pyFix = false; step = 4" class="flex-1 border-2 border-gray-200 hover:border-emerald-400 hover:text-emerald-700 rounded-lg py-3 text-sm font-semibold text-gray-700">Có, 3.10–3.13</button>
+            <button type="button" @click="pythonOk = false; pyFix = true" class="flex-1 border-2 border-gray-200 hover:border-orange-400 hover:text-orange-700 rounded-lg py-3 text-sm font-semibold text-gray-700">Khác / 3.14 / lỗi</button>
+        </div>
+
+        <div x-show="pyFix" x-cloak class="bg-gray-50 border border-gray-200 rounded-lg p-4 mt-2">
+            <p class="text-xs font-bold text-gray-500 uppercase mb-3">Fix nhanh</p>
+
+            <template x-if="platform === 'macos'">
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-700 mb-1">1. Kiểm tra Homebrew</p>
+                        <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('brew-check', 'brew --version')">
+                            $ brew --version
+                            <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'brew-check' ? 'Copied' : 'Copy'"></span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Hiện <b>"Homebrew 4.x.x"</b> → có rồi, bỏ qua bước 2. Hiện <b>"command not found"</b> → làm bước 2.</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-700 mb-1">2. Cài Homebrew <span class="font-normal text-gray-400">(chỉ khi bước 1 báo "not found")</span></p>
+                        <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('brew-install', '/bin/bash -c &quot;$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)&quot;')">
+                            $ /bin/bash -c "$(curl -fsSL .../install.sh)"
+                            <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'brew-install' ? 'Copied' : 'Copy'"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-700 mb-1">3. Cài Python 3.12</p>
+                        <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('py-install', 'brew install python@3.12')">
+                            $ brew install python@3.12
+                            <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'py-install' ? 'Copied' : 'Copy'"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-700 mb-1">4. Check lại</p>
+                        <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('py-recheck', 'python3.12 --version')">
+                            $ python3.12 --version
+                            <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'py-recheck' ? 'Copied' : 'Copy'"></span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Dùng tên có version (<b>python3.12</b>), không phải <b>python3</b> trần — Homebrew không tự đổi <b>python3</b> mặc định, nhưng installer thật tự tìm đúng <b>python3.12</b> nên không cần alias, không cần sửa file cấu hình shell.</p>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="platform === 'linux'">
+                <div>
+                    <p class="text-sm font-semibold text-gray-700 mb-1">Cài Python 3.10+ với venv</p>
+                    <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('py-linux', 'sudo apt install python3-venv')">
+                        $ sudo apt install python3-venv
+                        <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'py-linux' ? 'Copied' : 'Copy'"></span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Dùng dnf hoặc pacman thay apt nếu máy bạn không phải Debian/Ubuntu.</p>
+                </div>
+            </template>
+
+            <template x-if="platform === 'windows'">
+                <div>
+                    <p class="text-sm font-semibold text-gray-700 mb-1">Cài Python 3.12</p>
+                    <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('py-win', 'winget install Python.Python.3.12')">
+                        $ winget install Python.Python.3.12
+                        <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'py-win' ? 'Copied' : 'Copy'"></span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Từ python.org hoặc winget, không dùng bản Microsoft Store.</p>
+                </div>
+            </template>
+
+            <button type="button" @click="pythonOk = true; step = 4" class="mt-4 bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg">Xong, tiếp tục →</button>
+        </div>
+    </div>
+</div>
