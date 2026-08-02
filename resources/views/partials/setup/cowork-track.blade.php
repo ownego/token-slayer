@@ -33,7 +33,7 @@
         </div>
 
         <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-            Cowork tính đúng token thật (Cowork chạy Claude Code thật trong VM, trừ đúng vào quota 5h/7d của account đó) — nhưng watcher <b>không gắn được account cụ thể</b>, nên usage luôn hiện là cá nhân trên `/profile` dù bạn dùng account nào trong Cowork.
+            Cowork tính đúng token thật (Cowork chạy Claude Code thật trong VM, trừ đúng vào quota 5h/7d của account đó) — nhưng watcher <b>không gắn được account cụ thể</b>, nên usage luôn hiện là cá nhân trên <code>/profile</code> dù bạn dùng account nào trong Cowork.
         </div>
     </div>
 </div>

@@ -109,12 +109,9 @@ test('cli track offers the manual hook config fallback with all three provider s
 test('cowork track offers macOS and Windows only, not Linux', function () {
     $this->actingAs(User::factory()->create());
 
-    $response = $this->get('/setup');
-    $response->assertOk();
-
-    // The cowork-track partial's platform buttons — scoped by asserting
-    // the surrounding track block exists and Linux is absent from it.
-    $response->assertSee('Cowork');
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSeeInOrder(['macOS', 'Windows']);
 });
 
 test('cowork track shows the attribution caveat', function () {
