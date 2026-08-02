@@ -193,3 +193,16 @@ test('profile links to the setup wizard and the CLI guide', function () {
         ->assertSee('href="'.route('setup').'"', escape: false)
         ->assertSee('href="'.route('guide').'"', escape: false);
 });
+
+test('profile does not double-wrap the account nav in its own width constraint', function () {
+    $this->actingAs(User::factory()->create());
+
+    $html = $this->get('/profile')->getContent();
+
+    $navPos = strpos($html, 'account-nav') !== false ? strpos($html, '<nav') : strpos($html, '<nav');
+    $wrapperPos = strpos($html, 'p-8 max-w-3xl mx-auto space-y-6');
+
+    expect($navPos)->not->toBeFalse()
+        ->and($wrapperPos)->not->toBeFalse()
+        ->and($navPos)->toBeLessThan($wrapperPos);
+});
