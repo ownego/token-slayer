@@ -168,3 +168,37 @@ it('falls back to WindowsApps interpreters instead of rejecting them by path', f
         ->toContain('WindowsApps')
         ->not->toContain("if (\$path -and \$path -match 'WindowsApps') { continue }");
 });
+
+it('bootstraps a pinned jq.exe instead of relying on a system jq', function () {
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain("\$JqVersion = '1.8.2'")
+        ->toContain("\$JqBin = Join-Path \$JqDir 'jq.exe'")
+        ->toContain('jq-windows-amd64.exe')
+        ->toContain('a6fc67fedaf9128a3309a1e2ebb8b986aeccf70122ee46d2cb4849e423f0c627')
+        ->toContain('jq-windows-arm64.exe')
+        ->toContain('083b5377392bc57cf27052b6d20a2d927770683bca844632901ff38b4b7b0ac7')
+        ->toContain('https://github.com/jqlang/jq/releases/download/jq-$JqVersion/');
+
+    // Must run before the hook helper (HOOK_SH) template is written.
+    $jqBootstrapPos = strpos($script, "\$JqVersion = '1.8.2'");
+    $hookWritePos = strpos($script, '$hookShTemplate = @');
+    expect($jqBootstrapPos)->not->toBeFalse()
+        ->and($hookWritePos)->not->toBeFalse()
+        ->and($jqBootstrapPos)->toBeLessThan($hookWritePos);
+});
+
+it('throws with a clear message when no pinned jq build exists for this Windows architecture', function () {
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)->toContain('No pinned jq build for Windows/');
+});
+
+it('verifies the downloaded jq.exe checksum via Get-FileHash before trusting it', function () {
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('Get-FileHash -LiteralPath $path -Algorithm SHA256')
+        ->toContain('checksum mismatch');
+});

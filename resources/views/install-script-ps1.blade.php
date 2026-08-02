@@ -101,6 +101,53 @@ $PyArg = $Py[1]
 $PyPrefix = @()
 if ($PyArg) { $PyPrefix = @($PyArg) }
 
+# --- jq bootstrap ------------------------------------------------------------
+# Every machine uses this exact pinned jq.exe -- NEVER a system jq -- so
+# cross-platform/cross-version differences in jq's own behavior can never
+# again produce silently wrong token/account attribution. Mirrors the POSIX
+# installer's jq bootstrap; see that file for the full rationale.
+$JqVersion = '1.8.2'
+$JqDir = Join-Path $Cfg 'bin'
+$JqBin = Join-Path $JqDir 'jq.exe'
+New-Item -ItemType Directory -Force -Path $JqDir | Out-Null
+
+$jqAssets = @{
+  'AMD64' = @{ Name = 'jq-windows-amd64.exe'; Sha256 = 'a6fc67fedaf9128a3309a1e2ebb8b986aeccf70122ee46d2cb4849e423f0c627' }
+  'ARM64' = @{ Name = 'jq-windows-arm64.exe'; Sha256 = '083b5377392bc57cf27052b6d20a2d927770683bca844632901ff38b4b7b0ac7' }
+}
+$jqArch = $env:PROCESSOR_ARCHITECTURE
+if (-not $jqAssets.ContainsKey($jqArch)) {
+  throw "No pinned jq build for Windows/$jqArch -- token-slayer cannot install without a known-good jq for this platform."
+}
+$jqAsset = $jqAssets[$jqArch]
+
+function Get-FileSha256Hex($path) {
+  (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+# Self-heal: an existing binary that doesn't match the pinned checksum (a
+# partial download from a prior failed run, or a version bump) is rebuilt,
+# not trusted. A binary that already matches is left untouched.
+if (Test-Path $JqBin) {
+  if ((Get-FileSha256Hex $JqBin) -ne $jqAsset.Sha256) { Remove-Item -Force $JqBin }
+}
+
+if (-not (Test-Path $JqBin)) {
+  $jqUrl = "https://github.com/jqlang/jq/releases/download/jq-$JqVersion/$($jqAsset.Name)"
+  $jqTmp = Join-Path $JqDir '.jq.download'
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri $jqUrl -OutFile $jqTmp
+  } catch {
+    throw "Could not download jq from $jqUrl -- check your network connection and re-run. ($($_.Exception.Message))"
+  }
+  $downloadedSha = Get-FileSha256Hex $jqTmp
+  if ($downloadedSha -ne $jqAsset.Sha256) {
+    Remove-Item -Force $jqTmp -ErrorAction SilentlyContinue
+    throw "Downloaded jq checksum mismatch -- expected $($jqAsset.Sha256), got $downloadedSha. Refusing to install a binary that doesn't match. Re-run to retry the download."
+  }
+  Move-Item -Force $jqTmp $JqBin
+}
+
 # --- venv + PEP668 + get-pip fallback (Windows `Scripts\` layout) -----------
 # PIP_BREAK_SYSTEM_PACKAGES=1: pip's official override for the
 # EXTERNALLY-MANAGED marker some python.org/winget builds ship; safe here
