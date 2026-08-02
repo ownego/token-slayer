@@ -30,6 +30,26 @@ export function findOpaqueBounds(data, width, height) {
 }
 
 /**
+ * Computes a centered "cover" destination rect for drawing a
+ * sourceWidth x sourceHeight region into a destWidth x destHeight canvas —
+ * scaled uniformly (same factor on both axes, never stretched/warped) so it
+ * fully covers the destination, cropping the excess on whichever axis
+ * doesn't match. Pure and DOM-free so it's directly unit-testable.
+ *
+ * @param {number} sourceWidth
+ * @param {number} sourceHeight
+ * @param {number} destWidth
+ * @param {number} destHeight
+ * @return {{x: number, y: number, width: number, height: number}}
+ */
+export function coverFit(sourceWidth, sourceHeight, destWidth, destHeight) {
+  const scale = Math.max(destWidth / sourceWidth, destHeight / sourceHeight);
+  const width = sourceWidth * scale;
+  const height = sourceHeight * scale;
+  return { x: (destWidth - width) / 2, y: (destHeight - height) / 2, width, height };
+}
+
+/**
  * Draws a single named frame from the 'fighters' texture atlas onto a 2D
  * canvas by reusing the atlas already loaded by the running Phaser game —
  * no separate image request, and no re-generated sprite asset.
@@ -40,10 +60,15 @@ export function findOpaqueBounds(data, width, height) {
  * soldier's idle frame). Stretching the untrimmed slot to fill a thumbnail
  * canvas left the character looking tiny inside a mostly-empty circle, so
  * this probes the frame's real bounds (via findOpaqueBounds) and draws
- * only that region. The destination canvas itself is reused as scratch
- * space for the probe — document.createElement is unavailable under this
- * project's Vitest setup (no jsdom/canvas polyfill, a deliberate,
- * documented convention), so a second canvas element isn't an option here.
+ * only that region, scaled uniformly via coverFit rather than stretched to
+ * the destination's exact aspect ratio — a trimmed bounding box's aspect
+ * ratio varies per frame (a mid-swing attack frame is wider than an idle
+ * frame), so a plain stretch-to-fill warped the character differently on
+ * every frame/character. The destination canvas itself is reused as
+ * scratch space for the probe — document.createElement is unavailable
+ * under this project's Vitest setup (no jsdom/canvas polyfill, a
+ * deliberate, documented convention), so a second canvas element isn't an
+ * option here.
  *
  * @param {Phaser.Game|null} game the booted battlefield game, or null if not ready yet
  * @param {HTMLCanvasElement} canvas destination canvas; drawn at its current width/height
@@ -70,10 +95,11 @@ export function drawFighterFrame(game, canvas, frameName) {
   canvas.width = destWidth;
   canvas.height = destHeight;
   ctx.clearRect(0, 0, destWidth, destHeight);
+  const dest = coverFit(bounds.width, bounds.height, destWidth, destHeight);
   ctx.drawImage(
     source.image,
     cutX + bounds.x, cutY + bounds.y, bounds.width, bounds.height,
-    0, 0, destWidth, destHeight,
+    dest.x, dest.y, dest.width, dest.height,
   );
 
   return true;

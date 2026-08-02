@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { drawFighterPreview, findOpaqueBounds } from '@battlefield/fighter/preview.js';
+import { coverFit, drawFighterPreview, findOpaqueBounds } from '@battlefield/fighter/preview.js';
 
 /**
  * Builds a fully-transparent width*height RGBA buffer with a single opaque
@@ -37,6 +37,26 @@ describe('findOpaqueBounds', () => {
   });
 });
 
+describe('coverFit', () => {
+  test('scales a narrower-than-tall source uniformly to cover a square destination, cropping width', () => {
+    // 5x6 source into a 96x96 destination: scale = max(96/5, 96/6) = 19.2 on both axes
+    const result = coverFit(5, 6, 96, 96);
+    expect(result.x).toBeCloseTo(0);
+    expect(result.y).toBeCloseTo(-9.6);
+    expect(result.width).toBeCloseTo(96);
+    expect(result.height).toBeCloseTo(115.2);
+  });
+
+  test('scales a wider-than-tall source uniformly to cover a square destination, cropping height', () => {
+    // 60x30 source into a 60x60 destination: scale = max(60/60, 60/30) = 2 on both axes
+    expect(coverFit(60, 30, 60, 60)).toEqual({ x: -30, y: 0, width: 120, height: 60 });
+  });
+
+  test('an already-matching aspect ratio needs no cropping', () => {
+    expect(coverFit(10, 10, 50, 50)).toEqual({ x: 0, y: 0, width: 50, height: 50 });
+  });
+});
+
 function makeGame(frame) {
   return { textures: { getFrame: vi.fn(() => frame) } };
 }
@@ -55,7 +75,7 @@ function makeCanvas(width, height, opaqueRect) {
 }
 
 describe('drawFighterPreview', () => {
-  test('probes the frame for its real silhouette, then draws only that region stretched to the destination size', () => {
+  test('probes the frame for its real silhouette, then draws only that region cover-fit (not stretched) to the destination size', () => {
     const frame = { cutX: 10, cutY: 20, cutWidth: 30, cutHeight: 40, source: { image: 'IMG' } };
     const game = makeGame(frame);
     const canvas = makeCanvas(96, 96, { x: 5, y: 10, width: 5, height: 6 });
@@ -66,8 +86,14 @@ describe('drawFighterPreview', () => {
     expect(game.textures.getFrame).toHaveBeenCalledWith('fighters', 'werebear-idle-0');
     // probe pass: draws the whole untrimmed slot into the resized canvas
     expect(canvas._ctx.drawImage).toHaveBeenNthCalledWith(1, 'IMG', 10, 20, 30, 40, 0, 0, 30, 40);
-    // final pass: only the detected silhouette (offset by cutX/cutY), stretched to the original destination size
-    expect(canvas._ctx.drawImage).toHaveBeenNthCalledWith(2, 'IMG', 15, 30, 5, 6, 0, 0, 96, 96);
+    // final pass: only the detected silhouette (offset by cutX/cutY), scaled uniformly via coverFit — not
+    // stretched to 0,0,96,96, which would warp a non-square silhouette's aspect ratio
+    const [img, sx, sy, sw, sh, dx, dy, dw, dh] = canvas._ctx.drawImage.mock.calls[1];
+    expect([img, sx, sy, sw, sh]).toEqual(['IMG', 15, 30, 5, 6]);
+    expect(dx).toBeCloseTo(0);
+    expect(dy).toBeCloseTo(-9.6);
+    expect(dw).toBeCloseTo(96);
+    expect(dh).toBeCloseTo(115.2);
     // canvas dimensions are restored to their original destination size
     expect(canvas.width).toBe(96);
     expect(canvas.height).toBe(96);
