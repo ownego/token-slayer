@@ -92,7 +92,7 @@ test('cli track verify step mentions the tok alias and links to the guide', func
     $this->get('/setup')
         ->assertOk()
         ->assertSee('token-slayer status')
-        ->assertSee('tok')
+        ->assertSee('alias ngắn')
         ->assertSee('href="'.route('guide').'"', escape: false);
 });
 
@@ -111,7 +111,8 @@ test('cowork track offers macOS and Windows only, not Linux', function () {
 
     $this->get('/setup')
         ->assertOk()
-        ->assertSeeInOrder(['macOS', 'Windows']);
+        ->assertSeeInOrder(['macOS', 'Windows'])
+        ->assertSee('không gắn được account cụ thể');
 });
 
 test('cowork track shows the attribution caveat', function () {

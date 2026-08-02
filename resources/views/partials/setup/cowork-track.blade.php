@@ -24,13 +24,15 @@
         <h2 class="text-xl font-bold text-gray-900 mb-4">Cài đặt</h2>
 
         <template x-if="!plainTokenGenerated">
-            <button type="button" @click="$wire.generateToken().then(() => plainTokenGenerated = true)" class="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg mb-4">Generate token</button>
+            <button type="button" @click="$wire.generateToken().then(() => plainTokenGenerated = true)" class="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg mb-2">Generate token</button>
         </template>
+        <p class="text-xs text-amber-700 mb-4">Tạo token mới ở đây sẽ làm mất hiệu lực token cũ trên mọi máy khác (kể cả track Claude CLI trên chính máy này) đang dùng token đó.</p>
 
-        <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-4" @click="copy('cowork-install', '{{ addslashes($installCowork) }}')">
+        <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-2" @click="copy('cowork-install', '{{ addslashes($installCowork) }}')">
             {{ $installCowork }}
             <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'cowork-install' ? 'Copied' : 'Copy'"></span>
         </div>
+        <p x-show="platform === 'windows'" x-cloak class="text-xs text-amber-700 mb-4">Windows: tự động lên lịch chạy watcher chưa được hỗ trợ — bạn cần tự chạy lại lệnh trên theo chu kỳ.</p>
 
         <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
             Cowork tính đúng token thật (Cowork chạy Claude Code thật trong VM, trừ đúng vào quota 5h/7d của account đó) — nhưng watcher <b>không gắn được account cụ thể</b>, nên usage luôn hiện là cá nhân trên <code>/profile</code> dù bạn dùng account nào trong Cowork.

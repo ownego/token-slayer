@@ -137,7 +137,7 @@
             </div>
             <div x-show="sourcePlatform === 'windows'" x-cloak>
                 <p class="text-xs text-gray-500 mb-1">Chạy trên máy đó (PowerShell):</p>
-                <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('retrieve-win', 'Get-Content $HOME\.config\{{ $namespace }}\token')">
+                <div class="bg-gray-900 text-amber-300 rounded-md p-2 pr-20 relative font-mono text-xs cursor-pointer" @click="copy('retrieve-win', 'Get-Content $HOME\\.config\\{{ $namespace }}\\token')">
                     $ Get-Content $HOME\.config\{{ $namespace }}\token
                     <span class="absolute right-2 top-1.5 bg-gray-800 text-gray-300 text-[10px] font-semibold px-1.5 py-0.5 rounded" x-text="copied === 'retrieve-win' ? 'Copied' : 'Copy'"></span>
                 </div>
@@ -158,25 +158,38 @@
         <p class="text-xs font-semibold text-orange-600 mb-1">Bước 5 / 6</p>
         <h2 class="text-xl font-bold text-gray-900 mb-4">Cài đặt</h2>
 
-        <template x-if="tokenSource !== 'elsewhere' && !plainTokenGenerated">
+        <template x-if="tokenSource === 'fresh' && !plainTokenGenerated">
             <button type="button" @click="$wire.generateToken().then(() => plainTokenGenerated = true)" class="bg-gray-900 text-white text-sm font-semibold px-4 py-2 rounded-lg mb-4">Generate token</button>
         </template>
 
-        <template x-if="platform === 'macos' || platform === 'linux'">
+        <template x-if="tokenSource === 'here' && (platform === 'macos' || platform === 'linux')">
+            <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('install-here', 'curl -fsSL {{ route('install-script') }} | sh')">
+                curl -fsSL {{ route('install-script') }} | sh
+                <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install-here' ? 'Copied' : 'Copy'"></span>
+            </div>
+        </template>
+        <template x-if="tokenSource === 'here' && platform === 'windows'">
+            <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('install-here-ps', 'irm {{ route('install-script-ps1') }} | iex')">
+                irm {{ route('install-script-ps1') }} | iex
+                <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install-here-ps' ? 'Copied' : 'Copy'"></span>
+            </div>
+        </template>
+
+        <template x-if="tokenSource !== 'here' && (platform === 'macos' || platform === 'linux')">
             <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('install', tokenSource === 'elsewhere' ? '{{ addslashes($installUnix) }}'.replace('<your-token>', pastedToken) : '{{ addslashes($installUnix) }}')">
                 {{ $installUnix }}
                 <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install' ? 'Copied' : 'Copy'"></span>
             </div>
         </template>
-        <template x-if="platform === 'windows'">
+        <template x-if="tokenSource !== 'here' && platform === 'windows'">
             <div>
                 <p class="text-xs text-gray-500 mb-1">PowerShell:</p>
-                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('install-ps', '{{ addslashes($installWinPs) }}')">
+                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('install-ps', tokenSource === 'elsewhere' ? '{{ addslashes($installWinPs) }}'.replace('<your-token>', pastedToken) : '{{ addslashes($installWinPs) }}')">
                     {{ $installWinPs }}
                     <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install-ps' ? 'Copied' : 'Copy'"></span>
                 </div>
                 <p class="text-xs text-gray-500 mb-1">cmd.exe (không dùng lẫn với PowerShell ở trên):</p>
-                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer" @click="copy('install-cmd', '{{ addslashes($installWinCmd) }}')">
+                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer" @click="copy('install-cmd', tokenSource === 'elsewhere' ? '{{ addslashes($installWinCmd) }}'.replace('<your-token>', pastedToken) : '{{ addslashes($installWinCmd) }}')">
                     {{ $installWinCmd }}
                     <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'install-cmd' ? 'Copied' : 'Copy'"></span>
                 </div>
