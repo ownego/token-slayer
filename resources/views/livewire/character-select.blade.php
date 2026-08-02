@@ -12,32 +12,381 @@
         x-transition:leave-start="opacity-100"
         x-transition:leave-end="opacity-0"
         @click.self="isOpen = false"
-        class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
     >
-        <div class="w-full max-w-xs rounded-2xl border border-white/10 bg-slate-950/95 p-5 text-center shadow-2xl">
-            <h2 class="mb-4 text-sm font-semibold tracking-wide text-white">Choose your character</h2>
+        <div class="cs-outer" id="cardRoot" x-bind:style="`--accent:${accent}`">
+            <div class="cs-grain"></div>
 
-            <div class="mx-auto mb-3 flex h-28 w-28 items-center justify-center rounded-xl bg-black/40">
-                <canvas x-ref="preview" width="112" height="112"></canvas>
+            <!-- Only Character ships for now — future tabs (Item, ...) are a
+                 matter of adding another .tab-btn, not a layout rework. -->
+            <div class="tab-bar">
+                <button class="tab-btn is-active" type="button">⚔ Character</button>
             </div>
+            <div class="tab-bar-divider"></div>
 
-            <p class="mb-4 text-xs font-medium uppercase tracking-wide text-amber-300" x-text="currentKey()"></p>
+            <div class="cs-root">
+                <div class="roster">
+                    <div class="roster-label"><span class="flourish"></span>Roster · <span x-text="characters.length"></span><span class="flourish"></span></div>
+                    <div class="roster-scroll">
+                        <div class="roster-grid">
+                            <template x-for="character in characters" :key="character">
+                                <div
+                                    class="orb"
+                                    x-bind:class="{ 'is-preview': character === previewKey, 'is-equipped': character === equippedKey }"
+                                    tabindex="0"
+                                    x-bind:style="`--accent:${accentFor(character)}`"
+                                    @click="selectCharacter(character)"
+                                    @keydown.enter="selectCharacter(character)"
+                                >
+                                    <span class="halo"></span>
+                                    <div class="orb-crop" x-ref="`orbCrop-${character}`"></div>
+                                    <span class="orb-label" x-text="character"></span>
+                                    <span class="check" x-show="character === equippedKey">✓</span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="mb-4 flex items-center justify-center gap-4">
-                <button type="button" @click="prev()" class="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-slate-300 hover:text-amber-300">‹</button>
-                <button type="button" @click="next()" class="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-slate-300 hover:text-amber-300">›</button>
+                <div class="preview">
+                    <div class="preview-label"><span class="flourish"></span>Previewing<span class="flourish"></span></div>
+
+                    <div class="preview-frame">
+                        <span class="halo-outer"></span>
+                        <span class="halo-ripple"></span>
+                        <span class="halo-ripple delay"></span>
+                        <span class="portal-pad"></span>
+                        <span class="halo-core"></span>
+                        <span class="energy-ping"></span>
+                        <span class="energy-ping delay"></span>
+                        <span class="tick-groove"></span>
+                        <div class="tick-ring">
+                            <template x-for="i in 16" :key="i"><span x-bind:style="`--i:${i - 1}`"></span></template>
+                        </div>
+                        <span class="spin-ring"></span>
+                        <div class="preview-crop">
+                            <span class="sunburst"></span>
+                            <span class="holo-beam"></span>
+                            <div class="preview-mount" x-ref="previewMount"></div>
+                        </div>
+                        <div class="nameplate"><span x-text="previewKey"></span></div>
+                    </div>
+
+                    <div class="actions">
+                        <template x-for="skill in skills" :key="skill.id">
+                            <button
+                                type="button"
+                                class="btn-move"
+                                x-bind:class="{ 'is-active': skill.id === activeSkillId, 'btn-move-death': skill.id === 'death' }"
+                                @click="selectSkill(skill.id)"
+                            >
+                                <span x-text="skill.label"></span>
+                            </button>
+                        </template>
+                    </div>
+
+                    <button
+                        type="button"
+                        class="btn-equip"
+                        @click="equip()"
+                        x-bind:disabled="previewKey === equippedKey"
+                    >
+                        <span class="core"></span>
+                        <span class="sheen"></span>
+                        <span class="label">
+                            <span class="icon-cluster">
+                                <span class="sword-fx sword-left">🗡️</span>
+                                <span class="icon-wiggle">🛡</span>
+                                <span class="sword-fx sword-right">🗡️</span>
+                            </span>
+                            <span x-text="previewKey === equippedKey ? 'Equipped' : 'Equip'"></span>
+                        </span>
+                    </button>
+                </div>
             </div>
-
-            <button
-                type="button"
-                @click="equip()"
-                class="w-full rounded-lg bg-amber-500/90 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-400"
-                x-text="currentKey() === equippedKey ? 'Equipped' : 'Equip'"
-                :disabled="currentKey() === equippedKey"
-            ></button>
         </div>
     </div>
 </div>
+
+<style>
+/* --- Card shell --- */
+.cs-outer {
+    position: relative;
+    width: clamp(320px, 82vw, 1440px);
+    box-sizing: border-box;
+    padding: 3px;
+    background: linear-gradient(135deg, rgba(249,158,11,0.5), rgba(249,115,22,0.15) 30%, rgba(20,184,166,0.15) 70%, rgba(45,212,191,0.4));
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 25px 70px -15px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04), 0 0 90px -20px rgba(249,115,22,0.25);
+}
+.cs-grain {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0.05; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- Tab bar (Character today; Item lands later as another .tab-btn) --- */
+.tab-bar { position: relative; z-index: 2; display: flex; gap: 6px; padding: 14px 20px 0; }
+.tab-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 18px; border-radius: 10px 10px 0 0;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #78716c; background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08); border-bottom: none;
+    cursor: pointer; transition: all 0.2s ease; font-family: inherit;
+}
+.tab-btn.is-active {
+    color: #fff;
+    background: color-mix(in srgb, var(--accent, #fbbf24) 16%, transparent);
+    border-color: color-mix(in srgb, var(--accent, #fbbf24) 55%, transparent);
+    box-shadow: 0 -6px 18px color-mix(in srgb, var(--accent, #fbbf24) 22%, transparent);
+}
+.tab-bar-divider { position: relative; z-index: 2; height: 1px; margin: 0 20px; background: rgba(255,255,255,0.08); }
+
+/* --- Roster + preview split --- */
+.cs-root {
+    position: relative; z-index: 2;
+    display: flex; min-height: 540px;
+    background:
+        radial-gradient(ellipse 700px 400px at 25% 10%, color-mix(in srgb, var(--accent, #f97316) 14%, transparent), transparent 60%),
+        radial-gradient(ellipse 600px 400px at 90% 90%, color-mix(in srgb, var(--accent, #f97316) 8%, transparent), transparent 60%),
+        linear-gradient(160deg, #0a0e1a 0%, #05060d 100%);
+    transition: background 0.5s ease;
+    color: #e7e5e4;
+    font-family: -apple-system, "Instrument Sans", system-ui, sans-serif;
+    border-radius: 15px;
+}
+.roster { position: relative; width: 280px; padding: 20px; }
+.roster::after {
+    content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 45%, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 55%, transparent);
+    transition: background 0.4s ease;
+}
+.roster-label {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 11px; letter-spacing: 0.06em; color: #78716c; text-transform: uppercase; margin-bottom: 14px;
+}
+.flourish { flex: 1; max-width: 30px; height: 1px; background: linear-gradient(90deg, transparent, rgba(120,113,108,0.6)); }
+.roster-label .flourish:last-child { background: linear-gradient(90deg, rgba(120,113,108,0.6), transparent); }
+.roster-scroll { max-height: 380px; overflow-y: auto; padding-right: 6px; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.4) rgba(255,255,255,0.03); }
+.roster-scroll::-webkit-scrollbar { width: 6px; }
+.roster-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
+.roster-scroll::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.4); border-radius: 3px; }
+.roster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+
+.orb { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+.orb-crop { position: relative; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: rgba(0,0,0,0.45); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1); }
+.orb:hover .orb-crop, .orb:focus .orb-crop { transform: scale(1.1); }
+/* Same reasoning as .preview-mount canvas above: the animated tiles' Phaser
+   games render at 260x260 internally; scaling the canvas element's display
+   size down to fill this 64x64 circle avoids overflow:hidden clipping most
+   of the character out of frame. The 13 static tiles' plain 2D canvases are
+   already drawn at 64x64 natively, so this is a no-op for them. */
+.orb-crop canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+.orb-label { font-size: 9px; color: #78716c; }
+.orb:hover .orb-label { color: #fdba74; }
+.halo {
+    position: absolute; top: -8px; left: 50%; translate: -50% 0; width: 76px; height: 76px; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent, #fbbf24) 65%, transparent), color-mix(in srgb, var(--accent, #fbbf24) 30%, transparent) 55%, transparent 75%);
+    filter: blur(5px); animation: halo-pulse 1.6s ease-in-out infinite; z-index: -1;
+    visibility: hidden;
+}
+.orb.is-preview .halo { visibility: visible; }
+@keyframes halo-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 0.8; } }
+.orb.is-preview .orb-crop { box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255,255,255,0.6); }
+.check {
+    position: absolute; top: -4px; right: 10px; width: 16px; height: 16px; border-radius: 50%;
+    background: #2dd4bf; color: #042f2e; font-size: 9px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 0 8px rgba(45,212,191,0.6);
+}
+
+/* --- Preview panel --- */
+.preview { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 30px; }
+.preview-label { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #78716c; }
+.preview-frame { position: relative; width: 210px; height: 210px; border-radius: 50%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+.tick-groove {
+    position: absolute; inset: -18px; border-radius: 50%;
+    background: radial-gradient(circle closest-side, transparent 88%, color-mix(in srgb, var(--accent, #fbbf24) 45%, transparent) 95%, transparent 100%);
+    filter: blur(2px); transition: background 0.4s ease;
+}
+.tick-ring { position: absolute; inset: -24px; pointer-events: none; }
+.tick-ring span {
+    position: absolute; top: 50%; left: 50%; width: 3px; height: 7px; border-radius: 3px;
+    background: color-mix(in srgb, var(--accent, #fbbf24) 55%, #fff 10%);
+    box-shadow: 0 0 4px color-mix(in srgb, var(--accent, #fbbf24) 60%, transparent);
+    transform: translate(-50%, -124px) rotate(calc(var(--i) * 22.5deg));
+    transform-origin: 50% 124px;
+    animation: tick-sweep 3.2s linear infinite;
+    animation-delay: calc(var(--i) * 0.2s);
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+.tick-ring span:nth-child(4n+1) {
+    width: 7px; height: 7px; border-radius: 0;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+    background: linear-gradient(135deg, #fff, var(--accent, #f97316));
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent, #fbbf24) 70%, transparent);
+}
+@keyframes tick-sweep { 0%, 92%, 100% { filter: brightness(1); } 4% { filter: brightness(1.8); } }
+.sunburst {
+    position: absolute; inset: -20%; z-index: 0;
+    background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--accent, #fbbf24) 12%, transparent) 0deg 8deg, transparent 8deg 20deg);
+    animation: sunburst-breathe 4s ease-in-out infinite;
+    transition: background 0.4s ease;
+}
+@keyframes sunburst-breathe { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+.energy-ping {
+    position: absolute; inset: 0; border-radius: 50%; z-index: 2;
+    background: radial-gradient(circle closest-side, transparent 78%, color-mix(in srgb, #fff 45%, var(--accent, #fbbf24)) 90%, transparent 100%);
+    filter: blur(2px); animation: energy-out 3s ease-out infinite; transition: background 0.4s ease;
+}
+.energy-ping.delay { animation-delay: 1.5s; }
+@keyframes energy-out { 0% { transform: scale(0.97); opacity: 0; } 18% { transform: scale(1.08); opacity: 0.95; } 100% { transform: scale(1.45); opacity: 0; } }
+.nameplate {
+    position: absolute; left: 50%; bottom: -14px; translate: -50% 0; z-index: 4;
+    padding: 5px 22px; border-radius: 999px;
+    background: linear-gradient(180deg, #1c1917, #0a0908);
+    border: 1px solid color-mix(in srgb, var(--accent, #fbbf24) 60%, transparent);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.6), 0 0 16px color-mix(in srgb, var(--accent, #fbbf24) 30%, transparent);
+    white-space: nowrap; overflow: hidden;
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+}
+.nameplate::before {
+    content: ''; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+    background: linear-gradient(120deg, transparent, rgba(255,255,255,0.35), transparent);
+    transform: skewX(-20deg); animation: sheen-move 3.5s ease-in-out infinite;
+}
+.nameplate span {
+    font-size: 15px; font-weight: 600; letter-spacing: 0.03em;
+    background: linear-gradient(135deg, #fff, var(--accent, #f97316));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.holo-beam {
+    position: absolute; left: 50%; bottom: 55px; translate: -50% 0;
+    width: 220px; height: 260px;
+    clip-path: polygon(39% 100%, 61% 100%, 95% 8%, 5% 8%);
+    background: linear-gradient(0deg, color-mix(in srgb, var(--accent, #fbbf24) 45%, transparent) 0%, color-mix(in srgb, var(--accent, #fbbf24) 15%, transparent) 25%, transparent 48%);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 35%, #000 65%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 35%, #000 65%, transparent);
+    filter: blur(2px); animation: beam-breathe 3.6s ease-in-out infinite;
+    transition: background 0.4s ease;
+}
+@keyframes beam-breathe { 0%,100% { opacity: 0.55; } 50% { opacity: 0.95; } }
+.halo-outer {
+    position: absolute; left: 50%; bottom: 32px; translate: -50% 0; z-index: 0;
+    width: 220px; height: 80px; border-radius: 50%;
+    background: radial-gradient(ellipse, color-mix(in srgb, var(--accent, #fbbf24) 30%, transparent) 0%, color-mix(in srgb, var(--accent, #fbbf24) 10%, transparent) 45%, transparent 75%);
+    filter: blur(4px); animation: portal-glow 2.6s ease-in-out infinite; transition: background 0.4s ease;
+}
+.portal-pad {
+    position: absolute; left: 50%; bottom: 46px; translate: -50% 0; z-index: 0;
+    width: 140px; height: 34px; border-radius: 50%;
+    box-shadow: 0 0 20px 4px color-mix(in srgb, var(--accent, #fbbf24) 45%, transparent);
+    background: radial-gradient(ellipse, color-mix(in srgb, var(--accent, #fbbf24) 55%, transparent) 0%, color-mix(in srgb, var(--accent, #fbbf24) 25%, transparent) 45%, transparent 80%);
+    filter: blur(3px); animation: portal-glow 2.6s ease-in-out infinite; transition: background 0.4s ease;
+}
+@keyframes portal-glow { 0%,100% { opacity: 0.8; } 50% { opacity: 1; } }
+.halo-core {
+    position: absolute; left: 50%; bottom: 54px; translate: -50% 0; z-index: 0;
+    width: 50px; height: 14px; border-radius: 50%;
+    background: radial-gradient(ellipse, #fff, color-mix(in srgb, var(--accent, #fbbf24) 70%, #fff) 60%, transparent 100%);
+    filter: blur(1px); animation: portal-glow 2.6s ease-in-out infinite;
+}
+.halo-ripple {
+    position: absolute; left: 50%; bottom: 46px; translate: -50% 0; z-index: 0;
+    width: 140px; height: 34px; border-radius: 50%;
+    background: radial-gradient(ellipse, transparent 55%, color-mix(in srgb, var(--accent, #fbbf24) 50%, transparent) 70%, transparent 88%);
+    filter: blur(2px); animation: halo-ripple-out 2.6s ease-out infinite;
+}
+.halo-ripple.delay { animation-delay: 1.3s; }
+@keyframes halo-ripple-out { 0% { scale: 1 1; opacity: 0.7; } 100% { scale: 1.7 1.4; opacity: 0; } }
+.spin-ring {
+    position: absolute; inset: -6px; border-radius: 50%; z-index: -1;
+    background: conic-gradient(from -45deg, #fff, var(--accent, #fbbf24) 40%, color-mix(in srgb, var(--accent, #fbbf24) 60%, #7f1d1d) 70%, #fff);
+    filter: blur(3px); animation: ring-breathe 2.4s ease-in-out infinite; transition: background 0.4s ease;
+}
+@keyframes ring-breathe { 0%,100% { opacity: 0.75; filter: blur(3px); } 50% { opacity: 1; filter: blur(4px); } }
+.spin-ring::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: #05060d; }
+.preview-crop { position: relative; width: 190px; height: 190px; border-radius: 50%; overflow: hidden; z-index: 1; }
+.preview-mount { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+/* The Phaser game's internal resolution (260x260, game.js PREVIEW_SIZE) is
+   larger than this 190x190 circular window on purpose — it gives the
+   projectile's flight target room past the character's silhouette. Forcing
+   the canvas element's DISPLAY size down to 100%/100% scales that whole
+   260x260 scene proportionally to fit here; without this the raw canvas
+   would overflow the circle and .preview-crop's overflow:hidden would clip
+   the character and most of the projectile's flight instead of scaling it. */
+.preview-mount canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+
+/* --- Skill row --- */
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+.btn-move { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 80px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 8px 8px 6px; cursor: pointer; transition: all 0.2s ease; }
+.btn-move:hover {
+    border-color: color-mix(in srgb, var(--accent, #fbbf24) 55%, transparent);
+    background: color-mix(in srgb, var(--accent, #fbbf24) 8%, transparent);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--accent, #fbbf24) 25%, transparent);
+    transform: translateY(-3px);
+}
+.btn-move:active { transform: translateY(0) scale(0.96); }
+.btn-move span { font-size: 11px; color: #a8a29e; text-align: center; }
+.btn-move:hover span { color: color-mix(in srgb, var(--accent, #fbbf24) 70%, #fff 20%); }
+.btn-move.is-active {
+    border-color: var(--accent, #fbbf24);
+    background: color-mix(in srgb, var(--accent, #fbbf24) 14%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #fbbf24) 45%, transparent), 0 6px 20px color-mix(in srgb, var(--accent, #fbbf24) 30%, transparent);
+}
+.btn-move.is-active span { color: color-mix(in srgb, var(--accent, #fbbf24) 75%, #fff 20%); }
+
+/* --- Equip button --- */
+.btn-equip {
+    position: relative; overflow: hidden; font-weight: 800; font-size: 19px; letter-spacing: 0.04em; color: #fff;
+    -webkit-text-stroke: 0.5px rgba(28,25,23,0.4);
+    background: linear-gradient(135deg, #fff8e1, var(--accent, #f97316));
+    border: none; border-radius: 999px; padding: 14px 46px; cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.5), 0 0 0 4px color-mix(in srgb, var(--accent, #fbbf24) 55%, transparent), 0 6px 26px color-mix(in srgb, var(--accent, #fbbf24) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.5);
+    transition: box-shadow 0.2s ease, transform 0.2s ease, background 0.4s ease, filter 0.2s ease;
+    animation: equip-breathe 2.2s ease-in-out infinite;
+}
+.btn-equip:disabled { cursor: default; }
+.btn-equip .core { position: absolute; inset: 0; border-radius: 999px; background: radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%); animation: core-pulse 2.2s ease-in-out infinite; }
+@keyframes core-pulse { 0%,100% { opacity: 0; transform: scale(0.6); } 50% { opacity: 0.55; transform: scale(1.15); } }
+@keyframes equip-breathe {
+    0%,100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.5), 0 0 0 4px color-mix(in srgb, var(--accent, #fbbf24) 55%, transparent), 0 6px 26px color-mix(in srgb, var(--accent, #fbbf24) 45%, transparent), inset 0 1px 0 rgba(255,255,255,0.5); }
+    50% { box-shadow: 0 0 0 2px rgba(0,0,0,0.5), 0 0 0 5px color-mix(in srgb, var(--accent, #fbbf24) 75%, transparent), 0 8px 34px color-mix(in srgb, var(--accent, #fbbf24) 65%, transparent), inset 0 1px 0 rgba(255,255,255,0.5); }
+}
+.btn-equip:hover { transform: translateY(-3px) scale(1.05); filter: brightness(1.1); animation-duration: 0.9s; }
+.btn-equip:hover .core { animation-duration: 0.9s; }
+.btn-equip:hover .sheen { animation-duration: 1.1s; }
+.btn-equip:active { transform: translateY(0) scale(0.98); }
+.btn-equip .sheen { position: absolute; top:0; left:-60%; width:40%; height:100%; background: linear-gradient(120deg, transparent, rgba(255,255,255,0.65), transparent); transform: skewX(-20deg); animation: sheen-move 2.8s ease-in-out infinite; z-index: 1; }
+.btn-equip .label { position: relative; z-index: 2; text-shadow: 0 1px 0 rgba(255,255,255,0.35), 0 1px 3px rgba(0,0,0,0.35); }
+.icon-wiggle { display: inline-block; animation: icon-wiggle 2.2s ease-in-out infinite; }
+.icon-cluster { position: relative; display: inline-grid; place-items: center; width: 1em; }
+.sword-fx { position: absolute; top: 50%; left: 50%; font-size: 14px; opacity: 0; z-index: 2; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent, #fbbf24) 70%, transparent)); transition: transform 0.35s cubic-bezier(.34,1.56,.64,1), opacity 0.25s ease; pointer-events: none; }
+.sword-left { transform: translate(calc(-50% - 20px), -50%) rotate(-40deg); }
+.sword-right { transform: translate(calc(-50% + 20px), -50%) rotate(40deg) scaleX(-1); }
+.btn-equip:hover .sword-left { opacity: 1; transform: translate(-50%, -50%) rotate(-12deg); }
+.btn-equip:hover .sword-right { opacity: 1; transform: translate(-50%, -50%) rotate(12deg) scaleX(-1); }
+@keyframes icon-wiggle { 0%, 100% { transform: rotate(0deg) scale(1); } 10% { transform: rotate(-12deg) scale(1.1); } 20% { transform: rotate(10deg) scale(1.1); } 30% { transform: rotate(-6deg) scale(1.05); } 40%, 85% { transform: rotate(0deg) scale(1); } }
+@keyframes sheen-move { 0% { left: -60%; } 50% { left: 130%; } 100% { left: 130%; } }
+
+/* --- Responsive --- */
+@media (max-width: 480px) {
+    .cs-root { flex-direction: column; min-height: 0; }
+    .roster { width: 100%; padding: 16px; box-sizing: border-box; }
+    .roster::after { display: none; }
+    .roster-scroll { max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; }
+    .roster-grid { display: flex; gap: 14px; grid-template-columns: none; }
+    .roster-grid .orb { flex: 0 0 auto; }
+    .preview { padding: 20px 16px 24px; }
+    .actions { gap: 8px; }
+    .btn-move { width: 78px; padding: 6px 6px 5px; }
+    .btn-equip { padding: 12px 32px; font-size: 17px; }
+}
+@media (max-width: 380px) {
+    .preview-frame { transform: scale(0.85); }
+    .preview-label { transform: scale(0.9); }
+}
+</style>
 
 <script>
     window.characterSelectModal = function (characters, startingCharacter, equippedKey) {
@@ -47,6 +396,16 @@
             equippedKey,
             isOpen: false,
             index: 0,
+            skills: [],
+            activeSkillId: undefined,
+
+            get previewKey() {
+                return this.currentKey();
+            },
+            get accent() {
+                return this.accentFor(this.previewKey);
+            },
+
             init() {
                 this.index = Math.max(0, this.characters.indexOf(this.startingCharacter));
                 this.$nextTick(() => this.redraw());
@@ -67,13 +426,28 @@
                 this.index = (this.index + 1) % this.characters.length;
                 this.redraw();
             },
+            selectCharacter(character) {
+                const idx = this.characters.indexOf(character);
+                if (idx !== -1) {
+                    this.index = idx;
+                    this.redraw();
+                }
+            },
+            accentFor(character) {
+                const idx = this.characters.indexOf(character);
+                const hue = (idx * 360 / this.characters.length) % 360;
+                return `hsl(${hue}, 70%, 55%)`;
+            },
+            selectSkill(skillId) {
+                this.activeSkillId = skillId;
+            },
             redraw() {
                 const bf = window.__battlefield;
                 if (!bf?.game) {
                     setTimeout(() => this.redraw(), 50);
                     return;
                 }
-                bf.drawFighterPreview(bf.game, this.$refs.preview, this.currentKey());
+                bf.drawFighterPreview(bf.game, this.$refs.previewMount, this.currentKey());
             },
             equip() {
                 if (this.currentKey() === this.equippedKey) {
