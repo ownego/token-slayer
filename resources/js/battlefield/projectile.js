@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TIMINGS } from '@battlefield/config.js';
 import { AttackType, TextureKey } from '@battlefield/constants.js';
+import { ensureSlashTexture, ensureShurikenTexture, ensureArrowTexture, ensureBladeTexture } from './projectile-textures.js';
 
 /** Spawns typed projectiles from a fighter position toward the boss. */
 export class Projectile {
@@ -35,31 +36,6 @@ export class Projectile {
 
   // ── Slash (Knight) — blue-white crescent ──────────────────────────────────
 
-  /** Ensures the slash projectile texture exists in the scene. */
-  _ensureSlashTexture() {
-    if (this.scene.textures.exists('proj-slash')) { return; }
-    const w = 56, h = 20;
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    const cy = h / 2;
-    ctx.shadowColor = '#93c5fd'; ctx.shadowBlur = 8;
-    const grad = ctx.createLinearGradient(0, 0, w, 0);
-    grad.addColorStop(0, 'rgba(147,197,253,0)');
-    grad.addColorStop(0.3, '#ffffff');
-    grad.addColorStop(0.6, '#93c5fd');
-    grad.addColorStop(1, '#1e3a8a');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(w - 2, cy);
-    ctx.quadraticCurveTo(w * 0.6, cy - 7, w * 0.1, cy - 2);
-    ctx.lineTo(0, cy);
-    ctx.quadraticCurveTo(w * 0.6, cy + 7, w - 2, cy);
-    ctx.closePath();
-    ctx.fill();
-    this.scene.textures.addCanvas('proj-slash', canvas);
-  }
-
   /**
    * Spawns a slash (crescent) projectile.
    *
@@ -70,7 +46,7 @@ export class Projectile {
    * @return {void}
    */
   _spawnSlash(fromX, fromY, dmgScale, onImpact) {
-    this._ensureSlashTexture();
+    ensureSlashTexture(this.scene);
     const toX     = this.scene.layout.boss.anchor.x;
     const toY     = this.scene.layout.boss.anchor.y;
     const sc      = dmgScale * 2.0;
@@ -167,33 +143,6 @@ export class Projectile {
 
   // ── Shuriken (Ninjagirl) — spinning pink star ──────────────────────────────
 
-  /** Ensures the shuriken projectile texture exists. */
-  _ensureShurikenTexture() {
-    if (this.scene.textures.exists('proj-shuriken')) { return; }
-    const size = 24;
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    const cx = size / 2, cy = size / 2;
-    ctx.shadowColor = '#e879f9'; ctx.shadowBlur = 10;
-    ctx.fillStyle = '#f0abfc';
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.beginPath();
-    ctx.moveTo(0, -cy + 1);
-    ctx.lineTo(3, -3);
-    ctx.lineTo(cx - 1, 0);
-    ctx.lineTo(3, 3);
-    ctx.lineTo(0, cy - 1);
-    ctx.lineTo(-3, 3);
-    ctx.lineTo(-cx + 1, 0);
-    ctx.lineTo(-3, -3);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    this.scene.textures.addCanvas('proj-shuriken', canvas);
-  }
-
   /**
    * Spawns a spinning shuriken projectile.
    *
@@ -204,7 +153,7 @@ export class Projectile {
    * @return {void}
    */
   _spawnShuriken(fromX, fromY, dmgScale, onImpact) {
-    this._ensureShurikenTexture();
+    ensureShurikenTexture(this.scene);
     const toX   = this.scene.layout.boss.anchor.x;
     const toY   = this.scene.layout.boss.anchor.y;
     const sc    = dmgScale * 1.8;
@@ -244,29 +193,6 @@ export class Projectile {
 
   // ── Arrow (Adventurer) — golden arrow ────────────────────────────────────
 
-  /** Ensures the arrow projectile texture exists. */
-  _ensureArrowTexture() {
-    if (this.scene.textures.exists('proj-arrow')) { return; }
-    const w = 52, h = 12;
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    const cy = h / 2;
-    ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 8;
-    const shaftGrad = ctx.createLinearGradient(0, 0, w, 0);
-    shaftGrad.addColorStop(0, 'rgba(251,191,36,0)');
-    shaftGrad.addColorStop(0.2, '#fde68a');
-    shaftGrad.addColorStop(0.8, '#fbbf24');
-    shaftGrad.addColorStop(1, '#92400e');
-    ctx.strokeStyle = shaftGrad; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(2, cy); ctx.lineTo(w - 6, cy); ctx.stroke();
-    ctx.fillStyle = '#fef3c7';
-    ctx.beginPath();
-    ctx.moveTo(w, cy); ctx.lineTo(w - 7, cy - 4); ctx.lineTo(w - 5, cy); ctx.lineTo(w - 7, cy + 4);
-    ctx.closePath(); ctx.fill();
-    this.scene.textures.addCanvas('proj-arrow', canvas);
-  }
-
   /**
    * Spawns a golden arrow projectile.
    *
@@ -277,7 +203,7 @@ export class Projectile {
    * @return {void}
    */
   _spawnArrow(fromX, fromY, dmgScale, onImpact) {
-    this._ensureArrowTexture();
+    ensureArrowTexture(this.scene);
     const toX     = this.scene.layout.boss.anchor.x;
     const toY     = this.scene.layout.boss.anchor.y;
     const sc      = dmgScale * 2.0;
@@ -320,31 +246,6 @@ export class Projectile {
 
   // ── Blade (Shinobi) — dark purple kunai ──────────────────────────────────
 
-  /** Ensures the blade projectile texture exists. */
-  _ensureBladeTexture() {
-    if (this.scene.textures.exists('proj-blade')) { return; }
-    const w = 88, h = 20;
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    const cy = h / 2;
-    ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 14;
-    const grad = ctx.createLinearGradient(0, cy - 4, 0, cy + 4);
-    grad.addColorStop(0, '#f0abfc');
-    grad.addColorStop(0.4, '#7c3aed');
-    grad.addColorStop(1, '#1a0030');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(w - 2, cy);
-    ctx.lineTo(w * 0.7, cy - 7); ctx.lineTo(w * 0.1, cy - 3);
-    ctx.lineTo(w * 0.05, cy);
-    ctx.lineTo(w * 0.1, cy + 3); ctx.lineTo(w * 0.7, cy + 7);
-    ctx.closePath(); ctx.fill();
-    ctx.shadowBlur = 0; ctx.strokeStyle = '#e879f9'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(w - 2, cy); ctx.lineTo(w * 0.1, cy - 3); ctx.stroke();
-    this.scene.textures.addCanvas('proj-blade', canvas);
-  }
-
   /**
    * Spawns a blade (kunai) projectile.
    *
@@ -355,7 +256,7 @@ export class Projectile {
    * @return {void}
    */
   _spawnBlade(fromX, fromY, dmgScale, onImpact) {
-    this._ensureBladeTexture();
+    ensureBladeTexture(this.scene);
     const toX     = this.scene.layout.boss.anchor.x;
     const toY     = this.scene.layout.boss.anchor.y;
     const sc      = dmgScale * 1.4;
