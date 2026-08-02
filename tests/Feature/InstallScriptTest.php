@@ -611,6 +611,49 @@ it('symlinks slayer to the token-slayer shim', function () {
 // relays the wheel behind hook.token. That behavior is covered end-to-end in
 // tests/Feature/SlayerWheelTest.php.
 
+it('bootstraps a pinned jq binary instead of relying on the system jq', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('JQ_VERSION="1.8.2"')
+        ->toContain('JQ_DIR="$HOME/.config/token_slayer/bin"')
+        ->toContain('JQ_BIN="$JQ_DIR/jq"')
+        ->toContain('https://github.com/jqlang/jq/releases/download/jq-$JQ_VERSION/$JQ_ASSET')
+        ->toContain('jq-linux-amd64 b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f')
+        ->toContain('jq-linux-arm64 8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309')
+        ->toContain('jq-macos-amd64 e94b266e3c26690550006abe63152b782280f4e14374accdf04cbde844f00bc0')
+        ->toContain('jq-macos-arm64 2d75340ba57a4b4b4c8708a21c2dc8e958a48aaa8bba13b27f77f6e4c0eca07e');
+
+    // Must run before the HOOK_SH heredoc is written, so a jq failure stops
+    // the install before any jq-dependent file is even created.
+    $jqBootstrapPos = strpos($script, 'JQ_VERSION="1.8.2"');
+    $hookWritePos = strpos($script, "cat > \"\$HELPER\" <<'HOOK_SH'");
+    expect($jqBootstrapPos)->not->toBeFalse()
+        ->and($hookWritePos)->not->toBeFalse()
+        ->and($jqBootstrapPos)->toBeLessThan($hookWritePos);
+});
+
+it('exits with a clear error when no pinned jq build exists for this platform/arch', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('no pinned jq build for');
+
+    $noBuildPos = strpos($script, 'no pinned jq build for');
+    $exitPos = strpos($script, 'exit 1', $noBuildPos);
+    expect($exitPos)->not->toBeFalse()
+        ->and($exitPos - $noBuildPos)->toBeLessThan(200);
+});
+
+it('verifies the downloaded jq checksum before trusting it, and self-heals a mismatched existing binary', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)
+        ->toContain('CURRENT_SHA=$(sha256 < "$JQ_BIN")')
+        ->toContain('DOWNLOADED_SHA=$(sha256 < "$JQ_TMP")')
+        ->toContain('checksum mismatch')
+        ->toContain('chmod +x "$JQ_BIN"');
+});
+
 it('warns loudly at the end of the install when jq is missing, with an OS-specific install command', function () {
     // Without jq the hook adds neither tokens nor client_version, so every
     // event answers 201 and records nothing — silently, forever. macOS ships

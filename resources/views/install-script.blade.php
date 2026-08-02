@@ -51,6 +51,68 @@ fi
 # Ensure token directory exists.
 mkdir -p "$HOME/.config/{{ $namespace }}"
 
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+
+# --- jq bootstrap ----
+# Every machine uses this exact pinned jq binary -- NEVER the system jq --
+# so cross-platform/cross-version differences in jq's own behavior (try/catch
+# semantics, sort/type-coercion edge cases) can never again produce silently
+# wrong token/account attribution the way "whatever jq happens to be on this
+# machine" did on prod. A missing/unverifiable jq now stops the install
+# entirely rather than shipping a hook that will silently record nothing.
+JQ_VERSION="1.8.2"
+JQ_DIR="$HOME/.config/{{ $namespace }}/bin"
+JQ_BIN="$JQ_DIR/jq"
+mkdir -p "$JQ_DIR"
+
+jq_asset_and_sha() {
+    # $1 = uname -s, $2 = uname -m. One `echo "asset sha256"` line per
+    # supported platform; pinned to the jq 1.8.2 release's own sha256sum.txt.
+    case "$1:$2" in
+        Linux:x86_64)  echo "jq-linux-amd64 b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f" ;;
+        Linux:aarch64) echo "jq-linux-arm64 8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309" ;;
+        Darwin:x86_64) echo "jq-macos-amd64 e94b266e3c26690550006abe63152b782280f4e14374accdf04cbde844f00bc0" ;;
+        Darwin:arm64)  echo "jq-macos-arm64 2d75340ba57a4b4b4c8708a21c2dc8e958a48aaa8bba13b27f77f6e4c0eca07e" ;;
+        *) echo "" ;;
+    esac
+}
+
+JQ_ASSET_SHA=$(jq_asset_and_sha "$(uname -s)" "$(uname -m)")
+if [ -z "$JQ_ASSET_SHA" ]; then
+    echo "error: no pinned jq build for $(uname -s)/$(uname -m) -- token-slayer cannot install without a known-good jq for this platform. Open an issue with this OS/arch." >&2
+    exit 1
+fi
+JQ_ASSET=$(printf '%s' "$JQ_ASSET_SHA" | cut -d' ' -f1)
+JQ_SHA=$(printf '%s' "$JQ_ASSET_SHA" | cut -d' ' -f2)
+
+# Self-heal: an existing binary that doesn't match the pinned checksum (a
+# partial download from a prior failed run, or a version bump) is rebuilt,
+# not trusted. A binary that already matches is left untouched.
+if [ -x "$JQ_BIN" ]; then
+    CURRENT_SHA=$(sha256 < "$JQ_BIN")
+    [ "$CURRENT_SHA" = "$JQ_SHA" ] || rm -f "$JQ_BIN"
+fi
+
+if [ ! -x "$JQ_BIN" ]; then
+    JQ_URL="https://github.com/jqlang/jq/releases/download/jq-$JQ_VERSION/$JQ_ASSET"
+    JQ_TMP="$JQ_DIR/.jq.download"
+    if ! curl -fsSL "$JQ_URL" -o "$JQ_TMP" 2>"$JQ_DIR/.jq.curl-err"; then
+        cat "$JQ_DIR/.jq.curl-err" >&2
+        rm -f "$JQ_TMP" "$JQ_DIR/.jq.curl-err"
+        echo "error: could not download jq from $JQ_URL (see error above) -- check your network connection and re-run." >&2
+        exit 1
+    fi
+    rm -f "$JQ_DIR/.jq.curl-err"
+    DOWNLOADED_SHA=$(sha256 < "$JQ_TMP")
+    if [ "$DOWNLOADED_SHA" != "$JQ_SHA" ]; then
+        rm -f "$JQ_TMP"
+        echo "error: downloaded jq checksum mismatch -- expected $JQ_SHA, got $DOWNLOADED_SHA. Refusing to install a binary that doesn't match. Re-run to retry the download." >&2
+        exit 1
+    fi
+    mv "$JQ_TMP" "$JQ_BIN"
+    chmod +x "$JQ_BIN"
+fi
+
 # Bundled detector config (data, not code): tells the hook where a locally-run
 # proxy already logs session/account, so token-slayer can attribute without
 # modifying the proxy. Overwritten on every install so new entries ship centrally.
@@ -67,8 +129,6 @@ DETECTOR_JSON
 # because the server cannot read the user's filesystem.
 HELPER="$HOME/.config/{{ $namespace }}/send-hook.sh"
 CHECKSUM_FILE="$HOME/.config/{{ $namespace }}/.hook-checksum"
-
-sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
 
 # If an existing send-hook.sh no longer matches the checksum of the last
 # stock install (or predates checksum tracking entirely), assume the user
