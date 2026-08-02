@@ -80,6 +80,7 @@
                                 x-bind:class="{ 'is-active': skill.id === activeSkillId, 'btn-move-death': skill.id === 'death' }"
                                 @click="selectSkill(skill.id)"
                             >
+                                <div class="thumb-crop" x-bind:data-skill="skill.id"></div>
                                 <span x-text="skill.label"></span>
                             </button>
                         </template>
@@ -170,21 +171,28 @@
 }
 .flourish { flex: 1; max-width: 30px; height: 1px; background: linear-gradient(90deg, transparent, rgba(120,113,108,0.6)); }
 .roster-label .flourish:last-child { background: linear-gradient(90deg, rgba(120,113,108,0.6), transparent); }
-.roster-scroll { max-height: 380px; overflow-y: auto; padding-right: 6px; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.4) rgba(255,255,255,0.03); }
+/* top padding clears the .is-preview halo's negative offset (-8px top,
+   6px overhang past orb-crop, plus blur) so the first roster row's ring
+   isn't clipped by this container's own scroll boundary; right padding is
+   wider than the 6px scrollbar itself so content doesn't butt against it. */
+.roster-scroll { max-height: 380px; overflow-y: auto; padding: 16px 14px 6px 0; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.4) rgba(255,255,255,0.03); }
 .roster-scroll::-webkit-scrollbar { width: 6px; }
 .roster-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
 .roster-scroll::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.4); border-radius: 3px; }
 .roster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
 .orb { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
-.orb-crop { position: relative; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: rgba(0,0,0,0.45); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1); }
+.orb-crop { position: relative; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: rgba(0,0,0,0.45); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1); display: flex; align-items: center; justify-content: center; }
 .orb:hover .orb-crop, .orb:focus .orb-crop { transform: scale(1.1); }
-/* Same reasoning as .preview-mount canvas above: the animated tiles' Phaser
-   games render at 260x260 internally; scaling the canvas element's display
-   size down to fill this 64x64 circle avoids overflow:hidden clipping most
-   of the character out of frame. The 13 static tiles' plain 2D canvases are
-   already drawn at 64x64 natively, so this is a no-op for them. */
-.orb-crop canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+/* The animated tiles' Phaser games render at 260x260 internally — larger
+   than this 64x64 circle on purpose, matching the design mockup's approach
+   of rendering the character bigger than its window and letting
+   overflow:hidden crop it into a close-up, instead of shrinking the whole
+   canvas down to fit (which left the character looking small with dead
+   space around it). The canvas is left at its native size and centered by
+   this container's flex centering; the 13 static tiles' plain 2D canvases
+   are already drawn at exactly 64x64, so this is a no-op for them. */
+.orb-crop canvas { image-rendering: pixelated; }
 .orb-label { font-size: 9px; color: #78716c; }
 .orb:hover .orb-label { color: #fdba74; }
 .halo {
@@ -313,12 +321,14 @@
 .preview-mount { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 /* The Phaser game's internal resolution (260x260, game.js PREVIEW_SIZE) is
    larger than this 190x190 circular window on purpose — it gives the
-   projectile's flight target room past the character's silhouette. Forcing
-   the canvas element's DISPLAY size down to 100%/100% scales that whole
-   260x260 scene proportionally to fit here; without this the raw canvas
-   would overflow the circle and .preview-crop's overflow:hidden would clip
-   the character and most of the projectile's flight instead of scaling it. */
-.preview-mount canvas { width: 100%; height: 100%; image-rendering: pixelated; }
+   projectile's flight target room past the character's silhouette, AND
+   (matching the design mockup) lets the character render at its natural
+   close-up size with .preview-crop's overflow:hidden cropping the excess,
+   instead of shrinking the whole canvas down to fit (which left the
+   character looking small with dead space around it inside the ring). The
+   canvas is left at its native 260x260 size and centered by this
+   container's flex centering. */
+.preview-mount canvas { image-rendering: pixelated; }
 
 /* --- Skill row --- */
 .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
@@ -338,6 +348,13 @@
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #fbbf24) 45%, transparent), 0 6px 20px color-mix(in srgb, var(--accent, #fbbf24) 30%, transparent);
 }
 .btn-move.is-active span { color: color-mix(in srgb, var(--accent, #fbbf24) 75%, #fff 20%); }
+/* Static (non-animated) icon per skill — a single representative frame
+   drawn onto a 2D canvas via drawFighterFrame, the same technique as the
+   roster's static tiles. The design mockup animates these; a static frame
+   keeps the same "iconed" visual identity per skill without adding 5-6 more
+   live Phaser.Game instances per open modal. */
+.thumb-crop { position: relative; width: 56px; height: 56px; border-radius: 10px; overflow: hidden; background: rgba(0,0,0,0.35); }
+.thumb-crop canvas { image-rendering: pixelated; }
 
 /* --- Equip button --- */
 .btn-equip {
@@ -480,6 +497,7 @@
                 this.skills = this.previewScene?.getMoveset()?.skills ?? [];
                 this.activeSkillId = 'idle';
                 this._refreshAnimatedTiles();
+                this.$nextTick(() => this._drawSkillThumbnails());
             },
 
             selectSkill(skillId) {
@@ -519,6 +537,27 @@
                     canvas.height = 64;
                     el.replaceChildren(canvas);
                     bf.drawFighterPreview(bf.game, canvas, key);
+                });
+            },
+
+            // One static frame per skill button — same technique as the
+            // roster's static tiles, keyed by skill.animKey (e.g.
+            // 'soldier-attack1') rather than the character key.
+            _drawSkillThumbnails() {
+                const bf = window.__battlefield;
+                if (!bf?.drawFighterFrame) {
+                    return;
+                }
+                this.$root.querySelectorAll('.thumb-crop').forEach(el => {
+                    const skill = this.skills.find(s => s.id === el.dataset.skill);
+                    if (!skill) {
+                        return;
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 56;
+                    canvas.height = 56;
+                    el.replaceChildren(canvas);
+                    bf.drawFighterFrame(bf.game, canvas, `${skill.animKey}-0`);
                 });
             },
 
