@@ -1,6 +1,9 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
 
 test('guide redirects guests to the slack login route', function () {
     $this->get('/guide')->assertRedirect(route('slack.login'));
