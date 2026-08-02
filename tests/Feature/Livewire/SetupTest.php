@@ -60,7 +60,7 @@ test('cli track step 4 offers three token states', function () {
 
     $this->get('/setup')
         ->assertOk()
-        ->assertSee('token-slayer status')
+        ->assertSee('tok status')
         ->assertSee('cat ~/.config/token_slayer/token')
         ->assertSee('Get-Content $HOME\.config\token_slayer\token', escape: false);
 });
@@ -91,9 +91,17 @@ test('cli track verify step mentions the tok alias and links to the guide', func
 
     $this->get('/setup')
         ->assertOk()
-        ->assertSee('token-slayer status')
-        ->assertSee('alias ngắn')
+        ->assertSee('tok status')
         ->assertSee('href="'.route('guide').'"', escape: false);
+});
+
+test('cli track back button is present on every step and preserves entered state', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSeeInOrder(['Choose your platform', '← Back'])
+        ->assertSee('direction = -1', escape: false);
 });
 
 test('cli track offers the manual hook config fallback with all three provider snippets', function () {

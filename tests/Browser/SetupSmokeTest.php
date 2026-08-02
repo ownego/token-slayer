@@ -21,8 +21,22 @@ test('the CLI track can be clicked through end to end with no JS errors', functi
     $page = visit('/setup');
     $page->click('Claude CLI');
     $page->click('macOS');
-    $page->click('Khác / 3.14 / lỗi'); // exercises the nested python-fix branch
+    $page->click('Other / 3.14 / error'); // exercises the nested python-fix branch
     $page->assertSee('brew --version');
+    $page->assertNoJavaScriptErrors();
+});
+
+test('the CLI track back button preserves the platform choice', function () {
+    ensureChromeForSetup();
+    $this->actingAs(User::factory()->create());
+
+    $page = visit('/setup');
+    $page->click('Claude CLI');
+    $page->click('macOS');
+    $page->click('← Back');
+    $page->assertSee('Choose your platform');
+    $page->click('macOS'); // re-clicking a still-selected macOS should still advance normally
+    $page->assertSee('Check Python');
     $page->assertNoJavaScriptErrors();
 });
 
