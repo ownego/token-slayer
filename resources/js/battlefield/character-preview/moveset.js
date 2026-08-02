@@ -17,8 +17,8 @@ export function buildMoveset(characterKey) {
   }
 
   const skills = [
-    { id: 'idle', label: '◇ Idle', animKey: `${ftype.key}-idle`, loop: true, effectAnimKey: null, durationMs: null },
-    { id: 'walk', label: '🏃 Walk', animKey: `${ftype.key}-walk`, loop: true, effectAnimKey: null, durationMs: null },
+    { id: 'idle', label: '◇ Idle', animKey: `${ftype.key}-idle`, loop: true, effectAnimKey: null, durationMs: null, frames: ftype.animations.idle.frames },
+    { id: 'walk', label: '🏃 Walk', animKey: `${ftype.key}-walk`, loop: true, effectAnimKey: null, durationMs: null, frames: ftype.animations.walk.frames },
     ...ftype.attacks.map((atk, i) => ({
       id: `attack${i + 1}`,
       label: getAttackLabel(ftype.attackType, i),
@@ -26,6 +26,7 @@ export function buildMoveset(characterKey) {
       effectAnimKey: atk.effectFrames ? `${ftype.key}-effect${i + 1}` : null,
       loop: false,
       durationMs: Math.round((atk.frames / atk.rate) * 1000),
+      frames: atk.frames,
     })),
     {
       id: 'death',
@@ -34,6 +35,7 @@ export function buildMoveset(characterKey) {
       loop: false,
       effectAnimKey: null,
       durationMs: Math.round((ftype.animations.death.frames / ftype.animations.death.rate) * 1000),
+      frames: ftype.animations.death.frames,
     },
   ];
 

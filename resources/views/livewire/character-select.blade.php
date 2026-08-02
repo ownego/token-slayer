@@ -452,6 +452,7 @@
             previewTileGame: null,
             _previewTileKey: null,
             _equippedTileKey: null,
+            _skillThumbTimers: [],
 
             init() {
                 // no-op until open() — the preview game only exists while the modal is open.
@@ -490,6 +491,8 @@
                 window.__battlefield?.destroyCharacterPreview?.(this.previewGame);
                 window.__battlefield?.destroyCharacterPreview?.(this.previewTileGame);
                 window.__battlefield?.destroyCharacterPreview?.(this.equippedTileGame);
+                this._skillThumbTimers.forEach(clearInterval);
+                this._skillThumbTimers = [];
                 this.previewGame = null;
                 this.previewScene = null;
                 this.previewTileGame = null;
@@ -556,10 +559,15 @@
                 });
             },
 
-            // One static frame per skill button — same technique as the
-            // roster's static tiles, keyed by skill.animKey (e.g.
-            // 'soldier-attack1') rather than the character key.
+            // A small looping thumbnail per skill button — same static-frame
+            // drawFighterFrame technique as the roster's static tiles, but
+            // cycled on a plain setInterval across that skill's real frame
+            // count (skill.frames) instead of a live Phaser.Game per button,
+            // which would multiply the tile-churn cost the final review
+            // already flagged for the roster's two animated tiles.
             _drawSkillThumbnails() {
+                this._skillThumbTimers.forEach(clearInterval);
+                this._skillThumbTimers = [];
                 const bf = window.__battlefield;
                 if (!bf?.drawFighterFrame) {
                     return;
@@ -573,7 +581,13 @@
                     canvas.width = 56;
                     canvas.height = 56;
                     el.replaceChildren(canvas);
-                    bf.drawFighterFrame(bf.game, canvas, `${skill.animKey}-0`);
+                    let frameIndex = 0;
+                    const drawFrame = () => {
+                        bf.drawFighterFrame(bf.game, canvas, `${skill.animKey}-${frameIndex}`);
+                        frameIndex = (frameIndex + 1) % skill.frames;
+                    };
+                    drawFrame();
+                    this._skillThumbTimers.push(setInterval(drawFrame, 120));
                 });
             },
 
