@@ -20,6 +20,7 @@ class Profile extends Component
 
     /**
      * @param  HookTokenRotator  $rotator  mints and persists the fresh token
+     * @return void
      */
     public function regenerate(HookTokenRotator $rotator): void
     {
