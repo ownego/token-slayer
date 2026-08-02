@@ -52,11 +52,6 @@ class Profile extends Component
 
     public function render(CachedLatestVersion $latest)
     {
-        $namespace = config('app.hook_namespace');
-        $envVar = strtoupper($namespace).'_TOKEN';
-        $tokenValue = $this->plainToken ?? '<your-token>';
-        $tokenPath = "~/.config/{$namespace}/token";
-
         return view('livewire.profile', [
             'user' => auth()->user(),
             'damageTotals' => app(DamageTotals::class)->forUser(auth()->user()),
@@ -64,28 +59,7 @@ class Profile extends Component
             'accountRows' => app(DamageTotals::class)->forUserByAccount(auth()->user()),
             'quotaBars' => fn (array $row): array => $this->quotaBars($row),
             'attribution' => $this->attributionStatus(auth()->user(), $latest),
-            'claudeSnippet' => view('partials.claude-snippet', [
-                'baseUrl' => url('/api/events'),
-                'namespace' => $namespace,
-            ])->render(),
-            'codexSnippet' => view('partials.codex-snippet', [
-                'baseUrl' => url('/api/events').'?provider=codex',
-                'namespace' => $namespace,
-            ])->render(),
-            'antigravitySnippet' => view('partials.antigravity-snippet', [
-                'baseUrl' => url('/api/events'),
-                'namespace' => $namespace,
-            ])->render(),
-            'installUrl' => route('install-script'),
-            'coworkInstallUrl' => route('cowork-install-script'),
-            'userscriptUrl' => route('userscript'),
-            'combinedCommand' => 'curl -fsSL '.route('install-script')." | {$envVar}={$tokenValue} sh",
-            'windowsCommand' => '$env:'.$envVar."='{$tokenValue}'; irm ".route('install-script-ps1').' | iex',
-            'windowsCmdCommand' => 'powershell -ExecutionPolicy ByPass -c "$env:'.$envVar."='{$tokenValue}'; irm ".route('install-script-ps1').' | iex"',
-            'coworkCommand' => 'curl -fsSL '.route('cowork-install-script')." | {$envVar}={$tokenValue} sh",
-            'tokenSaveCommand' => "mkdir -p ~/.config/{$namespace} && printf '%s' '{$tokenValue}' > {$tokenPath} && chmod 600 {$tokenPath}",
-            'tokenPath' => $tokenPath,
-            'namespace' => $namespace,
+            'plainToken' => $this->plainToken,
         ]);
     }
 
