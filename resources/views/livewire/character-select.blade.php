@@ -29,12 +29,12 @@
                     <div class="roster-label"><span class="flourish"></span>Roster · <span x-text="characters.length"></span><span class="flourish"></span></div>
                     <div class="roster-scroll">
                         <div class="roster-grid">
-                            <template x-for="character in characters" :key="character">
+                            <template x-for="(character, index) in characters" :key="character">
                                 <div
                                     class="orb"
                                     x-bind:class="{ 'is-preview': character === previewKey, 'is-equipped': character === equippedKey }"
                                     tabindex="0"
-                                    x-bind:style="`--accent:${accentFor(character)}`"
+                                    x-bind:style="`--accent:${accentFor(character)}; --d:${index}`"
                                     @click="selectCharacter(character)"
                                     @keydown.enter="selectCharacter(character)"
                                 >
@@ -165,6 +165,11 @@
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 45%, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 55%, transparent);
     transition: background 0.4s ease;
 }
+.roster::before {
+    content: '◆'; position: absolute; top: 50%; right: -5px; translate: 0 -50%;
+    font-size: 8px; color: var(--accent, #fbbf24); text-shadow: 0 0 8px color-mix(in srgb, var(--accent, #fbbf24) 80%, transparent); z-index: 1;
+    transition: color 0.4s ease, text-shadow 0.4s ease;
+}
 .roster-label {
     display: flex; align-items: center; justify-content: center; gap: 8px;
     font-size: 11px; letter-spacing: 0.06em; color: #78716c; text-transform: uppercase; margin-bottom: 14px;
@@ -181,7 +186,12 @@
 .roster-scroll::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.4); border-radius: 3px; }
 .roster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
-.orb { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; }
+.orb {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer;
+    animation: orb-enter 0.4s cubic-bezier(.34,1.56,.64,1) backwards;
+    animation-delay: calc(var(--d, 0) * 0.05s);
+}
+@keyframes orb-enter { from { opacity: 0; transform: scale(0.5) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 .orb-crop { position: relative; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: rgba(0,0,0,0.45); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1); display: flex; align-items: center; justify-content: center; }
 .orb:hover .orb-crop, .orb:focus .orb-crop { transform: scale(1.1); }
 /* The animated tiles' Phaser games render at 260x260 internally — larger
@@ -205,6 +215,8 @@
 @keyframes halo-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 0.8; } }
 .orb.is-preview .orb-crop { box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255,255,255,0.6); }
 .orb:not(.is-preview):not(.is-equipped) .orb-crop { opacity: 0.72; }
+.orb:not(.is-preview):not(.is-equipped):hover .orb-crop,
+.orb:not(.is-preview):not(.is-equipped):focus .orb-crop { opacity: 1; }
 .check {
     position: absolute; top: -4px; right: 10px; width: 16px; height: 16px; border-radius: 50%;
     background: #2dd4bf; color: #042f2e; font-size: 9px; font-weight: bold;
@@ -328,7 +340,11 @@
    character looking small with dead space around it inside the ring). The
    canvas is left at its native 260x260 size and centered by this
    container's flex centering. */
-.preview-mount canvas { image-rendering: pixelated; }
+.preview-mount canvas {
+    image-rendering: pixelated;
+    filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent, #fbbf24) 40%, transparent));
+    transition: filter 0.4s ease;
+}
 
 /* --- Skill row --- */
 .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
@@ -402,7 +418,7 @@
 @media (max-width: 480px) {
     .cs-root { flex-direction: column; min-height: 0; }
     .roster { width: 100%; padding: 16px; box-sizing: border-box; }
-    .roster::after { display: none; }
+    .roster::after, .roster::before { display: none; }
     .roster-scroll { max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; }
     .roster-grid { display: flex; gap: 14px; grid-template-columns: none; }
     .roster-grid .orb { flex: 0 0 auto; }
