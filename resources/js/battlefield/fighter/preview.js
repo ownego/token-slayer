@@ -85,15 +85,24 @@ export function drawFighterFrame(game, canvas, frameName) {
   const destWidth = canvas.width;
   const destHeight = canvas.height;
   const ctx = canvas.getContext('2d');
+  // A trimmed silhouette (as small as ~15x18px) drawn at 5-20x scale onto
+  // the destination canvas would otherwise get bilinear-smoothed by the
+  // canvas API itself — CSS's image-rendering:pixelated on the element
+  // only governs CSS-level scaling, not drawImage's own resampling — and
+  // came out visibly blurry. Resizing canvas.width/height resets this flag,
+  // so it's set again after each resize below.
+  ctx.imageSmoothingEnabled = false;
 
   canvas.width = cutWidth;
   canvas.height = cutHeight;
+  ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, cutWidth, cutHeight);
   ctx.drawImage(source.image, cutX, cutY, cutWidth, cutHeight, 0, 0, cutWidth, cutHeight);
   const bounds = findOpaqueBounds(ctx.getImageData(0, 0, cutWidth, cutHeight).data, cutWidth, cutHeight);
 
   canvas.width = destWidth;
   canvas.height = destHeight;
+  ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, destWidth, destHeight);
   const dest = coverFit(bounds.width, bounds.height, destWidth, destHeight);
   ctx.drawImage(

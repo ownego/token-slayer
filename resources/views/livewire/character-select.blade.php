@@ -340,8 +340,18 @@
    character looking small with dead space around it inside the ring). The
    canvas is left at its native 260x260 size and centered by this
    container's flex centering. */
+/* The fighter atlas's authored art fills only a small silhouette within
+   each frame's slot (measured ~15-27px within a 100x100 slot depending on
+   character) — the sprite's own setScale(2.4) in scene.js scales that
+   whole mostly-empty slot, so at the crop ratio here the visible character
+   still read small. Rather than re-tuning the scene's sprite scale (which
+   would also need re-tuning the projectile's target offset and the effect
+   overlay to match), this CSS transform zooms the already-rendered,
+   already-correctly-positioned canvas output further, centered — cropped
+   the same way by .preview-crop's overflow:hidden. */
 .preview-mount canvas {
     image-rendering: pixelated;
+    transform: scale(3);
     filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent, #fbbf24) 40%, transparent));
     transition: filter 0.4s ease;
 }
