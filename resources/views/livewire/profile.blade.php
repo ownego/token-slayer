@@ -115,10 +115,15 @@
             @endif
         </section>
 
-        <section class="bg-white border border-gray-200 rounded-xl p-5">
+        <section class="bg-white border border-gray-200 rounded-xl p-5" x-data="{ confirmingRegenerate: false }">
             <div class="flex items-center justify-between mb-3">
                 <h2 class="text-sm font-bold text-gray-900">Hook token</h2>
-                <button wire:click="regenerate" class="px-3 py-1.5 bg-gray-900 text-white rounded-lg text-xs font-semibold">Regenerate token</button>
+                <button type="button" x-show="!confirmingRegenerate" @click="confirmingRegenerate = true" class="cursor-pointer px-3 py-1.5 bg-gray-900 hover:bg-gray-700 text-white rounded-lg text-xs font-semibold transition">Regenerate token</button>
+                <div x-show="confirmingRegenerate" x-cloak class="flex items-center gap-2">
+                    <span class="text-xs text-red-600 font-semibold">Sure?</span>
+                    <button type="button" wire:click="regenerate" @click="confirmingRegenerate = false" class="cursor-pointer px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition">Yes, regenerate</button>
+                    <button type="button" @click="confirmingRegenerate = false" class="cursor-pointer px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-400 text-gray-700 rounded-lg text-xs font-semibold transition">Cancel</button>
+                </div>
             </div>
             @if ($plainToken)
                 <p class="text-sm text-gray-500 mb-1">Your token (shown once — copy it now):</p>
