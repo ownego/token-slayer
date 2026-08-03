@@ -2,6 +2,7 @@
 
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
+use App\Events\FighterCharacterChanged;
 use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
 use App\Events\FighterIdled;
@@ -42,6 +43,7 @@ test('every battlefield event broadcasts now on the battlefield channel with a s
         'FighterJoined' => new FighterJoined($user),
         'FighterIdled' => new FighterIdled($user),
         'FighterChargeCleared' => new FighterChargeCleared($user),
+        'FighterCharacterChanged' => new FighterCharacterChanged($user),
         'FighterMoved' => new FighterMoved($user, 0.5, 0.7),
     ];
 
@@ -150,5 +152,17 @@ test('FighterMoved broadcasts on the battlefield channel with expected payload',
             'user_id' => $user->id,
             'x' => 0.35,
             'y' => 0.72,
+        ]);
+});
+
+test('FighterCharacterChanged broadcasts on the battlefield channel with the user\'s current character', function () {
+    $user = User::factory()->create(['equipped_character' => 'archer']);
+    $event = new FighterCharacterChanged($user);
+
+    expect($event->broadcastOn()[0]->name)->toBe('battlefield')
+        ->and($event->broadcastAs())->toBe('FighterCharacterChanged')
+        ->and($event->broadcastWith())->toBe([
+            'user_id' => $user->id,
+            'character' => 'archer',
         ]);
 });

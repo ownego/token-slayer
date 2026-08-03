@@ -37,6 +37,7 @@ class User extends Authenticatable implements FilamentUser
         'display_name',
         'avatar_url',
         'hook_token',
+        'equipped_character',
         'last_event_at',
         'client_version',
     ];
@@ -52,6 +53,7 @@ class User extends Authenticatable implements FilamentUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'last_event_at' => 'datetime',
+            'equipped_character' => FighterCharacter::class,
         ];
     }
 
@@ -60,9 +62,20 @@ class User extends Authenticatable implements FilamentUser
         return $this->slack_handle ?: ($this->display_name ?: ($this->name ?: ('#'.$this->id)));
     }
 
+    /**
+     * The fighter character to render for this user against the given boss.
+     * Prefers the user's explicitly equipped character (persistent across every
+     * boss) over the deterministic per-(user, boss) assignment, which only
+     * applies until the user equips one for the first time.
+     *
+     * @param  ?int  $bossId  the boss being fought, or null when no boss context applies
+     * @return string
+     */
     public function characterForBoss(?int $bossId): string
     {
-        return FighterCharacter::forUserAndBoss($this->id, $bossId)->value;
+        $character = $this->equipped_character ?? FighterCharacter::forUserAndBoss($this->id, $bossId);
+
+        return $character->value;
     }
 
     /**
