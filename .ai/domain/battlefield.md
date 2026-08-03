@@ -10,6 +10,7 @@ The deep operational guide is the `battlefield` skill (`.claude/skills/battlefie
 4. **Boss cycle.** `Boss.bossTypeFor(number)` = `BOSS_TYPES[number % BOSS_TYPES.length]` — reordering `BOSS_TYPES` changes which visual each boss number gets, nothing else.
 5. **Key discipline.** Fighters/charges are keyed by `user_id` from broadcast payloads — keep key types consistent (number vs string never collide-match).
 6. **Layout.** Two separate logical spaces: landscape 960×540, portrait 540×960. Positions that cross the wire are normalized fractions of the sender's logical space; receiver-side clamping lives in `move-geometry.js`.
+7. **Fighter size depends on headcount, by design.** `fighterDisplayConfig(count, mode)` (`layout.js`) steps `displaySize` down as more fighters join (landscape: 45px ≤14, 36px ≤28, 27px beyond; portrait: 54px ≤8, 45px beyond) so a crowded roster doesn't overflow the canvas. On top of that, `damageScaleMultiplier(damage, maxHp)` adds up to another ×1.4 for a fighter whose cumulative damage share against the current boss's `maxHp` is high. A near-empty battlefield showing oversized fighters is this combination working as intended, not a bug.
 
 ## Testability
 
