@@ -166,8 +166,17 @@
    the padding gained, so .roster-grid's available content width — and
    therefore each 64px-orb column's fit — stays exactly what it was before
    this change; growing padding alone would have squeezed the 3-column
-   grid below the fixed 64px orb width instead. */
-.roster { position: relative; width: 300px; padding: 20px 20px 20px 40px; }
+   grid below the fixed 64px orb width instead.
+
+   That still wasn't enough: the ACTUAL clip boundary for column 1's bleed
+   is .roster-scroll below, not .roster or .cs-outer. overflow-y:auto with
+   no explicit overflow-x forces the computed overflow-x to behave as auto
+   too (CSS Overflow spec: a non-visible value on one axis flips "visible"
+   on the other to "auto") — and .roster-scroll had 0 left padding, so the
+   grid's first column sat flush against that clip edge with zero room to
+   bleed. Width is grown by the SAME +8px .roster-scroll gains below, for
+   the same reason as above. */
+.roster { position: relative; width: 308px; padding: 20px 20px 20px 40px; }
 .roster::after {
     content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 45%, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 55%, transparent);
@@ -187,8 +196,10 @@
 /* top padding clears the .is-preview halo's negative offset (-8px top,
    6px overhang past orb-crop, plus blur) so the first roster row's ring
    isn't clipped by this container's own scroll boundary; right padding is
-   wider than the 6px scrollbar itself so content doesn't butt against it. */
-.roster-scroll { max-height: 380px; overflow-y: auto; padding: 16px 14px 6px 0; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.4) rgba(255,255,255,0.03); }
+   wider than the 6px scrollbar itself so content doesn't butt against it;
+   left padding gives column 1's halo/hover-scale bleed the same room —
+   this is the box that actually clips it (see .roster's comment above). */
+.roster-scroll { max-height: 380px; overflow-y: auto; padding: 16px 14px 6px 8px; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.4) rgba(255,255,255,0.03); }
 .roster-scroll::-webkit-scrollbar { width: 6px; }
 .roster-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
 .roster-scroll::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.4); border-radius: 3px; }
@@ -368,7 +379,11 @@
    output — cropped the same way by .preview-crop's overflow:hidden. */
 .preview-mount canvas {
     image-rendering: pixelated;
-    transform: scale(1.25);
+    /* translateY listed before scale so the nudge stays a flat 8px on
+       screen — listing it after scale would have it multiplied by 1.25.
+       Brings the character down closer to .halo-glow/.halo-core, the
+       portal-ring graphic anchored near the bottom of this panel. */
+    transform: translateY(8px) scale(1.25);
     filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent, #fbbf24) 40%, transparent));
     transition: filter 0.4s ease;
 }
