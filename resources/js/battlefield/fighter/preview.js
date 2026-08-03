@@ -1,46 +1,12 @@
 import { PREVIEW_SPRITE_SCALE } from '@battlefield/constants.js';
 
 /**
- * Finds the tight bounding box of non-transparent pixels in an RGBA pixel
- * buffer (e.g. ImageData.data). Pure and DOM-free so it's directly
- * unit-testable, unlike the canvas/image calls around it.
- *
- * @param {Uint8ClampedArray|number[]} data RGBA pixel buffer, 4 bytes/pixel
- * @param {number} width
- * @param {number} height
- * @return {{x: number, y: number, width: number, height: number}}
- */
-export function findOpaqueBounds(data, width, height) {
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-  for (let py = 0; py < height; py++) {
-    for (let px = 0; px < width; px++) {
-      if (data[(py * width + px) * 4 + 3] > 8) {
-        if (px < minX) { minX = px; }
-        if (px > maxX) { maxX = px; }
-        if (py < minY) { minY = py; }
-        if (py > maxY) { maxY = py; }
-      }
-    }
-  }
-  if (maxX < minX || maxY < minY) {
-    return { x: 0, y: 0, width, height };
-  }
-  return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
-}
-
-/**
  * Computes a centered destination rect for drawing a sourceWidth x
  * sourceHeight region into a destWidth x destHeight canvas at a fixed
  * scale — never stretched/warped, and never forced to fill the
- * destination, so every thumbnail renders a character at the exact same
- * size regardless of its own trimmed silhouette's aspect ratio. Whichever
- * axis exceeds the destination is simply clipped by the canvas's own
- * bounds when drawn, the 2D-canvas equivalent of the live Phaser preview
- * tiles' overflow:hidden crop. Pure and DOM-free so it's directly
- * unit-testable.
+ * destination. Whichever axis exceeds the destination is simply clipped
+ * by the canvas's own bounds when drawn. Pure and DOM-free so it's
+ * directly unit-testable.
  *
  * @param {number} sourceWidth
  * @param {number} sourceHeight
@@ -60,22 +26,19 @@ export function centeredScaleFit(sourceWidth, sourceHeight, scale, destWidth, de
  * canvas by reusing the atlas already loaded by the running Phaser game —
  * no separate image request, and no re-generated sprite asset.
  *
- * pack-sprites.js packs every atlas frame into a fixed 100x100 slot with
- * trimmed:false — a raw frame's cutWidth/cutHeight is the WHOLE slot, not
- * the character's actual silhouette (measured as small as ~15x18px for
- * soldier's idle frame). Stretching the untrimmed slot to fill a thumbnail
- * canvas left the character looking tiny inside a mostly-empty circle, so
- * this probes the frame's real bounds (via findOpaqueBounds) and draws
- * only that region at PREVIEW_SPRITE_SCALE — the same fixed multiple the
- * live Phaser preview tiles render their sprite at — rather than force-
- * scaling it to fill the destination canvas: a trimmed bounding box's size
- * varies per frame and character, so filling the box unconditionally made
- * every static thumbnail visibly bigger than the live animated tile right
- * next to it, which renders at this same fixed scale. The destination
- * canvas itself is reused as scratch space for the probe —
- * document.createElement is unavailable under this project's Vitest setup
- * (no jsdom/canvas polyfill, a deliberate, documented convention), so a
- * second canvas element isn't an option here.
+ * Draws the frame's whole cutWidth x cutHeight slot (never trimmed to its
+ * opaque silhouette) at PREVIEW_SPRITE_SCALE, centered — deliberately
+ * mirroring how the live Phaser preview tiles render: a Phaser sprite's
+ * default origin (0.5, 0.5) sits at the middle of its *whole* frame, not
+ * the middle of its visible pixels, and that origin is placed at the
+ * tile's canvas center. An earlier version of this function detected the
+ * frame's real opaque bounding box (via a since-removed findOpaqueBounds)
+ * and centered *that* instead — correct in isolation, but wrong next to a
+ * live tile, since a character whose silhouette isn't perfectly centered
+ * in its own 100x100 slot would then render at a different position than
+ * the live tile showing the same character, causing a visible jump the
+ * moment a tile switched from this static draw to the live one. Centering
+ * on the untrimmed frame, exactly as Phaser does, keeps both in lockstep.
  *
  * @param {Phaser.Game|null} game the booted battlefield game, or null if not ready yet
  * @param {HTMLCanvasElement} canvas destination canvas; drawn at its current width/height
@@ -92,31 +55,15 @@ export function drawFighterFrame(game, canvas, frameName) {
   const destWidth = canvas.width;
   const destHeight = canvas.height;
   const ctx = canvas.getContext('2d');
-  // A trimmed silhouette (as small as ~15x18px) drawn at 5-20x scale onto
-  // the destination canvas would otherwise get bilinear-smoothed by the
-  // canvas API itself — CSS's image-rendering:pixelated on the element
-  // only governs CSS-level scaling, not drawImage's own resampling — and
-  // came out visibly blurry. Resizing canvas.width/height resets this flag,
-  // so it's set again after each resize below.
-  ctx.imageSmoothingEnabled = false;
-
-  canvas.width = cutWidth;
-  canvas.height = cutHeight;
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, cutWidth, cutHeight);
-  ctx.drawImage(source.image, cutX, cutY, cutWidth, cutHeight, 0, 0, cutWidth, cutHeight);
-  const bounds = findOpaqueBounds(ctx.getImageData(0, 0, cutWidth, cutHeight).data, cutWidth, cutHeight);
-
-  canvas.width = destWidth;
-  canvas.height = destHeight;
+  // Scaling a small source region up onto the destination canvas would
+  // otherwise get bilinear-smoothed by the canvas API itself — CSS's
+  // image-rendering:pixelated on the element only governs CSS-level
+  // scaling, not drawImage's own resampling — and came out visibly blurry.
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, destWidth, destHeight);
-  const dest = centeredScaleFit(bounds.width, bounds.height, PREVIEW_SPRITE_SCALE, destWidth, destHeight);
-  ctx.drawImage(
-    source.image,
-    cutX + bounds.x, cutY + bounds.y, bounds.width, bounds.height,
-    dest.x, dest.y, dest.width, dest.height,
-  );
+
+  const dest = centeredScaleFit(cutWidth, cutHeight, PREVIEW_SPRITE_SCALE, destWidth, destHeight);
+  ctx.drawImage(source.image, cutX, cutY, cutWidth, cutHeight, dest.x, dest.y, dest.width, dest.height);
 
   return true;
 }
