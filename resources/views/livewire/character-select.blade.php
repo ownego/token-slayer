@@ -192,17 +192,20 @@
     animation-delay: calc(var(--d, 0) * 0.05s);
 }
 @keyframes orb-enter { from { opacity: 0; transform: scale(0.5) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-.orb-crop { position: relative; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: rgba(0,0,0,0.45); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1); display: flex; align-items: center; justify-content: center; }
+.orb-crop { position: relative; width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: rgba(0,0,0,0.45); transition: transform 0.2s cubic-bezier(.34,1.56,.64,1); }
 .orb:hover .orb-crop, .orb:focus .orb-crop { transform: scale(1.1); }
 /* The animated tiles' Phaser games render at 260x260 internally — larger
    than this 64x64 circle on purpose, matching the design mockup's approach
    of rendering the character bigger than its window and letting
    overflow:hidden crop it into a close-up, instead of shrinking the whole
    canvas down to fit (which left the character looking small with dead
-   space around it). The canvas is left at its native size and centered by
-   this container's flex centering; the 13 static tiles' plain 2D canvases
-   are already drawn at exactly 64x64, so this is a no-op for them. */
-.orb-crop canvas { image-rendering: pixelated; }
+   space around it). Absolutely positioned + centered per-canvas (rather
+   than flex-centering the container) because _mountAnimatedTile keeps the
+   outgoing static canvas mounted alongside the incoming Phaser canvas
+   until the new one has actually drawn a frame — flex would lay two
+   simultaneous canvases out side by side and squash both; absolute
+   positioning lets them overlap in place so the swap is invisible. */
+.orb-crop canvas { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); image-rendering: pixelated; }
 .orb-label { font-size: 9px; color: #78716c; }
 .orb:hover .orb-label { color: #fdba74; }
 .halo {
@@ -598,7 +601,12 @@
                         frameIndex = (frameIndex + 1) % skill.frames;
                     };
                     drawFrame();
-                    this._skillThumbTimers.push(setInterval(drawFrame, 120));
+                    // skill.rate is the animation's authored frames-per-second
+                    // (config/fighters.js) — a flat interval here made every
+                    // thumbnail loop at the same speed regardless of the real
+                    // animation's rate (idle=8fps, walk=10, attack=12,
+                    // death=6), reading as too fast for the slower ones.
+                    this._skillThumbTimers.push(setInterval(drawFrame, 1000 / skill.rate));
                 });
             },
 
@@ -631,16 +639,22 @@
                 this._drawStaticThumbnails();
             },
 
+            // Keeps the outgoing static canvas mounted until the new Phaser
+            // game has actually drawn a frame — clearing it upfront left the
+            // orb blank (just its own dark background) for the one tick
+            // between game creation and 'preview-ready', a visible flash
+            // every time a character was selected.
             _mountAnimatedTile(key) {
                 const bf = window.__battlefield;
                 const el = this.$root.querySelector(`.orb-crop[data-character="${key}"]`);
                 if (!el) {
                     return null;
                 }
-                el.replaceChildren();
+                const outgoing = [...el.children];
                 const game = bf.createCharacterPreview(el);
                 game.events.once('preview-ready', () => {
                     game.scene.getScene('character-preview').setCharacter(key);
+                    outgoing.forEach(child => child.remove());
                 });
                 return game;
             },
