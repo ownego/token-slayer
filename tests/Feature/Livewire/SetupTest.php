@@ -95,6 +95,15 @@ test('cli track verify step mentions the tok alias and links to the guide', func
         ->assertSee('href="'.route('guide').'"', escape: false);
 });
 
+test('cli track verify step tells company-account users to contact admin before running tok setup', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/setup')
+        ->assertOk()
+        ->assertSee('Contact your admin, then run', escape: false)
+        ->assertSee('<code>tok setup</code>', escape: false);
+});
+
 test('cli track renders a back control on the platform step', function () {
     $this->actingAs(User::factory()->create());
 

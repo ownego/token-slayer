@@ -242,7 +242,7 @@
         </div>
 
         <p class="text-sm text-gray-500 mb-3">Every command here also has the full form <code>token-slayer</code>, in case <code>tok</code> isn't on PATH yet.</p>
-        <p class="text-sm text-gray-500 mb-3">Have a company account? Run <code>tok setup</code>. Multiple personal accounts? <code>tok switch NAME</code>.</p>
+        <p class="text-sm text-gray-500 mb-3">Have a company account? Contact your admin, then run <code>tok setup</code>. Multiple personal accounts? <code>tok switch NAME</code>.</p>
         <div class="flex items-center justify-between">
             <button type="button" @click="direction = -1; step = 5" class="cursor-pointer text-sm font-semibold text-gray-500 hover:text-orange-600 transition inline-flex items-center gap-1">← Back</button>
             <a href="{{ route('guide') }}" class="text-sm text-orange-600 underline font-medium hover:text-orange-700">See the full tok command reference →</a>
