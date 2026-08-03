@@ -4,8 +4,6 @@ import { PREVIEW_SPRITE_SCALE, TextureKey } from '@battlefield/constants.js';
 import { registerFighterAnimations } from '@battlefield/fighter/animations.js';
 import { buildMoveset } from './moveset.js';
 import { createSkillLoop } from './skill-loop.js';
-import { getProjectileLaunchDelay } from './projectile-launch.js';
-import { spawnPreviewProjectile } from './preview-projectile.js';
 
 /**
  * Standalone Phaser scene powering the character-select modal's animated
@@ -26,9 +24,6 @@ export class CharacterPreviewScene extends Phaser.Scene {
         '/assets/battlefield/fighters/fighters-atlas.json',
       );
     }
-    if (!this.textures.exists(TextureKey.FIREBALL)) {
-      this.load.spritesheet(TextureKey.FIREBALL, '/assets/battlefield/fx/fireball.png', { frameWidth: 16, frameHeight: 16 });
-    }
   }
 
   /** @return {void} */
@@ -38,7 +33,6 @@ export class CharacterPreviewScene extends Phaser.Scene {
     const { width, height } = this.sys.game.config;
     this.centerX = width / 2;
     this.centerY = height / 2;
-    this.projectileTarget = { x: this.centerX + 95, y: this.centerY - 25 };
 
     this.sprite = this.add.sprite(this.centerX, this.centerY, TextureKey.FIGHTERS).setScale(PREVIEW_SPRITE_SCALE);
     this.currentKey = null;
@@ -99,9 +93,6 @@ export class CharacterPreviewScene extends Phaser.Scene {
    * @return {void}
    */
   _playSkill(skill, onComplete) {
-    this._pendingProjectileTimer?.remove(false);
-    this._pendingProjectileTimer = null;
-
     this.sprite.play(skill.animKey);
     if (skill.loop) {
       return;
@@ -116,17 +107,6 @@ export class CharacterPreviewScene extends Phaser.Scene {
         .setDepth(3)
         .play(skill.effectAnimKey);
       effect.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => effect.destroy());
-
-      const attackType = this.moveset.attackType;
-      this._pendingProjectileTimer = this.time.delayedCall(getProjectileLaunchDelay(skill.durationMs), () => {
-        spawnPreviewProjectile(this, {
-          fromX: this.centerX,
-          fromY: this.centerY,
-          toX: this.projectileTarget.x,
-          toY: this.projectileTarget.y,
-          attackType,
-        });
-      });
     }
   }
 }

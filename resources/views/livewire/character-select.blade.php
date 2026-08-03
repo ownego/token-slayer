@@ -159,15 +159,19 @@
     font-family: -apple-system, "Instrument Sans", system-ui, sans-serif;
     border-radius: 15px;
 }
-.roster { position: relative; width: 280px; padding: 20px; }
+/* Left padding is slightly larger than the other sides — an orb's hover
+   scale(1.1) and its halo glow both bleed a few px past the 64px orb-crop,
+   and the first grid column sat close enough to this edge for .cs-outer's
+   overflow-x:hidden to clip that bleed. */
+.roster { position: relative; width: 280px; padding: 20px 20px 20px 28px; }
 .roster::after {
     content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 45%, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 55%, transparent);
     transition: background 0.4s ease;
 }
 .roster::before {
-    content: '◆'; position: absolute; top: 50%; right: -5px; translate: 0 -50%;
-    font-size: 8px; color: var(--accent, #fbbf24); text-shadow: 0 0 8px color-mix(in srgb, var(--accent, #fbbf24) 80%, transparent); z-index: 1;
+    content: '◆'; position: absolute; top: 50%; right: -6px; translate: 0 -50%;
+    font-size: 12px; color: var(--accent, #fbbf24); text-shadow: 0 0 8px color-mix(in srgb, var(--accent, #fbbf24) 80%, transparent); z-index: 1;
     transition: color 0.4s ease, text-shadow 0.4s ease;
 }
 .roster-label {
@@ -184,6 +188,11 @@
 .roster-scroll::-webkit-scrollbar { width: 6px; }
 .roster-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
 .roster-scroll::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.4); border-radius: 3px; }
+/* Firefox has no arbitrary-width scrollbar-css, only the thin/auto/none
+   keywords — 'auto' is the closest available "bigger" state on hover. */
+.roster-scroll:hover { scrollbar-width: auto; }
+.roster-scroll:hover::-webkit-scrollbar { width: 10px; }
+.roster-scroll:hover::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.65); }
 .roster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
 .orb {
