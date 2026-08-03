@@ -159,11 +159,15 @@
     font-family: -apple-system, "Instrument Sans", system-ui, sans-serif;
     border-radius: 15px;
 }
-/* Left padding is slightly larger than the other sides — an orb's hover
+/* Left padding is larger than the other sides — an orb's hover
    scale(1.1) and its halo glow both bleed a few px past the 64px orb-crop,
    and the first grid column sat close enough to this edge for .cs-outer's
-   overflow-x:hidden to clip that bleed. */
-.roster { position: relative; width: 280px; padding: 20px 20px 20px 28px; }
+   overflow-x:hidden to clip that bleed. Width is grown by the same +20px
+   the padding gained, so .roster-grid's available content width — and
+   therefore each 64px-orb column's fit — stays exactly what it was before
+   this change; growing padding alone would have squeezed the 3-column
+   grid below the fixed 64px orb width instead. */
+.roster { position: relative; width: 300px; padding: 20px 20px 20px 40px; }
 .roster::after {
     content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 45%, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 55%, transparent);
