@@ -215,7 +215,7 @@
                     <pre class="bg-gray-900 text-amber-300 rounded-lg p-3 text-xs overflow-x-auto">{{ $claudeSnippet }}</pre>
                 </div>
                 <div>
-                    <p class="text-sm text-gray-600 mb-1">3. Add to <code>~/.codex/config.toml</code>:</p>
+                    <p class="text-sm text-gray-600 mb-1">3. Paste/merge into <code>~/.codex/hooks.json</code>, then run <code>/hooks</code> inside Codex once to trust it:</p>
                     <pre class="bg-gray-900 text-amber-300 rounded-lg p-3 text-xs overflow-x-auto">{{ $codexSnippet }}</pre>
                 </div>
                 <div>

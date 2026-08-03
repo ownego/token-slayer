@@ -24,20 +24,36 @@ test('guide lists every account task with its tok command', function () {
     $this->get('/guide')
         ->assertOk()
         ->assertSee('See all your accounts')
+        ->assertSee('Browse and switch interactively')
         ->assertSee('Add another account')
         ->assertSee('Switch which account is active')
+        ->assertSee('Force-switch when the normal switch is stuck')
         ->assertSee('See which account is currently active')
-        ->assertSee('Check version, namespace, and credential status')
-        ->assertSee('Set or clear a short alias for a slot')
+        ->assertSee('Give a slot a short alias')
         ->assertSee('Remove an account slot')
         ->assertSee('Pull an org-provisioned account')
+        ->assertSee('Register your current login as a slot')
+        ->assertSee('See recent account swaps')
+        ->assertSee('See which Claude Code sessions are running')
+        ->assertSee('Reconcile accounts after a manual change')
+        ->assertSee('Update the switcher itself')
+        ->assertSee('Remove the switcher entirely')
         ->assertSee('tok add NAME')
-        ->assertSee('tok switch NAME', escape: false)
-        ->assertSee('tok remove NAME')
-        ->assertSee('tok alias NAME ALIAS')
+        ->assertSee('--login', escape: false)
+        ->assertSee('tok switch TARGET', escape: false)
+        ->assertSee('tok force-switch TARGET', escape: false)
+        ->assertSee('tok remove TARGET', escape: false)
+        ->assertSee('tok alias TARGET', escape: false)
         ->assertSee('tok status')
+        ->assertSee('tok tui')
         ->assertSee('tok setup')
-        ->assertSee('tok current');
+        ->assertSee('tok current')
+        ->assertSee('tok detect-base')
+        ->assertSee('tok history')
+        ->assertSee('tok sessions')
+        ->assertSee('tok sync')
+        ->assertSee('tok update')
+        ->assertSee('tok uninstall');
 });
 
 test('guide explains how to discover a slot name or index before switching', function () {
@@ -45,7 +61,8 @@ test('guide explains how to discover a slot name or index before switching', fun
 
     $this->get('/guide')
         ->assertOk()
-        ->assertSee('Not sure of the name or index?');
+        ->assertSee('Not sure of the name or index?')
+        ->assertDontSee('lets you switch right there');
 });
 
 test('guide shows the custom.sh tool catalog reference', function () {

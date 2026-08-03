@@ -110,7 +110,7 @@ test('cli track offers the manual hook config fallback with all three provider s
     $this->get('/setup')
         ->assertOk()
         ->assertSee('UserPromptSubmit') // claude snippet
-        ->assertSee('config.toml') // codex snippet
+        ->assertSee('~/.codex/hooks.json', escape: false) // codex snippet
         ->assertSee('hooks.json'); // antigravity snippet
 });
 
