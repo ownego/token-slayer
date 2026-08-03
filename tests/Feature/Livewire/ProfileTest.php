@@ -54,7 +54,8 @@ test('profile shows the plain token once when redirected from oauth', function (
     $this->get('/profile')
         ->assertOk()
         ->assertSee('plain-abc')
-        ->assertSee($user->display_name);
+        ->assertSee($user->display_name)
+        ->assertSeeInOrder(['<details class="bg-white border border-gray-200 rounded-xl" open>', 'plain-abc'], escape: false);
 });
 
 test('regenerate replaces the hook token', function () {
@@ -73,10 +74,12 @@ test('regenerate token button is gated behind a confirmation step', function () 
 
     $this->get('/profile')
         ->assertOk()
+        ->assertSee('Hook token settings')
         ->assertSee('Regenerate token')
         ->assertSee('confirmingRegenerate = true', escape: false)
         ->assertSee('Yes, regenerate')
-        ->assertSee('Cancel');
+        ->assertSee('Cancel')
+        ->assertDontSee('<details class="bg-white border border-gray-200 rounded-xl" open>', escape: false);
 });
 
 test('profile shows the players own all-time, monthly, and daily damage totals', function () {
