@@ -6,27 +6,10 @@ use App\Models\Event;
 use App\Models\User;
 use App\Services\DamageTotals;
 use App\Services\GitHub\CachedLatestVersion;
-use App\Services\HookTokenRotator;
 use Livewire\Component;
 
 class Profile extends Component
 {
-    public ?string $plainToken = null;
-
-    public function mount(): void
-    {
-        $this->plainToken = session()->pull('hook_token_plain');
-    }
-
-    /**
-     * @param  HookTokenRotator  $rotator  mints and persists the fresh token
-     * @return void
-     */
-    public function regenerate(HookTokenRotator $rotator): void
-    {
-        $this->plainToken = $rotator->rotate(auth()->user());
-    }
-
     /**
      * Snapshot of how the user's latest event was attributed, for the status
      * block. `latestVersion` is null when the latest release cannot be
@@ -59,7 +42,6 @@ class Profile extends Component
             'accountRows' => app(DamageTotals::class)->forUserByAccount(auth()->user()),
             'quotaBars' => fn (array $row): array => $this->quotaBars($row),
             'attribution' => $this->attributionStatus(auth()->user(), $latest),
-            'plainToken' => $this->plainToken,
         ]);
     }
 

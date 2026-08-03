@@ -115,29 +115,6 @@
             @endif
         </section>
 
-        <details class="bg-white border border-gray-200 rounded-xl"{{ $plainToken ? ' open' : '' }}>
-            <summary class="p-5 text-sm font-bold text-gray-900 cursor-pointer select-none">Hook token settings</summary>
-            <div class="px-5 pb-5" x-data="{ confirmingRegenerate: false }">
-                <div class="mb-3">
-                    <button type="button" x-show="!confirmingRegenerate" @click="confirmingRegenerate = true" class="cursor-pointer px-3 py-1.5 bg-gray-900 hover:bg-gray-700 text-white rounded-lg text-xs font-semibold transition">Regenerate token</button>
-                    <div x-show="confirmingRegenerate" x-cloak class="flex items-center gap-2">
-                        <span class="text-xs text-red-600 font-semibold">Sure?</span>
-                        <button type="button" wire:click="regenerate" @click="confirmingRegenerate = false" class="cursor-pointer px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition">Yes, regenerate</button>
-                        <button type="button" @click="confirmingRegenerate = false" class="cursor-pointer px-3 py-1.5 bg-white border border-gray-200 hover:border-gray-400 text-gray-700 rounded-lg text-xs font-semibold transition">Cancel</button>
-                    </div>
-                </div>
-                @if ($plainToken)
-                    <p class="text-sm text-gray-500 mb-1">Your token (shown once — copy it now):</p>
-                    <code class="block bg-gray-50 border border-gray-200 p-2 rounded-lg text-xs select-all">{{ $plainToken }}</code>
-                @else
-                    <p class="text-sm text-gray-500">Regenerating creates a fresh token for the <a href="{{ route('setup') }}" class="text-orange-600 underline">setup wizard</a> to use, or to paste manually.</p>
-                @endif
-                <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-                    Regenerating replaces the token everywhere at once — every machine currently using it will stop working (401) until you update each one with the new value.
-                </p>
-            </div>
-        </details>
-
         <div class="grid sm:grid-cols-2 gap-4">
             <a href="{{ route('setup') }}" class="bg-orange-50 border border-orange-200 hover:border-orange-400 rounded-xl p-5 flex items-center justify-between transition">
                 <div>

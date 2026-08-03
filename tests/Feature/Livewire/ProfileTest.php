@@ -47,41 +47,6 @@ test('profile shows a link to the dashboard panel', function () {
         ->assertSee('href="'.route('filament.admin.pages.dashboard').'"', escape: false);
 });
 
-test('profile shows the plain token once when redirected from oauth', function () {
-    $user = User::factory()->create(['hook_token' => hash('sha256', 'plain-abc')]);
-    $this->actingAs($user)->withSession(['hook_token_plain' => 'plain-abc']);
-
-    $this->get('/profile')
-        ->assertOk()
-        ->assertSee('plain-abc')
-        ->assertSee($user->display_name)
-        ->assertSeeInOrder(['<details class="bg-white border border-gray-200 rounded-xl" open>', 'plain-abc'], escape: false);
-});
-
-test('regenerate replaces the hook token', function () {
-    $user = User::factory()->create(['hook_token' => hash('sha256', 'old')]);
-    $original = $user->hook_token;
-
-    Livewire::actingAs($user)
-        ->test(Profile::class)
-        ->call('regenerate');
-
-    expect($user->fresh()->hook_token)->not->toBe($original);
-});
-
-test('regenerate token button is gated behind a confirmation step', function () {
-    $this->actingAs(User::factory()->create());
-
-    $this->get('/profile')
-        ->assertOk()
-        ->assertSee('Hook token settings')
-        ->assertSee('Regenerate token')
-        ->assertSee('confirmingRegenerate = true', escape: false)
-        ->assertSee('Yes, regenerate')
-        ->assertSee('Cancel')
-        ->assertDontSee('<details class="bg-white border border-gray-200 rounded-xl" open>', escape: false);
-});
-
 test('profile shows the players own all-time, monthly, and daily damage totals', function () {
     $user = User::factory()->create();
     $other = User::factory()->create();
@@ -188,15 +153,6 @@ it('shows the matched attribution status for an org-uuid verified event with no 
     Livewire::actingAs($user)->test(Profile::class)
         ->assertSee('an org account')
         ->assertSee('org@ownego.com');
-});
-
-test('regenerating the token warns that existing installs will 401 until updated', function () {
-    $user = User::factory()->create();
-    $this->actingAs($user);
-
-    $this->get('/profile')
-        ->assertOk()
-        ->assertSee('every machine currently using it will stop working', escape: false);
 });
 
 test('profile links to the setup wizard and the CLI guide', function () {
