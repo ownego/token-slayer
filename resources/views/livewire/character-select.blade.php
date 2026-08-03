@@ -379,11 +379,11 @@
    output — cropped the same way by .preview-crop's overflow:hidden. */
 .preview-mount canvas {
     image-rendering: pixelated;
-    /* translateY listed before scale so the nudge stays a flat 8px on
+    /* translateY listed before scale so the nudge stays a flat px value on
        screen — listing it after scale would have it multiplied by 1.25.
-       Brings the character down closer to .halo-glow/.halo-core, the
+       Brings the character down closer to .portal-pad/.halo-core, the
        portal-ring graphic anchored near the bottom of this panel. */
-    transform: translateY(8px) scale(1.25);
+    transform: translateY(18px) scale(1.25);
     filter: drop-shadow(0 6px 18px color-mix(in srgb, var(--accent, #fbbf24) 40%, transparent));
     transition: filter 0.4s ease;
 }
