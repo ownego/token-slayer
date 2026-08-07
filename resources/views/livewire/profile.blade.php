@@ -224,8 +224,8 @@
 
                 <div>
                     <p class="text-sm mb-1">Example <code>~/.config/{{ $namespace }}/custom.sh</code>:</p>
-                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">if command -v jq >/dev/null 2>&1; then
-  BODY=$(printf '%s' "$BODY" | jq -c '
+                    <pre class="bg-gray-900 text-gray-100 p-3 rounded overflow-x-auto text-xs select-all">if [ -x "$JQ" ]; then
+  BODY=$(printf '%s' "$BODY" | "$JQ" -c '
     if (.hook_event_name // "") == "UserPromptSubmit" then
       .custom_activity = "🧠 New prompt"
     elif (.hook_event_name // "") == "PreToolUse" then
