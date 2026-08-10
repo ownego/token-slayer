@@ -12,17 +12,18 @@ class ExchangeController extends Controller
     /**
      * Exchange a CCRC-flow one-time token for an IDENTITY — and nothing else.
      *
-     * Deliberately does NOT issue a bearer like the IDE flow does. This
-     * matters because a bearer, once issued, lives forever and — combined
-     * with `/api/ide/auth/session-url` and `EstablishIdeSession` (a global
-     * web middleware) — logs straight into the user's account.
+     * Deliberately does NOT issue a bearer like the IDE flow does. An IDE
+     * bearer is longer-lived and reaches further than anything this flow
+     * needs; the CCRC hub only ever needs a name, so it should never hold
+     * more than that — not in memory, not in a log, not in a callback URL.
      *
-     * The token consumed here is `IdeAccessToken::issueOneTimeCcrc()`'s own
-     * `kind`, distinct from the IDE flow's `one_time`: `consumeOneTimeCcrc()`
-     * only ever matches that kind, so a token minted for this endpoint is
-     * never redeemable on `/api/ide/auth/exchange` and can never become a
-     * bearer that way. The CCRC hub only ever needs a name, so it must never
-     * be handed anything more powerful than that.
+     * The token consumed here carries `IdeAccessToken::issueOneTimeCcrc()`'s
+     * own `kind`, distinct from the IDE flow's `one_time`, and
+     * `consumeOneTimeCcrc()` only ever matches that kind. So a token minted
+     * for this endpoint is not redeemable on `/api/ide/auth/exchange`, and an
+     * IDE token is not redeemable here. Both directions have tests — without
+     * them the two kinds would drift back into one on some later refactor,
+     * and this endpoint's restraint would buy nothing.
      */
     public function __invoke(Request $request): JsonResponse
     {

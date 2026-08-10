@@ -135,7 +135,9 @@ function bindSlackProviderThrowingInvalidState(): void
 test('slack callback restarts the login flow when the oauth state is stale', function () {
     bindSlackProviderThrowingInvalidState();
 
-    $this->get('/auth/slack/callback')->assertRedirect(route('slack.login'));
+    // Not an exact match: restartLogin() now tags the retry redirect with a
+    // one-time ?resume= token (see RESUME_FLOW's docblock in SlackController).
+    $this->get('/auth/slack/callback')->assertRedirectContains(route('slack.login'));
 
     expect(User::count())->toBe(0);
 });
@@ -148,7 +150,7 @@ test('restarting a stale-state login preserves the originally requested page', f
     // (successful) callback lands them back on /dashboard.
     $this->withSession(['url.intended' => url('/dashboard/accounts')])
         ->get('/auth/slack/callback')
-        ->assertRedirect(route('slack.login'))
+        ->assertRedirectContains(route('slack.login'))
         ->assertSessionHas('url.intended', url('/dashboard/accounts'));
 });
 
@@ -172,7 +174,7 @@ test('a guest bounced off the dashboard still lands there after a stale-state re
     Socialite::shouldReceive('driver')->with('slack')->andReturn($provider);
 
     $this->get('/dashboard')->assertRedirect(route('slack.login'));
-    $this->get('/auth/slack/callback')->assertRedirect(route('slack.login'));
+    $this->get('/auth/slack/callback')->assertRedirectContains(route('slack.login'));
     $this->get('/auth/slack/callback')->assertRedirect(url('/dashboard'));
 });
 
@@ -183,6 +185,33 @@ test('slack callback stops retrying after one restart so it cannot loop', functi
         ->get('/auth/slack/callback')
         ->assertRedirect(route('battlefield'))
         ->assertSessionHas('error');
+});
+
+test('two consecutive stale-state failures end on the battlefield error, not a further retry', function () {
+    // Full round trip, unlike the test above: the first failure's retry
+    // redirect is actually followed to /auth/slack before failing again, so
+    // this also proves RESUME_FLOW's one-shot consumption there doesn't
+    // interfere with RETRY_FLAG's separate job of stopping the ping-pong.
+    $provider = Mockery::mock(AbstractProvider::class);
+    $provider->shouldReceive('redirect')->once()->andReturn(redirect('https://slack.test/oauth'));
+    $provider->shouldReceive('user')->twice()->andThrow(new InvalidStateException);
+    Socialite::shouldReceive('driver')->with('slack')->andReturn($provider);
+
+    // First failure: restartLogin() sends the guest to /auth/slack, tagged
+    // with the one-time ?resume= token this specific retry carries.
+    $retry = $this->get('/auth/slack/callback');
+    $retry->assertRedirectContains(route('slack.login'));
+
+    // The browser follows that exact retry URL for real.
+    $this->get($retry->headers->get('Location'));
+
+    // The retry fails again: the guard must end the flow here instead of
+    // sending the guest through yet another retry.
+    $this->get('/auth/slack/callback')
+        ->assertRedirect(route('battlefield'))
+        ->assertSessionHas('error');
+
+    expect(User::count())->toBe(0);
 });
 
 test('slack callback sends an already authenticated visitor on instead of erroring', function () {
@@ -200,7 +229,7 @@ test('slack callback restarts the flow when slack returns no user id', function 
     $slackUser->shouldReceive('getId')->andReturn(null);
     bindSlackProvider($slackUser);
 
-    $this->get('/auth/slack/callback')->assertRedirect(route('slack.login'));
+    $this->get('/auth/slack/callback')->assertRedirectContains(route('slack.login'));
 
     expect(User::count())->toBe(0);
 });
