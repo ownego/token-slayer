@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 
+/* Alpine's x-cloak is inert without this rule — Tailwind/Alpine don't ship
+   it by default. Without it, any x-cloak'd element (e.g. the character-select
+   modal's full-viewport backdrop) renders at its normal display value until
+   Alpine finishes booting, silently sitting on top of — and eating hover/
+   click on — everything beneath it for however long that takes. */
 [x-cloak] {
     display: none !important;
 }
