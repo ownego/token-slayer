@@ -113,6 +113,29 @@ it('stops the install with a throw when Git for Windows is missing, not just a w
         ->not->toContain('Write-Warning "Attribution hooks need Git for Windows');
 });
 
+it('resolves Git Bash by known install path instead of Get-Command bash', function () {
+    // `Get-Command bash` finds C:\Windows\System32\bash.exe (the WSL launcher)
+    // first, which is unusable for running the hooks and can fail outright on
+    // a box with no or broken WSL distro.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('function Find-GitBash')
+        ->toContain("if (\$c -match '\\\\System32\\\\') { continue }")
+        ->toContain('$gitBash = Find-GitBash');
+});
+
+it('writes hook commands that invoke Git Bash by absolute path, not a bare bash', function () {
+    // A bare `bash` in the hook command resolves through PATH, where the WSL
+    // launcher in System32 shadows Git Bash.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('$BashExe = if ($gitBash) { ($gitBash -replace \'\\\\\',\'/\') } else { \'bash\' }')
+        ->toContain('$ClaudeCmd = "`"$BashExe`" `"$HelperBash`""')
+        ->not->toContain('$ClaudeCmd = "bash `"$HelperBash`""');
+});
+
 it('stamps the resolver-derived client version into install.ps1', function () {
     config(['github.token' => 'ghp_test', 'github.cli_repo' => 'acme/slayer-cli']);
     Http::fake(['api.github.com/*' => Http::response([
