@@ -33,8 +33,10 @@ test('codex snippet calls the helper with PROVIDER=codex', function () {
 
     expect($rendered)
         ->toContain('PROVIDER=codex bash $HOME/.config/token_slayer/send-hook.sh')
-        ->toContain('session_start')
-        ->toContain('stop');
+        ->toContain('SessionStart')
+        ->toContain('Stop')
+        ->not->toContain('config.toml');
+    expect(json_decode($rendered, true))->toBeArray();
 });
 
 test('antigravity snippet calls the helper with PROVIDER=antigravity', function () {

@@ -28,6 +28,14 @@ test('one-time token is single-use', function () {
     $this->postJson('/api/ide/auth/exchange', ['token' => $plain, 'state' => 'st'])->assertStatus(410);
 });
 
+test('rejects a CCRC one-time token — the two flows mint different kinds', function () {
+    $user = User::factory()->create();
+    [$plain] = IdeAccessToken::issueOneTimeCcrc($user, 'st', 120);
+
+    $this->postJson('/api/ide/auth/exchange', ['token' => $plain, 'state' => 'st'])
+        ->assertStatus(410);
+});
+
 test('rejects mismatched state', function () {
     $user = User::factory()->create();
     [$plain] = IdeAccessToken::issueOneTime($user, 'st', 120);

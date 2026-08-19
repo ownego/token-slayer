@@ -1,6 +1,21 @@
 import Phaser from 'phaser';
 
 /**
+ * Fixed canvas-texture size for avatars, deliberately much smaller than the
+ * source images (Slack/Google avatars are commonly 512px+). Drawing the
+ * full-res source down to this size lets the 2D context's own high-quality
+ * resampling (configured below) do that big reduction once; the remaining
+ * shrink to the on-screen avatar size (fighterDisplayConfig's avatarPx caps
+ * out at 46px) is then only ~3x even at 3x device pixel ratio, which
+ * Phaser's single-pass bilinear GPU sampler can do without visible blur.
+ * Uploading the source at its native resolution and leaving the whole
+ * 10-20x reduction to that one bilinear pass is what caused the blur.
+ *
+ * @type {number}
+ */
+const AVATAR_TEXTURE_SIZE = 160;
+
+/**
  * Loads an avatar image as a circular canvas texture.
  *
  * @param {Phaser.Scene} scene
@@ -21,7 +36,7 @@ export function loadAvatarTexture(scene, fighterId, avatarUrl) {
       if (scene.textures.exists(key)) {
         scene.textures.remove(key);
       }
-      const size = img.naturalWidth || 512;
+      const size = AVATAR_TEXTURE_SIZE;
       const canvas = document.createElement('canvas');
       canvas.width = size;
       canvas.height = size;

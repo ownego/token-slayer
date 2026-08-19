@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Ccrc\ExchangeController as CcrcExchangeController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\Ide\AuthController;
 use App\Http\Controllers\Api\Ide\HookConfigController;
@@ -30,4 +31,11 @@ Route::middleware('throttle:30,1')->prefix('ide')->group(function (): void {
         Route::get('/hook-config', HookConfigController::class);
         Route::get('/snapshot', SnapshotController::class);
     });
+});
+
+// Entry point of the CCRC login flow. Same throttle as /api/ide, and NOT
+// behind `ide.bearer`: this is the one-time token exchange step, before
+// anyone holds a bearer yet.
+Route::middleware('throttle:30,1')->prefix('ccrc')->group(function (): void {
+    Route::post('/auth/exchange', CcrcExchangeController::class);
 });

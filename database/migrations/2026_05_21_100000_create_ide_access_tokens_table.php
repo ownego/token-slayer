@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('ide_access_tokens', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('kind', 16); // 'one_time' | 'bearer' | 'session_url'
+            $table->string('kind', 16); // 'one_time' | 'one_time_ccrc' | 'bearer' | 'session_url'
             $table->string('token_hash', 64)->unique();
             $table->string('state_hash', 64)->nullable()->index();
             $table->string('redirect_path', 255)->nullable();

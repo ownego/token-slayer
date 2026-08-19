@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { BG_COLOR, LAYOUTS, BOSS_TYPES, FIGHTER_TYPES } from '@battlefield/config.js';
-import { AnimState, BusEvent, TextureKey, SCENE_KEY } from '@battlefield/constants.js';
+import { BG_COLOR, LAYOUTS, BOSS_TYPES } from '@battlefield/config.js';
+import { BusEvent, TextureKey, SCENE_KEY } from '@battlefield/constants.js';
 import { bus } from './bus.js';
 import { Leaderboard } from './leaderboard.js';
 import { Impact } from './impact.js';
@@ -11,6 +11,8 @@ import { Charge } from './charge.js';
 import { Bubble } from './bubble.js';
 import { MoveInput } from './move-input.js';
 import { Fighter } from './fighter.js';
+import { ensureSparkTexture } from './spark-texture.js';
+import { registerAllFighterAnimations } from './fighter/animations.js';
 
 /** Phaser scene coordinator — wires all battlefield managers and handles the Phaser lifecycle. */
 export class BattlefieldScene extends Phaser.Scene {
@@ -64,52 +66,7 @@ export class BattlefieldScene extends Phaser.Scene {
       }
       // Fighter atlas: NEAREST filter + register all animations from named frames
       this.textures.get(TextureKey.FIGHTERS)?.setFilter(Phaser.Textures.FilterMode.NEAREST);
-      for (const ft of FIGHTER_TYPES) {
-        for (const [state, anim] of Object.entries(ft.animations)) {
-          const animKey = `${ft.key}-${state}`;
-          if (!this.anims.exists(animKey)) {
-            this.anims.create({
-              key: animKey,
-              frames: this.anims.generateFrameNames(TextureKey.FIGHTERS, {
-                prefix: `${ft.key}-${state}-`,
-                start: 0,
-                end: anim.frames - 1,
-              }),
-              frameRate: anim.rate,
-              repeat: (state === AnimState.IDLE || state === AnimState.WALK) ? -1 : 0,
-            });
-          }
-        }
-        for (let i = 0; i < (ft.attacks?.length ?? 0); i++) {
-          const atk = ft.attacks[i];
-          const atkKey = `${ft.key}-attack${i + 1}`;
-          const effKey = `${ft.key}-effect${i + 1}`;
-          if (!this.anims.exists(atkKey)) {
-            this.anims.create({
-              key: atkKey,
-              frames: this.anims.generateFrameNames(TextureKey.FIGHTERS, {
-                prefix: `${ft.key}-attack${i + 1}-`,
-                start: 0,
-                end: atk.frames - 1,
-              }),
-              frameRate: atk.rate,
-              repeat: 0,
-            });
-          }
-          if (atk.effectFrames && !this.anims.exists(effKey)) {
-            this.anims.create({
-              key: effKey,
-              frames: this.anims.generateFrameNames(TextureKey.FIGHTERS, {
-                prefix: `${ft.key}-effect${i + 1}-`,
-                start: 0,
-                end: atk.effectFrames - 1,
-              }),
-              frameRate: atk.rate,
-              repeat: 0,
-            });
-          }
-        }
-      }
+      registerAllFighterAnimations(this);
     });
   }
 
@@ -125,7 +82,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const L = this.layout;
 
     this.add.rectangle(L.logicalWidth / 2, L.logicalHeight / 2, L.logicalWidth, L.logicalHeight, BG_COLOR);
-    this.makeSparkTexture();
+    ensureSparkTexture(this);
     this.add.image(L.logicalWidth / 2, L.logicalHeight / 2, this.makeVignetteTexture());
 
     const state = this.game.registry.get('initialState');
@@ -168,6 +125,7 @@ export class BattlefieldScene extends Phaser.Scene {
       [BusEvent.FIGHTER_MOVED]:    payload => this.fighter.handleFighterMoved(payload),
       [BusEvent.POSITIONS_RESYNCED]: payload => this.fighter.reconcilePositions(payload.positions),
       [BusEvent.FIGHTER_CHARGE_CLEARED]: payload => this.charge.handleChargeCleared(payload),
+      [BusEvent.CHARACTER_CHANGED]: payload => this.fighter.updateCharacters([payload]),
     };
 
     this.moveInput = new MoveInput(this);
@@ -246,16 +204,4 @@ export class BattlefieldScene extends Phaser.Scene {
     return key;
   }
 
-  /** Creates and registers the spark particle texture used by charge and attack effects. */
-  makeSparkTexture() {
-    if (this.textures.exists(TextureKey.SPARK)) {
-      return;
-    }
-    const g = this.make.graphics({ add: false });
-    g.fillStyle(0xffffff, 1);
-    // Thin triangle — tip at right (24,3), base at left
-    g.fillTriangle(24, 3, 0, 0, 0, 6);
-    g.generateTexture(TextureKey.SPARK, 24, 6);
-    g.destroy();
-  }
 }

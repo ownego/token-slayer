@@ -44,4 +44,10 @@ return [
         'channel' => env('SLACK_SECURITY_CHANNEL'),
     ],
 
+    'ccrc' => [
+        // Callback URL for the CC Remote Control hub. Fixed here, never read
+        // from the query string — see redirectToCcrc() in SlackController.
+        'callback_url' => env('CCRC_CALLBACK_URL'),
+    ],
+
 ];
