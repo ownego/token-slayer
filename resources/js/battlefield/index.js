@@ -4,6 +4,8 @@ import { LAYOUTS, BG_COLOR } from './config.js';
 import { bus } from './bus.js';
 import { snapshotState } from './snapshot.js';
 import { computeHudTop } from './hud-position.js';
+import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
+import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
 import { BusEvent, SCENE_KEY } from './constants.js';
 
 const ECHO_EVENT_MAP = {
@@ -15,6 +17,7 @@ const ECHO_EVENT_MAP = {
   FighterIdled:    BusEvent.FIGHTER_IDLED,
   FighterMoved:    BusEvent.FIGHTER_MOVED,
   FighterChargeCleared: BusEvent.FIGHTER_CHARGE_CLEARED,
+  FighterCharacterChanged: BusEvent.CHARACTER_CHANGED,
 };
 
 const ECHO_RETRY_INTERVAL_MS = 200;
@@ -120,6 +123,10 @@ function bootGame(mount, state, mode) {
       bossHp: () => scene.bossState?.currentHp,
       bossMaxHp: () => scene.bossState?.maxHp,
       computeHudTop,
+      drawFighterPreview,
+      drawFighterFrame,
+      createCharacterPreview: createPreviewGame,
+      destroyCharacterPreview: destroyPreviewGame,
     };
   });
 

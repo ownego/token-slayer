@@ -51,6 +51,68 @@ fi
 # Ensure token directory exists.
 mkdir -p "$HOME/.config/{{ $namespace }}"
 
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+
+# --- jq bootstrap ----
+# Every machine uses this exact pinned jq binary -- NEVER the system jq --
+# so cross-platform/cross-version differences in jq's own behavior (try/catch
+# semantics, sort/type-coercion edge cases) can never again produce silently
+# wrong token/account attribution the way "whatever jq happens to be on this
+# machine" did on prod. A missing/unverifiable jq now stops the install
+# entirely rather than shipping a hook that will silently record nothing.
+JQ_VERSION="1.8.2"
+JQ_DIR="$HOME/.config/{{ $namespace }}/bin"
+JQ_BIN="$JQ_DIR/jq"
+mkdir -p "$JQ_DIR"
+
+jq_asset_and_sha() {
+    # $1 = uname -s, $2 = uname -m. One `echo "asset sha256"` line per
+    # supported platform; pinned to the jq 1.8.2 release's own sha256sum.txt.
+    case "$1:$2" in
+        Linux:x86_64)  echo "jq-linux-amd64 b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f" ;;
+        Linux:aarch64) echo "jq-linux-arm64 8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309" ;;
+        Darwin:x86_64) echo "jq-macos-amd64 e94b266e3c26690550006abe63152b782280f4e14374accdf04cbde844f00bc0" ;;
+        Darwin:arm64)  echo "jq-macos-arm64 2d75340ba57a4b4b4c8708a21c2dc8e958a48aaa8bba13b27f77f6e4c0eca07e" ;;
+        *) echo "" ;;
+    esac
+}
+
+JQ_ASSET_SHA=$(jq_asset_and_sha "$(uname -s)" "$(uname -m)")
+if [ -z "$JQ_ASSET_SHA" ]; then
+    echo "error: no pinned jq build for $(uname -s)/$(uname -m) -- token-slayer cannot install without a known-good jq for this platform. Open an issue with this OS/arch." >&2
+    exit 1
+fi
+JQ_ASSET=$(printf '%s' "$JQ_ASSET_SHA" | cut -d' ' -f1)
+JQ_SHA=$(printf '%s' "$JQ_ASSET_SHA" | cut -d' ' -f2)
+
+# Self-heal: an existing binary that doesn't match the pinned checksum (a
+# partial download from a prior failed run, or a version bump) is rebuilt,
+# not trusted. A binary that already matches is left untouched.
+if [ -x "$JQ_BIN" ]; then
+    CURRENT_SHA=$(sha256 < "$JQ_BIN")
+    [ "$CURRENT_SHA" = "$JQ_SHA" ] || rm -f "$JQ_BIN"
+fi
+
+if [ ! -x "$JQ_BIN" ]; then
+    JQ_URL="https://github.com/jqlang/jq/releases/download/jq-$JQ_VERSION/$JQ_ASSET"
+    JQ_TMP="$JQ_DIR/.jq.download"
+    if ! curl -fsSL "$JQ_URL" -o "$JQ_TMP" 2>"$JQ_DIR/.jq.curl-err"; then
+        cat "$JQ_DIR/.jq.curl-err" >&2
+        rm -f "$JQ_TMP" "$JQ_DIR/.jq.curl-err"
+        echo "error: could not download jq from $JQ_URL (see error above) -- check your network connection and re-run." >&2
+        exit 1
+    fi
+    rm -f "$JQ_DIR/.jq.curl-err"
+    DOWNLOADED_SHA=$(sha256 < "$JQ_TMP")
+    if [ "$DOWNLOADED_SHA" != "$JQ_SHA" ]; then
+        rm -f "$JQ_TMP"
+        echo "error: downloaded jq checksum mismatch -- expected $JQ_SHA, got $DOWNLOADED_SHA. Refusing to install a binary that doesn't match. Re-run to retry the download." >&2
+        exit 1
+    fi
+    mv "$JQ_TMP" "$JQ_BIN"
+    chmod +x "$JQ_BIN"
+fi
+
 # Bundled detector config (data, not code): tells the hook where a locally-run
 # proxy already logs session/account, so token-slayer can attribute without
 # modifying the proxy. Overwritten on every install so new entries ship centrally.
@@ -67,8 +129,6 @@ DETECTOR_JSON
 # because the server cannot read the user's filesystem.
 HELPER="$HOME/.config/{{ $namespace }}/send-hook.sh"
 CHECKSUM_FILE="$HOME/.config/{{ $namespace }}/.hook-checksum"
-
-sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
 
 # If an existing send-hook.sh no longer matches the checksum of the last
 # stock install (or predates checksum tracking entirely), assume the user
@@ -94,10 +154,14 @@ TOKEN_FILE="$HOME/.config/{{ $namespace }}/token"
 BODY=$(cat)
 [ -r "$TOKEN_FILE" ] || exit 0
 
-if command -v jq >/dev/null 2>&1; then
-  TRANSCRIPT=$(printf '%s' "$BODY" | jq -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
+# Always the pinned binary installed by the bootstrap above -- never a
+# system jq -- so hook behavior can never drift between machines.
+JQ="$HOME/.config/{{ $namespace }}/bin/jq"
+
+if [ -x "$JQ" ]; then
+  TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
   if [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ]; then
-    TOKENS=$(jq -sr '
+    TOKENS=$("$JQ" -sr '
       . as $a
       | (length - 1) as $end
       | reduce range($end; -1; -1) as $i ({t:0, stop:false};
@@ -115,7 +179,7 @@ if command -v jq >/dev/null 2>&1; then
       | .t
     ' "$TRANSCRIPT" 2>/dev/null)
     if [ -n "${TOKENS:-}" ]; then
-      BODY=$(printf '%s' "$BODY" | jq -c --argjson t "$TOKENS" '. + {tokens:$t}' 2>/dev/null || printf '%s' "$BODY")
+      BODY=$(printf '%s' "$BODY" | "$JQ" -c --argjson t "$TOKENS" '. + {tokens:$t}' 2>/dev/null || printf '%s' "$BODY")
     fi
   fi
 fi
@@ -142,11 +206,11 @@ current_access_token() {
   fi
   for f in "${CLAUDE_CONFIG_DIR:-}/.credentials.json" "$HOME/.claude/.credentials.json"; do
     [ -r "$f" ] || continue
-    jq -r '.claudeAiOauth.accessToken // ""' "$f" 2>/dev/null && return
+    "$JQ" -r '.claudeAiOauth.accessToken // ""' "$f" 2>/dev/null && return
   done
   if [ "$(uname)" = "Darwin" ]; then
     security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-      | jq -r '.claudeAiOauth.accessToken // ""' 2>/dev/null
+      | "$JQ" -r '.claudeAiOauth.accessToken // ""' 2>/dev/null
   fi
 }
 
@@ -178,11 +242,11 @@ provider_account() {
   fi
   [ -n "$_pv" ] || return 1
 
-  _org=$(jq -r '.org_uuid // ""' "$_pv" 2>/dev/null)
+  _org=$("$JQ" -r '.org_uuid // ""' "$_pv" 2>/dev/null)
   [ -n "$_org" ] || return 1
   ACC_ORG_ID="$_org"
-  ACC_EMAIL=$(jq -r '.email // ""' "$_pv" 2>/dev/null)
-  ACC_UUID=$(jq -r '.uuid // ""' "$_pv" 2>/dev/null)
+  ACC_EMAIL=$("$JQ" -r '.email // ""' "$_pv" 2>/dev/null)
+  ACC_UUID=$("$JQ" -r '.uuid // ""' "$_pv" 2>/dev/null)
   ACC_SOURCE="provider"
   return 0
 }
@@ -195,14 +259,14 @@ detector_scan() {
   _cfg="$NS_DIR/detector-config.json"
   [ -r "$_cfg" ] || return 1
 
-  for _mgr in $(jq -r 'keys[]' "$_cfg" 2>/dev/null); do
-    _join=$(jq -r --arg k "$_mgr" '.[$k].join // ""' "$_cfg" 2>/dev/null)
+  for _mgr in $("$JQ" -r 'keys[]' "$_cfg" 2>/dev/null); do
+    _join=$("$JQ" -r --arg k "$_mgr" '.[$k].join // ""' "$_cfg" 2>/dev/null)
     case "$_join" in
       session)
         [ -n "${SESSION_ID:-}" ] || continue
-        _pat=$(jq -r --arg k "$_mgr" '.[$k].account_pattern // ""' "$_cfg" 2>/dev/null)
+        _pat=$("$JQ" -r --arg k "$_mgr" '.[$k].account_pattern // ""' "$_cfg" 2>/dev/null)
         [ -n "$_pat" ] || continue
-        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+        for _glob in $("$JQ" -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
           _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
           for _f in $_glob; do
             [ -r "$_f" ] || continue
@@ -222,17 +286,17 @@ detector_scan() {
         ;;
       ts_tokens)
         DETECTOR_WINDOW_SECS=120
-        _af=$(jq -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
-        _tf=$(jq -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
+        _af=$("$JQ" -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
+        _tf=$("$JQ" -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
         [ -n "$_af" ] || continue
         _now=$(date +%s)
         _lo=$((_now - DETECTOR_WINDOW_SECS))
-        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+        for _glob in $("$JQ" -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
           _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
           for _f in $_glob; do
             [ -r "$_f" ] || continue
             # SAFE rule: one distinct account in the window -> attribute; more -> NULL.
-            _acct=$(jq -rs --arg af "$_af" --arg tf "$_tf" \
+            _acct=$("$JQ" -rs --arg af "$_af" --arg tf "$_tf" \
               --argjson lo "$_lo" --argjson hi "$_now" '
                 [ .[] | select((.[$tf] // 0) >= $lo and (.[$tf] // 0) <= $hi) | .[$af] ]
                 | map(select(. != null and . != "")) | unique
@@ -260,8 +324,8 @@ resolve_account() {
 
   # 1. Manual override: wins over credential/proxy/auto (a provider still precedes it).
   if [ -r "$NS_DIR/account.json" ]; then
-    ACC_EMAIL=$(jq -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
-    ACC_UUID=$(jq -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
+    ACC_EMAIL=$("$JQ" -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
+    ACC_UUID=$("$JQ" -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
     [ -n "$ACC_EMAIL" ] && { ACC_SOURCE="manual"; return; }
   fi
 
@@ -294,17 +358,17 @@ resolve_account() {
 
     CACHED_STATUS="" CACHED_CHECKED_AT=0
     if [ -r "$CACHE" ]; then
-      CACHED_STATUS=$(jq -r --arg fp "$FP" '.[$fp].status // ""' "$CACHE" 2>/dev/null)
-      CACHED_CHECKED_AT=$(jq -r --arg fp "$FP" '.[$fp].checked_at // 0' "$CACHE" 2>/dev/null)
+      CACHED_STATUS=$("$JQ" -r --arg fp "$FP" '.[$fp].status // ""' "$CACHE" 2>/dev/null)
+      CACHED_CHECKED_AT=$("$JQ" -r --arg fp "$FP" '.[$fp].checked_at // 0' "$CACHE" 2>/dev/null)
     fi
     : "${CACHED_CHECKED_AT:=0}"
 
     SHOULD_LOOKUP=1
     case "$CACHED_STATUS" in
       ok)
-        ACC_ORG_ID=$(jq -r --arg fp "$FP" '.[$fp].org_id // ""' "$CACHE" 2>/dev/null)
-        ACC_EMAIL=$(jq -r --arg fp "$FP" '.[$fp].email // ""' "$CACHE" 2>/dev/null)
-        ACC_UUID=$(jq -r --arg fp "$FP" '.[$fp].uuid // ""' "$CACHE" 2>/dev/null)
+        ACC_ORG_ID=$("$JQ" -r --arg fp "$FP" '.[$fp].org_id // ""' "$CACHE" 2>/dev/null)
+        ACC_EMAIL=$("$JQ" -r --arg fp "$FP" '.[$fp].email // ""' "$CACHE" 2>/dev/null)
+        ACC_UUID=$("$JQ" -r --arg fp "$FP" '.[$fp].uuid // ""' "$CACHE" 2>/dev/null)
         SHOULD_LOOKUP=0
         ;;
       restricted)
@@ -328,14 +392,14 @@ resolve_account() {
           # proved identity via the org id.
           PROFILE=$(curl -sf --max-time 5 -A "$HOOK_UA" "https://api.anthropic.com/api/oauth/profile" \
             -H "Authorization: Bearer $OAUTH_TOKEN" -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
-          ACC_EMAIL=$(printf '%s' "$PROFILE" | jq -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
-          ACC_UUID=$(printf '%s' "$PROFILE" | jq -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
+          ACC_EMAIL=$(printf '%s' "$PROFILE" | "$JQ" -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
+          ACC_UUID=$(printf '%s' "$PROFILE" | "$JQ" -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
         fi
       else
         STATUS="error"
       fi
 
-      TMP=$(mktemp) && jq --arg fp "$FP" --arg o "$ACC_ORG_ID" --arg e "$ACC_EMAIL" \
+      TMP=$(mktemp) && "$JQ" --arg fp "$FP" --arg o "$ACC_ORG_ID" --arg e "$ACC_EMAIL" \
         --arg u "$ACC_UUID" --arg st "$STATUS" --argjson t "$NOW" \
         '. + {($fp): {org_id: $o, email: $e, uuid: $u, status: $st, checked_at: $t}}' \
         "$CACHE" 2>/dev/null > "$TMP" \
@@ -351,16 +415,16 @@ resolve_account() {
   CJ="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
   [ -r "$CJ" ] || CJ="$HOME/.claude.json"
   if [ -r "$CJ" ]; then
-    ACC_EMAIL=$(jq -r '.oauthAccount.emailAddress // ""' "$CJ" 2>/dev/null)
-    ACC_UUID=$(jq -r '.oauthAccount.accountUuid // ""' "$CJ" 2>/dev/null)
+    ACC_EMAIL=$("$JQ" -r '.oauthAccount.emailAddress // ""' "$CJ" 2>/dev/null)
+    ACC_UUID=$("$JQ" -r '.oauthAccount.accountUuid // ""' "$CJ" 2>/dev/null)
     [ -n "$ACC_EMAIL" ] && ACC_SOURCE="auto"
   fi
 }
 
-if command -v jq >/dev/null 2>&1; then
-  SESSION_ID=$(printf '%s' "$BODY" | jq -r '.session_id // .sessionId // ""' 2>/dev/null)
+if [ -x "$JQ" ]; then
+  SESSION_ID=$(printf '%s' "$BODY" | "$JQ" -r '.session_id // .sessionId // ""' 2>/dev/null)
   resolve_account
-  BODY=$(printf '%s' "$BODY" | jq -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
+  BODY=$(printf '%s' "$BODY" | "$JQ" -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
     --arg s "$ACC_SOURCE" --arg v "$CLIENT_VERSION" --arg o "$ACC_ORG_ID" \
     '. + {client_version: $v} + (if $s != "" then {account_source: $s} else {} end)
        + (if $e != "" then {account_email: $e, account_uuid: $u} else {} end)
@@ -380,8 +444,8 @@ CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
 # and attribution fields the dashboard reads, dropping prompt text, tool_input,
 # tool_response, and the last assistant message so no session content leaves the
 # machine. Runs after custom.sh so a fighter's custom_activity still rides along.
-if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && command -v jq >/dev/null 2>&1; then
-  FILTERED=$(printf '%s' "$BODY" | jq -c '{
+if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then
+  FILTERED=$(printf '%s' "$BODY" | "$JQ" -c '{
     hook_event_name, session_id, tokens, tool_name, custom_activity,
     client_version, account_email, account_uuid, account_source, account_org_id
   } | with_entries(select(.value != null))' 2>/dev/null)
@@ -458,19 +522,25 @@ if ! "$PY" -m venv "$SLAYER_VENV_DIR"; then
     # --break-system-packages (so PEP 668 can't block it even when pip fails to
     # detect the venv). Each step is separate and errors are NOT suppressed, so
     # a real failure (network/SSL/unsupported version) is visible in the output.
+    # A failure anywhere in this chain now stops the whole install: a broken
+    # slayer-cli venv used to be tolerated so a Python problem never bricked
+    # hook tracking, but every install step is now required to actually work.
     echo "slayer-cli: bundled pip bootstrap failed; retrying without it..." >&2
     rm -rf "$SLAYER_VENV_DIR"
     if ! "$PY" -m venv --without-pip "$SLAYER_VENV_DIR"; then
-        echo "slayer-cli: 'python -m venv --without-pip' failed (see error above) — CLI unavailable; hook tracking is still installed" >&2
+        echo "slayer-cli: 'python -m venv --without-pip' failed (see error above)." >&2
+        exit 1
     elif ! curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/slayer-get-pip.py; then
-        echo "slayer-cli: could not download get-pip.py — CLI unavailable; hook tracking is still installed" >&2
+        echo "slayer-cli: could not download get-pip.py (see error above)." >&2
+        exit 1
     elif _slayer_gp=$("$SLAYER_VENV_DIR/bin/python" /tmp/slayer-get-pip.py --break-system-packages 2>&1); then
         rm -f /tmp/slayer-get-pip.py
         echo "slayer-cli: pip bootstrapped via get-pip." >&2
     else
         printf '%s\n' "$_slayer_gp" >&2
         rm -f /tmp/slayer-get-pip.py
-        echo "slayer-cli: get-pip bootstrap failed (see error above) — CLI unavailable; hook tracking is still installed" >&2
+        echo "slayer-cli: get-pip bootstrap failed (see error above)." >&2
+        exit 1
     fi
 fi
 # pip refuses to install straight from {{ $slayerWheelUrl }}: its basename
@@ -490,30 +560,46 @@ if [ -z "$SLAYER_TOKEN" ] && [ -s "$HOME/.config/{{ $namespace }}/token" ]; then
   SLAYER_TOKEN="$(cat "$HOME/.config/{{ $namespace }}/token")"
 fi
 
-# No -f: we must read the status code, not fail silently. `|| echo "000"` keeps
-# a hard curl error from aborting the script under `set -e`.
-SLAYER_HTTP=$(curl -sSL -w '%{http_code}' \
+# No -f: we must read the status code, not fail silently. curl's own -w
+# status output is unreliable as a hard-failure signal: on a hard transport
+# failure (DNS/TLS/timeout) curl still writes SOMETHING to stdout via -w,
+# just not a clean "000" -- so curl's own exit status is checked directly
+# via `if !` instead of pattern-matching the printed body. curl's own
+# stderr (DNS/TLS/timeout detail) is captured rather than discarded, so a
+# transport failure is diagnosable.
+SLAYER_CURL_ERR="$SLAYER_WHL_DIR/curl-stderr"
+if ! SLAYER_HTTP=$(curl -sSL -w '%{http_code}' \
     -H "Authorization: Bearer $SLAYER_TOKEN" \
-    "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>/dev/null || echo "000")
+    "{{ $slayerWheelUrl }}" -o "$SLAYER_WHL" 2>"$SLAYER_CURL_ERR"); then
+  cat "$SLAYER_CURL_ERR" >&2
+  echo "slayer-cli: could not reach the wheel download URL (see error above)." >&2
+  exit 1
+fi
 
 if [ "$SLAYER_HTTP" = "200" ]; then
   # Two steps on purpose: the served wheel is always "latest" and its version
   # may be UNCHANGED between builds, so a plain `--upgrade` is a no-op and ships
   # stale code. First install pulls deps (first run) / no-ops; then
   # force-reinstall --no-deps refreshes ONLY the package code every time,
-  # cheaply (deps untouched).
-  if "$SLAYER_PIP" install --quiet --break-system-packages "$SLAYER_WHL" \
-      && "$SLAYER_PIP" install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL"; then
+  # cheaply (deps untouched). --quiet keeps successful-run output short; on
+  # failure stderr is captured explicitly and printed in full below rather
+  # than trusting --quiet to have shown enough on its own.
+  if SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --break-system-packages "$SLAYER_WHL" 2>&1) \
+      && SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL" 2>&1); then
     :
   else
-    echo "slayer-cli: wheel install failed (see the error above) — CLI unavailable; hook tracking is still installed" >&2
+    printf '%s\n' "$SLAYER_PIP_ERR" >&2
+    echo "slayer-cli: wheel install failed (see the error above)." >&2
+    exit 1
   fi
 elif [ "$SLAYER_HTTP" = "401" ]; then
   echo "slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows." >&2
+  exit 1
 else
-  echo "slayer-cli: could not download the CLI right now (server said $SLAYER_HTTP). Try again in a few minutes; hook tracking is still installed." >&2
+  echo "slayer-cli: could not download the CLI (server said $SLAYER_HTTP)." >&2
+  exit 1
 fi
-rm -f "$SLAYER_WHL"
+rm -f "$SLAYER_WHL" "$SLAYER_CURL_ERR"
 
 cat > "$HOME/.local/bin/token-slayer" <<'CLI_SH'
 #!/usr/bin/env bash
@@ -543,7 +629,7 @@ case "${1:-}" in
     echo "client version: $(cat "$NS_DIR/version" 2>/dev/null || echo none) (latest known at install: $LATEST)"
     [ -s "$NS_DIR/token" ] && echo "hook token: present" || echo "hook token: MISSING"
     if [ -r "$NS_DIR/account.json" ]; then
-      echo "account: $(jq -r '.email' "$NS_DIR/account.json" 2>/dev/null) (manual)"
+      echo "account: $("$HOME/.config/{{ $namespace }}/bin/jq" -r '.email' "$NS_DIR/account.json" 2>/dev/null) (manual)"
     else
       echo "account: resolved automatically per event (credential/auto)"
     fi
@@ -867,28 +953,6 @@ echo "installed Antigravity CLI hooks -> $AGY_HOOKS"
 if [ -z "{!! $envCheck !!}" ] && [ ! -s "$HOME/.config/{{ $namespace }}/token" ]; then
     echo ""
     echo "Next: save your token from the profile page into ~/.config/{{ $namespace }}/token."
-fi
-
-# --- jq check --------------------------------------------------------------
-# The hook reads the token count out of the transcript with jq, and adds
-# client_version/account fields with it too. Without jq every hook still
-# answers 201 while recording NOTHING -- no damage, no attribution, no error
-# anywhere -- so this has to be loud. macOS ships no jq at all, which is how a
-# fresh Mac ends up tracking zero without anyone noticing.
-if ! command -v jq >/dev/null 2>&1; then
-    case "$(uname -s)" in
-        Darwin) JQ_HINT="brew install jq" ;;
-        *)      JQ_HINT="sudo apt install jq   (or: sudo dnf install jq / sudo pacman -S jq)" ;;
-    esac
-    echo ""
-    echo "=========================================================="
-    echo "WARNING: jq is NOT installed -- usage tracking will record"
-    echo "nothing. Hooks keep answering 201 and your fighter stays"
-    echo "silent: no damage, no account attribution, no error."
-    echo ""
-    echo "Install it, then start a new session:"
-    echo "  $JQ_HINT"
-    echo "=========================================================="
 fi
 
 echo ""

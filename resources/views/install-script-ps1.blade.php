@@ -101,6 +101,58 @@ $PyArg = $Py[1]
 $PyPrefix = @()
 if ($PyArg) { $PyPrefix = @($PyArg) }
 
+# --- jq bootstrap ------------------------------------------------------------
+# Every machine uses this exact pinned jq.exe -- NEVER a system jq -- so
+# cross-platform/cross-version differences in jq's own behavior can never
+# again produce silently wrong token/account attribution. Mirrors the POSIX
+# installer's jq bootstrap; see that file for the full rationale.
+$JqVersion = '1.8.2'
+$JqDir = Join-Path $Cfg 'bin'
+$JqBin = Join-Path $JqDir 'jq.exe'
+New-Item -ItemType Directory -Force -Path $JqDir | Out-Null
+
+$jqAssets = @{
+  'AMD64' = @{ Name = 'jq-windows-amd64.exe'; Sha256 = 'a6fc67fedaf9128a3309a1e2ebb8b986aeccf70122ee46d2cb4849e423f0c627' }
+  'ARM64' = @{ Name = 'jq-windows-arm64.exe'; Sha256 = '083b5377392bc57cf27052b6d20a2d927770683bca844632901ff38b4b7b0ac7' }
+}
+$jqArch = $env:PROCESSOR_ARCHITECTURE
+# Under WOW64 (32-bit PowerShell running on a 64-bit machine -- some
+# corporate images default to "Windows PowerShell (x86)"), PROCESSOR_ARCHITECTURE
+# reports the process architecture (x86), not the real hardware; the true
+# architecture is in PROCESSOR_ARCHITEW6432 in that case.
+if ($jqArch -eq 'x86' -and $env:PROCESSOR_ARCHITEW6432) { $jqArch = $env:PROCESSOR_ARCHITEW6432 }
+if (-not $jqAssets.ContainsKey($jqArch)) {
+  throw "No pinned jq build for Windows/$jqArch -- token-slayer cannot install without a known-good jq for this platform. Open an issue with this OS/arch."
+}
+$jqAsset = $jqAssets[$jqArch]
+
+function Get-FileSha256Hex($path) {
+  (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+# Self-heal: an existing binary that doesn't match the pinned checksum (a
+# partial download from a prior failed run, or a version bump) is rebuilt,
+# not trusted. A binary that already matches is left untouched.
+if (Test-Path $JqBin) {
+  if ((Get-FileSha256Hex $JqBin) -ne $jqAsset.Sha256) { Remove-Item -Force $JqBin }
+}
+
+if (-not (Test-Path $JqBin)) {
+  $jqUrl = "https://github.com/jqlang/jq/releases/download/jq-$JqVersion/$($jqAsset.Name)"
+  $jqTmp = Join-Path $JqDir '.jq.download'
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri $jqUrl -OutFile $jqTmp
+  } catch {
+    throw "Could not download jq from $jqUrl -- check your network connection and re-run. ($($_.Exception.Message))"
+  }
+  $downloadedSha = Get-FileSha256Hex $jqTmp
+  if ($downloadedSha -ne $jqAsset.Sha256) {
+    Remove-Item -Force $jqTmp -ErrorAction SilentlyContinue
+    throw "Downloaded jq checksum mismatch -- expected $($jqAsset.Sha256), got $downloadedSha. Refusing to install a binary that doesn't match. Re-run to retry the download."
+  }
+  Move-Item -Force $jqTmp $JqBin
+}
+
 # --- venv + PEP668 + get-pip fallback (Windows `Scripts\` layout) -----------
 # PIP_BREAK_SYSTEM_PACKAGES=1: pip's official override for the
 # EXTERNALLY-MANAGED marker some python.org/winget builds ship; safe here
@@ -127,59 +179,71 @@ if (Test-Path $Venv) {
   if (-not $venvHealthy) { Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue }
 }
 
+# A failure anywhere in this chain now stops the whole install: a broken
+# slayer-cli venv used to be tolerated so a Python problem never bricked hook
+# tracking, but every install step is now required to actually work.
 & $PyExe @PyPrefix -m venv $Venv
 if (-not (Test-Path $VenvPy)) {
   Write-Warning 'slayer-cli: bundled pip bootstrap failed; retrying with get-pip...'
   Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue
   & $PyExe @PyPrefix -m venv --without-pip $Venv
-  if (Test-Path $VenvPy) {
-    (Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py).Content | & $VenvPy -
+  if (-not (Test-Path $VenvPy)) {
+    throw "slayer-cli: 'python -m venv --without-pip' failed -- see the error above."
   }
+  (Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py).Content | & $VenvPy -
 }
 if (-not (Test-Path (Join-Path $Venv 'Scripts\pip.exe'))) {
-  Write-Warning 'slayer-cli: venv/pip setup failed -- CLI unavailable; hook tracking still installed'
-} else {
-  # The wheel route requires a valid hook token. Resolve it: the env var
-  # passed on the install one-liner, else the token saved by a previous
-  # install, so `token-slayer update` (which re-runs this script with no env
-  # var) still works. Never echoed.
-  $slayerToken = [Environment]::GetEnvironmentVariable($EnvVarName)
-  if (-not $slayerToken) {
-    $wheelTokenFile = Join-Path $Cfg 'token'
-    if ((Test-Path $wheelTokenFile) -and (Get-Item $wheelTokenFile).Length -gt 0) {
-      $slayerToken = (Get-Content -Raw -LiteralPath $wheelTokenFile).Trim()
-    }
-  }
-
-  $whl = Join-Path $env:TEMP 'slayer_cli-0.0.0-py3-none-any.whl'
-  # Invoke-WebRequest throws on a non-2xx status, and -SkipHttpErrorCheck
-  # does not exist on PowerShell 5.1 (this script requires 5.1), so the
-  # status is read from the exception in the catch. A request that never
-  # got a response at all (DNS/TLS failure, no connectivity) has no
-  # .Response and is treated as 0.
-  $slayerHttp = 0
-  try {
-    Invoke-WebRequest -UseBasicParsing -Uri $WheelUrl -OutFile $whl `
-      -Headers @{ Authorization = "Bearer $slayerToken" } | Out-Null
-    $slayerHttp = 200
-  } catch {
-    if ($_.Exception.Response) { $slayerHttp = [int]$_.Exception.Response.StatusCode } else { $slayerHttp = 0 }
-  }
-
-  if ($slayerHttp -eq 200) {
-    # Two steps on purpose: the served wheel is always "latest" and its version
-    # may be UNCHANGED between builds, so a plain install is a no-op and ships
-    # stale code. First install pulls deps; force-reinstall --no-deps refreshes
-    # only the package code every time, cheaply (deps untouched).
-    & $VenvPy -m pip install --quiet $whl
-    & $VenvPy -m pip install --quiet --force-reinstall --no-deps $whl
-  } elseif ($slayerHttp -eq 401) {
-    Write-Warning 'slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows.'
-  } else {
-    Write-Warning "slayer-cli: could not download the CLI right now (server said $slayerHttp). Try again in a few minutes; hook tracking is still installed."
-  }
-  Remove-Item $whl -ErrorAction SilentlyContinue
+  throw 'slayer-cli: venv/pip setup failed -- see the error above.'
 }
+
+# The wheel route requires a valid hook token. Resolve it: the env var
+# passed on the install one-liner, else the token saved by a previous
+# install, so `token-slayer update` (which re-runs this script with no env
+# var) still works. Never echoed.
+$slayerToken = [Environment]::GetEnvironmentVariable($EnvVarName)
+if (-not $slayerToken) {
+  $wheelTokenFile = Join-Path $Cfg 'token'
+  if ((Test-Path $wheelTokenFile) -and (Get-Item $wheelTokenFile).Length -gt 0) {
+    $slayerToken = (Get-Content -Raw -LiteralPath $wheelTokenFile).Trim()
+  }
+}
+
+$whl = Join-Path $env:TEMP 'slayer_cli-0.0.0-py3-none-any.whl'
+# Invoke-WebRequest throws on a non-2xx status, and -SkipHttpErrorCheck
+# does not exist on PowerShell 5.1 (this script requires 5.1), so the
+# status is read from the exception in the catch. A request that never
+# got a response at all (DNS/TLS failure, no connectivity) has no
+# .Response and is treated as 0; the exception message is kept so a
+# transport failure is diagnosable instead of just "0".
+$slayerHttp = 0
+$slayerErr = $null
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri $WheelUrl -OutFile $whl `
+    -Headers @{ Authorization = "Bearer $slayerToken" } | Out-Null
+  $slayerHttp = 200
+} catch {
+  $slayerErr = $_.Exception.Message
+  if ($_.Exception.Response) { $slayerHttp = [int]$_.Exception.Response.StatusCode } else { $slayerHttp = 0 }
+}
+
+if ($slayerHttp -eq 200) {
+  # Two steps on purpose: the served wheel is always "latest" and its version
+  # may be UNCHANGED between builds, so a plain install is a no-op and ships
+  # stale code. First install pulls deps; force-reinstall --no-deps refreshes
+  # only the package code every time, cheaply (deps untouched). pip's own
+  # exit code is checked explicitly -- a native exe's non-zero exit is NOT a
+  # terminating error under $ErrorActionPreference='Stop' the way a cmdlet's
+  # is, so a failed install would otherwise be silently ignored.
+  & $VenvPy -m pip install --quiet $whl
+  if ($LASTEXITCODE -ne 0) { throw 'slayer-cli: wheel install failed -- see the error above.' }
+  & $VenvPy -m pip install --quiet --force-reinstall --no-deps $whl
+  if ($LASTEXITCODE -ne 0) { throw 'slayer-cli: wheel force-reinstall failed -- see the error above.' }
+} elseif ($slayerHttp -eq 401) {
+  throw 'slayer-cli: your token is missing or no longer valid. Open your token-slayer profile page, click Regenerate token, and re-run the install command it shows.'
+} else {
+  throw "slayer-cli: could not download the CLI (server said $slayerHttp): $slayerErr"
+}
+Remove-Item $whl -ErrorAction SilentlyContinue
 
 # --- Shims (3 .cmd, absolute venv path) -------------------------------------
 # Absolute $VenvPy avoids %~dp0 layout coupling.
@@ -273,10 +337,14 @@ TOKEN_FILE="$HOME/.config/__TS_NAMESPACE__/token"
 BODY=$(cat)
 [ -r "$TOKEN_FILE" ] || exit 0
 
-if command -v jq >/dev/null 2>&1; then
-  TRANSCRIPT=$(printf '%s' "$BODY" | jq -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
+# Always the pinned binary installed by the bootstrap above -- never a
+# system jq -- so hook behavior can never drift between machines.
+JQ="$HOME/.config/__TS_NAMESPACE__/bin/jq.exe"
+
+if [ -x "$JQ" ]; then
+  TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
   if [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ]; then
-    TOKENS=$(jq -sr '
+    TOKENS=$("$JQ" -sr '
       . as $a
       | (length - 1) as $end
       | reduce range($end; -1; -1) as $i ({t:0, stop:false};
@@ -294,7 +362,7 @@ if command -v jq >/dev/null 2>&1; then
       | .t
     ' "$TRANSCRIPT" 2>/dev/null)
     if [ -n "${TOKENS:-}" ]; then
-      BODY=$(printf '%s' "$BODY" | jq -c --argjson t "$TOKENS" '. + {tokens:$t}' 2>/dev/null || printf '%s' "$BODY")
+      BODY=$(printf '%s' "$BODY" | "$JQ" -c --argjson t "$TOKENS" '. + {tokens:$t}' 2>/dev/null || printf '%s' "$BODY")
     fi
   fi
 fi
@@ -321,11 +389,11 @@ current_access_token() {
   fi
   for f in "${CLAUDE_CONFIG_DIR:-}/.credentials.json" "$HOME/.claude/.credentials.json"; do
     [ -r "$f" ] || continue
-    jq -r '.claudeAiOauth.accessToken // ""' "$f" 2>/dev/null && return
+    "$JQ" -r '.claudeAiOauth.accessToken // ""' "$f" 2>/dev/null && return
   done
   if [ "$(uname)" = "Darwin" ]; then
     security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null \
-      | jq -r '.claudeAiOauth.accessToken // ""' 2>/dev/null
+      | "$JQ" -r '.claudeAiOauth.accessToken // ""' 2>/dev/null
   fi
 }
 
@@ -357,11 +425,11 @@ provider_account() {
   fi
   [ -n "$_pv" ] || return 1
 
-  _org=$(jq -r '.org_uuid // ""' "$_pv" 2>/dev/null)
+  _org=$("$JQ" -r '.org_uuid // ""' "$_pv" 2>/dev/null)
   [ -n "$_org" ] || return 1
   ACC_ORG_ID="$_org"
-  ACC_EMAIL=$(jq -r '.email // ""' "$_pv" 2>/dev/null)
-  ACC_UUID=$(jq -r '.uuid // ""' "$_pv" 2>/dev/null)
+  ACC_EMAIL=$("$JQ" -r '.email // ""' "$_pv" 2>/dev/null)
+  ACC_UUID=$("$JQ" -r '.uuid // ""' "$_pv" 2>/dev/null)
   ACC_SOURCE="provider"
   return 0
 }
@@ -374,14 +442,14 @@ detector_scan() {
   _cfg="$NS_DIR/detector-config.json"
   [ -r "$_cfg" ] || return 1
 
-  for _mgr in $(jq -r 'keys[]' "$_cfg" 2>/dev/null); do
-    _join=$(jq -r --arg k "$_mgr" '.[$k].join // ""' "$_cfg" 2>/dev/null)
+  for _mgr in $("$JQ" -r 'keys[]' "$_cfg" 2>/dev/null); do
+    _join=$("$JQ" -r --arg k "$_mgr" '.[$k].join // ""' "$_cfg" 2>/dev/null)
     case "$_join" in
       session)
         [ -n "${SESSION_ID:-}" ] || continue
-        _pat=$(jq -r --arg k "$_mgr" '.[$k].account_pattern // ""' "$_cfg" 2>/dev/null)
+        _pat=$("$JQ" -r --arg k "$_mgr" '.[$k].account_pattern // ""' "$_cfg" 2>/dev/null)
         [ -n "$_pat" ] || continue
-        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+        for _glob in $("$JQ" -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
           _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
           for _f in $_glob; do
             [ -r "$_f" ] || continue
@@ -401,17 +469,17 @@ detector_scan() {
         ;;
       ts_tokens)
         DETECTOR_WINDOW_SECS=120
-        _af=$(jq -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
-        _tf=$(jq -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
+        _af=$("$JQ" -r --arg k "$_mgr" '.[$k].account_field // ""' "$_cfg" 2>/dev/null)
+        _tf=$("$JQ" -r --arg k "$_mgr" '.[$k].ts_field // "ts"' "$_cfg" 2>/dev/null)
         [ -n "$_af" ] || continue
         _now=$(date +%s)
         _lo=$((_now - DETECTOR_WINDOW_SECS))
-        for _glob in $(jq -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
+        for _glob in $("$JQ" -r --arg k "$_mgr" '.[$k].logs[]' "$_cfg" 2>/dev/null); do
           _glob=$(printf '%s' "$_glob" | sed "s#^~#$HOME#")
           for _f in $_glob; do
             [ -r "$_f" ] || continue
             # SAFE rule: one distinct account in the window -> attribute; more -> NULL.
-            _acct=$(jq -rs --arg af "$_af" --arg tf "$_tf" \
+            _acct=$("$JQ" -rs --arg af "$_af" --arg tf "$_tf" \
               --argjson lo "$_lo" --argjson hi "$_now" '
                 [ .[] | select((.[$tf] // 0) >= $lo and (.[$tf] // 0) <= $hi) | .[$af] ]
                 | map(select(. != null and . != "")) | unique
@@ -439,8 +507,8 @@ resolve_account() {
 
   # 1. Manual override: wins over credential/proxy/auto (a provider still precedes it).
   if [ -r "$NS_DIR/account.json" ]; then
-    ACC_EMAIL=$(jq -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
-    ACC_UUID=$(jq -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
+    ACC_EMAIL=$("$JQ" -r '.email // ""' "$NS_DIR/account.json" 2>/dev/null)
+    ACC_UUID=$("$JQ" -r '.uuid // ""' "$NS_DIR/account.json" 2>/dev/null)
     [ -n "$ACC_EMAIL" ] && { ACC_SOURCE="manual"; return; }
   fi
 
@@ -473,17 +541,17 @@ resolve_account() {
 
     CACHED_STATUS="" CACHED_CHECKED_AT=0
     if [ -r "$CACHE" ]; then
-      CACHED_STATUS=$(jq -r --arg fp "$FP" '.[$fp].status // ""' "$CACHE" 2>/dev/null)
-      CACHED_CHECKED_AT=$(jq -r --arg fp "$FP" '.[$fp].checked_at // 0' "$CACHE" 2>/dev/null)
+      CACHED_STATUS=$("$JQ" -r --arg fp "$FP" '.[$fp].status // ""' "$CACHE" 2>/dev/null)
+      CACHED_CHECKED_AT=$("$JQ" -r --arg fp "$FP" '.[$fp].checked_at // 0' "$CACHE" 2>/dev/null)
     fi
     : "${CACHED_CHECKED_AT:=0}"
 
     SHOULD_LOOKUP=1
     case "$CACHED_STATUS" in
       ok)
-        ACC_ORG_ID=$(jq -r --arg fp "$FP" '.[$fp].org_id // ""' "$CACHE" 2>/dev/null)
-        ACC_EMAIL=$(jq -r --arg fp "$FP" '.[$fp].email // ""' "$CACHE" 2>/dev/null)
-        ACC_UUID=$(jq -r --arg fp "$FP" '.[$fp].uuid // ""' "$CACHE" 2>/dev/null)
+        ACC_ORG_ID=$("$JQ" -r --arg fp "$FP" '.[$fp].org_id // ""' "$CACHE" 2>/dev/null)
+        ACC_EMAIL=$("$JQ" -r --arg fp "$FP" '.[$fp].email // ""' "$CACHE" 2>/dev/null)
+        ACC_UUID=$("$JQ" -r --arg fp "$FP" '.[$fp].uuid // ""' "$CACHE" 2>/dev/null)
         SHOULD_LOOKUP=0
         ;;
       restricted)
@@ -507,14 +575,14 @@ resolve_account() {
           # proved identity via the org id.
           PROFILE=$(curl -sf --max-time 5 -A "$HOOK_UA" "https://api.anthropic.com/api/oauth/profile" \
             -H "Authorization: Bearer $OAUTH_TOKEN" -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null)
-          ACC_EMAIL=$(printf '%s' "$PROFILE" | jq -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
-          ACC_UUID=$(printf '%s' "$PROFILE" | jq -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
+          ACC_EMAIL=$(printf '%s' "$PROFILE" | "$JQ" -r '.account.email // .account.email_address // .email // ""' 2>/dev/null)
+          ACC_UUID=$(printf '%s' "$PROFILE" | "$JQ" -r '.account.uuid // .account_uuid // ""' 2>/dev/null)
         fi
       else
         STATUS="error"
       fi
 
-      TMP=$(mktemp) && jq --arg fp "$FP" --arg o "$ACC_ORG_ID" --arg e "$ACC_EMAIL" \
+      TMP=$(mktemp) && "$JQ" --arg fp "$FP" --arg o "$ACC_ORG_ID" --arg e "$ACC_EMAIL" \
         --arg u "$ACC_UUID" --arg st "$STATUS" --argjson t "$NOW" \
         '. + {($fp): {org_id: $o, email: $e, uuid: $u, status: $st, checked_at: $t}}' \
         "$CACHE" 2>/dev/null > "$TMP" \
@@ -530,16 +598,16 @@ resolve_account() {
   CJ="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
   [ -r "$CJ" ] || CJ="$HOME/.claude.json"
   if [ -r "$CJ" ]; then
-    ACC_EMAIL=$(jq -r '.oauthAccount.emailAddress // ""' "$CJ" 2>/dev/null)
-    ACC_UUID=$(jq -r '.oauthAccount.accountUuid // ""' "$CJ" 2>/dev/null)
+    ACC_EMAIL=$("$JQ" -r '.oauthAccount.emailAddress // ""' "$CJ" 2>/dev/null)
+    ACC_UUID=$("$JQ" -r '.oauthAccount.accountUuid // ""' "$CJ" 2>/dev/null)
     [ -n "$ACC_EMAIL" ] && ACC_SOURCE="auto"
   fi
 }
 
-if command -v jq >/dev/null 2>&1; then
-  SESSION_ID=$(printf '%s' "$BODY" | jq -r '.session_id // .sessionId // ""' 2>/dev/null)
+if [ -x "$JQ" ]; then
+  SESSION_ID=$(printf '%s' "$BODY" | "$JQ" -r '.session_id // .sessionId // ""' 2>/dev/null)
   resolve_account
-  BODY=$(printf '%s' "$BODY" | jq -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
+  BODY=$(printf '%s' "$BODY" | "$JQ" -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
     --arg s "$ACC_SOURCE" --arg v "$CLIENT_VERSION" --arg o "$ACC_ORG_ID" \
     '. + {client_version: $v} + (if $s != "" then {account_source: $s} else {} end)
        + (if $e != "" then {account_email: $e, account_uuid: $u} else {} end)
@@ -836,27 +904,11 @@ with open(path, "w") as f:
 Write-Host "installed Antigravity CLI hooks -> $AgyHooks"
 
 # --- Git for Windows check ---------------------------------------------------
+# Every hook command shells out via bash (Git Bash); without it nothing this
+# installer just set up can ever run, so this stops the install rather than
+# just warning.
 if (-not (Get-Command git -ErrorAction SilentlyContinue) -and -not (Get-Command bash -ErrorAction SilentlyContinue)) {
-  Write-Warning 'Attribution hooks need Git for Windows (Git Bash) to run. The CLI works without it; install Git for Windows to enable usage tracking.'
-}
-
-# --- jq check ----------------------------------------------------------------
-# jq has to be on Git Bash's PATH, not PowerShell's -- the hook runs under bash,
-# so probing Get-Command jq here would pass while the hook still records
-# nothing. Without jq every hook answers 201 and no damage is ever recorded.
-$bashExe = (Get-Command bash -ErrorAction SilentlyContinue)
-if ($bashExe) {
-  # -c, not -lc: the hook runs as a non-login bash, and a login shell sources
-  # /etc/profile into a wider PATH that would hide a jq the hook cannot see.
-  $jqFound = & $bashExe.Source -c 'command -v jq >/dev/null 2>&1 && echo yes' 2>$null
-  if ($jqFound -notcontains 'yes') {
-    Write-Host ""
-    Write-Host "=========================================================="
-    Write-Warning 'jq is NOT available to Git Bash -- usage tracking will record nothing. Hooks keep answering 201 and your fighter stays silent: no damage, no account attribution, no error.'
-    Write-Host "Install it, then open a new terminal:"
-    Write-Host "  winget install jqlang.jq"
-    Write-Host "=========================================================="
-  }
+  throw 'Attribution hooks need Git for Windows (Git Bash) to run. Install Git for Windows (https://git-scm.com/downloads/win), then re-run this installer.'
 }
 
 # --- Register the machine's current Claude login as a base account slot ----
