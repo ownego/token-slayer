@@ -289,6 +289,38 @@ $Helper = Join-Path $Cfg 'send-hook.sh'
 $ChecksumFile = Join-Path $Cfg '.hook-checksum'
 $HelperBash = $Helper -replace '\\','/'
 
+# `Get-Command bash` is unusable for finding Git Bash: on Windows it resolves
+# C:\Windows\System32\bash.exe -- the WSL launcher -- long before Git Bash, and
+# on a machine with no or broken WSL distro that binary fails outright. Resolve
+# the real thing by known install locations and from git.exe's own path, and
+# reject anything under System32. Returns $null when Git Bash is absent.
+function Find-GitBash {
+  $cands = @()
+  if ($env:CLAUDE_CODE_GIT_BASH_PATH) { $cands += $env:CLAUDE_CODE_GIT_BASH_PATH }
+  $git = Get-Command git -ErrorAction SilentlyContinue
+  if ($git -and $git.Source) {
+    # ...\Git\cmd\git.exe -> ...\Git\bin\bash.exe
+    $cands += (Join-Path (Split-Path (Split-Path $git.Source -Parent) -Parent) 'bin\bash.exe')
+  }
+  foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if ($base) { $cands += (Join-Path $base 'Git\bin\bash.exe') }
+  }
+  if ($env:LOCALAPPDATA) { $cands += (Join-Path $env:LOCALAPPDATA 'Programs\Git\bin\bash.exe') }
+  foreach ($c in $cands) {
+    if (-not $c) { continue }
+    if ($c -match '\\System32\\') { continue }
+    if (Test-Path -LiteralPath $c) { return $c }
+  }
+  return $null
+}
+$gitBash = Find-GitBash
+
+# The hook commands invoke bash by ABSOLUTE path when Git Bash was found: a
+# bare `bash` resolves through PATH, where the System32 WSL launcher shadows
+# Git Bash. (Claude Code's own outer shell lookup is separate -- point it at
+# the same binary with CLAUDE_CODE_GIT_BASH_PATH if it picks the wrong one.)
+$BashExe = if ($gitBash) { ($gitBash -replace '\\','/') } else { 'bash' }
+
 function Get-Sha256Hex($text) {
   $sha = [System.Security.Cryptography.SHA256]::Create()
   try {
@@ -662,9 +694,9 @@ if ($hookBackup) {
   Write-Host ""
 }
 
-$ClaudeCmd = "bash `"$HelperBash`""
-$CodexCmd  = "PROVIDER=codex bash `"$HelperBash`""
-$AgyCmd    = "PROVIDER=antigravity bash `"$HelperBash`""
+$ClaudeCmd = "`"$BashExe`" `"$HelperBash`""
+$CodexCmd  = "PROVIDER=codex `"$BashExe`" `"$HelperBash`""
+$AgyCmd    = "PROVIDER=antigravity `"$BashExe`" `"$HelperBash`""
 
 # Save the token now if the caller pre-set it, e.g.
 #   $env:TOKEN_SLAYER_TOKEN = "xxx"; iex (irm $InstallUrl)
@@ -906,9 +938,11 @@ Write-Host "installed Antigravity CLI hooks -> $AgyHooks"
 # --- Git for Windows check ---------------------------------------------------
 # Every hook command shells out via bash (Git Bash); without it nothing this
 # installer just set up can ever run, so this stops the install rather than
-# just warning.
-if (-not (Get-Command git -ErrorAction SilentlyContinue) -and -not (Get-Command bash -ErrorAction SilentlyContinue)) {
-  throw 'Attribution hooks need Git for Windows (Git Bash) to run. Install Git for Windows (https://git-scm.com/downloads/win), then re-run this installer.'
+# just warning. Deliberately keyed on Find-GitBash (see $gitBash above), not
+# `Get-Command bash`: the WSL launcher in System32 answers to `bash` and would
+# silence this check on a machine that cannot actually run the hooks.
+if (-not $gitBash) {
+  throw 'Attribution hooks need Git for Windows (Git Bash) to run -- a WSL bash does not count. Install Git for Windows (winget install Git.Git), then re-run this installer.'
 }
 
 # --- Register the machine's current Claude login as a base account slot ----
