@@ -9,6 +9,64 @@
     display: none !important;
 }
 
+.stepper-dot-done {
+    background: linear-gradient(135deg, #f97316, #ea580c);
+    color: #fff;
+}
+
+.stepper-dot-active {
+    background: linear-gradient(135deg, #fb923c, #f97316);
+    color: #fff;
+    animation: stepper-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes stepper-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.45); }
+    50% { box-shadow: 0 0 0 7px rgba(249, 115, 22, 0); }
+}
+
+.stepper-check {
+    display: inline-block;
+    animation: stepper-pop .35s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+
+@keyframes stepper-pop {
+    from { transform: scale(0); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.stepper-bar-fill {
+    background: linear-gradient(90deg, #f97316, #fb923c);
+    transform-origin: left;
+}
+
+.stepper-bar-fill-on {
+    animation: stepper-fill 1s cubic-bezier(.4, 0, .2, 1) both;
+}
+
+@keyframes stepper-fill {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+
+.step-in-fwd {
+    animation: step-in-fwd 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.step-in-back {
+    animation: step-in-back 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes step-in-fwd {
+    from { opacity: 0; transform: translateX(1.5rem); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes step-in-back {
+    from { opacity: 0; transform: translateX(-1.5rem); }
+    to { opacity: 1; transform: none; }
+}
+
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../**/*.blade.php';

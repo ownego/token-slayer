@@ -1,10 +1,12 @@
 @php($command = "PROVIDER=codex bash \$HOME/.config/{$namespace}/send-hook.sh")
-# Codex hook config — add to ~/.codex/config.toml under [hooks]
-# Adjust event names to match your Codex CLI version.
-
-@foreach (['session_start', 'stop'] as $event)
-[[hooks]]
-event = "{{ $event }}"
-command = "{!! $command !!}"
-
+{
+  "hooks": {
+@foreach (['SessionStart', 'Stop'] as $event)
+    "{{ $event }}": [
+      { "hooks": [{
+        "type": "command",
+        "command": "{!! $command !!}"
+      }]}]{{ ! $loop->last ? ',' : '' }}
 @endforeach
+  }
+}
