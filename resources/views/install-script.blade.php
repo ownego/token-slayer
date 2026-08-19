@@ -584,8 +584,13 @@ if [ "$SLAYER_HTTP" = "200" ]; then
   # cheaply (deps untouched). --quiet keeps successful-run output short; on
   # failure stderr is captured explicitly and printed in full below rather
   # than trusting --quiet to have shown enough on its own.
-  if SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --break-system-packages "$SLAYER_WHL" 2>&1) \
-      && SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --break-system-packages --force-reinstall --no-deps "$SLAYER_WHL" 2>&1); then
+  # Deliberately no PEP-668-bypass CLI flag here: pip older than 23.0.1 has no
+  # such option at all and hard-fails with "no such option" when passed one,
+  # unlike an unrecognized env var, which old pip just ignores.
+  # PIP_BREAK_SYSTEM_PACKAGES=1 (exported above) already covers the bypass for
+  # pip versions that understand it, so it alone is enough here.
+  if SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet "$SLAYER_WHL" 2>&1) \
+      && SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --force-reinstall --no-deps "$SLAYER_WHL" 2>&1); then
     :
   else
     printf '%s\n' "$SLAYER_PIP_ERR" >&2
