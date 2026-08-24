@@ -300,12 +300,16 @@ export class Leaderboard {
   // ─── Static methods ───────────────────────────────────────────────────────────
 
   /**
-   * Formats a damage number into a compact string (e.g. 1500 → "2K", 9500000 → "9.5M").
+   * Formats a damage number into a compact string (e.g. 1500 → "2K", 9500000 → "9.5M", 1000000000 → "1.0B").
    *
    * @param {number} n
    * @return {string}
    */
   static abbreviateDamage(n) {
+    if (n >= 1e9) {
+      const v = n / 1e9;
+      return (v >= 10 ? Math.round(v) : v.toFixed(1)) + 'B';
+    }
     if (n >= 1e6) {
       const v = n / 1e6;
       return (v >= 10 ? Math.round(v) : v.toFixed(1)) + 'M';
