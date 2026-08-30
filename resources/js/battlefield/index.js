@@ -4,6 +4,7 @@ import { LAYOUTS, BG_COLOR } from './config.js';
 import { bus } from './bus.js';
 import { snapshotState } from './snapshot.js';
 import { computeHudTop } from './hud-position.js';
+import { formatHp } from './format.js';
 import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
 import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
 import { BusEvent, SCENE_KEY } from './constants.js';
@@ -123,6 +124,7 @@ function bootGame(mount, state, mode) {
       bossHp: () => scene.bossState?.currentHp,
       bossMaxHp: () => scene.bossState?.maxHp,
       computeHudTop,
+      formatHp,
       drawFighterPreview,
       drawFighterFrame,
       createCharacterPreview: createPreviewGame,

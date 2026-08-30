@@ -313,16 +313,12 @@
                     this.$el.style.transform = `scale(${scale})`;
                 },
                 fmt(n) {
-                    // Mirror the boss HP formatter (resources/js/battlefield/format.js).
-                    const v = Math.max(0, Math.round(n));
-                    const trimZero = s => (s.includes('.') ? s.replace(/\.?0+$/, '') : s);
-                    if (v >= 999_500) {
-                        return trimZero((v / 1_000_000).toFixed(2)) + 'M';
-                    }
-                    if (v >= 1_000) {
-                        return trimZero((v / 1_000).toFixed(1)) + 'K';
-                    }
-                    return String(v);
+                    // Delegate to the boss HP formatter exposed on window.__battlefield
+                    // (resources/js/battlefield/format.js) so this never drifts from it.
+                    // Falls back to a plain integer before the game has finished booting.
+                    return window.__battlefield?.formatHp
+                        ? window.__battlefield.formatHp(n)
+                        : String(Math.max(0, Math.round(n)));
                 },
             };
         };

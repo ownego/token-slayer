@@ -1,11 +1,14 @@
 /**
- * Formats an HP value to a compact string (e.g. 1500 → "1.5K", 2000000 → "2M").
+ * Formats an HP value to a compact string (e.g. 1500 → "1.5K", 2000000 → "2M", 1000000000 → "1B").
  *
  * @param {number} n
  * @return {string}
  */
 export function formatHp(n) {
   const v = Math.max(0, Math.round(n));
+  if (v >= 999_500_000) {
+    return trimZero((v / 1_000_000_000).toFixed(2)) + 'B';
+  }
   if (v >= 999_500) {
     return trimZero((v / 1_000_000).toFixed(2)) + 'M';
   }
