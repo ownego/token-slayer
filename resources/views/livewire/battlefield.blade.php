@@ -315,8 +315,12 @@
                 fmt(n) {
                     // Delegate to the boss HP formatter exposed on window.__battlefield
                     // (resources/js/battlefield/format.js) so this never drifts from it.
-                    // Falls back to a plain integer before the game has finished booting.
-                    return window.__battlefield?.formatHp
+                    // Reads `this.ready` (set by tryWire() once window.__battlefield
+                    // exists) so Alpine re-evaluates this binding the moment the game
+                    // finishes booting — without it, init()'s synchronous first render
+                    // (before the game is ready) bakes in the plain-integer fallback
+                    // and nothing ever re-triggers it until the next live damage hit.
+                    return this.ready && window.__battlefield?.formatHp
                         ? window.__battlefield.formatHp(n)
                         : String(Math.max(0, Math.round(n)));
                 },
