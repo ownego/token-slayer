@@ -26,4 +26,14 @@ describe('Leaderboard.abbreviateDamage', () => {
     expect(Leaderboard.abbreviateDamage(10_000_000)).toBe('10M');
     expect(Leaderboard.abbreviateDamage(12_600_000)).toBe('13M');
   });
+
+  test('uses one decimal place for B values under 10B', () => {
+    expect(Leaderboard.abbreviateDamage(1_000_000_000)).toBe('1.0B');
+    expect(Leaderboard.abbreviateDamage(9_500_000_000)).toBe('9.5B');
+  });
+
+  test('rounds to nearest integer for B values 10B and above', () => {
+    expect(Leaderboard.abbreviateDamage(10_000_000_000)).toBe('10B');
+    expect(Leaderboard.abbreviateDamage(12_600_000_000)).toBe('13B');
+  });
 });
