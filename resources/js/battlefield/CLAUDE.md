@@ -81,7 +81,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `fighter-placement.js` | Pure entry placement: `resolveFighterPlacement(saved, gridPos, ctx)` — decides whether a fighter entering the scene (boot payload or `FighterJoined` echo) restores its persisted position or takes the default grid slot; snaps a no-longer-valid saved position instead of resetting it. Shared by `seedInitial` and `handleFighterJoined` so both entry paths place a fighter identically |
 | `hud-position.js` | Pure `computeHudTop({navBottom, canvasTop, parentTop, scale})` — vertical offset for the HTML Damage HUD so it never collides with the top-left nav stack (Profile/Dashboard pills) in either orientation. Exposed on `window.__battlefield` by `index.js` because the HUD's Alpine code lives in a plain inline `<script>` in `battlefield.blade.php`, not a module |
 | `resync.js` | Pure `driftedPositions(localFighters, serverPositions, epsilon)` — diffs the client's local fighter positions against the server-authoritative snapshot returned by `Battlefield::resync()`, used after an Echo reconnect to repair positions lost to Reverb's lack of event replay |
-| `format.js` | Pure format helpers: formatHp |
+| `format.js` | Pure format helpers: formatHp — exposed on `window.__battlefield` by `index.js` so the Damage HUD's inline `<script>` in `battlefield.blade.php` calls it directly instead of duplicating the logic |
 | `snapshot.js` | Snapshot/restore scene state on orientation change |
 | `bus.js` | Tiny event bus for cross-manager communication |
 | `index.js` | Entry point: bootBattlefield, detectMode, Echo wiring |
@@ -108,6 +108,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `tests/js/snapshot.test.js` | snapshotState roundtrip |
 | `tests/js/constants.test.js` | BusEvent, TextureKey, SCENE_KEY shape validation |
 | `tests/js/leaderboard.test.js` | Legacy `makeMethods` damage-tracking factory (kept alongside the `Leaderboard` class; not currently wired into scene.js) |
+| `tests/js/format.test.js` | formatHp — K/M/B tier formatting |
 | `tests/js/pack-sprites.test.js` | Fighter atlas packing |
 | `tests/js/managers/Boss.test.js` | Boss pure helpers, dreadknight turn sequence |
 | `tests/js/managers/Charge.test.js` | Charge pure helpers |
