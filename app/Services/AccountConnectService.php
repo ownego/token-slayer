@@ -329,7 +329,7 @@ class AccountConnectService
             return null;
         }
 
-        return Account::query()->where('organization_uuid', $orgUuid)->first();
+        return Account::query()->whereRelation('claudeCredential', 'organization_uuid', $orgUuid)->first();
     }
 
     /**
@@ -541,6 +541,10 @@ class AccountConnectService
             return;
         }
 
+        // getOriginal() would not see this — organization_uuid is a virtual
+        // accessor proxying to claudeCredential, not a real Account column —
+        // so capture the pre-write value explicitly to restore on failure.
+        $previousOrganizationUuid = $account->organization_uuid;
         $account->organization_uuid = $organizationUuid;
 
         try {
@@ -549,7 +553,7 @@ class AccountConnectService
             // Another account row already claims this organization uuid
             // (unique constraint). Skip the write rather than failing the
             // whole connect; the admin can reconcile the duplicate later.
-            $account->organization_uuid = $account->getOriginal('organization_uuid');
+            $account->organization_uuid = $previousOrganizationUuid;
         }
     }
 
