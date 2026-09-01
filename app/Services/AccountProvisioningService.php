@@ -248,6 +248,12 @@ final class AccountProvisioningService
                     $user->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
                 $confirmed++;
+                if ($device !== null) {
+                    $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
+                    if ($grant !== null) {
+                        CacheKeys::forgetProvisionedGrant($grant->id);
+                    }
+                }
             } catch (Throwable $e) {
                 report($e);
 

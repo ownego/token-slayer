@@ -35,12 +35,31 @@ final class CacheKeys
 
     /**
      * How long a provisioned grant's encrypted secret lives in the cache
-     * (24 hours). After expiry the raw grant is gone forever; Reissue is
-     * the only recovery path.
+     * (7 days) — enough slack for a user to open Claude Code on a normal
+     * work cadence, including a weekend, between an admin issuing or
+     * reissuing a grant and the user's device pulling it. After expiry the
+     * raw grant is gone forever; Reissue is the only recovery path. In
+     * practice this ceiling is only hit by a grant that's never claimed at
+     * all — a confirmed successful claim clears its own cache entry
+     * immediately (see `AccountProvisioningService::confirmSetup()`), same
+     * as a confirmed removal already does.
      *
      * @var int
      */
-    public const int PROVISIONED_GRANT_TTL_SECONDS = 86400;
+    public const int PROVISIONED_GRANT_TTL_SECONDS = 604800;
+
+    /**
+     * How long after `provisioned_at` a still-Pending grant's admin-facing
+     * badge flips to "Pending (expired)" in {@see ProvisionsRelationManager}
+     * (24 hours). Deliberately a SEPARATE constant from
+     * {@see self::PROVISIONED_GRANT_TTL_SECONDS} even though both used to
+     * share one value — they are different concepts (cache-secret lifetime
+     * vs. an admin-UI staleness signal) and must be able to change
+     * independently.
+     *
+     * @var int
+     */
+    public const int PROVISIONED_GRANT_PENDING_BADGE_SECONDS = 86400;
 
     /**
      * Build the cache key for one account's tracked-members aggregate map.
