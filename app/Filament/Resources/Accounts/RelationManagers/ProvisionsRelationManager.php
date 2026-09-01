@@ -91,7 +91,7 @@ class ProvisionsRelationManager extends RelationManager
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(fn (GrantStatus $state, AccountProvisionedGrant $record): string => $state === GrantStatus::Pending
-                        && $record->provisioned_at->addSeconds(CacheKeys::PROVISIONED_GRANT_TTL_SECONDS)->isPast()
+                        && $record->provisioned_at->addSeconds(CacheKeys::PROVISIONED_GRANT_PENDING_BADGE_SECONDS)->isPast()
                             ? 'Pending (expired)'
                             : $state->getLabel()),
                 TextColumn::make('provisioned_at')

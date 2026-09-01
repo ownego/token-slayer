@@ -308,3 +308,86 @@ it('rejects an empty confirmation body with 422', function () {
         ->postJson('/api/provisioned/confirm', [])
         ->assertUnprocessable();
 });
+
+it('persists oauth_refresh_expires_at from the expiring array on confirm', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '50505050-5050-4050-8050-505050505050']);
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    $deadlineMs = now()->addDays(2)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'set_up' => [],
+        'removed' => [],
+        'expiring' => [['org_uuid' => '50505050-5050-4050-8050-505050505050', 'refresh_token_expires_at' => $deadlineMs]],
+    ]);
+
+    $res->assertOk();
+    // Compare at second precision, not millisecond: the migration declares
+    // `timestamp('oauth_refresh_expires_at')` with no explicit precision, so
+    // Postgres stores it as `timestamp(0)` (whole seconds) — an exact
+    // millisecond round-trip comparison would fail on almost every run
+    // whenever $deadlineMs has nonzero milliseconds, which is not a logic
+    // bug, just a precision mismatch this test must not assume away. Second
+    // precision is also all the 3-day warning window actually needs.
+    expect($account->fresh()->oauth_refresh_expires_at->timestamp)->toBe(intdiv($deadlineMs, 1000));
+});
+
+it('accepts a request with only expiring populated (no set_up or removed)', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '60606060-6060-4060-8060-606060606060']);
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    $deadlineMs = now()->addDay()->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => '60606060-6060-4060-8060-606060606060', 'refresh_token_expires_at' => $deadlineMs]],
+    ]);
+
+    $res->assertOk();
+});
+
+it('does not regress a fresher already-stored deadline with a stale client report', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => '70707070-7070-4070-8070-707070707070']);
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    $fresherDeadline = now()->addDays(20); // e.g. the server's own refresher (Task 2) just extended it
+    $account->update(['oauth_refresh_expires_at' => $fresherDeadline]);
+    $staleReportMs = now()->addHours(6)->getTimestampMs(); // what the client observed BEFORE that refresh happened
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => '70707070-7070-4070-8070-707070707070', 'refresh_token_expires_at' => $staleReportMs]],
+    ]);
+
+    $res->assertOk();
+    expect($account->fresh()->oauth_refresh_expires_at->timestamp)->toBe($fresherDeadline->timestamp);
+});
+
+it('rejects an expiring write for an org uuid the hook user holds no live grant for (anti-IDOR)', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    // Account exists, but nothing ties it to this user: no AccountProvisionedGrant/Device.
+    $account = Account::factory()->create(['organization_uuid' => '90909090-9090-4090-8090-909090909090']);
+    $deadlineMs = now()->addDays(2)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => '90909090-9090-4090-8090-909090909090', 'refresh_token_expires_at' => $deadlineMs]],
+    ]);
+
+    $res->assertOk();
+    expect($account->fresh()->oauth_refresh_expires_at)->toBeNull();
+});
+
+it('rejects an expiring refresh_token_expires_at further than 45 days in the future', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0']);
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    $absurdMs = now()->addDays(100)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0', 'refresh_token_expires_at' => $absurdMs]],
+    ]);
+
+    $res->assertUnprocessable();
+});

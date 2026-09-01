@@ -66,9 +66,11 @@ class AccountTokenRefresher
 
     /**
      * Exchange the account's refresh token for a new access/refresh token
-     * pair and persist it. On a dead-grant failure, flips the account to
-     * AccountStatus::NeedsReauth; on a transient failure, leaves status
-     * untouched so the next cycle retries.
+     * pair and persist it, including the new refresh-token deadline
+     * (`oauth_refresh_expires_at`) when the response reports one. On a
+     * dead-grant failure, flips the account to AccountStatus::NeedsReauth;
+     * on a transient failure, leaves status untouched so the next cycle
+     * retries.
      *
      * @param  Account  $account  the account whose token is being refreshed
      * @return bool true when the refresh succeeded and the account is ready to use
@@ -113,6 +115,9 @@ class AccountTokenRefresher
         $account->oauth_access_token = $token['access_token'];
         $account->oauth_refresh_token = $token['refresh_token'];
         $account->oauth_expires_at = now()->addSeconds($token['expires_in']);
+        if (isset($token['refresh_token_expires_in'])) {
+            $account->oauth_refresh_expires_at = now()->addSeconds($token['refresh_token_expires_in']);
+        }
         $account->save();
 
         return true;

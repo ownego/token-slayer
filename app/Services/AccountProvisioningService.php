@@ -223,15 +223,19 @@ final class AccountProvisioningService
      * the still-Claimed, still-cached grant and the CLI would silently
      * re-add the slot it had just deleted. Additive only; failures on one
      * org are reported and swallowed so they cannot 500 the batch; uuids
-     * are deduped per list.
+     * are deduped per list. Also persists `oauth_refresh_expires_at` for each
+     * `expiring` org the client reported approaching its refresh-token
+     * deadline, behind the same live-grant ownership guard as `set_up`, and
+     * never regressing a fresher deadline already stored.
      *
      * @param  User  $user  the hook-authenticated user
      * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
      * @param  array<int, string>  $removedOrgUuids  orgs the CLI removed the local slot for
      * @param  Device|null  $device  the resolved claiming device; null = removed loop no-ops
+     * @param  array<int, array{org_uuid: string, refresh_token_expires_at: \Illuminate\Support\Carbon}>  $expiring  orgs the CLI reported as approaching their refresh-token deadline this run
      * @return array{confirmed: int, deprovisioned: int}
      */
-    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null): array
+    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null, array $expiring = []): array
     {
         $confirmed = 0;
         foreach (array_unique($setUpOrgUuids) as $orgUuid) {
@@ -244,6 +248,12 @@ final class AccountProvisioningService
                     $user->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
                 $confirmed++;
+                if ($device !== null) {
+                    $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
+                    if ($grant !== null) {
+                        CacheKeys::forgetProvisionedGrant($grant->id);
+                    }
+                }
             } catch (Throwable $e) {
                 report($e);
 
@@ -286,6 +296,27 @@ final class AccountProvisioningService
 
                     continue;
                 }
+            }
+        }
+
+        foreach ($expiring as $row) {
+            // Same self-graft guard as the set_up loop above (accountWithLiveGrantFor) —
+            // without it, any hook-token holder could overwrite oauth_refresh_expires_at
+            // on an account they don't own by reporting a fabricated org_uuid.
+            $account = $this->accountWithLiveGrantFor($user, $row['org_uuid']);
+            if ($account === null) {
+                continue;
+            }
+            // Never regress a fresher, more-informative deadline with a stale
+            // client report: only write when there's nothing stored yet, or
+            // the client's value is LATER than what's already there. Guards
+            // against a narrow race where the server's own refresher (Task 2)
+            // pushes the deadline out ~27.5 days between when the client
+            // observed a near-term deadline and when this confirm request
+            // reaches the server.
+            if ($account->oauth_refresh_expires_at === null
+                || $row['refresh_token_expires_at']->isAfter($account->oauth_refresh_expires_at)) {
+                $account->update(['oauth_refresh_expires_at' => $row['refresh_token_expires_at']]);
             }
         }
 

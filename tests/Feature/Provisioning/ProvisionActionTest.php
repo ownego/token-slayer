@@ -90,6 +90,25 @@ it('revoke marks the grant revoked and hides the action on revoked rows', functi
         ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->toBeNull();
 });
 
+it('keeps the Pending badge unflipped at 23h, then flips it to expired by 48h — the 24h badge threshold, not the 7-day cache TTL', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $fresh = AccountProvisionedGrant::factory()->for($account)->pending()->create(['provisioned_at' => now()->subHours(23)]);
+
+    Livewire::actingAs($admin)
+        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertDontSee('Pending (expired)');
+
+    $fresh->delete();
+    $stale = AccountProvisionedGrant::factory()->for($account)->pending()->create(['provisioned_at' => now()->subHours(48)]);
+
+    Livewire::actingAs($admin)
+        ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->assertSee('Pending (expired)');
+
+    expect($stale->status)->toBe(GrantStatus::Pending);
+});
+
 it('delete device removes a fully-revoked device row and its grants', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
