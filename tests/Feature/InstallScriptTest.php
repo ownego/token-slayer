@@ -420,6 +420,34 @@ it('consults an account identity provider before the beacon, by-session then act
         ->toBeLessThan(strpos($script, "\n  resolve_account\n"));
 });
 
+it('reads the provider-scoped active file, generic account_id/user_id fields, before the legacy path', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('account-provider/active-${PROVIDER:-claude}.json')
+        ->and($script)->toContain('.account_id // .org_uuid // ""')
+        ->and($script)->toContain('.user_id // .uuid // ""');
+});
+
+it('only falls back to the legacy shared active.json when PROVIDER is unset', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // the legacy fallback branch is gated on an empty PROVIDER, not
+    // unconditionally reachable -- this pins the guard so a future edit
+    // can't accidentally let a Codex-labeled event read Claude's file.
+    expect($script)->toContain('[ -z "${PROVIDER:-}" ]')
+        ->and($script)->toContain('account-provider/active.json');
+});
+
+it('still exposes ACC_ORG_ID and ACC_UUID for downstream attribution after the field rename', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // downstream code (the POST body builder) reads these two variable
+    // names -- the rename only touches the JSON field names being read
+    // INTO them, not the shell variable names themselves.
+    expect($script)->toContain('ACC_ORG_ID="$_org"')
+        ->and($script)->toContain('ACC_SOURCE="provider"');
+});
+
 it('bundles a detector-config and scans a proxy log by session id before giving up', function () {
     $script = $this->get('/install')->getContent();
 
@@ -749,7 +777,7 @@ it('uses the resolved $JQ variable in every call site inside the hook, including
     // and the final body-merge/minimal-payload filters.
     expect($script)
         ->toContain('"$JQ" -r \'.claudeAiOauth.accessToken')
-        ->toContain('"$JQ" -r \'.org_uuid')
+        ->toContain('"$JQ" -r \'.account_id // .org_uuid')
         ->toContain('"$JQ" -r \'.email // ""\' "$NS_DIR/account.json"')
         ->toContain('"$JQ" -r \'keys[]\'')
         ->toContain('[ -x "$JQ" ]; then')

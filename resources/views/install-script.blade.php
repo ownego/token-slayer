@@ -232,21 +232,29 @@ provider_account() {
   # (a proxy or switcher) may declare identity via a portable transport;
   # token-slayer ships no code into that layer -- it only reads. Env var + file
   # only (socket / URL / executable transports are out of scope for now).
+  #
+  # File precedence: an explicit CLAUDE_ACCOUNT_PROVIDER override, then a
+  # session-scoped file, then the provider-scoped active file (what an
+  # updated switcher writes for every provider, including non-Claude ones),
+  # then -- ONLY when PROVIDER is unset -- the legacy shared active.json a
+  # not-yet-updated Claude-only client may still be writing.
   _pv=""
   if [ -n "${CLAUDE_ACCOUNT_PROVIDER:-}" ] && [ -r "${CLAUDE_ACCOUNT_PROVIDER}" ]; then
     _pv="${CLAUDE_ACCOUNT_PROVIDER}"
   elif [ -n "${SESSION_ID:-}" ] && [ -r "$NS_DIR/account-provider/sessions/$SESSION_ID.json" ]; then
     _pv="$NS_DIR/account-provider/sessions/$SESSION_ID.json"
-  elif [ -r "$NS_DIR/account-provider/active.json" ]; then
+  elif [ -r "$NS_DIR/account-provider/active-${PROVIDER:-claude}.json" ]; then
+    _pv="$NS_DIR/account-provider/active-${PROVIDER:-claude}.json"
+  elif [ -z "${PROVIDER:-}" ] && [ -r "$NS_DIR/account-provider/active.json" ]; then
     _pv="$NS_DIR/account-provider/active.json"
   fi
   [ -n "$_pv" ] || return 1
 
-  _org=$("$JQ" -r '.org_uuid // ""' "$_pv" 2>/dev/null)
+  _org=$("$JQ" -r '.account_id // .org_uuid // ""' "$_pv" 2>/dev/null)
   [ -n "$_org" ] || return 1
   ACC_ORG_ID="$_org"
   ACC_EMAIL=$("$JQ" -r '.email // ""' "$_pv" 2>/dev/null)
-  ACC_UUID=$("$JQ" -r '.uuid // ""' "$_pv" 2>/dev/null)
+  ACC_UUID=$("$JQ" -r '.user_id // .uuid // ""' "$_pv" 2>/dev/null)
   ACC_SOURCE="provider"
   return 0
 }
