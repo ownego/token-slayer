@@ -5,6 +5,7 @@ use App\Events\AccountTokenRejected;
 use App\Models\Account;
 use App\Services\AccountTokenRefresher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 
@@ -12,6 +13,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     $this->refresher = app(AccountTokenRefresher::class);
+});
+
+afterEach(function () {
+    Carbon::setTestNow();
 });
 
 test('a disabled account is not fresh and makes no HTTP call', function () {
@@ -54,4 +59,32 @@ test('an invalid_grant refresh flags NeedsReauth, dispatches the alert, and repo
     expect($this->refresher->ensureFreshToken($account))->toBeFalse();
     expect($account->fresh()->status)->toBe(AccountStatus::NeedsReauth);
     Event::assertDispatched(AccountTokenRejected::class);
+});
+
+test('a refresh persists oauth_refresh_expires_at from the response refresh_token_expires_in', function () {
+    Carbon::setTestNow('2026-08-31 00:00:00');
+    fakeAnthropic();
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->subMinute()]);
+
+    expect($this->refresher->ensureFreshToken($account))->toBeTrue();
+    // tests/fixtures/anthropic/token.json carries refresh_token_expires_in: 2546274.
+    expect($account->fresh()->oauth_refresh_expires_at->timestamp)
+        ->toBe(now()->addSeconds(2_546_274)->timestamp);
+});
+
+test('a refresh response omitting refresh_token_expires_in leaves oauth_refresh_expires_at untouched', function () {
+    Carbon::setTestNow('2026-08-31 00:00:00');
+    $priorDeadline = now()->addDays(20);
+    fakeAnthropic(['token' => Http::response([
+        'access_token' => 'sk-ant-oat01-NEW',
+        'refresh_token' => 'sk-ant-ort01-NEW',
+        'expires_in' => 28800,
+    ], 200, ['Content-Type' => 'application/json'])]);
+    $account = Account::factory()->connected()->create([
+        'oauth_expires_at' => now()->subMinute(),
+        'oauth_refresh_expires_at' => $priorDeadline,
+    ]);
+
+    expect($this->refresher->ensureFreshToken($account))->toBeTrue();
+    expect($account->fresh()->oauth_refresh_expires_at->timestamp)->toBe($priorDeadline->timestamp);
 });
