@@ -168,6 +168,7 @@ class Account extends Model
             'oauth_access_token' => 'encrypted',
             'oauth_refresh_token' => 'encrypted',
             'oauth_expires_at' => 'datetime',
+            'oauth_refresh_expires_at' => 'datetime',
             'last_probed_at' => 'datetime',
         ];
     }
