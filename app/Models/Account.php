@@ -122,6 +122,17 @@ class Account extends Model
     }
 
     /**
+     * This account's Claude-specific OAuth credential and probe-health
+     * state, split into its own table in the envelope/credential split.
+     *
+     * @return HasOne<ClaudeCredential, $this>
+     */
+    public function claudeCredential(): HasOne
+    {
+        return $this->hasOne(ClaudeCredential::class);
+    }
+
+    /**
      * Every usage event attributed to this org account via
      * `events.account_id`, in natural order. Callers that need newest-first
      * order the query explicitly.
