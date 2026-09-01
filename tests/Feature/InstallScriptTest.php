@@ -800,3 +800,20 @@ it('guards jq calls with -x (executable check), not the always-true -n', functio
 
     expect(substr_count($script, '-x "$JQ"'))->toBe(3);
 });
+
+it('a Codex-provider event can resolve identity via a provider-scoped active file, not just Claude events', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // The full call chain, in order, that makes this true: resolve_account
+    // tries provider_account first (Task 1); provider_account's file lookup
+    // is provider-scoped so it finds a Codex-written file even though
+    // PROVIDER=codex is set (Task 2) -- the OLD code's guard would have
+    // returned empty identity before ever reaching this lookup.
+    $resolveDefinitionPosition = strpos($script, 'resolve_account() {');
+    $providerCallPosition = strpos($script, 'provider_account && return');
+    $providerScopedLookup = strpos($script, 'account-provider/active-${PROVIDER:-claude}.json');
+
+    expect($providerCallPosition)->toBeGreaterThan($resolveDefinitionPosition)
+        ->and($providerScopedLookup)->not->toBeFalse()
+        ->and($script)->toContain('CODEX_CMD="PROVIDER=codex bash $HELPER"');
+});
