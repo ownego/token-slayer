@@ -6,6 +6,7 @@ use App\Models\Account;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 
@@ -36,10 +37,11 @@ class ReencryptAccountTokens extends Command
         $count = 0;
 
         Account::query()
-            ->where(function ($query): void {
-                $query->whereNotNull('oauth_access_token')
+            ->whereHas('claudeCredential', function (Builder $credentials): void {
+                $credentials->whereNotNull('oauth_access_token')
                     ->orWhereNotNull('oauth_refresh_token');
             })
+            ->with('claudeCredential')
             ->each(function (Account $account) use (&$count): void {
                 // The model's `encrypted` cast compares DECRYPTED values for
                 // dirtiness, so re-saving the same plaintext is a no-op and
@@ -50,7 +52,7 @@ class ReencryptAccountTokens extends Command
                 $access = $account->oauth_access_token;
                 $refresh = $account->oauth_refresh_token;
 
-                DB::table('accounts')->where('id', $account->getKey())->update([
+                DB::table('claude_credentials')->where('account_id', $account->getKey())->update([
                     'oauth_access_token' => $access === null ? null : Crypt::encryptString($access),
                     'oauth_refresh_token' => $refresh === null ? null : Crypt::encryptString($refresh),
                 ]);
