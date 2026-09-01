@@ -13,6 +13,7 @@ use App\Filament\Resources\Accounts\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
+use App\Models\ClaudeCredential;
 use App\Services\AccountConnectService;
 use App\Services\Accounts\PlanResolver;
 use App\Services\UsageProber;
@@ -36,6 +37,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\Rules\Unique;
 
 /**
  * Admin CRUD for org `Account` records: connection details, plan, status,
@@ -80,7 +82,13 @@ class AccountResource extends Resource
                 TextInput::make('organization_uuid')
                     ->label('Organization UUID')
                     ->helperText('Auto-learned from events; paste manually to attribute switcher users immediately.')
-                    ->unique(ignoreRecord: true)
+                    ->unique(
+                        table: 'claude_credentials',
+                        column: 'organization_uuid',
+                        modifyRuleUsing: fn (Unique $rule, ?Account $record): Unique => $record?->claudeCredential !== null
+                            ? $rule->ignore($record->claudeCredential->id)
+                            : $rule,
+                    )
                     ->maxLength(64)
                     ->disabledOn('edit'),
                 TextInput::make('name')
@@ -136,7 +144,10 @@ class AccountResource extends Resource
                 TextColumn::make('last_probed_at')
                     ->since()
                     ->placeholder('Never')
-                    ->sortable(),
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy(
+                        ClaudeCredential::select('last_probed_at')->whereColumn('claude_credentials.account_id', 'accounts.id'),
+                        $direction,
+                    )),
                 TextColumn::make('organization_uuid')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('organization_type')
