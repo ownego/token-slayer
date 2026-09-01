@@ -282,7 +282,13 @@ class AccountConnectService
         $account->organization_type = $pending['organization_type'] ?? $account->organization_type;
         $account->rate_limit_tier = $pending['rate_limit_tier'] ?? $account->rate_limit_tier;
         $account->account_uuid = $pending['account_uuid'] ?? $account->account_uuid;
-        $this->writeGrant($account, $pending['access_token'], $pending['refresh_token'], $pending['expires_in']);
+        $this->writeGrant(
+            $account,
+            $pending['access_token'],
+            $pending['refresh_token'],
+            $pending['expires_in'],
+            $pending['refresh_token_expires_in'] ?? null,
+        );
         $account->save();
 
         $this->learnOrganizationUuid($account, $orgUuid);
@@ -359,6 +365,7 @@ class AccountConnectService
                 'access_token' => $token['access_token'],
                 'refresh_token' => $token['refresh_token'],
                 'expires_in' => $token['expires_in'],
+                'refresh_token_expires_in' => $token['refresh_token_expires_in'] ?? null,
                 'account_uuid' => $profile['account']['uuid'] ?? null,
                 'organization_uuid' => $orgUuid,
                 'organization_type' => $organizationType,
@@ -492,6 +499,7 @@ class AccountConnectService
         $account->oauth_access_token = null;
         $account->oauth_refresh_token = null;
         $account->oauth_expires_at = null;
+        $account->oauth_refresh_expires_at = null;
         $account->status = AccountStatus::NeedsReauth;
         $account->probe_error = 'disconnected by admin';
         $account->save();

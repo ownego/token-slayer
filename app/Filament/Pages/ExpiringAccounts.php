@@ -106,7 +106,7 @@ class ExpiringAccounts extends Page
     /**
      * The expiring-account rows for the Blade view.
      *
-     * @return array<int, array{id: int, email: ?string, plan: ?string, expires_at: \Illuminate\Support\Carbon, tracked_members: int, updated_at: ?\Illuminate\Support\Carbon}>
+     * @return array<int, array{id: int, email: ?string, plan: ?string, expires_at: \Illuminate\Support\Carbon, is_expired: bool, tracked_members: int, updated_at: ?\Illuminate\Support\Carbon}>
      */
     public function rows(): array
     {

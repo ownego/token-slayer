@@ -222,14 +222,25 @@ test('createFromPending throws state expired when the handoff key is unknown', f
         ->toThrow(AccountConnectException::class);
 });
 
+test('createFromPending persists the refresh-token deadline stashed on the pending draft', function () {
+    fakeAnthropic();
+    $started = $this->service->start();
+    $draft = $this->service->resolve($started['state'], 'pasted-code')->draft;
+
+    $account = $this->service->createFromPending($draft->handoffKey, AccountPlan::Max5x->value, 'Custom Name');
+
+    expect($account->oauth_refresh_expires_at)->not->toBeNull();
+});
+
 test('disconnect wipes the stored grant and marks the account needing re-auth', function () {
-    $account = Account::factory()->connected()->create();
+    $account = Account::factory()->connected()->create(['oauth_refresh_expires_at' => now()->addDays(10)]);
 
     $this->service->disconnect($account);
 
     $account->refresh();
     expect($account->oauth_access_token)->toBeNull()
         ->and($account->oauth_refresh_token)->toBeNull()
+        ->and($account->oauth_refresh_expires_at)->toBeNull()
         ->and($account->status)->toBe(AccountStatus::NeedsReauth)
         ->and($account->probe_error)->toBe('disconnected by admin');
 });

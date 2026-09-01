@@ -363,3 +363,31 @@ it('does not regress a fresher already-stored deadline with a stale client repor
     $res->assertOk();
     expect($account->fresh()->oauth_refresh_expires_at->timestamp)->toBe($fresherDeadline->timestamp);
 });
+
+it('rejects an expiring write for an org uuid the hook user holds no live grant for (anti-IDOR)', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    // Account exists, but nothing ties it to this user: no AccountProvisionedGrant/Device.
+    $account = Account::factory()->create(['organization_uuid' => '90909090-9090-4090-8090-909090909090']);
+    $deadlineMs = now()->addDays(2)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => '90909090-9090-4090-8090-909090909090', 'refresh_token_expires_at' => $deadlineMs]],
+    ]);
+
+    $res->assertOk();
+    expect($account->fresh()->oauth_refresh_expires_at)->toBeNull();
+});
+
+it('rejects an expiring refresh_token_expires_at further than 45 days in the future', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0']);
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    $absurdMs = now()->addDays(100)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => 'a0a0a0a0-a0a0-4a0a-8a0a-a0a0a0a0a0a0', 'refresh_token_expires_at' => $absurdMs]],
+    ]);
+
+    $res->assertUnprocessable();
+});

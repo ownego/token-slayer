@@ -39,7 +39,14 @@ final class ConfirmProvisionedSetupRequest extends FormRequest
             'accounts.*.org_uuid' => ['required_with:accounts', 'uuid'],
             'expiring' => ['required_without_all:accounts,set_up,removed', 'array'],
             'expiring.*.org_uuid' => ['required_with:expiring', 'uuid'],
-            'expiring.*.refresh_token_expires_at' => ['required_with:expiring', 'integer'],
+            // Anthropic's refresh-token deadline is a fixed ~27.5-day ceiling
+            // from original login; 45 days is a generous but implausible-past
+            // upper bound. Without it, a client reporting an absurdly
+            // far-future timestamp would permanently suppress that org from
+            // the admin warning page — nothing regresses the deadline
+            // downward once stored (see the never-regress guard in
+            // AccountProvisioningService's `expiring` loop).
+            'expiring.*.refresh_token_expires_at' => ['required_with:expiring', 'integer', 'max:'.now()->addDays(45)->getTimestampMs()],
             'device_id' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
