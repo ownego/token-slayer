@@ -53,8 +53,9 @@ final class ProvisionedAccountController extends Controller
     }
 
     /**
-     * Confirm the CLI's reconcile. Accepts `{set_up:[{org_uuid}], removed:[{org_uuid}], device_id?}`;
-     * also accepts the legacy `{accounts:[{org_uuid}]}` as `set_up` (old clients).
+     * Confirm the CLI's reconcile. Accepts `{set_up:[{org_uuid}], removed:[{org_uuid}],
+     * expiring:[{org_uuid, refresh_token_expires_at}], device_id?}`; also accepts the
+     * legacy `{accounts:[{org_uuid}]}` as `set_up` (old clients).
      *
      * @param  ConfirmProvisionedSetupRequest  $request  carries the hook-authenticated user and the validated body
      * @return JsonResponse {confirmed, deprovisioned}
@@ -69,7 +70,14 @@ final class ProvisionedAccountController extends Controller
         $removed = array_column($payload['removed'] ?? [], 'org_uuid');
         $device = $this->resolver->resolve($user, Arr::get($payload, 'device_id'));
 
-        $result = $this->provisioning->confirmSetup($user, $setUp, $removed, $device);
+        $expiring = collect($payload['expiring'] ?? [])
+            ->map(fn (array $row): array => [
+                'org_uuid' => $row['org_uuid'],
+                'refresh_token_expires_at' => \Illuminate\Support\Carbon::createFromTimestampMs($row['refresh_token_expires_at']),
+            ])
+            ->all();
+
+        $result = $this->provisioning->confirmSetup($user, $setUp, $removed, $device, $expiring);
 
         return response()->json($result);
     }
