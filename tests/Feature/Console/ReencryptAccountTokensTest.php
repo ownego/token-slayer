@@ -45,11 +45,13 @@ test('reencrypt rewraps tokens so they survive dropping the previous key', funct
 
 test('reencrypt changes the stored ciphertext without altering the plaintext', function () {
     $account = Account::factory()->connected()->create();
-    $before = DB::table('accounts')->where('id', $account->id)->value('oauth_access_token');
+    // oauth_access_token now lives on claude_credentials, not accounts —
+    // moved there in the envelope/credential split.
+    $before = DB::table('claude_credentials')->where('account_id', $account->id)->value('oauth_access_token');
 
     $this->artisan('accounts:reencrypt-oauth-tokens')->assertSuccessful();
 
-    $after = DB::table('accounts')->where('id', $account->id)->value('oauth_access_token');
+    $after = DB::table('claude_credentials')->where('account_id', $account->id)->value('oauth_access_token');
 
     expect($after)->not->toBe($before)
         ->and($account->fresh()->oauth_access_token)->toBe($account->oauth_access_token);
