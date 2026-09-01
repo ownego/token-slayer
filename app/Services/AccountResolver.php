@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Account;
+use App\Models\ClaudeCredential;
 use App\Support\CacheKeys;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
@@ -71,9 +72,9 @@ final class AccountResolver
         }
 
         $map = Cache::remember(self::ORG_CACHE_KEY, self::CACHE_TTL_SECONDS, function (): array {
-            return Account::query()
+            return ClaudeCredential::query()
                 ->whereNotNull('organization_uuid')
-                ->pluck('id', 'organization_uuid')
+                ->pluck('account_id', 'organization_uuid')
                 ->all();
         });
 

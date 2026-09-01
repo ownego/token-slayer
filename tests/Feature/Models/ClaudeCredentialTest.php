@@ -10,7 +10,10 @@ use Illuminate\Support\Facades\DB;
 uses(RefreshDatabase::class);
 
 it('belongs to an account', function (): void {
-    $account = Account::factory()->create(['email' => 'owner@example.com']);
+    // Account::create (not the factory) so no claude_credentials row is
+    // auto-created by the accessor's persistence hook — this test wants
+    // full control over the credential row it creates.
+    $account = Account::create(['email' => 'owner@example.com']);
     $credential = ClaudeCredential::create([
         'account_id' => $account->id,
         'organization_uuid' => 'org-uuid-1',
@@ -21,7 +24,7 @@ it('belongs to an account', function (): void {
 });
 
 it('casts status and plan to their enums, and encrypts oauth tokens at rest', function (): void {
-    $account = Account::factory()->create();
+    $account = Account::create(['email' => 'casts@example.com']);
     $credential = ClaudeCredential::create([
         'account_id' => $account->id,
         'status' => AccountStatus::NeedsReauth,
@@ -38,7 +41,7 @@ it('casts status and plan to their enums, and encrypts oauth tokens at rest', fu
 });
 
 it('exposes a claudeCredential relation from Account', function (): void {
-    $account = Account::factory()->create();
+    $account = Account::create(['email' => 'relation@example.com']);
     ClaudeCredential::create(['account_id' => $account->id, 'organization_uuid' => 'org-uuid-2']);
 
     expect($account->claudeCredential)->toBeInstanceOf(ClaudeCredential::class)
