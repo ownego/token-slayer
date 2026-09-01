@@ -277,17 +277,21 @@ it('prunes old send-hook.sh backups to the newest 3', function () {
         ->toContain('ls -1t "$HOME/.config/token_slayer"/send-hook.sh.bak.* 2>/dev/null | tail -n +4 | xargs rm -f --');
 });
 
-it('skips account resolution entirely for non-Claude providers', function () {
+it('tries the account identity provider before skipping Claude-specific resolution for non-Claude providers', function () {
     $script = $this->get(route('install-script'))->content();
 
-    expect($script)->toContain('[ -n "${PROVIDER:-}" ]');
-
-    $guardPosition = strpos($script, '[ -n "${PROVIDER:-}" ]');
     $resolveDefinitionPosition = strpos($script, 'resolve_account() {');
+    $providerCallPosition = strpos($script, 'provider_account && return');
+    $guardPosition = strpos($script, '[ -n "${PROVIDER:-}" ] && return');
 
-    expect($guardPosition)->not->toBeFalse()
-        ->and($resolveDefinitionPosition)->not->toBeFalse()
-        ->and($guardPosition)->toBeGreaterThan($resolveDefinitionPosition);
+    expect($resolveDefinitionPosition)->not->toBeFalse()
+        ->and($providerCallPosition)->not->toBeFalse()
+        ->and($guardPosition)->not->toBeFalse()
+        // both live inside resolve_account()
+        ->and($providerCallPosition)->toBeGreaterThan($resolveDefinitionPosition)
+        ->and($guardPosition)->toBeGreaterThan($resolveDefinitionPosition)
+        // provider_account is tried FIRST -- this is the fix
+        ->and($providerCallPosition)->toBeLessThan($guardPosition);
 });
 
 it('sends an org-id beacon request that costs zero tokens and never touches quota', function () {
@@ -414,6 +418,34 @@ it('consults an account identity provider before the beacon, by-session then act
     expect($script)->toContain('.session_id // .sessionId // ""');
     expect(strpos($script, 'SESSION_ID=$(printf'))
         ->toBeLessThan(strpos($script, "\n  resolve_account\n"));
+});
+
+it('reads the provider-scoped active file, generic account_id/user_id fields, before the legacy path', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('account-provider/active-${PROVIDER:-claude}.json')
+        ->and($script)->toContain('.account_id // .org_uuid // ""')
+        ->and($script)->toContain('.user_id // .uuid // ""');
+});
+
+it('only falls back to the legacy shared active.json when PROVIDER is unset', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // the legacy fallback branch is gated on an empty PROVIDER, not
+    // unconditionally reachable -- this pins the guard so a future edit
+    // can't accidentally let a Codex-labeled event read Claude's file.
+    expect($script)->toContain('[ -z "${PROVIDER:-}" ]')
+        ->and($script)->toContain('account-provider/active.json');
+});
+
+it('still exposes ACC_ORG_ID and ACC_UUID for downstream attribution after the field rename', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // downstream code (the POST body builder) reads these two variable
+    // names -- the rename only touches the JSON field names being read
+    // INTO them, not the shell variable names themselves.
+    expect($script)->toContain('ACC_ORG_ID="$_org"')
+        ->and($script)->toContain('ACC_SOURCE="provider"');
 });
 
 it('bundles a detector-config and scans a proxy log by session id before giving up', function () {
@@ -745,7 +777,7 @@ it('uses the resolved $JQ variable in every call site inside the hook, including
     // and the final body-merge/minimal-payload filters.
     expect($script)
         ->toContain('"$JQ" -r \'.claudeAiOauth.accessToken')
-        ->toContain('"$JQ" -r \'.org_uuid')
+        ->toContain('"$JQ" -r \'.account_id // .org_uuid')
         ->toContain('"$JQ" -r \'.email // ""\' "$NS_DIR/account.json"')
         ->toContain('"$JQ" -r \'keys[]\'')
         ->toContain('[ -x "$JQ" ]; then')
@@ -767,4 +799,21 @@ it('guards jq calls with -x (executable check), not the always-true -n', functio
         ->toContain('[ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then');
 
     expect(substr_count($script, '-x "$JQ"'))->toBe(3);
+});
+
+it('a Codex-provider event can resolve identity via a provider-scoped active file, not just Claude events', function () {
+    $script = $this->get(route('install-script'))->content();
+
+    // The full call chain, in order, that makes this true: resolve_account
+    // tries provider_account first (Task 1); provider_account's file lookup
+    // is provider-scoped so it finds a Codex-written file even though
+    // PROVIDER=codex is set (Task 2) -- the OLD code's guard would have
+    // returned empty identity before ever reaching this lookup.
+    $resolveDefinitionPosition = strpos($script, 'resolve_account() {');
+    $providerCallPosition = strpos($script, 'provider_account && return');
+    $providerScopedLookup = strpos($script, 'account-provider/active-${PROVIDER:-claude}.json');
+
+    expect($providerCallPosition)->toBeGreaterThan($resolveDefinitionPosition)
+        ->and($providerScopedLookup)->not->toBeFalse()
+        ->and($script)->toContain('CODEX_CMD="PROVIDER=codex bash $HELPER"');
 });
