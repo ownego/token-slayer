@@ -316,11 +316,14 @@ detector_scan() {
 resolve_account() {
   ACC_EMAIL="" ACC_UUID="" ACC_SOURCE="" ACC_ORG_ID=""
 
-  # Pre-check: non-Claude providers (codex/antigravity) never carry Claude account claims.
-  [ -n "${PROVIDER:-}" ] && return
-
-  # 0. Account Identity Provider (proxy/switcher declares identity) -- highest signal.
+  # 0. Account Identity Provider (proxy/switcher declares identity) -- highest
+  # signal, tried for every provider (it is already provider-agnostic).
   provider_account && return
+
+  # Pre-check: non-Claude providers (codex/antigravity) never carry the
+  # Claude-specific claims below (manual override / credential beacon /
+  # .claude.json fallback).
+  [ -n "${PROVIDER:-}" ] && return
 
   # 1. Manual override: wins over credential/proxy/auto (a provider still precedes it).
   if [ -r "$NS_DIR/account.json" ]; then

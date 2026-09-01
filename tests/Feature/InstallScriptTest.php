@@ -277,17 +277,21 @@ it('prunes old send-hook.sh backups to the newest 3', function () {
         ->toContain('ls -1t "$HOME/.config/token_slayer"/send-hook.sh.bak.* 2>/dev/null | tail -n +4 | xargs rm -f --');
 });
 
-it('skips account resolution entirely for non-Claude providers', function () {
+it('tries the account identity provider before skipping Claude-specific resolution for non-Claude providers', function () {
     $script = $this->get(route('install-script'))->content();
 
-    expect($script)->toContain('[ -n "${PROVIDER:-}" ]');
-
-    $guardPosition = strpos($script, '[ -n "${PROVIDER:-}" ]');
     $resolveDefinitionPosition = strpos($script, 'resolve_account() {');
+    $providerCallPosition = strpos($script, 'provider_account && return');
+    $guardPosition = strpos($script, '[ -n "${PROVIDER:-}" ] && return');
 
-    expect($guardPosition)->not->toBeFalse()
-        ->and($resolveDefinitionPosition)->not->toBeFalse()
-        ->and($guardPosition)->toBeGreaterThan($resolveDefinitionPosition);
+    expect($resolveDefinitionPosition)->not->toBeFalse()
+        ->and($providerCallPosition)->not->toBeFalse()
+        ->and($guardPosition)->not->toBeFalse()
+        // both live inside resolve_account()
+        ->and($providerCallPosition)->toBeGreaterThan($resolveDefinitionPosition)
+        ->and($guardPosition)->toBeGreaterThan($resolveDefinitionPosition)
+        // provider_account is tried FIRST -- this is the fix
+        ->and($providerCallPosition)->toBeLessThan($guardPosition);
 });
 
 it('sends an org-id beacon request that costs zero tokens and never touches quota', function () {
