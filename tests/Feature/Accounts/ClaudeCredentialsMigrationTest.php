@@ -1,14 +1,18 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
 it('creates claude_credentials with one row per existing accounts row, copied from its current column values', function (): void {
-    Artisan::call('migrate:rollback', ['--step' => 1]);
+    // Target this migration by file, not by "the last migration" (a fragile
+    // assumption — see the AccountPlanMigrationTest pre-existing-failure
+    // memory note — that breaks the moment ANY later migration is added,
+    // which Phase 2's own codex_credentials migration already does).
+    $migration = require database_path('migrations/2026_09_02_100001_create_claude_credentials_table.php');
+    $migration->down();
 
     DB::table('accounts')->insert([
         'email' => 'legacy@example.com',
@@ -27,7 +31,7 @@ it('creates claude_credentials with one row per existing accounts row, copied fr
         'updated_at' => now(),
     ]);
 
-    Artisan::call('migrate');
+    $migration->up();
 
     expect(Schema::hasTable('claude_credentials'))->toBeTrue();
 

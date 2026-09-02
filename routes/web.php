@@ -26,6 +26,12 @@ Route::get('/guide', fn () => view('guide', [
 
 Route::get('/setup', fn () => view('setup'))->middleware('auth')->name('setup');
 
+Route::get('/admin-token', function () {
+    abort_unless(auth()->user()->roles()->exists(), 403);
+
+    return view('admin-token');
+})->middleware('auth')->name('admin-token');
+
 Route::get('/admin/usage', fn () => view('admin-usage'))
     ->middleware(['auth', 'can:view_usage_analytics'])
     ->name('admin.usage');
