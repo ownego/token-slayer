@@ -26,6 +26,18 @@ class Account extends Model
     protected $guarded = [];
 
     /**
+     * Mirrors the migration's DB-level default so a freshly-created
+     * in-memory instance reads 'claude' immediately — Eloquent does not
+     * refresh DB-computed defaults into memory after an INSERT that omits
+     * the column.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'provider' => 'claude',
+    ];
+
+    /**
      * Keep the resolver's email and organization-uuid maps, and this
      * account's membership aggregate + ingest pair caches, in sync with
      * account mutations. Also persists a dirty, in-memory `claudeCredential`
@@ -132,6 +144,17 @@ class Account extends Model
     public function claudeCredential(): HasOne
     {
         return $this->hasOne(ClaudeCredential::class);
+    }
+
+    /**
+     * This account's Codex-specific persistent credential (Step A of the
+     * admin-provisioning flow), when this account's provider is 'codex'.
+     *
+     * @return HasOne<CodexCredential, $this>
+     */
+    public function codexCredential(): HasOne
+    {
+        return $this->hasOne(CodexCredential::class);
     }
 
     /**
