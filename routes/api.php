@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\CodexAdminController;
 use App\Http\Controllers\Api\Ccrc\ExchangeController as CcrcExchangeController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\Ide\AuthController;
@@ -31,6 +32,11 @@ Route::middleware('throttle:30,1')->prefix('ide')->group(function (): void {
         Route::get('/hook-config', HookConfigController::class);
         Route::get('/snapshot', SnapshotController::class);
     });
+});
+
+Route::middleware('admin.bearer')->prefix('admin/codex')->group(function (): void {
+    Route::post('/connect', [CodexAdminController::class, 'connect']);
+    Route::post('/provision', [CodexAdminController::class, 'provision']);
 });
 
 // Entry point of the CCRC login flow. Same throttle as /api/ide, and NOT
