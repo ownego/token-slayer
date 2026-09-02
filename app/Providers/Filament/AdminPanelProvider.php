@@ -10,6 +10,7 @@ use App\Filament\Widgets\FleetQuotaOverview;
 use App\Filament\Widgets\TokenVolumeChart;
 use App\Filament\Widgets\TopAccountsLeaderboard;
 use App\Filament\Widgets\TopUsersLeaderboard;
+use App\Filament\Widgets\TotalActiveUsers;
 use App\Http\Middleware\RedirectGuestsToSlackLogin;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\Auth\Http\Responses\Contracts\LogoutResponse;
@@ -93,6 +94,7 @@ class AdminPanelProvider extends PanelProvider
             // weight.
             ->globalSearch(false)
             ->widgets([
+                TotalActiveUsers::class,
                 FleetQuotaOverview::class,
                 ActivityHeatmap::class,
                 TokenVolumeChart::class,

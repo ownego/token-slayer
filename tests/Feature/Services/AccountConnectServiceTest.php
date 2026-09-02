@@ -56,6 +56,30 @@ test('resolve updates an existing account matched by email and marks it active, 
         && $request['code'] === 'pasted-code');
 });
 
+test('resolve persists refresh_token_expires_in from the token response onto oauth_refresh_expires_at', function () {
+    fakeAnthropic();
+    Account::factory()->create(['email' => 'ongtung2212002@gmail.com', 'status' => AccountStatus::NeedsReauth]);
+    $started = $this->service->start();
+
+    $this->service->resolve($started['state'], 'pasted-code#'.$started['state']);
+
+    $account = Account::where('email', 'ongtung2212002@gmail.com')->first();
+    expect($account->oauth_refresh_expires_at)->not->toBeNull();
+});
+
+test('resolve leaves oauth_refresh_expires_at null when the token response omits refresh_token_expires_in', function () {
+    $tokenWithoutField = json_decode(file_get_contents(base_path('tests/fixtures/anthropic/token.json')), true);
+    unset($tokenWithoutField['refresh_token_expires_in']);
+    fakeAnthropic(['token' => Http::response($tokenWithoutField, 200)]);
+    Account::factory()->create(['email' => 'ongtung2212002@gmail.com', 'status' => AccountStatus::NeedsReauth]);
+    $started = $this->service->start();
+
+    $this->service->resolve($started['state'], 'pasted-code#'.$started['state']);
+
+    $account = Account::where('email', 'ongtung2212002@gmail.com')->first();
+    expect($account->oauth_refresh_expires_at)->toBeNull();
+});
+
 test('resolve updates an existing account matched by organization uuid when the email differs', function () {
     fakeAnthropic();
     $account = Account::factory()->create([
