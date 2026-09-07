@@ -77,8 +77,6 @@ class UsageProber implements UsageProberContract
         $snapshot = $account->usageSnapshots()->create([
             'util_5h' => $this->roundedUtilization($usage, 'five_hour'),
             'util_7d' => $this->roundedUtilization($usage, 'seven_day'),
-            'util_7d_sonnet' => $this->roundedUtilization($usage, 'seven_day_sonnet'),
-            'util_7d_oi' => $this->roundedUtilization($usage, 'seven_day_opus'),
             'reset_5h_at' => $this->parseResetsAt($usage, 'five_hour'),
             'reset_7d_at' => $this->parseResetsAt($usage, 'seven_day'),
             'raw' => $usage,

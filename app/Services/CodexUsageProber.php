@@ -107,8 +107,6 @@ class CodexUsageProber implements UsageProberContract
         $snapshot = $account->usageSnapshots()->create([
             'util_5h' => $this->roundedUtilization($session),
             'util_7d' => $this->roundedUtilization($weekly),
-            'util_7d_sonnet' => null,
-            'util_7d_oi' => null,
             'reset_5h_at' => $this->parseResetsAt($session),
             'reset_7d_at' => $this->parseResetsAt($weekly),
             'raw' => $usage,

@@ -48,8 +48,6 @@ test('a fresh token skips refresh and records a snapshot from the usage fixture'
     expect($snapshot)->toBeInstanceOf(AccountUsageSnapshot::class)
         ->and($snapshot->util_5h)->toBe(0)
         ->and($snapshot->util_7d)->toBe(25)
-        ->and($snapshot->util_7d_sonnet)->toBeNull()
-        ->and($snapshot->util_7d_oi)->toBeNull()
         ->and($snapshot->reset_5h_at)->not->toBeNull()
         ->and($snapshot->reset_7d_at)->not->toBeNull()
         ->and($snapshot->raw)->toHaveKey('limits')

@@ -25,8 +25,6 @@ class AccountUsageSnapshotFactory extends Factory
             'account_id' => Account::factory(),
             'util_5h' => $util5h,
             'util_7d' => $util7d,
-            'util_7d_sonnet' => $util7dSonnet,
-            'util_7d_oi' => $util7dOi,
             'reset_5h_at' => now()->addHours(5),
             'reset_7d_at' => now()->addDays(7),
             'raw' => [
