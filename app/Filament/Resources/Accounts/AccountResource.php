@@ -17,9 +17,9 @@ use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
 use App\Models\ClaudeCredential;
 use App\Services\AccountConnectService;
+use App\Services\Accounts\ModelQuotaLimits;
 use App\Services\Accounts\PlanBadgeResolver;
 use App\Services\Accounts\PlanResolver;
-use App\Services\Accounts\UsageBuckets;
 use App\Services\ProviderServiceFactory;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -227,20 +227,17 @@ class AccountResource extends Resource
                 TextEntry::make('last_probed_at')
                     ->since()
                     ->placeholder('Never'),
-                TextEntry::make('usage_buckets')
+                TextEntry::make('model_quota')
                     ->label('Per-model quota')
-                    // Read out of the stored probe response rather than typed
-                    // columns: the set of buckets Anthropic reports changes on
-                    // its own schedule, and a bucket can arrive under a
-                    // codename before its model is announced. See
-                    // {@see UsageBuckets} for why naming them is the thing to
-                    // avoid.
+                    // Read from the probe response's limits[], which names its
+                    // own model -- see {@see ModelQuotaLimits} for why the
+                    // top-level keys that look like the source are not it.
                     ->state(fn (Account $record): array => array_map(
-                        fn (array $bucket): string => "{$bucket['key']} — {$bucket['utilization']}%",
-                        UsageBuckets::from($record->latestUsageSnapshot?->raw),
+                        fn (array $limit): string => "{$limit['model']} — {$limit['percent']}%",
+                        ModelQuotaLimits::from($record->latestUsageSnapshot?->raw),
                     ))
                     ->badge()
-                    ->placeholder('No per-model buckets in the last probe'),
+                    ->placeholder('No per-model limits in the last probe'),
             ]);
     }
 

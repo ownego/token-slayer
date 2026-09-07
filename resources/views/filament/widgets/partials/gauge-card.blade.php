@@ -1,7 +1,7 @@
 {{--
     One quota gauge card. Expects $g = a QuotaGaugesQuery row:
     ['provider', 'email', 'plan', 'util_5h', 'util_7d', 'projected_5h', 'projected_7d',
-     'reset_5h_at', 'reset_7d_at', 'near_cap', 'model_buckets'].
+     'reset_5h_at', 'reset_7d_at', 'near_cap', 'model_limits'].
     Optionally $members = a list of the account's contributors, each
     ['handle', 'avatar_url', 'status', 'tokens']; omitted (empty) on the
     single-account gauge, populated on the Fleet Quota dashboard card.
@@ -68,17 +68,16 @@
         @endforeach
     </div>
 
-    {{-- Whatever per-model buckets the last probe happened to carry. Never a
-         fixed list: Anthropic's set changes between releases and a bucket can
-         arrive under a codename before its model is announced, so the key is
-         printed as received rather than translated. --}}
-    @if (! empty($g['model_buckets'] ?? []))
+    {{-- The per-model limits the last probe carried, each naming its own
+         model. Never a fixed list: a model released after this shipped shows
+         up under the name the API gives it. --}}
+    @if (! empty($g['model_limits'] ?? []))
         <div style="margin-top:.6rem; border-top:1px solid rgba(120,120,140,.16); padding-top:.5rem; display:flex; flex-wrap:wrap; gap:.3rem;">
-            @foreach ($g['model_buckets'] as $bucket)
+            @foreach ($g['model_limits'] as $limit)
                 <span
-                    title="{{ $bucket['resets_at'] ? 'resets '.$bucket['resets_at']->diffForHumans(['short' => true]) : 'no reset reported' }}"
-                    style="font-size:.62rem; font-variant-numeric:tabular-nums; padding:.12rem .4rem; border-radius:999px; border:1px solid {{ $barColor($bucket['utilization']) }}55; color:{{ $barColor($bucket['utilization']) }};"
-                >{{ $bucket['key'] }} {{ $bucket['utilization'] }}%</span>
+                    title="{{ $limit['resets_at'] ? 'resets '.$limit['resets_at']->diffForHumans(['short' => true]) : 'no reset reported' }}"
+                    style="font-size:.62rem; font-variant-numeric:tabular-nums; padding:.12rem .4rem; border-radius:999px; border:1px solid {{ $barColor($limit['percent']) }}55; color:{{ $barColor($limit['percent']) }};"
+                >{{ $limit['model'] }} {{ $limit['percent'] }}%</span>
             @endforeach
         </div>
     @endif

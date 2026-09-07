@@ -6,8 +6,8 @@ use App\Enums\AccountPlan;
 use App\Enums\CodexPlan;
 use App\Enums\Provider;
 use App\Models\Account;
+use App\Services\Accounts\ModelQuotaLimits;
 use App\Services\Accounts\PlanBadgeResolver;
-use App\Services\Accounts\UsageBuckets;
 use App\Services\QuotaProjection;
 use Illuminate\Support\Carbon;
 
@@ -54,11 +54,10 @@ final class QuotaGaugesQuery
                     'projected_5h' => $this->project($snapshot?->util_5h, $snapshot?->reset_5h_at, 5, 'hours'),
                     'projected_7d' => $this->project($snapshot?->util_7d, $snapshot?->reset_7d_at, 7, 'days'),
                     'near_cap' => ($snapshot?->util_7d ?? 0) >= 85,
-                    // Read out of the stored response, not typed columns: the
-                    // set of per-model buckets Anthropic reports changes on its
-                    // own schedule. See UsageBuckets for why none of them are
-                    // named here.
-                    'model_buckets' => UsageBuckets::from($snapshot?->raw),
+                    // From the response's limits[], which names its own model
+                    // -- see ModelQuotaLimits for why the top-level keys that
+                    // look like the source are not it.
+                    'model_limits' => ModelQuotaLimits::from($snapshot?->raw),
                 ];
             })
             ->all();

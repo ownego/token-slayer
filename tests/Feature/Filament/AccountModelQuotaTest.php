@@ -9,7 +9,7 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
-it('lists a per-model bucket the server was never taught about', function () {
+it('lists a per-model limit under the name the API gives it', function () {
     // The whole point: a bucket that did not exist when this shipped is
     // visible without a migration or a deploy.
     $admin = User::factory()->admin()->create();
@@ -17,16 +17,17 @@ it('lists a per-model bucket the server was never taught about', function () {
     AccountUsageSnapshot::factory()->for($account)->create([
         'util_5h' => 10,
         'util_7d' => 20,
-        'raw' => [
-            'five_hour' => ['utilization' => 10],
-            'seven_day' => ['utilization' => 20],
-            'nimbus_quill' => ['utilization' => 73],
-        ],
+        'raw' => ['limits' => [
+            ['kind' => 'session', 'percent' => 10, 'scope' => null],
+            ['kind' => 'weekly_all', 'percent' => 20, 'scope' => null],
+            ['kind' => 'weekly_scoped', 'percent' => 73,
+                'scope' => ['model' => ['id' => null, 'display_name' => 'Fable']]],
+        ]],
     ]);
 
     Livewire::actingAs($admin)->test(ViewAccount::class, ['record' => $account->id])
         ->assertOk()
-        ->assertSee('nimbus_quill')
+        ->assertSee('Fable')
         ->assertSee('73%');
 });
 
@@ -36,10 +37,13 @@ it('does not repeat the account-wide figures as if they were models', function (
     AccountUsageSnapshot::factory()->for($account)->create([
         'util_5h' => 10,
         'util_7d' => 20,
-        'raw' => ['five_hour' => ['utilization' => 10], 'seven_day' => ['utilization' => 20]],
+        'raw' => ['limits' => [
+            ['kind' => 'session', 'percent' => 10, 'scope' => null],
+            ['kind' => 'weekly_all', 'percent' => 20, 'scope' => null],
+        ]],
     ]);
 
     Livewire::actingAs($admin)->test(ViewAccount::class, ['record' => $account->id])
         ->assertOk()
-        ->assertDontSee('five_hour');
+        ->assertDontSee('weekly_all');
 });
