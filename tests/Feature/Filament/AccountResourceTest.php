@@ -240,8 +240,10 @@ it('shows the latest usage utilization in the account table', function () {
 
     Livewire::actingAs($admin)
         ->test(ListAccounts::class)
-        ->assertTableColumnStateSet('latestUsageSnapshot.util_5h', 12, $account)
-        ->assertTableColumnStateSet('latestUsageSnapshot.util_7d', 34, $account);
+        // Each cell names its own window: Codex reports neither 5h nor 7d,
+        // so the header cannot name them for every row.
+        ->assertTableColumnStateSet('usage_window_1', '5h 12%', $account)
+        ->assertTableColumnStateSet('usage_window_2', '7d 34%', $account);
 });
 
 it('renders the plan label on the accounts table', function (): void {

@@ -17,6 +17,7 @@ use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
 use App\Models\ClaudeCredential;
 use App\Services\AccountConnectService;
+use App\Services\Accounts\CodexUsageWindows;
 use App\Services\Accounts\ModelQuotaLimits;
 use App\Services\Accounts\PlanBadgeResolver;
 use App\Services\Accounts\PlanResolver;
@@ -142,16 +143,26 @@ class AccountResource extends Resource
                     ->sortable(),
                 TextColumn::make('status')
                     ->badge(),
-                TextColumn::make('latestUsageSnapshot.util_5h')
-                    ->label('5h')
+                // Each cell names its own window rather than the header doing
+                // it: Codex does not report Claude's 5h/7d pair, so a fixed
+                // "5h" header would either mislabel its 30-day cap or, once
+                // that misfiling was corrected, leave the column empty.
+                TextColumn::make('usage_window_1')
+                    ->label('Usage')
                     ->badge()
-                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : "{$state}%")
-                    ->color(fn (?int $state): string => static::utilizationColor($state)),
-                TextColumn::make('latestUsageSnapshot.util_7d')
-                    ->label('7d')
+                    ->state(fn (Account $record): ?string => static::usageWindowLabel($record, 0))
+                    ->placeholder('—')
+                    ->color(fn (Account $record): string => static::utilizationColor(
+                        static::usageWindows($record)[0]['percent'] ?? null,
+                    )),
+                TextColumn::make('usage_window_2')
+                    ->label('')
                     ->badge()
-                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : "{$state}%")
-                    ->color(fn (?int $state): string => static::utilizationColor($state)),
+                    ->state(fn (Account $record): ?string => static::usageWindowLabel($record, 1))
+                    ->placeholder('')
+                    ->color(fn (Account $record): string => static::utilizationColor(
+                        static::usageWindows($record)[1]['percent'] ?? null,
+                    )),
                 TextColumn::make('last_probed_at')
                     ->since()
                     ->placeholder('Never')
@@ -338,6 +349,55 @@ class AccountResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with('latestUsageSnapshot');
+    }
+
+    /**
+     * The usage windows an account's latest probe reported, in the order it
+     * reported them.
+     *
+     * Claude always reports the same 5h/7d pair, so those come straight off
+     * the typed columns. Codex reports whatever its plan carries — a
+     * free-tier account a single 30-day cap — so its windows are read back
+     * from the stored response with the duration each one states. See
+     * {@see CodexUsageWindows} for why that is not assumed by position.
+     *
+     * @param  Account  $record  the account row being rendered
+     * @return array<int, array{label: string, percent: int}>
+     */
+    public static function usageWindows(Account $record): array
+    {
+        $snapshot = $record->latestUsageSnapshot;
+
+        if ($snapshot === null) {
+            return [];
+        }
+
+        if ($record->provider === Provider::Codex) {
+            return array_map(
+                fn (array $window): array => ['label' => $window['label'], 'percent' => $window['percent']],
+                CodexUsageWindows::from($snapshot->raw),
+            );
+        }
+
+        return array_values(array_filter([
+            $snapshot->util_5h === null ? null : ['label' => '5h', 'percent' => $snapshot->util_5h],
+            $snapshot->util_7d === null ? null : ['label' => '7d', 'percent' => $snapshot->util_7d],
+        ]));
+    }
+
+    /**
+     * One usage window rendered for a table cell, or null when the account
+     * reported no such window.
+     *
+     * @param  Account  $record  the account row being rendered
+     * @param  int  $position  0 for the first window, 1 for the second
+     * @return ?string
+     */
+    private static function usageWindowLabel(Account $record, int $position): ?string
+    {
+        $window = static::usageWindows($record)[$position] ?? null;
+
+        return $window === null ? null : "{$window['label']} {$window['percent']}%";
     }
 
     /**
