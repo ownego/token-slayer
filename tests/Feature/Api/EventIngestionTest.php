@@ -71,6 +71,7 @@ test('SubagentStop event with tokens damages the current boss just like Stop', f
             'session_id' => 'sess-1:agent-abc',
             'tokens' => 250_000,
             'models' => ['claude-haiku-4-5-20251001' => 250_000],
+            'hook_version' => '5',
         ])
         ->assertCreated();
 
@@ -89,12 +90,64 @@ test('SubagentStop event persists the hook-combined session_id and model verbati
             'session_id' => 'sess-1:agent-abc',
             'tokens' => 100,
             'models' => ['claude-haiku-4-5-20251001' => 100],
+            'hook_version' => '5',
         ])
         ->assertCreated();
 
     $event = Event::sole();
     expect($event->session_id)->toBe('sess-1:agent-abc')
         ->and($event->model)->toBe('claude-haiku-4-5-20251001');
+});
+
+test('ignores subagent tokens from a hook too old to say which transcript it read', function () {
+    // A pre-5 hook has no per-event guard: it walks `transcript_path` on every
+    // invocation, and on SubagentStop that path is the PARENT session's
+    // transcript, not the subagent's. It has always posted the parent's last
+    // turn under SubagentStop -- harmless only because the server ignored the
+    // event entirely. Now that SubagentStop counts, accepting it would charge
+    // the same turn again for every subagent a developer dispatches.
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'SubagentStop',
+            'session_id' => 'sess-1',
+            'tokens' => 250_000,
+        ])
+        ->assertCreated();
+
+    // No row at all, which is how every other zero-token event already
+    // behaves -- the ledger records usage, and this payload reports none we
+    // can trust.
+    expect(Event::count())->toBe(0)
+        ->and(Boss::sole()->current_hp)->toBe(1_000_000);
+});
+
+test('ignores subagent tokens from a hook version below the transcript fix', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'SubagentStop',
+            'session_id' => 'sess-1',
+            'tokens' => 250_000,
+            'hook_version' => '4',
+        ])
+        ->assertCreated();
+
+    expect(Event::count())->toBe(0);
+});
+
+test('still counts a plain Stop from a hook that sends no version', function () {
+    // The guard is scoped to SubagentStop on purpose. Stop has always been
+    // read from the right transcript, so gating it would silently stop
+    // counting every developer who has not re-run the installer.
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-1',
+            'tokens' => 250_000,
+        ])
+        ->assertCreated();
+
+    expect(Event::sole()->tokens)->toBe(250_000)
+        ->and(Boss::sole()->current_hp)->toBe(750_000);
 });
 
 test('Stop event without inline tokens no longer reads the transcript', function () {

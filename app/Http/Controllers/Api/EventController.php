@@ -24,6 +24,28 @@ use Illuminate\Http\Request;
 
 class EventController extends Controller
 {
+    /**
+     * The first hook version that reads a SubagentStop's OWN transcript.
+     *
+     * Every earlier hook computes tokens on every invocation from
+     * `transcript_path`, which on a SubagentStop is the PARENT session's
+     * file — so it reports the parent's last turn under the subagent's event.
+     * That was harmless while the server ignored SubagentStop entirely; now
+     * that the event counts, an un-upgraded hook would charge the same turn
+     * again for every subagent dispatched. Those clients cannot upgrade
+     * themselves either — the auto-update mechanism ships in the same release
+     * — so the server has to refuse the value rather than wait for them.
+     *
+     * Read per request, never from `users.hook_version`: one developer can
+     * run an upgraded laptop and an un-upgraded desktop, and the stored
+     * column only remembers whichever reported last.
+     *
+     * Remove this guard once `users.hook_version` shows no one below it.
+     *
+     * @var int
+     */
+    private const int SUBAGENT_TOKENS_MIN_HOOK_VERSION = 5;
+
     public function __construct(
         private DamageService $damage,
         private ModelUsageParser $models,
@@ -247,7 +269,31 @@ class EventController extends Controller
             return null;
         }
 
+        if ($eventType === 'subagent-stop' && ! $this->reportsItsOwnSubagentTranscript($payload)) {
+            return null;
+        }
+
         return TurnUsage::fromPayload($payload, $this->models);
+    }
+
+    /**
+     * Whether this payload came from a hook new enough for its SubagentStop
+     * token count to mean the subagent's own usage.
+     *
+     * `hook_version` is the only field that appears exactly with such a hook —
+     * every other field it sends, an older hook sends too. It is also the
+     * only one always present: the payload is filtered through
+     * `with_entries(select(.value != null))` before it leaves the machine, so
+     * `models` can legitimately be absent from a new hook's event.
+     *
+     * @param  array<string, mixed>  $payload  the raw hook payload
+     * @return bool
+     */
+    private function reportsItsOwnSubagentTranscript(array $payload): bool
+    {
+        $version = $payload['hook_version'] ?? null;
+
+        return is_numeric($version) && (int) $version >= self::SUBAGENT_TOKENS_MIN_HOOK_VERSION;
     }
 
     /**
