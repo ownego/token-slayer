@@ -69,16 +69,27 @@
     </div>
 
     {{-- The per-model limits the last probe carried, each naming its own
-         model. Never a fixed list: a model released after this shipped shows
-         up under the name the API gives it. --}}
+         model. Laid out as the same label/percent/bar row as the windows
+         above rather than as chips: a bare "Fable 28%" reads as one run-on
+         string, and the eye has nothing to compare one model against
+         another with. Never a fixed list -- a model released after this
+         shipped shows up under the name the API gives it. --}}
     @if (! empty($g['model_limits'] ?? []))
-        <div style="margin-top:.6rem; border-top:1px solid rgba(120,120,140,.16); padding-top:.5rem; display:flex; flex-wrap:wrap; gap:.3rem;">
-            @foreach ($g['model_limits'] as $limit)
-                <span
-                    title="{{ $limit['resets_at'] ? 'resets '.$limit['resets_at']->diffForHumans(['short' => true]) : 'no reset reported' }}"
-                    style="font-size:.62rem; font-variant-numeric:tabular-nums; padding:.12rem .4rem; border-radius:999px; border:1px solid {{ $barColor($limit['percent']) }}55; color:{{ $barColor($limit['percent']) }};"
-                >{{ $limit['model'] }} {{ $limit['percent'] }}%</span>
-            @endforeach
+        <div style="margin-top:.7rem; border-top:1px solid rgba(120,120,140,.16); padding-top:.6rem;">
+            <div style="font-size:.62rem; text-transform:uppercase; letter-spacing:.05em; opacity:.55; margin-bottom:.45rem;">Per model</div>
+            <div style="display:flex; flex-direction:column; gap:.5rem;">
+                @foreach ($g['model_limits'] as $limit)
+                    <div title="{{ $limit['resets_at'] ? 'resets '.$limit['resets_at']->diffForHumans(['short' => true]) : 'no reset reported' }}">
+                        <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:.72rem; opacity:.75; margin-bottom:.2rem; gap:.5rem;">
+                            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ $limit['model'] }}</span>
+                            <span style="font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap;">{{ $limit['percent'] }}%</span>
+                        </div>
+                        <div style="height:.3rem; border-radius:999px; background:rgba(120,120,140,.18); overflow:hidden;">
+                            <div style="height:100%; border-radius:999px; width:{{ max(0, min(100, $limit['percent'])) }}%; background:{{ $barColor($limit['percent']) }}; transition:width .2s;"></div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
         </div>
     @endif
 
