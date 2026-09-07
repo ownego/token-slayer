@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Middleware\AuthenticateAdminBearer;
 use App\Http\Middleware\AuthenticateHookToken;
 use App\Http\Middleware\AuthenticateIdeBearer;
 use App\Http\Middleware\EstablishIdeSession;
@@ -20,7 +19,6 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'hook.token' => AuthenticateHookToken::class,
             'ide.bearer' => AuthenticateIdeBearer::class,
-            'admin.bearer' => AuthenticateAdminBearer::class,
         ]);
 
         $middleware->web(append: [

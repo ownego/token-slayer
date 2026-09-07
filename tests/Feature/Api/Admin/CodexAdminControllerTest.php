@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Account;
-use App\Models\IdeAccessToken;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -28,10 +27,13 @@ function fakeCodexAuthJsonBody(): array
 
 function adminBearerHeader(): array
 {
+    // The admin API takes the SAME hook_token every employee already has —
+    // authorization is a live role check on the resolved user, not a second
+    // credential. See AuthenticateHookToken's `:admin` capability.
     Role::create(['name' => 'admin']);
-    $user = User::factory()->create();
+    $plain = 'plain-hook-token-for-admin-fixture';
+    $user = User::factory()->create(['hook_token' => hash('sha256', $plain)]);
     $user->assignRole('admin');
-    [$plain] = IdeAccessToken::issueAdminBearer($user);
 
     return ['Authorization' => "Bearer {$plain}"];
 }
@@ -63,9 +65,21 @@ it('provisions a device via the admin API', function (): void {
     $response->assertOk()->assertJson(['message' => 'Provisioned for employee@example.com']);
 });
 
-it('rejects both endpoints without a valid admin bearer', function (): void {
+it('rejects both endpoints without a valid hook token', function (): void {
     $this->postJson('/api/admin/codex/connect', ['name' => 'x', 'auth_json' => []])->assertStatus(401);
     $this->postJson('/api/admin/codex/provision', ['account' => 'x', 'email' => 'a@b.com', 'auth_json' => []])->assertStatus(401);
+});
+
+it('rejects a valid hook token from a user holding no role', function (): void {
+    // The token every employee already has must not, by itself, reach this
+    // API — the role check is what makes it an admin request, not the token.
+    $plain = 'plain-hook-token-for-no-role-fixture';
+    User::factory()->create(['hook_token' => hash('sha256', $plain)]);
+
+    $response = $this->withHeaders(['Authorization' => "Bearer {$plain}"])
+        ->postJson('/api/admin/codex/connect', ['name' => 'x', 'auth_json' => []]);
+
+    $response->assertStatus(403);
 });
 
 it('returns 404 provisioning to an unknown account name', function (): void {

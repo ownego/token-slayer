@@ -34,7 +34,7 @@ Route::middleware('throttle:30,1')->prefix('ide')->group(function (): void {
     });
 });
 
-Route::middleware('admin.bearer')->prefix('admin/codex')->group(function (): void {
+Route::middleware('hook.token:admin')->prefix('admin/codex')->group(function (): void {
     Route::post('/connect', [CodexAdminController::class, 'connect']);
     Route::post('/provision', [CodexAdminController::class, 'provision']);
 });
