@@ -1,7 +1,7 @@
 {{--
     One quota gauge card. Expects $g = a QuotaGaugesQuery row:
     ['provider', 'email', 'plan', 'util_5h', 'util_7d', 'projected_5h', 'projected_7d',
-     'reset_5h_at', 'reset_7d_at', 'near_cap'].
+     'reset_5h_at', 'reset_7d_at', 'near_cap', 'model_buckets'].
     Optionally $members = a list of the account's contributors, each
     ['handle', 'avatar_url', 'status', 'tokens']; omitted (empty) on the
     single-account gauge, populated on the Fleet Quota dashboard card.
@@ -67,6 +67,21 @@
             </div>
         @endforeach
     </div>
+
+    {{-- Whatever per-model buckets the last probe happened to carry. Never a
+         fixed list: Anthropic's set changes between releases and a bucket can
+         arrive under a codename before its model is announced, so the key is
+         printed as received rather than translated. --}}
+    @if (! empty($g['model_buckets'] ?? []))
+        <div style="margin-top:.6rem; border-top:1px solid rgba(120,120,140,.16); padding-top:.5rem; display:flex; flex-wrap:wrap; gap:.3rem;">
+            @foreach ($g['model_buckets'] as $bucket)
+                <span
+                    title="{{ $bucket['resets_at'] ? 'resets '.$bucket['resets_at']->diffForHumans(['short' => true]) : 'no reset reported' }}"
+                    style="font-size:.62rem; font-variant-numeric:tabular-nums; padding:.12rem .4rem; border-radius:999px; border:1px solid {{ $barColor($bucket['utilization']) }}55; color:{{ $barColor($bucket['utilization']) }};"
+                >{{ $bucket['key'] }} {{ $bucket['utilization'] }}%</span>
+            @endforeach
+        </div>
+    @endif
 
     @if (! empty($members))
         <div style="margin-top:.75rem; border-top:1px solid rgba(120,120,140,.16); padding-top:.55rem; display:flex; flex-direction:column; gap:.4rem;">
