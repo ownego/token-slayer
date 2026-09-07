@@ -89,3 +89,32 @@ test('the gauge card labels a Codex window by the duration it actually reports',
         ->assertSee('30D')
         ->assertSee('4%');
 });
+
+test('flags a Codex account near its cap, whatever window it reports', function () {
+    // near_cap read util_7d, which a Codex account never has — so one at 95%
+    // of its only window was never flagged. It read util_7d while the Codex
+    // figure was being misfiled into util_5h, so it has never worked here.
+    $account = Account::factory()->create(['email' => 'hot-codex@example.com', 'provider' => 'codex']);
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_5h' => null, 'util_7d' => null,
+        'raw' => ['rate_limit' => [
+            'primary_window' => ['used_percent' => 95, 'limit_window_seconds' => 2592000],
+        ]],
+        'created_at' => now(),
+    ]);
+
+    Livewire::test(FleetQuotaOverview::class)->assertOk()->assertSee('NEAR CAP');
+});
+
+test('does not flag a Codex account that is nowhere near its cap', function () {
+    $account = Account::factory()->create(['email' => 'cool-codex@example.com', 'provider' => 'codex']);
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_5h' => null, 'util_7d' => null,
+        'raw' => ['rate_limit' => [
+            'primary_window' => ['used_percent' => 4, 'limit_window_seconds' => 2592000],
+        ]],
+        'created_at' => now(),
+    ]);
+
+    Livewire::test(FleetQuotaOverview::class)->assertOk()->assertDontSee('NEAR CAP');
+});
