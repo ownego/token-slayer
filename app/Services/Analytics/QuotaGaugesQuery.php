@@ -6,6 +6,7 @@ use App\Enums\AccountPlan;
 use App\Enums\CodexPlan;
 use App\Enums\Provider;
 use App\Models\Account;
+use App\Services\Accounts\CodexUsageWindows;
 use App\Services\Accounts\ModelQuotaLimits;
 use App\Services\Accounts\PlanBadgeResolver;
 use App\Services\QuotaProjection;
@@ -58,6 +59,13 @@ final class QuotaGaugesQuery
                     // -- see ModelQuotaLimits for why the top-level keys that
                     // look like the source are not it.
                     'model_limits' => ModelQuotaLimits::from($snapshot?->raw),
+                    // Codex reports its own windows and they are not the 5h/7d
+                    // pair -- a free-tier account has a single 30-day cap. The
+                    // card renders these instead of the two fixed rows, so a
+                    // window is never shown under a duration it does not have.
+                    'codex_windows' => $account->provider === Provider::Codex
+                        ? CodexUsageWindows::from($snapshot?->raw)
+                        : [],
                 ];
             })
             ->all();

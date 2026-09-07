@@ -69,3 +69,23 @@ test('the gauge card does not repeat the account-wide figures as models', functi
         ->assertOk()
         ->assertDontSee('weekly_all');
 });
+
+test('the gauge card labels a Codex window by the duration it actually reports', function () {
+    // A free-tier Codex account reports one 30-day cap. Showing it under the
+    // card's 5H row would put a month's usage behind an hour's name.
+    $account = Account::factory()->create(['email' => 'codex@example.com', 'provider' => 'codex']);
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_5h' => null,
+        'util_7d' => null,
+        'raw' => ['rate_limit' => [
+            'primary_window' => ['used_percent' => 4, 'limit_window_seconds' => 2592000],
+            'secondary_window' => null,
+        ]],
+        'created_at' => now(),
+    ]);
+
+    Livewire::test(FleetQuotaOverview::class)
+        ->assertOk()
+        ->assertSee('30D')
+        ->assertSee('4%');
+});

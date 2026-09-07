@@ -1,7 +1,7 @@
 {{--
     One quota gauge card. Expects $g = a QuotaGaugesQuery row:
     ['provider', 'email', 'plan', 'util_5h', 'util_7d', 'projected_5h', 'projected_7d',
-     'reset_5h_at', 'reset_7d_at', 'near_cap', 'model_limits'].
+     'reset_5h_at', 'reset_7d_at', 'near_cap', 'model_limits', 'codex_windows'].
     Optionally $members = a list of the account's contributors, each
     ['handle', 'avatar_url', 'status', 'tokens']; omitted (empty) on the
     single-account gauge, populated on the Fleet Quota dashboard card.
@@ -16,7 +16,16 @@
         ? 'border:1px solid rgba(220,38,38,.55); background:rgba(220,38,38,.06);'
         : 'border:1px solid rgba(120,120,140,.22);';
     $barColor = fn (?int $pct): string => ($pct ?? 0) >= 90 ? '#dc2626' : (($pct ?? 0) >= 70 ? '#d97706' : '#059669');
-    $windows = [
+    // Codex reports its own windows, and they are not the 5h/7d pair: a
+    // free-tier account has a single 30-day cap. Rendering those instead of
+    // the two fixed rows keeps every figure under the duration it actually
+    // measures.
+    $windows = collect($g['codex_windows'] ?? [])
+        ->mapWithKeys(fn (array $w): array => [
+            $w['label'] => ['util' => $w['percent'], 'reset' => $w['resets_at'], 'proj' => null],
+        ])
+        ->all();
+    $windows = $windows ?: [
         '5h' => ['util' => $g['util_5h'], 'reset' => $g['reset_5h_at'], 'proj' => $g['projected_5h']],
         '7d' => ['util' => $g['util_7d'], 'reset' => $g['reset_7d_at'], 'proj' => $g['projected_7d']],
     ];

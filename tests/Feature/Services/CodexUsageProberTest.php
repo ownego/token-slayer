@@ -2,6 +2,7 @@
 
 use App\Models\Account;
 use App\Models\CodexCredential;
+use App\Services\Accounts\CodexUsageWindows;
 use App\Services\CodexUsageProber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -21,12 +22,20 @@ it('records a usage snapshot from the real captured response shape (free-tier, s
     $snapshot = app(CodexUsageProber::class)->probe($account->fresh());
 
     expect($snapshot)->not->toBeNull()
-        // A free-tier account's single window is a 30-day monthly cap, not the
-        // 5h/weekly split — it doesn't match either known duration, so it
-        // classifies as the primary/session slot per the fallback rule.
-        ->and($snapshot->util_5h)->toBe(0)
+        // A free-tier account's single window is a 30-day monthly cap, not
+        // the 5h/weekly split. It used to be filed into the 5-hour column
+        // anyway, which put a month's usage behind an hour's name. Neither
+        // typed column is a truthful home for it, so both stay null and the
+        // window is read back from `raw` with its real duration — see
+        // {@see CodexUsageWindows}.
+        ->and($snapshot->util_5h)->toBeNull()
         ->and($snapshot->util_7d)->toBeNull()
-        ->and($snapshot->reset_5h_at)->not->toBeNull()
+        // No reset either: the deadline belonged to the window that is no
+        // longer being filed here.
+        ->and($snapshot->reset_5h_at)->toBeNull()
+        // The window itself is not lost — `raw` keeps it, labelled by its own
+        // duration rather than by a column it does not fit.
+        ->and(CodexUsageWindows::from($snapshot->raw)[0]['label'])->toBe('30D')
         ->and($account->fresh()->last_probed_at)->not->toBeNull()
         ->and($account->fresh()->probe_error)->toBeNull();
 
