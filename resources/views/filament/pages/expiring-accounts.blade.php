@@ -12,6 +12,7 @@
                             <th style="padding:.4rem .6rem;">Account</th>
                             <th style="padding:.4rem .6rem;">Provider</th>
                             <th style="padding:.4rem .6rem;">Status</th>
+                            <th style="padding:.4rem .6rem;">Grant</th>
                             <th style="padding:.4rem .6rem;">Repair</th>
                         </tr>
                     </thead>
@@ -25,6 +26,18 @@
                                     </x-filament::badge>
                                 </td>
                                 <td style="padding:.4rem .6rem; opacity:.85;">{{ $row['label'] }}</td>
+                                {{-- Independent of the Status column: that reflects the shared
+                                     credential's own health, this reflects whether a per-employee
+                                     grant is already out awaiting pull -- an admin who already
+                                     reissued one otherwise has no way to tell "already did this"
+                                     from "haven't yet" while the row keeps showing here. --}}
+                                <td style="padding:.4rem .6rem;">
+                                    @if ($row['has_fresh_pending_grant'])
+                                        <x-filament::badge color="success">🟢 pending — awaiting pull</x-filament::badge>
+                                    @else
+                                        <x-filament::badge color="danger">🔴 no live grant yet</x-filament::badge>
+                                    @endif
+                                </td>
                                 {{-- The repair the admin came here to run, aimed at this row's
                                      account, so a listed account never has to be opened just to
                                      act on it. Claude gets a record-bound re-connect; Codex has

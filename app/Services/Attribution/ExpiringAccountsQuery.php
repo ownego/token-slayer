@@ -3,9 +3,12 @@
 namespace App\Services\Attribution;
 
 use App\Enums\AccountStatus;
+use App\Enums\GrantStatus;
 use App\Enums\Provider;
+use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
 use App\Models\ClaudeCredential;
+use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -34,6 +37,31 @@ use Illuminate\Support\Collection;
 final class ExpiringAccountsQuery
 {
     /**
+     * Whether `$account` already has a grant an admin should treat as
+     * "handled, awaiting pull" — a live (non-revoked), still-Pending grant
+     * younger than {@see CacheKeys::PROVISIONED_GRANT_PENDING_BADGE_SECONDS}.
+     * Reuses that exact threshold rather than inventing a second one: it is
+     * the same moment {@see ProvisionsRelationManager}
+     * starts badging the row "Pending (expired)", so the two surfaces agree
+     * on when "just issued" stops meaning that.
+     *
+     * A `Claimed` grant does not count — an employee having already pulled it
+     * is not the thing this signal exists to reassure the admin about, and
+     * this account is on the Expiring list for its OWN credential's health,
+     * unrelated to whether any one device's grant was ever claimed.
+     *
+     * @param  Account  $account  the account being checked
+     * @return bool
+     */
+    private function hasFreshPendingGrant(Account $account): bool
+    {
+        return $account->provisionedGrants()
+            ->where('status', GrantStatus::Pending->value)
+            ->where('provisioned_at', '>', now()->subSeconds(CacheKeys::PROVISIONED_GRANT_PENDING_BADGE_SECONDS))
+            ->exists();
+    }
+
+    /**
      * @var int
      */
     private const int CLAUDE_WARNING_DAYS = 3;
@@ -55,7 +83,7 @@ final class ExpiringAccountsQuery
     private const int CODEX_STALENESS_DAYS = 8;
 
     /**
-     * @return array<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon}>
+     * @return array<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool}>
      */
     public function get(): array
     {
@@ -63,7 +91,7 @@ final class ExpiringAccountsQuery
     }
 
     /**
-     * @return Collection<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon}>
+     * @return Collection<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool}>
      */
     private function claudeRows(): Collection
     {
@@ -103,6 +131,7 @@ final class ExpiringAccountsQuery
                 'deadline' => $account->claudeCredential->status === AccountStatus::NeedsReauth
                     ? null
                     : $account->claudeCredential->oauth_refresh_expires_at,
+                'has_fresh_pending_grant' => $this->hasFreshPendingGrant($account),
             ]);
     }
 
@@ -130,7 +159,7 @@ final class ExpiringAccountsQuery
     }
 
     /**
-     * @return Collection<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon}>
+     * @return Collection<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool}>
      */
     private function codexRows(): Collection
     {
@@ -152,6 +181,7 @@ final class ExpiringAccountsQuery
                 'provider' => Provider::Codex,
                 'label' => "hasn't refreshed recently — may need attention",
                 'deadline' => null,
+                'has_fresh_pending_grant' => $this->hasFreshPendingGrant($account),
             ]);
     }
 }

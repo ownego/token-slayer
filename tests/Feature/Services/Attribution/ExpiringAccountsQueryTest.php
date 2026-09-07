@@ -3,6 +3,7 @@
 use App\Enums\AccountStatus;
 use App\Enums\Provider;
 use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
 use App\Models\ClaudeCredential;
 use App\Models\CodexCredential;
 use App\Services\Attribution\ExpiringAccountsQuery;
@@ -141,4 +142,56 @@ it('leaves a disabled claude account out of the list entirely', function (): voi
 
     expect(collect(app(ExpiringAccountsQuery::class)->get())->pluck('account_id'))
         ->not->toContain($account->id);
+});
+
+it('flags a fresh pending grant on an expiring claude account', function (): void {
+    // The admin's own worry: they already reissued a grant for this expiring
+    // account, but the employee has not pulled it yet. Nothing here should
+    // read as "still untouched" while a fresh grant is sitting there.
+    $account = Account::create(['email' => 'soon@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()
+        ->for($account)
+        ->pending()
+        ->create(['provisioned_at' => now()->subHours(2)]);
+
+    $rows = app(ExpiringAccountsQuery::class)->get();
+
+    $row = collect($rows)->firstWhere('account_id', $account->id);
+    expect($row['has_fresh_pending_grant'])->toBeTrue();
+});
+
+it('does not flag a pending grant that has gone stale past the 24h badge window', function (): void {
+    $account = Account::create(['email' => 'soon@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()
+        ->for($account)
+        ->pending()
+        ->create(['provisioned_at' => now()->subHours(25)]);
+
+    $rows = app(ExpiringAccountsQuery::class)->get();
+
+    $row = collect($rows)->firstWhere('account_id', $account->id);
+    expect($row['has_fresh_pending_grant'])->toBeFalse();
+});
+
+it('does not flag an expiring account with no grant at all', function (): void {
+    $account = Account::create(['email' => 'soon@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+
+    $rows = app(ExpiringAccountsQuery::class)->get();
+
+    $row = collect($rows)->firstWhere('account_id', $account->id);
+    expect($row['has_fresh_pending_grant'])->toBeFalse();
+});
+
+it('does not flag an expiring account whose only grant is revoked', function (): void {
+    $account = Account::create(['email' => 'soon@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()->for($account)->revoked()->create();
+
+    $rows = app(ExpiringAccountsQuery::class)->get();
+
+    $row = collect($rows)->firstWhere('account_id', $account->id);
+    expect($row['has_fresh_pending_grant'])->toBeFalse();
 });

@@ -2,6 +2,7 @@
 
 use App\Filament\Pages\ExpiringAccounts;
 use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
 use App\Models\ClaudeCredential;
 use App\Models\CodexCredential;
 use App\Models\User;
@@ -76,4 +77,69 @@ it('offers a usage refresh on a Codex row instead of a reconnect', function (): 
         ->assertOk()
         ->assertSee('stale@example.com')
         ->assertActionExists('refreshAccountUsage');
+});
+
+it('splits the sidebar badge into a green pending count and a red unhandled count', function (): void {
+    // Two accounts on the Expiring list: one already has a fresh grant out
+    // (the admin's own worry from being unable to tell), one has nothing.
+    $handled = Account::create(['email' => 'handled@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $handled->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()->for($handled)->pending()
+        ->create(['provisioned_at' => now()->subHour()]);
+
+    $untouched = Account::create(['email' => 'untouched@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $untouched->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+
+    expect(ExpiringAccounts::getNavigationBadge())->toBe('🟢1 pending  🔴1 exp');
+});
+
+it('omits a zero half of the badge instead of showing it empty', function (): void {
+    $handled = Account::create(['email' => 'handled@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $handled->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()->for($handled)->pending()
+        ->create(['provisioned_at' => now()->subHour()]);
+
+    expect(ExpiringAccounts::getNavigationBadge())->toBe('🟢1 pending');
+});
+
+it('shows no sidebar badge at all when nothing is expiring', function (): void {
+    expect(ExpiringAccounts::getNavigationBadge())->toBeNull();
+});
+
+it('spells out each bucket in the badge tooltip', function (): void {
+    $handled = Account::create(['email' => 'handled@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $handled->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()->for($handled)->pending()
+        ->create(['provisioned_at' => now()->subHour()]);
+
+    $untouched = Account::create(['email' => 'untouched@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $untouched->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+
+    $tooltip = ExpiringAccounts::getNavigationBadgeTooltip();
+
+    expect($tooltip)->toContain('pending')->toContain('awaiting pull')
+        ->and($tooltip)->toContain('exp')->toContain('no live grant');
+});
+
+it('shows a green pending badge on a row that already has a fresh grant', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::create(['email' => 'handled@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()->for($account)->pending()
+        ->create(['provisioned_at' => now()->subHour()]);
+
+    Livewire::actingAs($admin)->test(ExpiringAccounts::class)
+        ->assertOk()
+        ->assertSee('🟢')
+        ->assertSee('pending');
+});
+
+it('shows a red unhandled badge on a row with no live grant', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::create(['email' => 'untouched@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDay()]);
+
+    Livewire::actingAs($admin)->test(ExpiringAccounts::class)
+        ->assertOk()
+        ->assertSee('🔴');
 });
