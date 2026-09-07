@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Services\Provisioning\LegacyGrantBackfiller;
 use Illuminate\Support\Facades\Cache;
 
@@ -57,7 +58,24 @@ final class CacheKeys
      *
      * @var int
      */
-    public const int PROVISIONED_GRANT_TTL_SECONDS = 86400;
+    public const int PROVISIONED_GRANT_TTL_SECONDS = 604800;
+
+    /**
+     * How long a still-unclaimed provisioned grant looks normal before the
+     * admin UI badges it "Pending (expired)" in
+     * {@see ProvisionsRelationManager}.
+     *
+     * Deliberately a SEPARATE constant from
+     * {@see self::PROVISIONED_GRANT_TTL_SECONDS} even though both used to
+     * share one value: they answer different questions — how long the cached
+     * secret stays fetchable, versus when a pending row stops looking normal
+     * — and must be able to move independently. Tying the badge to the
+     * secret's lifetime is what made lengthening that lifetime also silence
+     * the staleness signal for a week.
+     *
+     * @var int
+     */
+    public const int PROVISIONED_GRANT_PENDING_BADGE_SECONDS = 86400;
 
     /**
      * Build the cache key for one account's tracked-members aggregate map.

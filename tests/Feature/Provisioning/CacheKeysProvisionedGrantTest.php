@@ -5,7 +5,13 @@ use Illuminate\Support\Facades\Cache;
 
 it('builds the per-grant secret key and forgets it', function () {
     expect(CacheKeys::provisionedGrant(42))->toBe('provisioned:grant:42')
-        ->and(CacheKeys::PROVISIONED_GRANT_TTL_SECONDS)->toBe(86400);
+        // Two different clocks that used to share one value: how long the
+        // cached secret stays fetchable, and when the admin UI calls a
+        // still-unclaimed grant stale. A week is what a developer coming back
+        // from leave actually needs; a day is when a pending row stops looking
+        // normal.
+        ->and(CacheKeys::PROVISIONED_GRANT_TTL_SECONDS)->toBe(604800)
+        ->and(CacheKeys::PROVISIONED_GRANT_PENDING_BADGE_SECONDS)->toBe(86400);
 
     Cache::put(CacheKeys::provisionedGrant(42), 'secret', 60);
     CacheKeys::forgetProvisionedGrant(42);

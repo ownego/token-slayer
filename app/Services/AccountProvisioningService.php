@@ -231,10 +231,13 @@ final class AccountProvisioningService implements GrantRevokerContract
      * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
      * @param  array<int, string>  $removedOrgUuids  orgs the CLI removed the local slot for
      * @param  Device|null  $device  the resolved claiming device; null = removed loop no-ops
+     * @param  array<int, array{org_uuid: string, refresh_token_expires_at: Carbon}>  $expiring  refresh-token deadlines the client observed
      * @return array{confirmed: int, deprovisioned: int}
      */
-    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null): array
+    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null, array $expiring = []): array
     {
+        $this->recordObservedDeadlines($user, $expiring);
+
         $confirmed = 0;
         foreach (array_unique($setUpOrgUuids) as $orgUuid) {
             $account = $this->accountWithLiveGrantFor($user, $orgUuid);
@@ -246,6 +249,16 @@ final class AccountProvisioningService implements GrantRevokerContract
                     $user->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
                 $confirmed++;
+                // The secret exists to be fetched exactly once, by the machine
+                // being set up. Once that machine reports success it is spent,
+                // so it should not sit in the cache for the rest of its TTL
+                // waiting to be fetched by anything else.
+                if ($device !== null) {
+                    $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
+                    if ($grant !== null) {
+                        CacheKeys::forgetProvisionedGrant($grant->id);
+                    }
+                }
             } catch (Throwable $e) {
                 report($e);
 
@@ -315,6 +328,44 @@ final class AccountProvisioningService implements GrantRevokerContract
             ->exists();
 
         return $isGranted ? $account : null;
+    }
+
+    /**
+     * Store the refresh-token deadlines a client reported for its own orgs.
+     *
+     * The client is the only party that sees this value between the server's
+     * own refreshes, so it reports what it saw at setup time. Two guards make
+     * that safe to trust:
+     *
+     * The same self-graft check the set_up loop uses — without it any
+     * hook-token holder could overwrite the deadline on an account they do
+     * not own by naming a fabricated org uuid.
+     *
+     * And a never-regress rule: a value is written only when nothing is
+     * stored yet or the client's is LATER. The server's own refresher pushes
+     * this deadline out by weeks on every successful rotation, and a confirm
+     * request can arrive carrying an observation from before that happened;
+     * taking the older value would invent an expiry scare that is already
+     * resolved.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @param  array<int, array{org_uuid: string, refresh_token_expires_at: Carbon}>  $expiring  what the client observed
+     * @return void
+     */
+    private function recordObservedDeadlines(User $user, array $expiring): void
+    {
+        foreach ($expiring as $row) {
+            $account = $this->accountWithLiveGrantFor($user, $row['org_uuid']);
+
+            if ($account === null) {
+                continue;
+            }
+
+            if ($account->oauth_refresh_expires_at === null
+                || $row['refresh_token_expires_at']->isAfter($account->oauth_refresh_expires_at)) {
+                $account->update(['oauth_refresh_expires_at' => $row['refresh_token_expires_at']]);
+            }
+        }
     }
 
     /**
