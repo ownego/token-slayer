@@ -90,7 +90,7 @@ it('splits the sidebar badge into a green pending count and a red unhandled coun
     $untouched = Account::create(['email' => 'untouched@example.com', 'provider' => 'claude']);
     ClaudeCredential::create(['account_id' => $untouched->id, 'oauth_refresh_expires_at' => now()->addDay()]);
 
-    expect(ExpiringAccounts::getNavigationBadge())->toBe('🟢1 pending  🔴1 exp');
+    expect(ExpiringAccounts::getNavigationBadge())->toBe('🟢1 pending  🔴1 unhandled');
 });
 
 it('omits a zero half of the badge instead of showing it empty', function (): void {
@@ -118,7 +118,7 @@ it('spells out each bucket in the badge tooltip', function (): void {
     $tooltip = ExpiringAccounts::getNavigationBadgeTooltip();
 
     expect($tooltip)->toContain('pending')->toContain('awaiting pull')
-        ->and($tooltip)->toContain('exp')->toContain('no live grant');
+        ->and($tooltip)->toContain('unhandled')->toContain('no live grant');
 });
 
 it('shows a green pending badge on a row that already has a fresh grant', function (): void {

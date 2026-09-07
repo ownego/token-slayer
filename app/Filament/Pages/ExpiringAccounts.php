@@ -102,7 +102,7 @@ class ExpiringAccounts extends Page
     /**
      * The sidebar badge: a green 🟢 count of rows already handled (a fresh
      * grant is out, just awaiting pull) and a red 🔴 count of rows with
-     * nothing live yet, each spelled out short (`pending` / `exp`) rather
+     * nothing live yet, each spelled out short (`pending` / `unhandled`) rather
      * than left as bare numbers. A zero half is omitted rather than shown
      * as "🟢0 pending" clutter; null (no badge at all) only when both are
      * zero — a colored circle is the only way to carry two colors in one
@@ -117,14 +117,14 @@ class ExpiringAccounts extends Page
 
         $parts = array_filter([
             $counts['pending'] > 0 ? "🟢{$counts['pending']} pending" : null,
-            $counts['unhandled'] > 0 ? "🔴{$counts['unhandled']} exp" : null,
+            $counts['unhandled'] > 0 ? "🔴{$counts['unhandled']} unhandled" : null,
         ]);
 
         return $parts === [] ? null : implode('  ', $parts);
     }
 
     /**
-     * Spells out what the abbreviated badge means, since `pending`/`exp`
+     * Spells out what the abbreviated badge means, since `pending`/`unhandled`
      * alone doesn't say what either bucket is waiting ON.
      *
      * @return string|null
@@ -141,7 +141,7 @@ class ExpiringAccounts extends Page
                 ? "{$counts['pending']} pending — a grant was already issued, awaiting pull"
                 : null,
             $counts['unhandled'] > 0
-                ? "{$counts['unhandled']} expired — no live grant issued yet"
+                ? "{$counts['unhandled']} unhandled — no live grant issued yet"
                 : null,
         ]);
 
