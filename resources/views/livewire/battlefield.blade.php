@@ -17,7 +17,14 @@
             class="absolute top-0 inset-x-0 z-30 flex items-center justify-center gap-3 bg-amber-500/15 border-b border-amber-500/40 px-4 py-2 text-sm text-amber-200"
         >
             <span>Your hook is out of date &mdash; usage is being recorded with less detail.</span>
-            <code class="rounded bg-black/40 px-2 py-0.5 text-amber-100">token-slayer update</code>
+            {{-- A hook old enough not to report its own version predates
+                 `token-slayer update` as well, so pointing it at that command
+                 sends it at something its CLI may not have. --}}
+            @if ($hookCanSelfUpdate)
+                <code class="rounded bg-black/40 px-2 py-0.5 text-amber-100">token-slayer update</code>
+            @else
+                <span class="text-amber-100">Re-run the installer from your Profile page to update.</span>
+            @endif
             <button type="button" @click="dismiss()" class="ml-2 text-amber-300/70 hover:text-amber-100" aria-label="Dismiss">&times;</button>
         </div>
     @endif

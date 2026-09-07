@@ -209,10 +209,35 @@ test('says nothing to a developer who is current', function () {
 });
 
 test('says nothing to someone who has never sent an event', function () {
-    // hook_version stays null until the first event lands; nagging someone
-    // before they have installed anything is noise, not a nudge.
+    // Nagging someone before they have installed anything is noise, not a
+    // nudge. Nothing reported at all -- no client_version either -- is the
+    // only shape that means "never installed".
     config(['token_slayer.hook_version' => '7']);
-    $user = User::factory()->create(['hook_version' => null]);
+    $user = User::factory()->create(['hook_version' => null, 'client_version' => null]);
 
-    Livewire::actingAs($user)->test(Battlefield::class)->assertDontSee('token-slayer update');
+    Livewire::actingAs($user)->test(Battlefield::class)->assertDontSee('out of date');
+});
+
+test('nudges a developer on a hook too old to report its own version', function () {
+    // A pre-5 hook never sends hook_version at all, so null means two
+    // opposite things: never installed, or running exactly the build that
+    // most needs replacing. client_version tells them apart -- every hook
+    // ever shipped sends that. Without this, the only people the banner
+    // stays silent for are the ones it exists for.
+    config(['token_slayer.hook_version' => '7']);
+    $user = User::factory()->create(['hook_version' => null, 'client_version' => '1.0.0']);
+
+    Livewire::actingAs($user)->test(Battlefield::class)->assertSee('out of date');
+});
+
+test('tells a hook too old to self-update to re-run the installer instead', function () {
+    // `token-slayer update` is the wrong instruction for them: the command
+    // ships in the same release they are missing, so telling them to run it
+    // sends them at something their CLI may not have.
+    config(['token_slayer.hook_version' => '7']);
+    $user = User::factory()->create(['hook_version' => null, 'client_version' => '1.0.0']);
+
+    Livewire::actingAs($user)->test(Battlefield::class)
+        ->assertDontSee('token-slayer update')
+        ->assertSee('Re-run the installer');
 });

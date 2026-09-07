@@ -82,18 +82,38 @@ test('flags an outdated hook separately from an outdated CLI', function () {
 });
 
 test('says nothing about the hook to someone who has never sent an event', function () {
-    // hook_version stays null until the first event lands; nagging someone
-    // before they have installed anything is noise, not a nudge.
+    // Nagging someone before they have installed anything is noise. Nothing
+    // reported at all -- no client_version either -- is the only shape that
+    // means "never installed": this test used to set one, which describes a
+    // developer who HAS reported, on a hook too old to name its version.
     Http::fake(['api.github.com/*' => Http::response([
         'tag_name' => 'v1.0.4',
         'assets' => [['id' => 1, 'name' => 'slayer_cli-latest.whl']],
     ], 200)]);
     config(['token_slayer.hook_version' => '7']);
 
-    $user = User::factory()->create(['client_version' => '1.0.4', 'hook_version' => null]);
+    $user = User::factory()->create(['client_version' => null, 'hook_version' => null]);
 
     Livewire::actingAs($user)
         ->test(Profile::class)
         ->assertViewHas('attribution', fn ($a) => $a['hookOutdated'] === false)
-        ->assertDontSee('Your hook is on');
+        ->assertDontSee('hook is out of date');
+});
+
+test('nudges a developer on a hook too old to report its own version', function () {
+    Http::fake(['api.github.com/*' => Http::response([
+        'tag_name' => 'v1.0.4',
+        'assets' => [['id' => 1, 'name' => 'slayer_cli-latest.whl']],
+    ], 200)]);
+    config(['token_slayer.hook_version' => '7']);
+
+    $user = User::factory()->create(['client_version' => '1.0.0', 'hook_version' => null]);
+
+    Livewire::actingAs($user)
+        ->test(Profile::class)
+        ->assertViewHas('attribution', fn ($a) => $a['hookOutdated'] === true)
+        // Not "on v" anything -- it has no version to print, and the command
+        // it would be told to run ships in the release it is missing.
+        ->assertDontSee('Your hook is on v ')
+        ->assertSee('Re-run the install command');
 });

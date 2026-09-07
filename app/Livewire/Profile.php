@@ -6,6 +6,7 @@ use App\Models\Event;
 use App\Models\User;
 use App\Services\DamageTotals;
 use App\Services\GitHub\CachedLatestVersion;
+use App\Support\HookVersionStatus;
 use Livewire\Component;
 
 class Profile extends Component
@@ -32,8 +33,10 @@ class Profile extends Component
             'outdated' => $latestVersion !== null && $user->client_version !== $latestVersion,
             'hookVersion' => $user->hook_version,
             'latestHookVersion' => config('token_slayer.hook_version'),
-            'hookOutdated' => $user->hook_version !== null
-                && $user->hook_version !== config('token_slayer.hook_version'),
+            'hookOutdated' => HookVersionStatus::isOutdated($user, config('token_slayer.hook_version')),
+            // A hook old enough not to report its version predates
+            // `token-slayer update` too, so it gets sent somewhere that works.
+            'hookCanSelfUpdate' => $user->hook_version !== null,
         ];
     }
 

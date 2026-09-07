@@ -10,6 +10,7 @@ use App\Services\BossArena;
 use App\Services\DamageTotals;
 use App\Services\FighterChargingCache;
 use App\Services\FighterPositionCache;
+use App\Support\HookVersionStatus;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\On;
@@ -156,13 +157,14 @@ class Battlefield extends Component
      */
     public function render()
     {
-        $hookVersion = auth()->user()?->hook_version;
+        $user = auth()->user();
         $latest = config('token_slayer.hook_version');
 
         return view('livewire.battlefield', [
-            // null until the first event lands: nagging someone before they
-            // have installed anything is noise, not a nudge.
-            'hookOutdated' => $hookVersion !== null && $hookVersion !== $latest,
+            'hookOutdated' => HookVersionStatus::isOutdated($user, $latest),
+            // A hook old enough not to report its version predates
+            // `token-slayer update` too, so it gets sent somewhere that works.
+            'hookCanSelfUpdate' => $user?->hook_version !== null,
             'latestHookVersion' => $latest,
         ]);
     }
