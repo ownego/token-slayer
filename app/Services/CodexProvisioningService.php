@@ -85,7 +85,9 @@ final class CodexProvisioningService implements GrantRevokerContract
 
     /**
      * Step B: issue a per-device grant. Confirms the uploaded auth.json's
-     * identity matches `$account` (self-graft guard), revokes any live
+     * identity matches `$account` (self-graft guard) and that its login
+     * session isn't already live for a different employee (shared-session
+     * guard — see {@see guardAgainstSharedSession()}), revokes any live
      * grant already on the resolved device (one-live-grant invariant,
      * mirrors `AccountProvisioningService::provisionForDevice()`), and
      * caches the FULL raw auth.json — the employee-side pull writes it back
@@ -98,7 +100,8 @@ final class CodexProvisioningService implements GrantRevokerContract
      * @param  array<string, mixed>  $authJson  the uploaded auth.json content, for a fresh login into `$account`
      * @return AccountProvisionedGrant the new Pending grant
      *
-     * @throws CodexConnectException when the auth.json's identity doesn't match `$account`
+     * @throws CodexConnectException when the auth.json's identity doesn't match `$account`, or its
+     *                               login session is already live for a different employee
      */
     public function provisionForDevice(Account $account, User $user, array $authJson): AccountProvisionedGrant
     {
@@ -106,6 +109,9 @@ final class CodexProvisioningService implements GrantRevokerContract
         if ($chatgptAccountId === null || $chatgptAccountId !== $account->codexCredential?->chatgpt_account_id) {
             throw new CodexConnectException('codex_connect_identity_mismatch', 'the uploaded auth.json does not match the target account');
         }
+
+        $sessionId = $this->identity($authJson, 'sid', namespaced: false);
+        $this->guardAgainstSharedSession($account, $user, $sessionId);
 
         $device = $this->accounts->resolveProvisionTarget($user, null);
 
@@ -116,6 +122,7 @@ final class CodexProvisioningService implements GrantRevokerContract
         $grant = $account->provisionedGrants()->create([
             'device_id' => $device->id,
             'status' => GrantStatus::Pending,
+            'token_uuid' => $sessionId,
             'provisioned_at' => Carbon::now(),
         ]);
 
@@ -137,6 +144,51 @@ final class CodexProvisioningService implements GrantRevokerContract
         );
 
         return $grant;
+    }
+
+    /**
+     * Refuse to hand the exact same OpenAI login session (its `sid` claim)
+     * to a second employee while it's still live for someone else.
+     * `provisionForDevice()` mints no fresh token per call — it re-uploads
+     * whatever the admin currently has logged in locally — so reusing one
+     * login across two `--for` targets hands both employees the identical
+     * access/refresh token pair. OpenAI's refresh endpoint is assumed to
+     * rotate the refresh token on use the same way Anthropic's does (see
+     * the token-slayer KB's `codex-provision reused-login collision` entry
+     * for why this wasn't verified live), so whichever employee's Codex CLI
+     * refreshes first would silently invalidate the other's copy. Reusing
+     * the SAME session for the SAME employee again (a re-provision) is left
+     * alone — no collision risk, and blocking it would break re-running the
+     * command by mistake for the person it was always meant for. A null
+     * `$sessionId` (an id_token missing its `sid` claim, which real Codex
+     * logins always carry) fails open rather than blocking a legitimate
+     * upload on a technicality this service can't otherwise verify.
+     *
+     * @param  Account  $account  the target Codex account
+     * @param  User  $user  the employee being provisioned
+     * @param  string|null  $sessionId  the uploaded auth.json's `sid` claim
+     * @return void
+     *
+     * @throws CodexConnectException when `$sessionId` is already live on a different employee's grant
+     */
+    private function guardAgainstSharedSession(Account $account, User $user, ?string $sessionId): void
+    {
+        if ($sessionId === null) {
+            return;
+        }
+
+        $alreadyAssignedElsewhere = $account->provisionedGrants()
+            ->live()
+            ->where('token_uuid', $sessionId)
+            ->whereHas('device', fn ($query) => $query->where('user_id', '!=', $user->id))
+            ->exists();
+
+        if ($alreadyAssignedElsewhere) {
+            throw new CodexConnectException(
+                'codex_connect_session_already_assigned',
+                'this Codex login is already provisioned to a different employee — run `codex login` again for a fresh session before provisioning another person.',
+            );
+        }
     }
 
     /**

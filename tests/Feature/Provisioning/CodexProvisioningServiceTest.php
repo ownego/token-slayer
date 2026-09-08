@@ -16,19 +16,38 @@ use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
-// {"chatgpt_account_id": "acct-1", "chatgpt_user_id": "user-1", "chatgpt_plan_type": "pro", "email": "shared@example.com"}
-// under the "https://api.openai.com/auth" namespace, plus top-level "email" and "exp": 4102444800
-const ID_TOKEN_PAYLOAD_B64 = 'eyJlbWFpbCI6ICJzaGFyZWRAZXhhbXBsZS5jb20iLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdC0xIiwgImNoYXRncHRfdXNlcl9pZCI6ICJ1c2VyLTEiLCAiY2hhdGdwdF9wbGFuX3R5cGUiOiAicHJvIn19';
 // {"exp": 4102444800}
 const ACCESS_TOKEN_PAYLOAD_B64 = 'eyJleHAiOiA0MTAyNDQ0ODAwfQ';
 
-function fakeCodexAuthJson(): array
+/**
+ * Builds a fake `auth.json`'s id_token, carrying `chatgpt_account_id:
+ * "acct-1"` (etc.) under the `https://api.openai.com/auth` namespace, plus
+ * top-level `email` and `sid` (the login-session identity two different
+ * `--for` calls off the SAME admin login would share).
+ *
+ * @param  string  $sid  the login session id (OpenAI's `sid` claim)
+ * @return string
+ */
+function fakeCodexIdToken(string $sid = 'authsess-shared-1'): string
+{
+    return 'h.'.base64_encode(json_encode([
+        'email' => 'shared@example.com',
+        'sid' => $sid,
+        'https://api.openai.com/auth' => [
+            'chatgpt_account_id' => 'acct-1',
+            'chatgpt_user_id' => 'user-1',
+            'chatgpt_plan_type' => 'pro',
+        ],
+    ])).'.s';
+}
+
+function fakeCodexAuthJson(string $sid = 'authsess-shared-1'): array
 {
     return [
         'auth_mode' => 'chatgpt',
         'OPENAI_API_KEY' => null,
         'tokens' => [
-            'id_token' => 'h.'.ID_TOKEN_PAYLOAD_B64.'.s',
+            'id_token' => fakeCodexIdToken($sid),
             'access_token' => 'h.'.ACCESS_TOKEN_PAYLOAD_B64.'.s',
             'refresh_token' => 'opaque-refresh-fixture',
             'account_id' => 'acct-1',
@@ -117,6 +136,46 @@ it('provisions a device, syncs Tracked membership, and caches the raw auth_json'
     expect($cached['provider'])->toBe('codex')
         ->and($cached['chatgpt_account_id'])->toBe('acct-1')
         ->and($cached['auth_json'])->toBe(fakeCodexAuthJson());
+});
+
+it('rejects provisioning a second employee off the exact same admin login session', function (): void {
+    // The admin re-uploads whatever is currently in their local auth.json --
+    // it mints no fresh token per call, unlike Claude's PKCE flow. Handing
+    // the same login (same `sid`) to two different employees means they'd
+    // share one refresh token, and whichever one's Codex CLI refreshes
+    // first silently kills the other's copy.
+    $account = app(CodexProvisioningService::class)->connectAccount(fakeCodexAuthJson(), 'Company ChatGPT');
+    $first = User::factory()->create();
+    $second = User::factory()->create();
+    app(CodexProvisioningService::class)->provisionForDevice($account, $first, fakeCodexAuthJson('authsess-shared-1'));
+
+    try {
+        app(CodexProvisioningService::class)->provisionForDevice($account, $second, fakeCodexAuthJson('authsess-shared-1'));
+        test()->fail('expected a CodexConnectException');
+    } catch (CodexConnectException $exception) {
+        expect($exception->reason)->toBe('codex_connect_session_already_assigned');
+    }
+});
+
+it('allows provisioning two employees when each carries its own distinct login session', function (): void {
+    $account = app(CodexProvisioningService::class)->connectAccount(fakeCodexAuthJson(), 'Company ChatGPT');
+    $first = User::factory()->create();
+    $second = User::factory()->create();
+
+    app(CodexProvisioningService::class)->provisionForDevice($account, $first, fakeCodexAuthJson('authsess-1'));
+    $secondGrant = app(CodexProvisioningService::class)->provisionForDevice($account, $second, fakeCodexAuthJson('authsess-2'));
+
+    expect($secondGrant->status)->toBe(GrantStatus::Pending);
+});
+
+it('allows re-provisioning the same employee again off the same session', function (): void {
+    $account = app(CodexProvisioningService::class)->connectAccount(fakeCodexAuthJson(), 'Company ChatGPT');
+    $user = User::factory()->create();
+    app(CodexProvisioningService::class)->provisionForDevice($account, $user, fakeCodexAuthJson('authsess-shared-1'));
+
+    $again = app(CodexProvisioningService::class)->provisionForDevice($account, $user, fakeCodexAuthJson('authsess-shared-1'));
+
+    expect($again->status)->toBe(GrantStatus::Pending);
 });
 
 it('rejects a Step B upload whose chatgpt_account_id does not match the target account', function (): void {
