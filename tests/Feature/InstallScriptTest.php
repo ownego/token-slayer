@@ -87,9 +87,22 @@ test('install.sh merges codex hooks into hooks.json in the modern shape', functi
 
     expect($script)
         ->toContain('CODEX_HOOKS="$HOME/.codex/hooks.json"')
-        ->toContain('events = ["SessionStart", "Stop"]')
+        ->toContain('events = ["SessionStart", "Stop", "SubagentStop"]')
         ->toContain('"type": "command", "command": cmd')
         ->toContain('installed Codex CLI hooks -> $CODEX_HOOKS');
+});
+
+test('install.sh registers codex SubagentStop -- fires only from 0.153.4+, harmless no-op on older Codex', function () {
+    // Verified live: codex-cli 0.142.3 never fires SubagentStop for its own
+    // "collab" (spawn_agent/wait_agent) subagent mechanism at all, regardless
+    // of registration -- 0.153.4 does, with an agent_transcript_path field
+    // (same shape Claude's SubagentStop already carries). No version gate:
+    // an unsupported older Codex simply never sends the event, the same as
+    // any other hook it does not implement -- nothing to double-count or
+    // break, unlike Claude's pre-v5 transcript_path collision.
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('events = ["SessionStart", "Stop", "SubagentStop"]');
 });
 
 test('install.sh dedupes codex hooks per namespace via a fingerprint substring match', function () {

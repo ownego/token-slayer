@@ -1077,6 +1077,16 @@ fi
 
 # Current Codex reads hooks from hooks.json, top-level "hooks" key, PascalCase
 # event names -- the array-of-tables TOML shape healed above is obsolete.
+#
+# SubagentStop is registered alongside Stop for the same reason as Claude's:
+# its payload carries agent_transcript_path (the subagent's own rollout, not
+# the parent's), so the existing transcript-selection and extract_usage()
+# logic below already handles it -- both are provider-agnostic already, no
+# Codex-specific branch needed. Verified live: codex-cli 0.142.3 never fires
+# this event for its own "collab" (spawn_agent/wait_agent) subagent mechanism
+# regardless of registration; 0.153.4 does, with exactly this shape. No
+# version gate needed either way -- an older Codex that doesn't implement the
+# event simply never sends it, the same as any hook it doesn't support.
 CODEX_HOOKS="$HOME/.codex/hooks.json"
 [ -s "$CODEX_HOOKS" ] || echo '{"hooks": {}}' > "$CODEX_HOOKS"
 
@@ -1086,7 +1096,7 @@ import json, os, sys, time
 path = sys.argv[1]
 cmd = os.environ["CODEX_CMD"]
 fingerprint = os.environ["HOOK_FINGERPRINT"]
-events = ["SessionStart", "Stop"]
+events = ["SessionStart", "Stop", "SubagentStop"]
 
 try:
     with open(path) as f:
