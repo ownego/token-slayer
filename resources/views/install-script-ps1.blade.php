@@ -273,6 +273,7 @@ $shim = (@(
   'setlocal',
   "set `"SLAYER_NS=$Ns`"",
   "set `"SLAYER_INSTALL_URL=$InstallUrl`"",
+  'set "SLAYER_PROG_NAME=%~n0"',
   "`"$VenvPy`" -m slayer_cli %*"
 ) -join "`r`n") + "`r`n"
 foreach ($n in 'tok','slayer','token-slayer') {

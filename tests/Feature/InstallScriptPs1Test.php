@@ -214,6 +214,23 @@ it('bakes SLAYER_INSTALL_URL and SLAYER_NS into the Windows .cmd shims', functio
         ->toContain('-m slayer_cli %*');
 });
 
+it('carries the invoked shim name through so tok --help says tok, not token-slayer', function () {
+    // Same three-alias problem as the POSIX shim: tok.cmd/slayer.cmd/
+    // token-slayer.cmd all run identical content (`python -m slayer_cli`),
+    // so Click can never recover which one was typed from argv[0] alone.
+    // Batch's own `%~n0` (the invoked .cmd's own base name, no extension)
+    // carries it through the same way `$(basename "$0")` does on POSIX.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)->toContain('SLAYER_PROG_NAME=%~n0');
+
+    $progNamePos = strpos($script, 'SLAYER_PROG_NAME=%~n0');
+    $execPos = strpos($script, '-m slayer_cli %*');
+    expect($progNamePos)->not->toBeFalse()
+        ->and($execPos)->not->toBeFalse()
+        ->and($progNamePos)->toBeLessThan($execPos);
+});
+
 it('falls back to WindowsApps interpreters instead of rejecting them by path', function () {
     // %LOCALAPPDATA%\Microsoft\WindowsApps holds BOTH the Store stub and the
     // working shims of the Python Install Manager, so path alone cannot tell

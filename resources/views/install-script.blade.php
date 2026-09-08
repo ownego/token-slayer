@@ -796,7 +796,7 @@ sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -
 # update/status behavior when the venv is missing so a failed venv/pip step
 # never bricks the token-slayer command.
 if [ -x "$SLAYER_VENV/bin/python" ]; then
-  exec env SLAYER_NS={{ $namespace }} SLAYER_INSTALL_URL={{ $installUrl }} "$SLAYER_VENV/bin/python" -m slayer_cli "$@"
+  exec env SLAYER_NS={{ $namespace }} SLAYER_INSTALL_URL={{ $installUrl }} SLAYER_PROG_NAME="$(basename "$0")" "$SLAYER_VENV/bin/python" -m slayer_cli "$@"
 fi
 
 case "${1:-}" in

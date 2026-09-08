@@ -514,6 +514,22 @@ it('sets up a python venv and installs slayer-cli, with a shim that execs the ve
         ->toContain('SLAYER_INSTALL_URL=');
 });
 
+it('carries the invoked shim name through to the CLI so tok --help says tok, not token-slayer', function () {
+    // `token-slayer`/`slayer`/`tok` are one shim script (`slayer`/`tok` are
+    // symlinks to it) that always execs `python -m slayer_cli` -- Click can
+    // never recover which alias was actually typed from argv[0] once that
+    // happens, unless the shim passes it through some other way first.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('SLAYER_PROG_NAME="$(basename "$0")"');
+
+    $progNamePos = strpos($script, 'SLAYER_PROG_NAME="$(basename "$0")"');
+    $execPos = strpos($script, '-m slayer_cli "$@"');
+    expect($progNamePos)->not->toBeFalse()
+        ->and($execPos)->not->toBeFalse()
+        ->and($progNamePos)->toBeLessThan($execPos);
+});
+
 it('registers the current Claude login as a base account slot after installing the CLI', function () {
     $script = $this->get(route('install-script'))->content();
 
