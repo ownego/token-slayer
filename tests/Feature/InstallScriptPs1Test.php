@@ -291,3 +291,31 @@ it('throws immediately if the venv or wheel bootstrap fails on Windows, surfacin
         ->toContain('if ($LASTEXITCODE -ne 0) { throw')
         ->toContain('$slayerErr = $_.Exception.Message');
 });
+
+test('install.ps1 merges codex hooks into hooks.json in the modern shape, not the obsolete config.toml [[hooks]] array', function () {
+    // Verified against Codex's own source (codex-rs/config/src/hooks_tests.rs,
+    // codex-rs/hooks/src/declarations.rs -- HookEventsToml has a field per
+    // event name, e.g. session_start: Vec<MatcherGroup>; there is no generic
+    // "hooks" field it could ever bind to) and a full-text search of the
+    // entire openai/codex repo for the literal string "[[hooks]]", which
+    // returns zero matches anywhere in source, tests, or docs. The shape this
+    // installer used to write -- `[[hooks]]` / `event = "stop"` appended to
+    // config.toml -- has never been a real Codex format; a modern Codex CLI
+    // silently ignores it, so Windows users installed hooks that never fired.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain("Join-Path \$CodexDir 'hooks.json'")
+        ->toContain('events = ["SessionStart", "Stop", "SubagentStop"]')
+        ->not->toContain("Join-Path \$CodexDir 'config.toml'")
+        ->not->toContain('event = "session_start"')
+        ->not->toContain('event = "stop"');
+});
+
+test('install.ps1 codex hooks.json merge dedupes by fingerprint, same as the POSIX installer', function () {
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('HOOK_FINGERPRINT')
+        ->toContain('fingerprint not in json.dumps(h)');
+});

@@ -1053,52 +1053,84 @@ os.replace(tmp, path)
 
 Write-Host "installed Claude Code session-tracking hook -> $Settings"
 
-# --- Codex CLI: rewrite the namespace block in ~/.codex/config.toml --------
+# --- Codex CLI: merge into ~/.codex/hooks.json ------------------------------
+# Modern Codex reads hooks from hooks.json, top-level "hooks" key, PascalCase
+# event names -- config.toml's `[[hooks]]` array-of-tables shape this used to
+# write is not a real Codex format at all: `HookEventsToml` (codex-rs/config)
+# has one field per event name (session_start, stop, ...), never a generic
+# "hooks" field a flat array could bind to, and the literal string "[[hooks]]"
+# does not appear anywhere in the openai/codex source, tests, or docs. A
+# modern Codex CLI silently ignored this block, so Windows machines installed
+# hooks that never fired.
+#
+# SubagentStop is registered alongside Stop for the same reason as on POSIX:
+# its payload carries agent_transcript_path (the subagent's own rollout, not
+# the parent's) -- the server-side extraction already handles it, no
+# Codex-specific branch needed. No version gate: codex-cli 0.142.3 never
+# fires this event for its "collab" (spawn_agent/wait_agent) subagent
+# mechanism regardless of registration; 0.153.4 does, with exactly this
+# shape. An older Codex that doesn't implement the event simply never sends
+# it -- unlike Claude's pre-v5 transcript_path collision, there is nothing to
+# double-count by registering it unconditionally.
 $CodexDir = Join-Path $Home_ '.codex'
 New-Item -ItemType Directory -Force -Path $CodexDir | Out-Null
-$CodexConfig = Join-Path $CodexDir 'config.toml'
-if (-not (Test-Path $CodexConfig)) { New-Item -ItemType File -Path $CodexConfig | Out-Null }
+$CodexHooks = Join-Path $CodexDir 'hooks.json'
+if (-not (Test-Path $CodexHooks) -or (Get-Item $CodexHooks).Length -eq 0) {
+  Set-Content -Path $CodexHooks -Value '{"hooks": {}}' -Encoding Ascii
+}
 
-# Remove any previous namespace block (between markers) so we can append a fresh one.
-$env:NAMESPACE = $Ns
+$env:CODEX_CMD = $CodexCmd
+$env:HOOK_FINGERPRINT = "$Ns/send-hook.sh"
 Invoke-PyMerge @'
-import os, sys, re
+import json, os, sys, time
 
 path = sys.argv[1]
-ns = re.escape(os.environ["NAMESPACE"])
-with open(path) as f:
-    text = f.read()
+cmd = os.environ["CODEX_CMD"]
+fingerprint = os.environ["HOOK_FINGERPRINT"]
+events = ["SessionStart", "Stop", "SubagentStop"]
 
-text = re.sub(
-    rf"(?ms)^# >>> {ns} hooks\n.*?^# <<< {ns} hooks\n?",
-    "",
-    text,
-)
+try:
+    with open(path) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("hooks.json is not a JSON object")
+except (ValueError, OSError):
+    # A pre-existing malformed or missing hooks.json would otherwise crash the
+    # whole installer. Preserve a bad file for inspection and start from an
+    # empty object so hook installation still succeeds rather than aborting.
+    try:
+        os.replace(path, path + ".bak.%d" % int(time.time()))
+    except OSError:
+        pass
+    data = {}
 
-# Write-then-rename: config.toml is Codex's own file and may be read while a
-# session is live; truncating it in place could hand Codex a partial config.
+data.setdefault("hooks", {})
+for event in events:
+    groups = []
+    for group in data["hooks"].get(event, []):
+        # Drop only OUR handler objects (identified by the fingerprint
+        # substring), keeping any other tool's entries in the same group.
+        handlers = [h for h in group.get("hooks", [])
+                    if fingerprint not in json.dumps(h)]
+        if handlers:
+            group = dict(group)
+            group["hooks"] = handlers
+            groups.append(group)
+    groups.append({"hooks": [{"type": "command", "command": cmd}]})
+    data["hooks"][event] = groups
+
+# Write-then-rename: this file is read by a live Codex session, and
+# truncate-in-place leaves a window where a reader sees a partial config.
 tmp = path + ".tmp"
 with open(tmp, "w") as f:
-    f.write(text)
+    json.dump(data, f, indent=2)
+    f.write("\n")
     f.flush()
     os.fsync(f.fileno())
 os.replace(tmp, path)
-'@ @($CodexConfig)
+'@ @($CodexHooks)
 
-$codexBlock = @"
-# >>> $Ns hooks
-[[hooks]]
-event = "session_start"
-command = "$CodexCmd"
-
-[[hooks]]
-event = "stop"
-command = "$CodexCmd"
-# <<< $Ns hooks
-"@
-Add-Content -Path $CodexConfig -Value $codexBlock -Encoding Ascii
-
-Write-Host "installed Codex CLI hooks -> $CodexConfig"
+Write-Host "installed Codex CLI hooks -> $CodexHooks"
 
 # --- Antigravity CLI: merge into ~/.gemini/config/hooks.json ---------------
 $GeminiDir = Join-Path $Home_ '.gemini\config'
