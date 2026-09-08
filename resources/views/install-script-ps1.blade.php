@@ -166,11 +166,14 @@ $VenvPy = Join-Path $Venv 'Scripts\python.exe'
 # interpreter can have a working-looking directory but no importable
 # slayer_cli. Rebuild it clean instead of reusing it, so simply re-running
 # the installer (or `token-slayer update`) repairs a broken install. A
-# healthy venv where slayer_cli already imports is left untouched, keeping
-# updates fast. Guarded so a missing $VenvPy (a never-created or
-# half-deleted venv) can never throw here.
+# healthy venv where slayer_cli already imports is left ENTIRELY untouched
+# below -- venv creation is skipped outright, not just the delete -- both to
+# keep updates fast and because re-running `python -m venv` on an existing
+# venv can otherwise hit a real (if harmless) Windows "Access is denied"
+# when the daily background reconcile job happens to be running python.exe
+# from that same venv at that exact moment.
+$venvHealthy = $false
 if (Test-Path $Venv) {
-  $venvHealthy = $false
   if (Test-Path $VenvPy) {
     try {
       & $VenvPy -c 'import slayer_cli' 2>$null
@@ -183,18 +186,20 @@ if (Test-Path $Venv) {
 # A failure anywhere in this chain now stops the whole install: a broken
 # slayer-cli venv used to be tolerated so a Python problem never bricked hook
 # tracking, but every install step is now required to actually work.
-& $PyExe @PyPrefix -m venv $Venv
-if (-not (Test-Path $VenvPy)) {
-  Write-Warning 'slayer-cli: bundled pip bootstrap failed; retrying with get-pip...'
-  Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue
-  & $PyExe @PyPrefix -m venv --without-pip $Venv
+if (-not $venvHealthy) {
+  & $PyExe @PyPrefix -m venv $Venv
   if (-not (Test-Path $VenvPy)) {
-    throw "slayer-cli: 'python -m venv --without-pip' failed -- see the error above."
+    Write-Warning 'slayer-cli: bundled pip bootstrap failed; retrying with get-pip...'
+    Remove-Item -Recurse -Force $Venv -ErrorAction SilentlyContinue
+    & $PyExe @PyPrefix -m venv --without-pip $Venv
+    if (-not (Test-Path $VenvPy)) {
+      throw "slayer-cli: 'python -m venv --without-pip' failed -- see the error above."
+    }
+    (Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py).Content | & $VenvPy -
   }
-  (Invoke-WebRequest -UseBasicParsing https://bootstrap.pypa.io/get-pip.py).Content | & $VenvPy -
-}
-if (-not (Test-Path (Join-Path $Venv 'Scripts\pip.exe'))) {
-  throw 'slayer-cli: venv/pip setup failed -- see the error above.'
+  if (-not (Test-Path (Join-Path $Venv 'Scripts\pip.exe'))) {
+    throw 'slayer-cli: venv/pip setup failed -- see the error above.'
+  }
 }
 
 # The wheel route requires a valid hook token. Resolve it: the env var

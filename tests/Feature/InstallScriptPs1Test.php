@@ -287,9 +287,38 @@ it('throws immediately if the venv or wheel bootstrap fails on Windows, surfacin
         ->not->toContain('hook tracking still installed')
         ->not->toContain('CLI unavailable')
         ->toContain('throw "slayer-cli: \'python -m venv --without-pip\' failed -- see the error above."')
-        ->toContain("if (-not (Test-Path (Join-Path \$Venv 'Scripts\\pip.exe'))) {\n  throw")
+        ->toContain("if (-not (Test-Path (Join-Path \$Venv 'Scripts\\pip.exe'))) {\n    throw")
         ->toContain('if ($LASTEXITCODE -ne 0) { throw')
         ->toContain('$slayerErr = $_.Exception.Message');
+});
+
+it('skips recreating an already-healthy venv instead of unconditionally re-running python -m venv', function () {
+    // A re-install over a HEALTHY venv used to call `python -m venv $Venv`
+    // regardless, which can hit a real Windows "Access is denied" if the
+    // daily background reconcile job happens to be running python.exe from
+    // that same venv at that exact moment. Harmless (the untouched venv
+    // still works), but noisy and contradicted the self-heal comment's own
+    // stated intent ("left untouched, keeping updates fast").
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    // Two guards must exist: the original one gating the self-heal delete,
+    // and a NEW one gating venv creation itself -- a single shared guard
+    // string is not enough to prove the second one exists (it would match
+    // the first, pre-existing occurrence too).
+    expect(substr_count($script, 'if (-not $venvHealthy) {'))->toBe(2);
+
+    $healthCheckPos = strpos($script, '$venvHealthy = ($LASTEXITCODE -eq 0)');
+    $secondGuardPos = strpos($script, 'if (-not $venvHealthy) {', $healthCheckPos);
+    $venvCreatePos = strpos($script, '& $PyExe @PyPrefix -m venv $Venv');
+    $pipCheckPos = strpos($script, "if (-not (Test-Path (Join-Path \$Venv 'Scripts\\pip.exe'))) {");
+
+    expect($secondGuardPos)->not->toBeFalse()
+        ->and($venvCreatePos)->not->toBeFalse()
+        ->and($pipCheckPos)->not->toBeFalse()
+        // Creation call AND the final pip.exe check both sit inside the
+        // second guard -- a healthy venv skips both entirely.
+        ->and($secondGuardPos)->toBeLessThan($venvCreatePos)
+        ->and($venvCreatePos)->toBeLessThan($pipCheckPos);
 });
 
 test('install.ps1 merges codex hooks into hooks.json in the modern shape, not the obsolete config.toml [[hooks]] array', function () {
