@@ -120,15 +120,24 @@ test('surfaces a contributor who is nowhere near the overall top spenders', func
     expect($rows['Fable 5.1']['top_users'])->toBe([['handle' => 'specialist', 'tokens' => 10]]);
 });
 
-test('labels events carrying no model as Unknown', function () {
+test('excludes events carrying no model from the bars entirely', function () {
+    // "Unknown" is not a model an admin can compare against real ones -- it
+    // is an artifact of pre-tracking history and un-updated clients, and on
+    // an all-time range it can outweigh every real model's total many times
+    // over, stretching the y axis until every actual bar reads as flat. The
+    // widget's own description line already carries this exact signal as a
+    // percentage ({@see TokensByModelQuery::unknownShare()}); showing it a
+    // second time as a bar duplicates that and actively defeats the chart's
+    // one job, comparing models against each other.
     $tung = User::factory()->create(['slack_handle' => 'tung']);
-    Event::factory()->for($tung)->create(['model' => null, 'tokens' => 400]);
+    $an = User::factory()->create(['slack_handle' => 'an']);
+    Event::factory()->for($tung)->create(['model' => null, 'tokens' => 999_999]);
+    Event::factory()->for($an)->create(['model' => 'claude-opus-5', 'tokens' => 400]);
 
     $rows = (new ModelContributorsQuery)->get(UsageFilters::fromPageFilters(['range' => 'all']), 5);
 
-    expect($rows[0]['label'])->toBe('Unknown')
-        ->and($rows[0]['family'])->toBeNull()
-        ->and($rows[0]['top_users'])->toBe([['handle' => 'tung', 'tokens' => 400]]);
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]['label'])->toBe('Opus 5');
 });
 
 test('honors the shared analytics filter', function () {

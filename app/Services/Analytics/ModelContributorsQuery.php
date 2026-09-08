@@ -40,6 +40,15 @@ final class ModelContributorsQuery
     public function get(UsageFilters $filters, int $topUsers): array
     {
         $rows = $this->scopeEvents($filters)
+            // "Unknown" (no model recorded) is not a model to compare against
+            // real ones -- it is an artifact of pre-tracking history and
+            // un-updated clients, and on a wide range it can dwarf every real
+            // total, stretching the axis until every actual bar reads flat.
+            // The widget's description line already carries this exact signal
+            // as a percentage ({@see TokensByModelQuery::unknownShare()}); a
+            // bar here would only duplicate it while defeating the chart's
+            // one job of comparing models against each other.
+            ->whereNotNull('events.model')
             ->join('users', 'users.id', '=', 'events.user_id')
             ->groupBy('events.model', 'users.id', 'users.slack_handle', 'users.display_name', 'users.name')
             ->selectRaw('events.model as model')
