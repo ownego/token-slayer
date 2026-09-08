@@ -2,6 +2,7 @@
 
 use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
+use App\Enums\Provider;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Models\Account;
@@ -274,4 +275,44 @@ it('a pending member getting a second device stays pending instead of being sile
         ->assertNotified();
 
     expect($account->users()->find($member->id)->pivot->status)->toBe(MembershipStatus::Pending);
+});
+
+it('hides the provision toggle on a Codex account and shows the CLI command to run instead', function () {
+    // Codex device provisioning has no in-UI equivalent -- it happens via
+    // `token-slayer admin codex-provision`, driven from an admin's own
+    // machine (see CodexProvisioningService's docblock). Claude's
+    // PKCE-paste flow this toggle drives is meaningless here, so the
+    // toggle must stay hidden and default off for a Codex account.
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create(['provider' => Provider::Codex, 'name' => 'Shared Codex Bot']);
+    $newcomer = User::factory()->create(['email' => 'newcomer@example.test']);
+
+    $livewire = Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->assertSchemaComponentHidden('provision')
+        ->setActionData(['user_id' => $newcomer->id]);
+
+    $schemaName = $livewire->instance()->getMountedActionSchemaName();
+    $hint = $livewire->instance()->{$schemaName}->getFlatComponents(withHidden: true)['codex_provision_hint'];
+
+    expect($hint->getContent())->toBe('token-slayer admin codex-provision "Shared Codex Bot" --for newcomer@example.test');
+
+    $livewire->callMountedAction()->assertNotified()->assertActionNotMounted('confirmProvisionMember');
+
+    $pivot = AccountUser::query()->where('user_id', $newcomer->id)->where('account_id', $account->id)->firstOrFail();
+
+    expect($pivot->status)->toBe(MembershipStatus::Tracked)
+        ->and($newcomer->devices()->doesntExist())->toBeTrue();
+});
+
+it('keeps the provision toggle visible and hides the Codex hint for a Claude account', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->assertSchemaComponentVisible('provision')
+        ->assertSchemaComponentHidden('codex_provision_hint');
 });

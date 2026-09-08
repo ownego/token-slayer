@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Accounts\RelationManagers;
 
 use App\Enums\MembershipStatus;
+use App\Enums\Provider;
 use App\Exceptions\AccountConnectException;
 use App\Filament\Concerns\ConnectsAccounts;
 use App\Models\Account;
@@ -16,6 +17,7 @@ use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -40,8 +42,8 @@ use Livewire\Component;
  * in place; a tracked member can also be unverified (demoted) back to
  * untracked. Replaces the former separate
  * `UsersRelationManager`/`UntrackedContributorsRelationManager` tabs. This is
- * also the sole entry point for provisioning a device on the account — see
- * {@see addMemberAction()} — the standalone "Add device" action on
+ * also the sole in-UI entry point for provisioning a Claude device on the
+ * account — see {@see addMemberAction()} — the standalone "Add device" action on
  * {@see ProvisionsRelationManager} was removed in its favor.
  */
 class MembersRelationManager extends RelationManager
@@ -243,18 +245,23 @@ class MembersRelationManager extends RelationManager
      * `users()` relationship for the toggle-off path so it promotes an
      * existing untracked contributor (updating the pivot) or inserts a
      * brand-new member, never hitting the unique constraint. This is the
-     * ONLY entry point for provisioning a device on this account — the
-     * former standalone "Add device" action on the Provisions tab was
+     * ONLY entry point for provisioning a Claude device on this account —
+     * the former standalone "Add device" action on the Provisions tab was
      * removed in favor of it. When `provision` is on, `device_pk` (live, and
      * hidden entirely for a zero-device user) lets the admin target an
      * existing device, while `device_name` only appears while a NEW device
      * will actually be created — a zero-device user, or `device_pk` left
      * blank ("+ Create a new device…") — and disappears the instant an
      * existing device is picked; the one-open-door guard below refuses to
-     * open a second placeholder while one already awaits a machine. Public
-     * so Filament's
-     * `{name}Action` convention can resolve it when a test or the UI mounts
-     * it directly.
+     * open a second placeholder while one already awaits a machine.
+     * `provision` (and its device fields) is a Claude-only concept — hidden
+     * and defaulted off on a Codex account, since Codex device provisioning
+     * has no in-UI equivalent at all: it's driven from an admin's own
+     * machine via `token-slayer admin codex-provision` (see
+     * {@see CodexProvisioningService}), so a Codex account's "Add member"
+     * only ever tracks the membership, and {@see codexProvisionCommandFor()}
+     * surfaces that command instead. Public so Filament's `{name}Action`
+     * convention can resolve it when a test or the UI mounts it directly.
      *
      * @return Action
      */
@@ -273,8 +280,13 @@ class MembersRelationManager extends RelationManager
                     ->required(),
                 Toggle::make('provision')
                     ->label('Provision an account for this user')
-                    ->default(true)
+                    ->default(fn (): bool => $this->getOwnerRecord()->provider === Provider::Claude)
+                    ->visible(fn (): bool => $this->getOwnerRecord()->provider === Provider::Claude)
                     ->live(),
+                Placeholder::make('codex_provision_hint')
+                    ->label('Provisioning a Codex device')
+                    ->visible(fn (): bool => $this->getOwnerRecord()->provider !== Provider::Claude)
+                    ->content(fn (Get $get): string => $this->codexProvisionCommandFor($get('user_id'))),
                 Select::make('device_pk')
                     ->label('Device')
                     ->options(fn (Get $get): array => $this->deviceOptionsFor($get('user_id')))
@@ -289,7 +301,10 @@ class MembersRelationManager extends RelationManager
                         && (! $this->userHasDevices($get('user_id')) || blank($get('device_pk')))),
             ])
             ->action(function (array $data, Component $livewire): void {
-                if (! $data['provision']) {
+                // Absent entirely for a Codex account, since the hidden
+                // toggle never dehydrates -- falls back to the same
+                // track-only path its `default(false)` would have taken.
+                if (! ($data['provision'] ?? false)) {
                     /** @var Account $account */
                     $account = $this->getOwnerRecord();
                     $account->users()->syncWithoutDetaching([
@@ -446,6 +461,30 @@ class MembersRelationManager extends RelationManager
 
                 Notification::make()->success()->title('Refreshed from database')->send();
             });
+    }
+
+    /**
+     * The exact CLI command an admin runs to provision a Codex device for
+     * the selected user, shown by {@see addMemberAction()}'s
+     * `codex_provision_hint` placeholder in place of Claude's provision
+     * toggle — there is no in-UI equivalent for this step (see
+     * {@see CodexProvisioningService}), so this is the closest the modal
+     * gets to actually completing the job for a Codex account.
+     *
+     * @param  int|string|null  $userId  the selected user id, or null before one is chosen
+     * @return string
+     */
+    private function codexProvisionCommandFor(int|string|null $userId): string
+    {
+        $email = ($userId === null || $userId === '')
+            ? '<employee email>'
+            : (User::query()->find($userId)?->email ?? '<employee email>');
+
+        return sprintf(
+            'token-slayer admin codex-provision "%s" --for %s',
+            $this->getOwnerRecord()->name,
+            $email,
+        );
     }
 
     /**
