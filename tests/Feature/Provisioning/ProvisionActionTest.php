@@ -13,9 +13,7 @@ use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\Device;
 use App\Models\User;
-use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -55,8 +53,9 @@ it('reissue revokes the old grant and mints a pending replacement on the same de
     $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com']);
     $user = User::factory()->create();
     $device = Device::factory()->for($user)->create(['device_id' => 'fp-broken']);
-    $old = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
-    Cache::put(CacheKeys::provisionedGrant($old->id), 'stale', 60);
+    $old = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'pending_claude_access_token' => 'stale',
+    ]);
 
     Livewire::actingAs($admin)
         ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
@@ -68,7 +67,7 @@ it('reissue revokes the old grant and mints a pending replacement on the same de
         ->assertNotified();
 
     expect($old->fresh()->status)->toBe(GrantStatus::Revoked)
-        ->and(Cache::get(CacheKeys::provisionedGrant($old->id)))->toBeNull();
+        ->and($old->fresh()->pending_claude_access_token)->toBeNull();
     $new = AccountProvisionedGrant::query()->live()
         ->where('account_id', $account->id)->where('device_id', $device->id)->firstOrFail();
     expect($new->status)->toBe(GrantStatus::Pending);
@@ -77,8 +76,9 @@ it('reissue revokes the old grant and mints a pending replacement on the same de
 it('revoke marks the grant revoked and hides the action on revoked rows', function () {
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create();
-    $grant = AccountProvisionedGrant::factory()->for($account)->pending()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), 'secret', 60);
+    $grant = AccountProvisionedGrant::factory()->for($account)->pending()->create([
+        'pending_claude_access_token' => 'secret',
+    ]);
 
     Livewire::actingAs($admin)
         ->test(ProvisionsRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
@@ -87,7 +87,7 @@ it('revoke marks the grant revoked and hides the action on revoked rows', functi
         ->assertTableActionHidden('revoke', record: $grant->fresh());
 
     expect($grant->fresh()->status)->toBe(GrantStatus::Revoked)
-        ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->toBeNull();
+        ->and($grant->fresh()->pending_claude_access_token)->toBeNull();
 });
 
 it('delete device removes a fully-revoked device row and its grants', function () {

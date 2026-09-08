@@ -5,20 +5,22 @@ use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\Device;
 use App\Models\User;
-use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Crypt;
 
 uses(RefreshDatabase::class);
 
-// Seed a grant + its encrypted cache secret, exactly as provisionForDevice would.
+// Seed a grant + its durable pending-secret fields, exactly as
+// provisionForDevice would. `name`/`email`/`org_uuid` in `$secret` are
+// accepted for call-site parity with the old cache-payload shape but no
+// longer stored on the grant — claim() reads them off the account instead,
+// so a test asserting on them must set them via the account factory.
 function seedGrant(Device $device, Account $account, array $secret, string $state = 'pending'): AccountProvisionedGrant
 {
-    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->{$state}()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode($secret)), 86400);
-
-    return $grant;
+    return AccountProvisionedGrant::factory()->for($account)->for($device)->{$state}()->create([
+        'pending_claude_access_token' => $secret['access_token'],
+        'pending_claude_refresh_token' => $secret['refresh_token'] ?? null,
+        'pending_claude_expires_at' => $secret['expires_at'],
+    ]);
 }
 
 it('serves the default device to an old client with no device_id', function () {
@@ -61,7 +63,7 @@ it('serves nothing to an unknown fingerprint with no open door', function () {
         ->assertOk()->assertJsonCount(0, 'accounts');
 });
 
-it('returns the authed user\'s grants from cache, idempotently while the cache lives', function () {
+it('returns the authed user\'s grants from its pending-secret field, idempotently while it is set', function () {
     $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
     $device = Device::factory()->for($user)->legacyDefault()->create();
     $account = Account::factory()->create(['email' => 'shared@org.com', 'organization_uuid' => 'org-1']);
@@ -82,18 +84,18 @@ it('returns the authed user\'s grants from cache, idempotently while the cache l
     // First pull marks the grant claimed.
     expect($grant->fresh()->claimed_at)->not->toBeNull();
 
-    // Idempotent: a second pull STILL returns it (the cache secret is not consumed).
+    // Idempotent: a second pull STILL returns it (the secret field is not consumed).
     $this->withHeader('Authorization', 'Bearer HOOKTOK')->getJson('/api/provisioned')
         ->assertOk()->assertJsonCount(1, 'accounts')
         ->assertJsonPath('accounts.0.access_token', 'sk-ant-oat01-ACCESS');
 
-    // Once the cache secret is gone (24h TTL elapsed / revoked), it is no longer served.
-    Cache::forget(CacheKeys::provisionedGrant($grant->id));
+    // Once the pending secret is cleared (confirm/revoke), it is no longer served.
+    $grant->update(['pending_claude_access_token' => null]);
     $this->withHeader('Authorization', 'Bearer HOOKTOK')->getJson('/api/provisioned')
         ->assertOk()->assertJsonCount(0, 'accounts');
 });
 
-it('excludes another user\'s, a revoked, and an expired-cache grant', function () {
+it('excludes another user\'s, a revoked, and a secret-cleared grant', function () {
     $me = User::factory()->create(['hook_token' => hash('sha256', 'MINE')]);
     $myDevice = Device::factory()->for($me)->legacyDefault()->create();
     $other = User::factory()->create();
@@ -101,8 +103,8 @@ it('excludes another user\'s, a revoked, and an expired-cache grant', function (
 
     seedGrant($otherDevice, Account::factory()->create(), ['name' => 'x', 'email' => 'x', 'org_uuid' => null,
         'access_token' => 'a', 'refresh_token' => 'r', 'expires_at' => 1]);                                       // not mine
-    AccountProvisionedGrant::factory()->for(Account::factory()->create())->for($myDevice)->revoked()->create();  // revoked (+ no cache)
-    AccountProvisionedGrant::factory()->for(Account::factory()->create())->for($myDevice)->pending()->create();  // provisioned but cache expired (no secret)
+    AccountProvisionedGrant::factory()->for(Account::factory()->create())->for($myDevice)->revoked()->create();  // revoked (+ no pending secret)
+    AccountProvisionedGrant::factory()->for(Account::factory()->create())->for($myDevice)->pending()->create();  // provisioned but pending secret already cleared (no secret)
 
     $this->withHeader('Authorization', 'Bearer MINE')->getJson('/api/provisioned')
         ->assertOk()->assertJsonCount(0, 'accounts');

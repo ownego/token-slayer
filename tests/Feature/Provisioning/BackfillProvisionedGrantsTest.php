@@ -6,9 +6,7 @@ use App\Models\AccountProvisionedGrant;
 use App\Models\Device;
 use App\Models\User;
 use App\Services\Provisioning\LegacyGrantBackfiller;
-use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 
 uses(RefreshDatabase::class);
 
@@ -31,7 +29,6 @@ it('backfills one default device and mapped grants per legacy pivot row', functi
         'user_id' => $user->id, 'account_id' => $r[0], 'status' => 'tracked',
         'created_at' => now(), 'updated_at' => now(),
     ], $r[1]))->all();
-    Cache::put(CacheKeys::legacyProvisionedSetup($user->id, $pendingAlive->id), 'ALIVE-SECRET', 3600);
 
     app(LegacyGrantBackfiller::class)->backfill($legacy);
 
@@ -43,6 +40,5 @@ it('backfills one default device and mapped grants per legacy pivot row', functi
     $byAccount = AccountProvisionedGrant::query()->get()->keyBy('account_id');
     expect($byAccount[$claimed->id]->status)->toBe(GrantStatus::Claimed)
         ->and($byAccount[$pendingAlive->id]->status)->toBe(GrantStatus::Pending)
-        ->and($byAccount[$revoked->id]->status)->toBe(GrantStatus::Revoked)
-        ->and(Cache::get(CacheKeys::provisionedGrant($byAccount[$pendingAlive->id]->id)))->toBe('ALIVE-SECRET');
+        ->and($byAccount[$revoked->id]->status)->toBe(GrantStatus::Revoked);
 });

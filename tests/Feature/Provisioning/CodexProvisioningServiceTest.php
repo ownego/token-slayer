@@ -8,10 +8,7 @@ use App\Exceptions\CodexConnectException;
 use App\Models\Account;
 use App\Models\User;
 use App\Services\CodexProvisioningService;
-use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
@@ -120,7 +117,7 @@ it('re-connecting the same chatgpt_account_id updates the existing account inste
         ->and(Account::where('provider', 'codex')->count())->toBe(1);
 });
 
-it('provisions a device, syncs Tracked membership, and caches the raw auth_json', function (): void {
+it('provisions a device, syncs Tracked membership, and writes the raw auth_json onto the grant', function (): void {
     $account = app(CodexProvisioningService::class)->connectAccount(fakeCodexAuthJson(), 'Company ChatGPT');
     $user = User::factory()->create();
 
@@ -128,14 +125,8 @@ it('provisions a device, syncs Tracked membership, and caches the raw auth_json'
 
     expect($grant->status)->toBe(GrantStatus::Pending)
         ->and($grant->account_id)->toBe($account->id)
-        ->and($user->accounts()->wherePivot('status', MembershipStatus::Tracked->value)->whereKey($account->id)->exists())->toBeTrue();
-
-    $cached = json_decode(Crypt::decryptString(
-        Cache::get(CacheKeys::provisionedGrant($grant->id))
-    ), true);
-    expect($cached['provider'])->toBe('codex')
-        ->and($cached['chatgpt_account_id'])->toBe('acct-1')
-        ->and($cached['auth_json'])->toBe(fakeCodexAuthJson());
+        ->and($user->accounts()->wherePivot('status', MembershipStatus::Tracked->value)->whereKey($account->id)->exists())->toBeTrue()
+        ->and($grant->pending_codex_auth_json)->toBe(fakeCodexAuthJson());
 });
 
 it('rejects provisioning a second employee off the exact same admin login session', function (): void {
@@ -217,5 +208,5 @@ it('revoke calls the OpenAI revoke endpoint with the cached refresh token, then 
 
     Http::assertSent(fn ($request) => $request['token'] === 'opaque-refresh-fixture');
     expect($grant->fresh()->status)->toBe(GrantStatus::Revoked)
-        ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->toBeNull();
+        ->and($grant->fresh()->pending_codex_auth_json)->toBeNull();
 });

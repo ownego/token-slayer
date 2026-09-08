@@ -12,19 +12,19 @@ use App\Models\AccountProvisionedGrant;
 use App\Models\CodexCredential;
 use App\Models\User;
 use App\Services\Contracts\GrantRevokerContract;
-use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Crypt;
 
 /**
  * Admin-side Codex account provisioning: Step A ({@see connectAccount()})
  * populates a shared Codex account's own persistent credential; Step B
- * ({@see provisionForDevice()}) issues a per-device grant, cached the same
- * way {@see AccountProvisioningService} caches Claude's. Standalone from
- * `AccountProvisioningService` — never touches its Claude-specific
- * `claim()`/`removable()`/`confirmSetup()`/`memberships()` methods (those
- * stay Claude-only; see the spec's §7 correction for why).
+ * ({@see provisionForDevice()}) issues a per-device grant, its secret held
+ * the same durable way {@see AccountProvisioningService} holds Claude's
+ * (`pending_codex_auth_json`, no cache/TTL). Standalone from
+ * `AccountProvisioningService` for `removable()`/`confirmSetup()`/
+ * `memberships()` (those stay Claude-only; see the spec's §7 correction for
+ * why) — but `claim()` IS shared: it reads whichever pending-secret field a
+ * grant actually holds, Claude or Codex, since `device->grants()` mixes
+ * both providers on one device.
  */
 final class CodexProvisioningService implements GrantRevokerContract
 {
@@ -124,24 +124,12 @@ final class CodexProvisioningService implements GrantRevokerContract
             'status' => GrantStatus::Pending,
             'token_uuid' => $sessionId,
             'provisioned_at' => Carbon::now(),
+            'pending_codex_auth_json' => $authJson,
         ]);
 
         $user->accounts()->syncWithoutDetaching([
             $account->id => ['status' => MembershipStatus::Tracked->value],
         ]);
-
-        $payload = [
-            'provider' => 'codex',
-            'name' => $account->name ?? $account->email,
-            'email' => $this->identity($authJson, 'email', namespaced: false),
-            'chatgpt_account_id' => $chatgptAccountId,
-            'auth_json' => $authJson,
-        ];
-        Cache::put(
-            CacheKeys::provisionedGrant($grant->id),
-            Crypt::encryptString(json_encode($payload)),
-            CacheKeys::PROVISIONED_GRANT_TTL_SECONDS,
-        );
 
         return $grant;
     }
@@ -193,40 +181,23 @@ final class CodexProvisioningService implements GrantRevokerContract
 
     /**
      * Soft-revoke a grant: calls the real OpenAI revoke endpoint with the
-     * cached refresh token first (a genuine capability Claude doesn't
-     * have), then marks the row Revoked and forgets the cached secret —
-     * mirrors `AccountProvisioningService::revoke()`'s local half exactly.
+     * grant's own pending refresh token first (a genuine capability Claude
+     * doesn't have), then marks the row Revoked and clears its secret field
+     * — mirrors `AccountProvisioningService::revoke()`'s local half exactly
+     * (and reuses its field-clearing helper directly).
      *
      * @param  AccountProvisionedGrant  $grant  the grant to revoke
      * @return void
      */
     public function revoke(AccountProvisionedGrant $grant): void
     {
-        $refreshToken = $this->cachedRefreshToken($grant);
+        $refreshToken = $grant->pending_codex_auth_json['tokens']['refresh_token'] ?? null;
         if ($refreshToken !== null) {
             $this->oauth->revoke($refreshToken);
         }
 
         $grant->forceFill(['status' => GrantStatus::Revoked, 'revoked_at' => Carbon::now()])->save();
-        CacheKeys::forgetProvisionedGrant($grant->id);
-    }
-
-    /**
-     * Read the cached refresh token for a still-live grant, or null once
-     * the cache secret has already expired/been forgotten.
-     *
-     * @param  AccountProvisionedGrant  $grant  the grant being revoked
-     * @return string|null
-     */
-    private function cachedRefreshToken(AccountProvisionedGrant $grant): ?string
-    {
-        $raw = Cache::get(CacheKeys::provisionedGrant($grant->id));
-        if ($raw === null) {
-            return null;
-        }
-        $payload = json_decode(Crypt::decryptString($raw), true);
-
-        return $payload['auth_json']['tokens']['refresh_token'] ?? null;
+        $this->accounts->clearPendingSecret($grant);
     }
 
     /**
