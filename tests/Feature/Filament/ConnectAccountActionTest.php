@@ -14,6 +14,16 @@ beforeEach(function () {
     $this->admin = User::factory()->admin()->create();
 });
 
+test('labels the header action "Connect Claude account", not the ambiguous "Connect account"', function () {
+    // Renamed for symmetry with "Connect Codex account" — the old label
+    // read as provider-neutral even though the flow behind it is
+    // Claude-only PKCE, which was confusing next to the Codex button.
+    Livewire::actingAs($this->admin)
+        ->test(ListAccounts::class)
+        ->assertSeeText('Connect Claude account')
+        ->assertDontSeeText('Connect account');
+});
+
 test('connecting an existing identity updates its token and does not open the create modal', function () {
     fakeAnthropic();
     $account = Account::factory()->create(['email' => 'ongtung2212002@gmail.com', 'status' => AccountStatus::NeedsReauth]);
