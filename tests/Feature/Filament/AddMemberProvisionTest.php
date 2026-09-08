@@ -286,6 +286,7 @@ it('hides the provision toggle on a Codex account and shows the CLI command to r
     $admin = User::factory()->admin()->create();
     $account = Account::factory()->create(['provider' => Provider::Codex, 'name' => 'Shared Codex Bot']);
     $newcomer = User::factory()->create(['email' => 'newcomer@example.test']);
+    $another = User::factory()->create(['email' => 'another@example.test']);
 
     $livewire = Livewire::actingAs($admin)
         ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
@@ -294,11 +295,18 @@ it('hides the provision toggle on a Codex account and shows the CLI command to r
         ->setActionData(['user_id' => $newcomer->id]);
 
     $schemaName = $livewire->instance()->getMountedActionSchemaName();
-    $hint = $livewire->instance()->{$schemaName}->getFlatComponents(withHidden: true)['codex_provision_hint'];
+    $hint = fn () => $livewire->instance()->{$schemaName}->getFlatComponents(withHidden: true)['codex_provision_hint'];
 
-    expect($hint->getContent())->toBe('token-slayer admin codex-provision "Shared Codex Bot" --for newcomer@example.test');
+    expect($hint()->isCopyable())->toBeTrue()
+        ->and($hint()->getState())->toBe('token-slayer admin codex-provision "Shared Codex Bot" --for newcomer@example.test');
 
-    $livewire->callMountedAction()->assertNotified()->assertActionNotMounted('confirmProvisionMember');
+    // Reactive: swapping the selected user updates the command in place,
+    // not just at initial mount.
+    $livewire->setActionData(['user_id' => $another->id]);
+    expect($hint()->getState())->toBe('token-slayer admin codex-provision "Shared Codex Bot" --for another@example.test');
+
+    $livewire->setActionData(['user_id' => $newcomer->id])
+        ->callMountedAction()->assertNotified()->assertActionNotMounted('confirmProvisionMember');
 
     $pivot = AccountUser::query()->where('user_id', $newcomer->id)->where('account_id', $account->id)->firstOrFail();
 

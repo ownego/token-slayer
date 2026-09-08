@@ -17,13 +17,13 @@ use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -277,16 +277,20 @@ class MembersRelationManager extends RelationManager
                     ->options(fn (): array => User::query()->orderBy('name')->pluck('email', 'id')->all())
                     ->searchable()
                     ->live()
+                    ->afterStateUpdated(fn (Set $set, Get $get) => $set('codex_provision_hint', $this->codexProvisionCommandFor($get('user_id'))))
                     ->required(),
                 Toggle::make('provision')
                     ->label('Provision an account for this user')
                     ->default(fn (): bool => $this->getOwnerRecord()->provider === Provider::Claude)
                     ->visible(fn (): bool => $this->getOwnerRecord()->provider === Provider::Claude)
                     ->live(),
-                Placeholder::make('codex_provision_hint')
-                    ->label('Provisioning a Codex device')
+                TextInput::make('codex_provision_hint')
+                    ->label('Run this to provision a device')
+                    ->readOnly()
+                    ->copyable()
+                    ->dehydrated(false)
                     ->visible(fn (): bool => $this->getOwnerRecord()->provider !== Provider::Claude)
-                    ->content(fn (Get $get): string => $this->codexProvisionCommandFor($get('user_id'))),
+                    ->default(fn (Get $get): string => $this->codexProvisionCommandFor($get('user_id'))),
                 Select::make('device_pk')
                     ->label('Device')
                     ->options(fn (Get $get): array => $this->deviceOptionsFor($get('user_id')))
@@ -465,11 +469,12 @@ class MembersRelationManager extends RelationManager
 
     /**
      * The exact CLI command an admin runs to provision a Codex device for
-     * the selected user, shown by {@see addMemberAction()}'s
-     * `codex_provision_hint` placeholder in place of Claude's provision
-     * toggle — there is no in-UI equivalent for this step (see
+     * the selected user, shown (copyable) by {@see addMemberAction()}'s
+     * `codex_provision_hint` field in place of Claude's provision toggle —
+     * there is no in-UI equivalent for this step (see
      * {@see CodexProvisioningService}), so this is the closest the modal
-     * gets to actually completing the job for a Codex account.
+     * gets to actually completing the job for a Codex account. Recomputed
+     * live via `user_id`'s `afterStateUpdated`, not just at initial mount.
      *
      * @param  int|string|null  $userId  the selected user id, or null before one is chosen
      * @return string
