@@ -72,7 +72,12 @@ class CodexOAuthClient
      */
     public function requestUserCode(): array
     {
-        return Http::asForm()->post(self::USERCODE_URL, [
+        // JSON, not asForm(): this is OpenAI's own custom deviceauth API, not
+        // a standards-track OAuth endpoint. Verified live -- a form-encoded
+        // body gets a 400 ("Input should be a valid dictionary or object to
+        // extract fields from", a Pydantic body-parse error, not a field
+        // validation error) from the real endpoint.
+        return Http::post(self::USERCODE_URL, [
             'client_id' => self::CLIENT_ID,
         ])->throw()->json();
     }
@@ -91,7 +96,9 @@ class CodexOAuthClient
      */
     public function pollDeviceToken(string $deviceAuthId, string $userCode): array
     {
-        $response = Http::asForm()->post(self::DEVICE_TOKEN_URL, [
+        // JSON, not asForm() -- same custom deviceauth API as requestUserCode(),
+        // confirmed live to reject a form-encoded body the same way.
+        $response = Http::post(self::DEVICE_TOKEN_URL, [
             'device_auth_id' => $deviceAuthId,
             'user_code' => $userCode,
         ]);
