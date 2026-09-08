@@ -12,11 +12,9 @@ use App\Support\ModelName;
  * card reads from.
  *
  * Deliberately separate from {@see TokensByModelQuery}, which groups on the
- * raw stored id and knows nothing about who spent it, and from
- * {@see TokensByUserAndModelQuery}, which ranks users globally first. Ranking
- * globally is exactly what this must not do: a developer who runs one model
- * and nothing else never reaches an overall top-N, yet can be that model's
- * entire story.
+ * raw stored id and knows nothing about who spent it. Also deliberately does
+ * NOT rank users globally first: a developer who runs one model and nothing
+ * else never reaches an overall top-N, yet can be that model's entire story.
  */
 final class ModelContributorsQuery
 {
