@@ -136,7 +136,7 @@ it('shows attribution status from the latest event', function () {
 
     Livewire::actingAs($user)->test(Profile::class)
         ->assertSee('mystery@gmail.com')
-        ->assertSee('token-slayer update'); // outdated client hint (latest is 3)
+        ->assertSee('tok update'); // outdated client hint (latest is 3)
 });
 
 it('shows the matched attribution status for an org-uuid verified event with no email', function () {

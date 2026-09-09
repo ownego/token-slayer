@@ -198,14 +198,14 @@ test('nudges a developer whose hook is behind', function () {
     config(['token_slayer.hook_version' => '7']);
     $user = User::factory()->create(['hook_version' => '6']);
 
-    Livewire::actingAs($user)->test(Battlefield::class)->assertSee('token-slayer update');
+    Livewire::actingAs($user)->test(Battlefield::class)->assertSee('tok update');
 });
 
 test('says nothing to a developer who is current', function () {
     config(['token_slayer.hook_version' => '7']);
     $user = User::factory()->create(['hook_version' => '7']);
 
-    Livewire::actingAs($user)->test(Battlefield::class)->assertDontSee('token-slayer update');
+    Livewire::actingAs($user)->test(Battlefield::class)->assertDontSee('tok update');
 });
 
 test('says nothing to someone who has never sent an event', function () {
@@ -231,14 +231,14 @@ test('nudges a developer on a hook too old to report its own version', function 
 });
 
 test('tells a hook too old to self-update to re-run the installer instead', function () {
-    // `token-slayer update` is the wrong instruction for them: the command
-    // ships in the same release they are missing, so telling them to run it
-    // sends them at something their CLI may not have.
+    // `tok update` is the wrong instruction for them: the command ships in
+    // the same release they are missing, so telling them to run it sends
+    // them at something their CLI may not have.
     config(['token_slayer.hook_version' => '7']);
     $user = User::factory()->create(['hook_version' => null, 'client_version' => '1.0.0']);
 
     Livewire::actingAs($user)->test(Battlefield::class)
-        ->assertDontSee('token-slayer update')
+        ->assertDontSee('tok update')
         ->assertSee('Re-run the installer');
 });
 
