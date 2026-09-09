@@ -1,12 +1,47 @@
 <?php
 
 use App\Models\Account;
+use App\Models\CodexCredential;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Attribution\UnrecognizedAccountsQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+it('reports codex as the provider for an unrecognized chatgpt_account_id, matched once an account exists', function (): void {
+    $user = User::factory()->create();
+    Event::factory()->create(['account_id' => null, 'account_org_id' => 'acct-1', 'provider' => 'codex', 'user_id' => $user->id]);
+    $account = Account::create(['email' => 'chatgpt@company.com', 'provider' => 'codex']);
+    CodexCredential::create(['account_id' => $account->id, 'chatgpt_account_id' => 'acct-1']);
+
+    $rows = app(UnrecognizedAccountsQuery::class)->get();
+    $row = collect($rows)->firstWhere('org_uuid', 'acct-1');
+
+    expect($row['provider'])->toBe('codex')
+        ->and($row['account_id'])->toBe($account->id);
+});
+
+it('reports codex as the provider even with no matching account yet, derived from the event itself', function (): void {
+    $user = User::factory()->create();
+    Event::factory()->create(['account_id' => null, 'account_org_id' => 'acct-unknown', 'provider' => 'codex', 'user_id' => $user->id]);
+
+    $rows = app(UnrecognizedAccountsQuery::class)->get();
+    $row = collect($rows)->firstWhere('org_uuid', 'acct-unknown');
+
+    expect($row['provider'])->toBe('codex')
+        ->and($row['account_id'])->toBeNull();
+});
+
+it('still reports claude as the provider for existing rows, unchanged', function (): void {
+    $user = User::factory()->create();
+    Event::factory()->create(['account_id' => null, 'account_org_id' => 'org-a', 'provider' => 'claude-code', 'user_id' => $user->id]);
+
+    $rows = app(UnrecognizedAccountsQuery::class)->get();
+    $row = collect($rows)->firstWhere('org_uuid', 'org-a');
+
+    expect($row['provider'])->toBe('claude');
+});
 
 test('it lists distinct org beacons with no matched account, aggregated, matched flag set only when an account exists', function () {
     $user = User::factory()->create();

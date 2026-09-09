@@ -24,7 +24,9 @@ test('an account has many member users', function () {
 it('stores oauth tokens encrypted at rest', function () {
     $account = Account::factory()->connected()->create();
 
-    $raw = DB::table('accounts')->where('id', $account->id)->first();
+    // oauth_access_token now lives on claude_credentials, not accounts —
+    // moved there in the envelope/credential split.
+    $raw = DB::table('claude_credentials')->where('account_id', $account->id)->first();
 
     expect($raw->oauth_access_token)->not->toBe($account->oauth_access_token)
         ->and($account->oauth_access_token)->toStartWith('sk-ant-')

@@ -2,7 +2,7 @@
 
 namespace App\Services\Attribution;
 
-use App\Models\Account;
+use App\Models\ClaudeCredential;
 use App\Models\Event;
 use App\Support\CacheKeys;
 
@@ -26,10 +26,10 @@ final class EventAttributionBackfiller
      */
     public function backfill(?string $orgUuid = null): array
     {
-        $map = Account::query()
+        $map = ClaudeCredential::query()
             ->whereNotNull('organization_uuid')
             ->when($orgUuid !== null, fn ($query) => $query->where('organization_uuid', $orgUuid))
-            ->pluck('id', 'organization_uuid');
+            ->pluck('account_id', 'organization_uuid');
 
         $attributed = [];
 

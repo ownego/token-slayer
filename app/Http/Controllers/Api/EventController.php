@@ -37,13 +37,13 @@ class EventController extends Controller
         $accountEmail = $this->trimmedStringOrNull($payload['account_email'] ?? null);
         $accountSource = $this->trimmedStringOrNull($payload['account_source'] ?? null);
         $accountOrgId = $this->trimmedStringOrNull($payload['account_org_id'] ?? null);
-        $accountId = $this->accounts->resolve($accountOrgId, $accountEmail);
+        $provider = $request->query('provider', 'claude-code');
+        $accountId = $this->accounts->resolve($accountOrgId, $accountEmail, $provider);
         $clientVersion = $this->trimmedStringOrNull($payload['client_version'] ?? null);
         $customActivity = $this->trimmedStringOrNull($payload['custom_activity'] ?? null);
 
         $hookName = $payload['hook_event_name'] ?? 'unknown';
         $eventType = $this->normalizeEventType($hookName);
-        $provider = $request->query('provider', 'claude-code');
         $tokens = $this->resolveStopTokens($eventType, $payload);
 
         $user->forceFill([

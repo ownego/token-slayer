@@ -46,6 +46,14 @@ test('a near-expiry token is refreshed and reported fresh', function () {
     expect($account->fresh()->oauth_refresh_token)->not->toBeNull();
 });
 
+test('a refresh persists refresh_token_expires_in onto oauth_refresh_expires_at', function () {
+    fakeAnthropic();
+    $account = Account::factory()->connected()->create(['oauth_expires_at' => now()->addMinutes(30)]);
+
+    expect($this->refresher->ensureFreshToken($account))->toBeTrue();
+    expect($account->fresh()->oauth_refresh_expires_at)->not->toBeNull();
+});
+
 test('an invalid_grant refresh flags NeedsReauth, dispatches the alert, and reports not fresh', function () {
     Event::fake([AccountTokenRejected::class]);
     fakeAnthropic(['token' => Http::response('', 400)]);

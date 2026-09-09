@@ -200,10 +200,11 @@ final class AccountProvisioningService
 
         return $user->accounts()
             ->wherePivot('status', MembershipStatus::Untracked->value)
-            ->whereNotNull('organization_uuid')
+            ->whereHas('claudeCredential', fn ($query) => $query->whereNotNull('organization_uuid'))
             ->whereKeyNot($confirmedAccountIds)
-            ->pluck('organization_uuid')
-            ->map(fn (string $org): array => ['org_uuid' => $org])
+            ->with('claudeCredential')
+            ->get()
+            ->map(fn (Account $account): array => ['org_uuid' => $account->organization_uuid])
             ->all();
     }
 
@@ -254,7 +255,7 @@ final class AccountProvisioningService
         $deprovisioned = 0;
         if ($device !== null) {
             foreach (array_unique($removedOrgUuids) as $orgUuid) {
-                $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+                $account = Account::query()->whereRelation('claudeCredential', 'organization_uuid', $orgUuid)->first();
                 if ($account === null) {
                     continue; // unknown org — never create one from client input
                 }
@@ -303,7 +304,7 @@ final class AccountProvisioningService
      */
     private function accountWithLiveGrantFor(User $user, string $orgUuid): ?Account
     {
-        $account = Account::query()->where('organization_uuid', $orgUuid)->first();
+        $account = Account::query()->whereRelation('claudeCredential', 'organization_uuid', $orgUuid)->first();
         if ($account === null) {
             return null;
         }
@@ -343,9 +344,10 @@ final class AccountProvisioningService
     {
         return $user->accounts()
             ->wherePivot('status', MembershipStatus::Tracked->value)
-            ->whereNotNull('organization_uuid')
-            ->pluck('organization_uuid')
-            ->map(fn (string $org): array => ['org_uuid' => $org])
+            ->whereHas('claudeCredential', fn ($query) => $query->whereNotNull('organization_uuid'))
+            ->with('claudeCredential')
+            ->get()
+            ->map(fn (Account $account): array => ['org_uuid' => $account->organization_uuid])
             ->all();
     }
 }

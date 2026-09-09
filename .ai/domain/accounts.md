@@ -4,6 +4,8 @@
 
 An **Account** = one Claude (Anthropic) Max subscription owned by the org, identified by its login email. Developers (users) are members of zero or more accounts (`account_user` pivot). One user regularly switches between accounts (personal + org), so account attribution is **per-event, never per-user**.
 
+**Schema note (2026-09-02):** `accounts` is a provider-agnostic envelope (`id`, `email`, `name`, timestamps). All Claude-specific OAuth/credential-health state — `organization_uuid`, `organization_type`, `rate_limit_tier`, `plan`, `oauth_access_token`, `oauth_refresh_token`, `oauth_expires_at`, `oauth_refresh_expires_at`, `status`, `last_probed_at`, `probe_error`, `account_uuid` — lives on a separate `claude_credentials` table (`Account::claudeCredential(): HasOne`), split off so a future Codex provider can hold its own structurally different credential table symmetrically. Existing code keeps reading/writing `$account->organization_uuid`-style attributes unchanged — `Account` proxies each of these through `claudeCredential` via Eloquent `Attribute` accessors — but any RAW query-builder `where()`/`orderBy()`/`join()`/`pluck()` on these column names must go through the `claudeCredential` relation instead (e.g. `whereHas('claudeCredential', ...)`, `whereRelation('claudeCredential', 'organization_uuid', $uuid)`) — they no longer exist as queryable columns directly on `accounts` going forward (Deploy 2 drops the old, now-unused columns after a bake period).
+
 ## Membership states (`account_user.status`)
 
 The pivot's `status` (string-backed enum `MembershipStatus`) records how far a user's attribution setup has progressed for that account. It never drives attribution itself — events do — only the admin UI and the provisioning handoff:
@@ -37,7 +39,7 @@ The user's machine finishes the handoff: `token-slayer setup` pulls each provisi
 
 ## Quota tracking
 
-Server holds an **independent PKCE OAuth grant per account** (admin-driven code-paste connect flow; no collision with developers' own tokens). Constants in `config/token_slayer.php` (`anthropic.*`). A 5-minute `accounts:probe` command refreshes tokens (4 h headroom) and hits the free usage API → `account_usage_snapshots` (util 5h/7d as percent 0–100 + resets + raw JSON, pruned after 30 days). Refresh-token death → `accounts.status = needs_reauth`. A daily profile sync stores the raw `organization_type` and `rate_limit_tier` from `/api/oauth/profile` and derives the normalized `accounts.plan` (an `AccountPlan` enum: free/pro/max_5x/max_20x/max/unknown) from that `organization_type` × `rate_limit_tier` pair via `PlanResolver`.
+Server holds an **independent PKCE OAuth grant per account** (admin-driven code-paste connect flow; no collision with developers' own tokens). Constants in `config/token_slayer.php` (`anthropic.*`). A 5-minute `accounts:probe` command refreshes tokens (4 h headroom) and hits the free usage API → `account_usage_snapshots` (util 5h/7d as percent 0–100 + resets + raw JSON, pruned after 30 days). Refresh-token death → `claude_credentials.status = needs_reauth` (proxied as `$account->status` — see the schema note above). A daily profile sync stores the raw `organization_type` and `rate_limit_tier` from `/api/oauth/profile` and derives the normalized `accounts.plan` (an `AccountPlan` enum: free/pro/max_5x/max_20x/max/unknown) from that `organization_type` × `rate_limit_tier` pair via `PlanResolver`.
 
 ## Invariants
 

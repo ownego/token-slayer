@@ -8,6 +8,7 @@ use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
+use App\Services\CodexProvisioningService;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -77,7 +78,7 @@ class ProvisionsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['device.user', 'device.grants']))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['device.user', 'device.grants', 'account']))
             ->columns([
                 TextColumn::make('user')
                     ->label('User')
@@ -114,6 +115,10 @@ class ProvisionsRelationManager extends RelationManager
                     ->label('Token UUID')
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->placeholder('—'),
+                TextColumn::make('account.provider')
+                    ->label('Provider')
+                    ->badge()
+                    ->toggleable(),
             ])
             ->recordActions([
                 ActionGroup::make([
@@ -139,7 +144,8 @@ class ProvisionsRelationManager extends RelationManager
         return Action::make('reissue')
             ->label('Reissue')
             ->icon(Heroicon::OutlinedArrowPath)
-            ->visible(fn (AccountProvisionedGrant $record): bool => $record->status !== GrantStatus::Revoked)
+            ->visible(fn (AccountProvisionedGrant $record): bool => $record->status !== GrantStatus::Revoked
+                && $record->account->provider === 'claude')
             ->action(function (AccountProvisionedGrant $record, Component $livewire): void {
                 $started = app(AccountConnectService::class)->start();
 
@@ -200,8 +206,10 @@ class ProvisionsRelationManager extends RelationManager
 
     /**
      * Build the "Revoke" row action: soft-revokes the grant and forgets the
-     * cached secret via {@see AccountProvisioningService::revoke()}. Hidden
-     * once a row is already revoked.
+     * cached secret, via {@see AccountProvisioningService::revoke()} for a
+     * Claude grant or {@see CodexProvisioningService::revoke()} (which
+     * additionally calls the real OpenAI revoke endpoint first) for a Codex
+     * one. Hidden once a row is already revoked.
      *
      * @return Action
      */
@@ -213,11 +221,17 @@ class ProvisionsRelationManager extends RelationManager
             ->color('danger')
             ->requiresConfirmation()
             ->modalHeading('Revoke grant')
-            ->modalDescription('Marks this grant revoked and forgets the cached secret so it cannot be claimed. A grant already handed to the client must be deleted separately at claude.ai using its token_uuid.')
+            ->modalDescription(fn (AccountProvisionedGrant $record): string => $record->account->provider === 'codex'
+                ? 'Marks this grant revoked, calls OpenAI to revoke the refresh token, and forgets the cached secret.'
+                : 'Marks this grant revoked and forgets the cached secret so it cannot be claimed. A grant already handed to the client must be deleted separately at claude.ai using its token_uuid.')
             ->modalSubmitActionLabel('Revoke')
             ->visible(fn (AccountProvisionedGrant $record): bool => $record->status !== GrantStatus::Revoked)
             ->action(function (AccountProvisionedGrant $record): void {
-                app(AccountProvisioningService::class)->revoke($record);
+                if ($record->account->provider === 'codex') {
+                    app(CodexProvisioningService::class)->revoke($record);
+                } else {
+                    app(AccountProvisioningService::class)->revoke($record);
+                }
 
                 Notification::make()->success()->title('Grant revoked')->send();
             });

@@ -34,6 +34,23 @@ final class CacheKeys
     public const string ACCOUNTS_ORG_MAP = 'accounts:org-map';
 
     /**
+     * Codex chatgpt-account-id → account-id resolver map key.
+     *
+     * @var string
+     */
+    public const string ACCOUNTS_CODEX_ORG_MAP = 'accounts:codex-org-map';
+
+    /**
+     * Lowercase-email → account-id resolver map key, Codex-provider
+     * accounts only — kept separate from ACCOUNTS_EMAIL_MAP so a Codex
+     * event's email claim can never resolve against a Claude account (or
+     * vice versa) purely by email coincidence.
+     *
+     * @var string
+     */
+    public const string ACCOUNTS_CODEX_EMAIL_MAP = 'accounts:codex-email-map';
+
+    /**
      * How long a provisioned grant's encrypted secret lives in the cache
      * (24 hours). After expiry the raw grant is gone forever; Reissue is
      * the only recovery path.
@@ -122,6 +139,8 @@ final class CacheKeys
     {
         Cache::forget(self::ACCOUNTS_EMAIL_MAP);
         Cache::forget(self::ACCOUNTS_ORG_MAP);
+        Cache::forget(self::ACCOUNTS_CODEX_ORG_MAP);
+        Cache::forget(self::ACCOUNTS_CODEX_EMAIL_MAP);
     }
 
     /**

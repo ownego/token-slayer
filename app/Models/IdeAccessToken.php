@@ -121,6 +121,35 @@ class IdeAccessToken extends Model
     /**
      * @return array{0: string, 1: self}
      */
+    public static function issueAdminBearer(User $user): array
+    {
+        return self::issue($user, 'admin_bearer');
+    }
+
+    /**
+     * Resolve an admin bearer token to its User, but ONLY when that user
+     * currently holds at least one role — a token minted while the holder
+     * was an admin stops authenticating the moment their role is revoked,
+     * not just at the Filament-panel-access layer.
+     */
+    public static function resolveAdminBearer(string $plain): ?User
+    {
+        $token = self::whereKindAndHash('admin_bearer', hash('sha256', $plain))
+            ->whereNull('revoked_at')
+            ->first();
+
+        if ($token === null || ! $token->user->roles()->exists()) {
+            return null;
+        }
+
+        $token->forceFill(['last_used_at' => now()])->save();
+
+        return $token->user;
+    }
+
+    /**
+     * @return array{0: string, 1: self}
+     */
     public static function issueSessionUrl(User $user, string $redirectPath, int $ttlSeconds): array
     {
         return self::issue($user, 'session_url', [

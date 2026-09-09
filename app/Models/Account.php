@@ -9,11 +9,13 @@ use App\Support\CacheKeys;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 #[Hidden(['oauth_access_token', 'oauth_refresh_token'])]
 class Account extends Model
@@ -24,19 +26,24 @@ class Account extends Model
     protected $guarded = [];
 
     /**
-     * The model's default attribute values, mirroring the migration's DB-level defaults
-     * so a freshly-created instance reflects 'active' status without a reload.
+     * Mirrors the migration's DB-level default so a freshly-created
+     * in-memory instance reads 'claude' immediately — Eloquent does not
+     * refresh DB-computed defaults into memory after an INSERT that omits
+     * the column.
      *
      * @var array<string, mixed>
      */
     protected $attributes = [
-        'status' => AccountStatus::Active->value,
+        'provider' => 'claude',
     ];
 
     /**
      * Keep the resolver's email and organization-uuid maps, and this
      * account's membership aggregate + ingest pair caches, in sync with
-     * account mutations.
+     * account mutations. Also persists a dirty, in-memory `claudeCredential`
+     * relation after the parent account saves — Eloquent does not cascade-save
+     * `HasOne` relations on its own, so the accessor proxies below rely on
+     * this hook to actually reach the database.
      *
      * @return void
      */
@@ -49,6 +56,13 @@ class Account extends Model
         };
         static::saved($flush);
         static::deleted($flush);
+
+        static::saved(function (Account $account): void {
+            if ($account->relationLoaded('claudeCredential') && $account->claudeCredential?->isDirty()) {
+                $account->claudeCredential->account_id = $account->id;
+                $account->claudeCredential->save();
+            }
+        });
     }
 
     /**
@@ -122,6 +136,28 @@ class Account extends Model
     }
 
     /**
+     * This account's Claude-specific OAuth credential and probe-health
+     * state, split into its own table in the envelope/credential split.
+     *
+     * @return HasOne<ClaudeCredential, $this>
+     */
+    public function claudeCredential(): HasOne
+    {
+        return $this->hasOne(ClaudeCredential::class);
+    }
+
+    /**
+     * This account's Codex-specific persistent credential (Step A of the
+     * admin-provisioning flow), when this account's provider is 'codex'.
+     *
+     * @return HasOne<CodexCredential, $this>
+     */
+    public function codexCredential(): HasOne
+    {
+        return $this->hasOne(CodexCredential::class);
+    }
+
+    /**
      * Every usage event attributed to this org account via
      * `events.account_id`, in natural order. Callers that need newest-first
      * order the query explicitly.
@@ -137,17 +173,21 @@ class Account extends Model
      * Scope to accounts the usage prober should attempt this cycle: not
      * soft-disabled, not already known to have a dead refresh token
      * (`NeedsReauth` accounts are skipped until reconnected), and holding
-     * a refresh token to exchange in the first place.
+     * a refresh token to exchange in the first place. Queries through
+     * `claudeCredential` since `status`/`oauth_refresh_token` moved off
+     * `accounts` in the envelope/credential split.
      *
      * @param  Builder<Account>  $query  the query being scoped
      * @return Builder<Account> the scoped query
      */
     public function scopeProbeable(Builder $query): Builder
     {
-        return $query
-            ->where('status', '!=', AccountStatus::Disabled->value)
-            ->where('status', '!=', AccountStatus::NeedsReauth->value)
-            ->whereNotNull('oauth_refresh_token');
+        return $query->whereHas('claudeCredential', function (Builder $credentials): void {
+            $credentials
+                ->where('status', '!=', AccountStatus::Disabled->value)
+                ->where('status', '!=', AccountStatus::NeedsReauth->value)
+                ->whereNotNull('oauth_refresh_token');
+        });
     }
 
     protected static function newFactory(): AccountFactory
@@ -156,19 +196,231 @@ class Account extends Model
     }
 
     /**
-     * Get the attributes that should be cast.
+     * The credential row this account's Claude-column accessors read from
+     * and write to, materializing (and caching on the relation) an unsaved
+     * instance the first time a write touches a credential-less account,
+     * so several accessor writes in the same request land on one in-memory
+     * row instead of each silently creating and discarding its own.
      *
-     * @return array<string, string>
+     * @return ClaudeCredential
      */
-    protected function casts(): array
+    private function claudeCredentialForWrite(): ClaudeCredential
     {
-        return [
-            'status' => AccountStatus::class,
-            'plan' => AccountPlan::class,
-            'oauth_access_token' => 'encrypted',
-            'oauth_refresh_token' => 'encrypted',
-            'oauth_expires_at' => 'datetime',
-            'last_probed_at' => 'datetime',
-        ];
+        if ($this->claudeCredential === null) {
+            $this->setRelation('claudeCredential', $this->claudeCredential()->make());
+        }
+
+        return $this->claudeCredential;
+    }
+
+    /**
+     * Proxies to `claudeCredential.organization_uuid` — moved off `accounts`
+     * in the envelope/credential split; see `claudeCredentialForWrite()`.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function organizationUuid(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->claudeCredential?->organization_uuid,
+            set: function (?string $value): array {
+                $this->claudeCredentialForWrite()->organization_uuid = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.organization_type`.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function organizationType(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->claudeCredential?->organization_type,
+            set: function (?string $value): array {
+                $this->claudeCredentialForWrite()->organization_type = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.rate_limit_tier`.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function rateLimitTier(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->claudeCredential?->rate_limit_tier,
+            set: function (?string $value): array {
+                $this->claudeCredentialForWrite()->rate_limit_tier = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.plan`, defaulting to Max20x (mirroring
+     * the DB-level default the raw column used to carry) when no credential
+     * row exists yet.
+     *
+     * @return Attribute<AccountPlan, AccountPlan>
+     */
+    protected function plan(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): AccountPlan => $this->claudeCredential?->plan ?? AccountPlan::Max20x,
+            set: function (AccountPlan $value): array {
+                $this->claudeCredentialForWrite()->plan = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.oauth_access_token`.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function oauthAccessToken(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->claudeCredential?->oauth_access_token,
+            set: function (?string $value): array {
+                $this->claudeCredentialForWrite()->oauth_access_token = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.oauth_refresh_token`.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function oauthRefreshToken(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->claudeCredential?->oauth_refresh_token,
+            set: function (?string $value): array {
+                $this->claudeCredentialForWrite()->oauth_refresh_token = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.oauth_expires_at`.
+     *
+     * @return Attribute<?Carbon, mixed>
+     */
+    protected function oauthExpiresAt(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?Carbon => $this->claudeCredential?->oauth_expires_at,
+            set: function (mixed $value): array {
+                $this->claudeCredentialForWrite()->oauth_expires_at = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.oauth_refresh_expires_at` — a new
+     * column with no current writer server-side; the Phase 3 visibility
+     * work adds the code that populates it.
+     *
+     * @return Attribute<?Carbon, mixed>
+     */
+    protected function oauthRefreshExpiresAt(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?Carbon => $this->claudeCredential?->oauth_refresh_expires_at,
+            set: function (mixed $value): array {
+                $this->claudeCredentialForWrite()->oauth_refresh_expires_at = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.status`, defaulting to Active (mirroring
+     * the DB-level default the raw column used to carry) when no credential
+     * row exists yet.
+     *
+     * @return Attribute<AccountStatus, AccountStatus>
+     */
+    protected function status(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): AccountStatus => $this->claudeCredential?->status ?? AccountStatus::Active,
+            set: function (AccountStatus $value): array {
+                $this->claudeCredentialForWrite()->status = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.last_probed_at`.
+     *
+     * @return Attribute<?Carbon, mixed>
+     */
+    protected function lastProbedAt(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?Carbon => $this->claudeCredential?->last_probed_at,
+            set: function (mixed $value): array {
+                $this->claudeCredentialForWrite()->last_probed_at = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.probe_error`.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function probeError(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->claudeCredential?->probe_error,
+            set: function (?string $value): array {
+                $this->claudeCredentialForWrite()->probe_error = $value;
+
+                return [];
+            },
+        );
+    }
+
+    /**
+     * Proxies to `claudeCredential.account_uuid`.
+     *
+     * @return Attribute<?string, ?string>
+     */
+    protected function accountUuid(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->claudeCredential?->account_uuid,
+            set: function (?string $value): array {
+                $this->claudeCredentialForWrite()->account_uuid = $value;
+
+                return [];
+            },
+        );
     }
 }

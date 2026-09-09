@@ -113,6 +113,9 @@ class AccountTokenRefresher
         $account->oauth_access_token = $token['access_token'];
         $account->oauth_refresh_token = $token['refresh_token'];
         $account->oauth_expires_at = now()->addSeconds($token['expires_in']);
+        if (isset($token['refresh_token_expires_in'])) {
+            $account->oauth_refresh_expires_at = now()->addSeconds($token['refresh_token_expires_in']);
+        }
         $account->save();
 
         return true;
