@@ -115,5 +115,6 @@ test('nudges a developer on a hook too old to report its own version', function 
         // Not "on v" anything -- it has no version to print, and the command
         // it would be told to run ships in the release it is missing.
         ->assertDontSee('Your hook is on v ')
-        ->assertSee('Re-run the install command');
+        ->assertSee('Re-run the install command')
+        ->assertSeeHtml('href="'.route('update').'"');
 });

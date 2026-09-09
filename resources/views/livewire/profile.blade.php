@@ -71,7 +71,7 @@
                         {{-- No version to print, and no `token-slayer update`
                              to point at: both ship in the release this hook is
                              missing. --}}
-                        Your hook is out of date &mdash; usage is being recorded with less detail. Re-run the install command below to move to v{{ $attribution['latestHookVersion'] }}.
+                        Your hook is out of date &mdash; usage is being recorded with less detail. <a href="{{ route('update') }}" class="underline hover:text-amber-900">Re-run the install command</a> to move to v{{ $attribution['latestHookVersion'] }}.
                     @endif
                 </p>
             @endif

@@ -1,0 +1,22 @@
+<?php
+
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+uses(RefreshDatabase::class);
+
+test('the quick-update page redirects guests to the slack login route', function () {
+    $this->get('/update')->assertRedirect(route('slack.login'));
+});
+
+test('the quick-update page shows the reinstall commands for both platforms, with no setup wizard steps', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/update')
+        ->assertOk()
+        ->assertSee(route('install-script'))
+        ->assertSee(route('install-script-ps1'))
+        ->assertDontSee('Choose your platform')
+        ->assertDontSee('Check Python')
+        ->assertDontSee('Do you already have a token?');
+});

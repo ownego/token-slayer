@@ -241,3 +241,15 @@ test('tells a hook too old to self-update to re-run the installer instead', func
         ->assertDontSee('token-slayer update')
         ->assertSee('Re-run the installer');
 });
+
+test('the re-run-the-installer nudge links straight to the quick-update page, not the profile page', function () {
+    // The old copy pointed at the Profile page, which then made the
+    // developer click through into the full multi-step setup wizard just to
+    // reach a command they already know how to run. One click should land
+    // them on the command, not on a wizard.
+    config(['token_slayer.hook_version' => '7']);
+    $user = User::factory()->create(['hook_version' => null, 'client_version' => '1.0.0']);
+
+    Livewire::actingAs($user)->test(Battlefield::class)
+        ->assertSeeHtml('href="'.route('update').'"');
+});
