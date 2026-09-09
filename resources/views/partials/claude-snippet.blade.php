@@ -1,7 +1,7 @@
 @php($command = "bash \$HOME/.config/{$namespace}/send-hook.sh")
 {
   "hooks": {
-@foreach (['SessionStart','UserPromptSubmit','PreToolUse','PostToolUse','Stop','SubagentStop','SessionEnd','Notification'] as $event)
+@foreach (['SessionStart','UserPromptSubmit','PreToolUse','Stop','SubagentStop'] as $event)
     "{{ $event }}": [
       { "hooks": [{
         "type": "command",

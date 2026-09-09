@@ -89,6 +89,12 @@
             'example' => 'tok update',
         ],
         [
+            'q' => 'Inspect or refresh account usage',
+            'cmd' => 'tok usage show|refresh',
+            'desc' => "<code>show</code> prints the on-disk usage cache (5h/7d, per seat) as JSON, no network call. <code>refresh</code> fetches fresh usage for every account first, then shows the same list — this is what the main table's numbers come from.",
+            'example' => "tok usage show\ntok usage refresh",
+        ],
+        [
             'q' => 'Remove the switcher entirely',
             'cmd' => 'tok uninstall',
             'desc' => "Restores your original Claude login, removes the switcher's venv and shim, and (unless <code>--keep-accounts</code> is given) clears stored account slots, switch state, and history. Does not touch the token-tracking hook itself (<code>send-hook.sh</code>, hook token, <code>custom.sh</code>) — that's removed separately.",

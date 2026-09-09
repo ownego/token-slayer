@@ -1,7 +1,7 @@
 @php($command = "PROVIDER=codex bash \$HOME/.config/{$namespace}/send-hook.sh")
 {
   "hooks": {
-@foreach (['SessionStart', 'Stop'] as $event)
+@foreach (['SessionStart', 'Stop', 'SubagentStop'] as $event)
     "{{ $event }}": [
       { "hooks": [{
         "type": "command",

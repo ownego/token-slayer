@@ -15,14 +15,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          { "type": "command", "command": "{!! $command !!}" }
-        ]
-      }
-    ],
     "Stop": [
       { "type": "command", "command": "{!! $command !!}" }
     ]

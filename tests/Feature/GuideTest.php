@@ -38,6 +38,7 @@ test('guide lists every account task with its tok command', function () {
         ->assertSee('Reconcile accounts after a manual change')
         ->assertSee('Update the switcher itself')
         ->assertSee('Remove the switcher entirely')
+        ->assertSee('Inspect or refresh account usage')
         ->assertSee('tok add NAME')
         ->assertSee('--login', escape: false)
         ->assertSee('tok switch TARGET', escape: false)
@@ -53,7 +54,8 @@ test('guide lists every account task with its tok command', function () {
         ->assertSee('tok sessions')
         ->assertSee('tok sync')
         ->assertSee('tok update')
-        ->assertSee('tok uninstall');
+        ->assertSee('tok uninstall')
+        ->assertSee('tok usage show', escape: false);
 });
 
 test('guide explains how to discover a slot name or index before switching', function () {
