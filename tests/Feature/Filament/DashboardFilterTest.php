@@ -66,6 +66,26 @@ it('counts distinct tracked users across claude and codex accounts, without doub
         ->assertSeeInOrder(['Total active users', '3']);
 });
 
+it('scopes the tracked-membership existence check by the qualified account_user.status column, not the wherePivot() magic method -- that magic method only exists on the BelongsToMany relation itself, and whereHas\'s closure receives a plain related-model builder, so wherePivot() there silently falls through to the query builder\'s dynamicWhere magic and emits a bare "pivot" = "status" predicate; SQLite tolerates it, Postgres throws "column pivot does not exist"', function () {
+    $account = Account::factory()->create();
+    $tracked = User::factory()->create();
+    $account->users()->attach($tracked->id, ['status' => MembershipStatus::Tracked->value]);
+    $admin = User::factory()->admin()->create();
+
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+
+    $this->actingAs($admin)->get(Dashboard::getUrl(panel: 'admin'))->assertOk();
+
+    $existenceQueries = array_filter($queries, fn (string $sql): bool => str_contains($sql, 'account_user'));
+    expect($existenceQueries)->not->toBeEmpty();
+    foreach ($existenceQueries as $sql) {
+        expect($sql)->not->toContain('"pivot"');
+    }
+});
+
 it('explains the toggle on a separate line per case instead of one run-on block', function () {
     $this->actingAs(User::factory()->admin()->create());
 

@@ -70,7 +70,7 @@ class Dashboard extends BaseDashboard
     private function totalActiveUsersCount(): int
     {
         return User::query()
-            ->whereHas('accounts', fn ($query) => $query->wherePivot('status', MembershipStatus::Tracked->value))
+            ->whereHas('accounts', fn ($query) => $query->where('account_user.status', MembershipStatus::Tracked->value))
             ->count();
     }
 }
