@@ -164,7 +164,7 @@ it('pipes the event body into curl over stdin in the bundled hook, not as an arg
     $script = $this->get(route('install-script-ps1'))->content();
 
     expect($script)
-        ->toContain('printf \'%s\' "$BODY" | curl -s --max-time 3 -X POST "$URL"')
+        ->toContain('printf \'%s\' "$BODY" | curl -sf --max-time 3 -X POST "$URL"')
         ->toContain('--data-binary @-')
         ->not->toContain('-d "$BODY"');
 });
@@ -177,7 +177,7 @@ it('never falls back to a system jq inside the Windows hook -- every jq call res
         ->toContain('JQ="$HOME/.config/__TS_NAMESPACE__/bin/jq.exe"');
 
     $resolverPos = strpos($script, 'JQ="$HOME/.config/__TS_NAMESPACE__/bin/jq.exe"');
-    $firstJqCallPos = strpos($script, '"$JQ" -r \'.transcript_path');
+    $firstJqCallPos = strpos($script, '"$JQ" -r \'');
     expect($resolverPos)->not->toBeFalse()
         ->and($firstJqCallPos)->not->toBeFalse()
         ->and($resolverPos)->toBeLessThan($firstJqCallPos);
@@ -195,7 +195,10 @@ it('guards jq calls in the Windows hook template with -x (executable check), not
         ->not->toContain('[ -n "$JQ" ]')
         ->toContain('[ -x "$JQ" ]; then');
 
-    expect(substr_count($script, '[ -x "$JQ" ]'))->toBe(2);
+    // Four now: the SubagentStop session_id fold-in, transcript enrichment,
+    // the post-resolve_account body merge, and the payload filter the
+    // Windows hook previously did not have at all.
+    expect(substr_count($script, '[ -x "$JQ" ]'))->toBe(4);
 });
 
 it('bakes SLAYER_INSTALL_URL and SLAYER_NS into the Windows .cmd shims', function () {
@@ -209,6 +212,23 @@ it('bakes SLAYER_INSTALL_URL and SLAYER_NS into the Windows .cmd shims', functio
         ->toContain('SLAYER_INSTALL_URL=$InstallUrl')
         ->toContain('setlocal')
         ->toContain('-m slayer_cli %*');
+});
+
+it('carries the invoked shim name through so tok --help says tok, not token-slayer', function () {
+    // Same three-alias problem as the POSIX shim: tok.cmd/slayer.cmd/
+    // token-slayer.cmd all run identical content (`python -m slayer_cli`),
+    // so Click can never recover which one was typed from argv[0] alone.
+    // Batch's own `%~n0` (the invoked .cmd's own base name, no extension)
+    // carries it through the same way `$(basename "$0")` does on POSIX.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)->toContain('SLAYER_PROG_NAME=%~n0');
+
+    $progNamePos = strpos($script, 'SLAYER_PROG_NAME=%~n0');
+    $execPos = strpos($script, '-m slayer_cli %*');
+    expect($progNamePos)->not->toBeFalse()
+        ->and($execPos)->not->toBeFalse()
+        ->and($progNamePos)->toBeLessThan($execPos);
 });
 
 it('falls back to WindowsApps interpreters instead of rejecting them by path', function () {
@@ -284,7 +304,64 @@ it('throws immediately if the venv or wheel bootstrap fails on Windows, surfacin
         ->not->toContain('hook tracking still installed')
         ->not->toContain('CLI unavailable')
         ->toContain('throw "slayer-cli: \'python -m venv --without-pip\' failed -- see the error above."')
-        ->toContain("if (-not (Test-Path (Join-Path \$Venv 'Scripts\\pip.exe'))) {\n  throw")
+        ->toContain("if (-not (Test-Path (Join-Path \$Venv 'Scripts\\pip.exe'))) {\n    throw")
         ->toContain('if ($LASTEXITCODE -ne 0) { throw')
         ->toContain('$slayerErr = $_.Exception.Message');
+});
+
+it('skips recreating an already-healthy venv instead of unconditionally re-running python -m venv', function () {
+    // A re-install over a HEALTHY venv used to call `python -m venv $Venv`
+    // regardless, which can hit a real Windows "Access is denied" if the
+    // daily background reconcile job happens to be running python.exe from
+    // that same venv at that exact moment. Harmless (the untouched venv
+    // still works), but noisy and contradicted the self-heal comment's own
+    // stated intent ("left untouched, keeping updates fast").
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    // Two guards must exist: the original one gating the self-heal delete,
+    // and a NEW one gating venv creation itself -- a single shared guard
+    // string is not enough to prove the second one exists (it would match
+    // the first, pre-existing occurrence too).
+    expect(substr_count($script, 'if (-not $venvHealthy) {'))->toBe(2);
+
+    $healthCheckPos = strpos($script, '$venvHealthy = ($LASTEXITCODE -eq 0)');
+    $secondGuardPos = strpos($script, 'if (-not $venvHealthy) {', $healthCheckPos);
+    $venvCreatePos = strpos($script, '& $PyExe @PyPrefix -m venv $Venv');
+    $pipCheckPos = strpos($script, "if (-not (Test-Path (Join-Path \$Venv 'Scripts\\pip.exe'))) {");
+
+    expect($secondGuardPos)->not->toBeFalse()
+        ->and($venvCreatePos)->not->toBeFalse()
+        ->and($pipCheckPos)->not->toBeFalse()
+        // Creation call AND the final pip.exe check both sit inside the
+        // second guard -- a healthy venv skips both entirely.
+        ->and($secondGuardPos)->toBeLessThan($venvCreatePos)
+        ->and($venvCreatePos)->toBeLessThan($pipCheckPos);
+});
+
+test('install.ps1 merges codex hooks into hooks.json in the modern shape, not the obsolete config.toml [[hooks]] array', function () {
+    // Verified against Codex's own source (codex-rs/config/src/hooks_tests.rs,
+    // codex-rs/hooks/src/declarations.rs -- HookEventsToml has a field per
+    // event name, e.g. session_start: Vec<MatcherGroup>; there is no generic
+    // "hooks" field it could ever bind to) and a full-text search of the
+    // entire openai/codex repo for the literal string "[[hooks]]", which
+    // returns zero matches anywhere in source, tests, or docs. The shape this
+    // installer used to write -- `[[hooks]]` / `event = "stop"` appended to
+    // config.toml -- has never been a real Codex format; a modern Codex CLI
+    // silently ignores it, so Windows users installed hooks that never fired.
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain("Join-Path \$CodexDir 'hooks.json'")
+        ->toContain('events = ["SessionStart", "Stop", "SubagentStop"]')
+        ->not->toContain("Join-Path \$CodexDir 'config.toml'")
+        ->not->toContain('event = "session_start"')
+        ->not->toContain('event = "stop"');
+});
+
+test('install.ps1 codex hooks.json merge dedupes by fingerprint, same as the POSIX installer', function () {
+    $script = $this->get(route('install-script-ps1'))->content();
+
+    expect($script)
+        ->toContain('HOOK_FINGERPRINT')
+        ->toContain('fingerprint not in json.dumps(h)');
 });

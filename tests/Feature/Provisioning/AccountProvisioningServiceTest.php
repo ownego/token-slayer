@@ -8,11 +8,8 @@ use App\Models\Device;
 use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
-use App\Support\CacheKeys;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Crypt;
 
 uses(RefreshDatabase::class);
 
@@ -57,7 +54,7 @@ it('returns the selected device by id, scoped to the user', function () {
     $service->resolveProvisionTarget($user, $theirs->id);
 })->throws(ModelNotFoundException::class);
 
-it('provisions a Pending grant on the device, caches the secret, and tracks membership', function () {
+it('provisions a Pending grant on the device, writes its pending-secret fields, and tracks membership', function () {
     fakeExchange();
     $user = User::factory()->create();
     $account = Account::factory()->create(['organization_uuid' => 'org-1']);
@@ -68,11 +65,9 @@ it('provisions a Pending grant on the device, caches the secret, and tracks memb
 
     expect($grant->status)->toBe(GrantStatus::Pending)
         ->and($grant->device_id)->toBe($device->id)
-        ->and($grant->token_uuid)->toBe('tok-uuid-1');
-
-    $payload = json_decode(Crypt::decryptString(Cache::get(CacheKeys::provisionedGrant($grant->id))), true);
-    expect($payload['access_token'])->toBe('sk-ant-oat01-NEW')
-        ->and($payload['org_uuid'])->toBe('org-1');
+        ->and($grant->token_uuid)->toBe('tok-uuid-1')
+        ->and($grant->pending_claude_access_token)->toBe('sk-ant-oat01-NEW')
+        ->and($grant->pending_claude_refresh_token)->toBe('sk-ant-ort01-NEW');
 
     expect($user->accounts()->first()->pivot->status)->toBe(MembershipStatus::Tracked);
 });
@@ -82,38 +77,40 @@ it('revokes the previous live grant on the same (account, device) when re-provis
     $user = User::factory()->create();
     $account = Account::factory()->create();
     $device = Device::factory()->for($user)->create();
-    $old = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
-    Cache::put(CacheKeys::provisionedGrant($old->id), 'stale', 60);
+    $old = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'pending_claude_access_token' => 'stale',
+    ]);
 
     $new = app(AccountProvisioningService::class)
         ->provisionForDevice($user, $account, $device, 'state', 'code#state');
 
     expect($old->fresh()->status)->toBe(GrantStatus::Revoked)
-        ->and(Cache::get(CacheKeys::provisionedGrant($old->id)))->toBeNull()
+        ->and($old->fresh()->pending_claude_access_token)->toBeNull()
         ->and($new->status)->toBe(GrantStatus::Pending)
         ->and($account->provisionedGrants()->live()->where('device_id', $device->id)->count())->toBe(1);
 });
 
-it('revoke() marks the grant revoked and forgets its secret', function () {
-    $grant = AccountProvisionedGrant::factory()->pending()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), 'secret', 60);
+it('revoke() marks the grant revoked and clears its pending-secret fields', function () {
+    $grant = AccountProvisionedGrant::factory()->pending()->create([
+        'pending_claude_access_token' => 'secret',
+    ]);
 
     app(AccountProvisioningService::class)->revoke($grant);
 
     expect($grant->fresh()->status)->toBe(GrantStatus::Revoked)
         ->and($grant->fresh()->revoked_at)->not->toBeNull()
-        ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->toBeNull();
+        ->and($grant->fresh()->pending_claude_access_token)->toBeNull();
 });
 
 it('claims pending grants for the resolved device and marks them claimed', function () {
     $user = User::factory()->create();
     $device = Device::factory()->for($user)->legacyDefault()->create();
     $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-a']);
-    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->pending()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
-        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-a',
-        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
-    ])), 86400);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->pending()->create([
+        'pending_claude_access_token' => 'AT',
+        'pending_claude_refresh_token' => 'RT',
+        'pending_claude_expires_at' => 1,
+    ]);
 
     $payloads = app(AccountProvisioningService::class)->claim($user, null);
 
@@ -122,20 +119,23 @@ it('claims pending grants for the resolved device and marks them claimed', funct
         ->and($grant->fresh()->status)->toBe(GrantStatus::Claimed)
         ->and($grant->fresh()->claimed_at)->not->toBeNull();
 
-    // Idempotent within the TTL: a second claim still serves it.
+    // Idempotent: the secret field isn't cleared until confirm/revoke, so a
+    // second claim still serves it.
     expect(app(AccountProvisioningService::class)->claim($user, null))->toHaveCount(1);
 });
 
-it('serves nothing for a dead cache, a revoked grant, or another device', function () {
+it('serves nothing for a cleared secret, a revoked grant, or another device', function () {
     $user = User::factory()->create();
     $mine = Device::factory()->for($user)->create(['device_id' => 'fp-mine']);
     $other = Device::factory()->for($user)->create(['device_id' => 'fp-other']);
 
-    AccountProvisionedGrant::factory()->for($mine)->pending()->create();     // no cache
-    $revoked = AccountProvisionedGrant::factory()->for($mine)->revoked()->create();
-    Cache::put(CacheKeys::provisionedGrant($revoked->id), Crypt::encryptString('{}'), 60);
-    $othersGrant = AccountProvisionedGrant::factory()->for($other)->pending()->create();
-    Cache::put(CacheKeys::provisionedGrant($othersGrant->id), Crypt::encryptString('{}'), 60);
+    AccountProvisionedGrant::factory()->for($mine)->pending()->create();     // no pending secret
+    AccountProvisionedGrant::factory()->for($mine)->revoked()->create([
+        'pending_claude_access_token' => 'ignored',
+    ]);
+    AccountProvisionedGrant::factory()->for($other)->pending()->create([
+        'pending_claude_access_token' => 'not-mine',
+    ]);
 
     expect(app(AccountProvisioningService::class)->claim($user, 'fp-mine'))->toBe([]);
 });
@@ -151,13 +151,13 @@ it('never serves a grant for an org the user is untracked on, keeping it consist
     $user = User::factory()->create();
     $device = Device::factory()->for($user)->legacyDefault()->create();
     $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-untracked']);
-    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
-        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-untracked',
-        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
-    ])), 86400);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'pending_claude_access_token' => 'AT',
+        'pending_claude_refresh_token' => 'RT',
+        'pending_claude_expires_at' => 1,
+    ]);
 
-    // Admin unverifies the user while the grant's 24h cache secret is still alive.
+    // Admin unverifies the user while the grant's pending secret is still set.
     $user->accounts()->syncWithoutDetaching([
         $account->id => ['status' => MembershipStatus::Untracked->value],
     ]);
@@ -172,11 +172,11 @@ it('still serves grants for Tracked and Pending memberships', function (Membersh
     $user = User::factory()->create();
     $device = Device::factory()->for($user)->legacyDefault()->create();
     $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-servable']);
-    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
-        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-servable',
-        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
-    ])), 86400);
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'pending_claude_access_token' => 'AT',
+        'pending_claude_refresh_token' => 'RT',
+        'pending_claude_expires_at' => 1,
+    ]);
     $user->accounts()->syncWithoutDetaching([
         $account->id => ['status' => $status->value],
     ]);
@@ -191,11 +191,11 @@ it('serves a legacy grant whose membership row is absent, without breaking backf
     $user = User::factory()->create();
     $device = Device::factory()->for($user)->legacyDefault()->create();
     $account = Account::factory()->create(['email' => 'a@org.com', 'organization_uuid' => 'org-legacy-backfill']);
-    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString(json_encode([
-        'name' => 'a@org.com', 'email' => 'a@org.com', 'org_uuid' => 'org-legacy-backfill',
-        'access_token' => 'AT', 'refresh_token' => 'RT', 'expires_at' => 1,
-    ])), 86400);
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'pending_claude_access_token' => 'AT',
+        'pending_claude_refresh_token' => 'RT',
+        'pending_claude_expires_at' => 1,
+    ]);
 
     // No account_user row at all for this (user, account) pair.
     expect(app(AccountProvisioningService::class)->claim($user, null))->toHaveCount(1);

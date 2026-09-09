@@ -1,4 +1,33 @@
 <div class="relative min-h-screen bg-slate-950 text-white">
+    @if ($hookOutdated)
+        {{-- Dismissal is namespaced by version, so dismissing hides it until a
+             NEWER version ships rather than until the next reload. This page
+             gets reloaded constantly; a banner that returns every time gets
+             muted and then ignored. localStorage throws outright in some
+             contexts, so every access is guarded. --}}
+        <div
+            x-data="{
+                show: false,
+                key: 'ts:update-dismissed:{{ $latestHookVersion }}',
+                init() { try { this.show = localStorage.getItem(this.key) !== '1'; } catch (e) { this.show = true; } },
+                dismiss() { this.show = false; try { localStorage.setItem(this.key, '1'); } catch (e) {} },
+            }"
+            x-show="show"
+            x-cloak
+            class="absolute top-0 inset-x-0 z-30 flex items-center justify-center gap-3 bg-amber-500/15 border-b border-amber-500/40 px-4 py-2 text-sm text-amber-200"
+        >
+            <span>Your hook is out of date &mdash; usage is being recorded with less detail.</span>
+            {{-- A hook old enough not to report its own version predates
+                 `token-slayer update` as well, so pointing it at that command
+                 sends it at something its CLI may not have. --}}
+            @if ($hookCanSelfUpdate)
+                <code class="rounded bg-black/40 px-2 py-0.5 text-amber-100">token-slayer update</code>
+            @else
+                <span class="text-amber-100">Re-run the installer from your Profile page to update.</span>
+            @endif
+            <button type="button" @click="dismiss()" class="ml-2 text-amber-300/70 hover:text-amber-100" aria-label="Dismiss">&times;</button>
+        </div>
+    @endif
     <div
         id="battlefield-mount"
         data-battlefield-state="{{ json_encode([
@@ -288,8 +317,12 @@
                 fitToCanvas() {
                     const bf = window.__battlefield;
                     const canvas = bf?.game?.canvas;
-                    const gameSize = bf?.game?.scale?.gameSize;
-                    const logicalW = gameSize?.width;
+                    // The AUTHORED width (960/540), not game.scale.gameSize:
+                    // the canvas is deliberately created at logical size
+                    // times renderScale for pixel density (see index.js), so
+                    // scaling against the canvas size would shrink this HUD
+                    // by that same factor.
+                    const logicalW = bf?.logicalWidth ?? bf?.game?.scale?.gameSize?.width;
                     if (!canvas || !logicalW) {
                         return;
                     }

@@ -2,7 +2,7 @@
 
 namespace App\Support;
 
-use App\Services\Provisioning\LegacyGrantBackfiller;
+use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -51,13 +51,16 @@ final class CacheKeys
     public const string ACCOUNTS_CODEX_EMAIL_MAP = 'accounts:codex-email-map';
 
     /**
-     * How long a provisioned grant's encrypted secret lives in the cache
-     * (24 hours). After expiry the raw grant is gone forever; Reissue is
-     * the only recovery path.
+     * How long a still-unclaimed provisioned grant looks normal before the
+     * admin UI badges it "Pending (expired)" in
+     * {@see ProvisionsRelationManager}. The grant's own secret no longer has
+     * a matching lifetime to stay independent of (it lives on the grant row
+     * until Claimed or Revoked, no TTL) — this purely answers "when does a
+     * still-Pending row start looking stale to an admin".
      *
      * @var int
      */
-    public const int PROVISIONED_GRANT_TTL_SECONDS = 86400;
+    public const int PROVISIONED_GRANT_PENDING_BADGE_SECONDS = 86400;
 
     /**
      * Build the cache key for one account's tracked-members aggregate map.
@@ -91,33 +94,6 @@ final class CacheKeys
     public static function membershipPairs(int $accountId): string
     {
         return "account:{$accountId}:membership-pairs";
-    }
-
-    /**
-     * Build the cache key holding one grant's encrypted raw secret.
-     *
-     * @param  int  $grantId  the account_provisioned_grants row id
-     * @return string
-     */
-    public static function provisionedGrant(int $grantId): string
-    {
-        return "provisioned:grant:{$grantId}";
-    }
-
-    /**
-     * Build the legacy pre-device cache key for a stored provisioned grant,
-     * keyed by (user, account) rather than by grant id. Only read by
-     * {@see LegacyGrantBackfiller} while copying an
-     * in-flight (<24 h) secret onto its new per-grant key during the
-     * devices/grants migration; never written after that migration runs.
-     *
-     * @param  int  $userId  the provisioned user's id
-     * @param  int  $accountId  the granted account's id
-     * @return string
-     */
-    public static function legacyProvisionedSetup(int $userId, int $accountId): string
-    {
-        return "provisioned:setup:{$userId}:{$accountId}";
     }
 
     /**
@@ -164,16 +140,5 @@ final class CacheKeys
     public static function forgetMembershipPairs(int $accountId): void
     {
         Cache::forget(self::membershipPairs($accountId));
-    }
-
-    /**
-     * Forget one grant's encrypted raw secret.
-     *
-     * @param  int  $grantId  the account_provisioned_grants row id
-     * @return void
-     */
-    public static function forgetProvisionedGrant(int $grantId): void
-    {
-        Cache::forget(self::provisionedGrant($grantId));
     }
 }

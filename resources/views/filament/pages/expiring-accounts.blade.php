@@ -12,6 +12,8 @@
                             <th style="padding:.4rem .6rem;">Account</th>
                             <th style="padding:.4rem .6rem;">Provider</th>
                             <th style="padding:.4rem .6rem;">Status</th>
+                            <th style="padding:.4rem .6rem;">Grant</th>
+                            <th style="padding:.4rem .6rem;">Repair</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -19,11 +21,35 @@
                             <tr style="border-top:1px solid rgba(120,120,140,.15);">
                                 <td style="padding:.4rem .6rem;">{{ $row['name'] ?? $row['email'] ?? '— unnamed —' }}</td>
                                 <td style="padding:.4rem .6rem;">
-                                    <x-filament::badge :color="$row['provider'] === 'codex' ? 'gray' : 'primary'">
-                                        {{ ucfirst($row['provider']) }}
+                                    <x-filament::badge :color="$row['provider']->getColor()">
+                                        {{ $row['provider']->getLabel() }}
                                     </x-filament::badge>
                                 </td>
                                 <td style="padding:.4rem .6rem; opacity:.85;">{{ $row['label'] }}</td>
+                                {{-- Independent of the Status column: that reflects the shared
+                                     credential's own health, this reflects whether a per-employee
+                                     grant is already out awaiting pull -- an admin who already
+                                     reissued one otherwise has no way to tell "already did this"
+                                     from "haven't yet" while the row keeps showing here. --}}
+                                <td style="padding:.4rem .6rem;">
+                                    @if ($row['has_fresh_pending_grant'])
+                                        <x-filament::badge color="success">🟢 pending — awaiting pull</x-filament::badge>
+                                    @else
+                                        <x-filament::badge color="danger">🔴 no live grant yet</x-filament::badge>
+                                    @endif
+                                </td>
+                                {{-- The repair the admin came here to run, aimed at this row's
+                                     account, so a listed account never has to be opened just to
+                                     act on it. Claude gets a record-bound re-connect; Codex has
+                                     no per-row connect to offer (its device-code flow binds to
+                                     whoever approves), so it gets the re-probe instead. --}}
+                                <td style="padding:.4rem .6rem;">
+                                    @if ($row['provider'] === \App\Enums\Provider::Claude)
+                                        {{ ($this->reconnectAccountAction)(['account' => $row['account_id']]) }}
+                                    @else
+                                        {{ ($this->refreshAccountUsageAction)(['account' => $row['account_id']]) }}
+                                    @endif
+                                </td>
                             </tr>
                         @endforeach
                     </tbody>

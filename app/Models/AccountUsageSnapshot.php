@@ -45,8 +45,6 @@ class AccountUsageSnapshot extends Model
         return [
             'util_5h' => 'integer',
             'util_7d' => 'integer',
-            'util_7d_sonnet' => 'integer',
-            'util_7d_oi' => 'integer',
             'reset_5h_at' => 'datetime',
             'reset_7d_at' => 'datetime',
             'raw' => 'array',

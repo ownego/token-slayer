@@ -5,24 +5,23 @@ namespace App\Services;
 use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
 use App\Exceptions\AccountConnectException;
+use App\Http\Controllers\Api\ProvisionedAccountController;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\Device;
 use App\Models\User;
+use App\Services\Contracts\GrantRevokerContract;
 use App\Services\Provisioning\DeviceClaimResolver;
-use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Crypt;
 use Throwable;
 
 /**
- * Provisions a per-device OAuth grant. Durable, non-secret tracking lives on
- * `account_provisioned_grants`; the raw grant itself is held ONLY in the
- * cache, encrypted, with a 24 h TTL — never at rest in the DB long-term, and
- * never on the account's own probe grant.
+ * Provisions a per-device OAuth grant. Durable, non-secret tracking AND the
+ * raw grant secret itself both live on `account_provisioned_grants` (the
+ * `pending_claude_*` columns, `encrypted` casts) — never on the account's
+ * own probe grant, and never in a TTL-bound cache.
  */
-final class AccountProvisioningService
+final class AccountProvisioningService implements GrantRevokerContract
 {
     /**
      * Build the service with the connect flow and the device resolver.
@@ -64,7 +63,8 @@ final class AccountProvisioningService
      * — this enforces the one-live-grant invariant and doubles as the
      * Reissue path. Membership is upserted to Tracked; callers that want a
      * Pending membership (Add member flow) downgrade it afterwards. The raw
-     * secret is cached encrypted under the grant's key for 24 h.
+     * secret is written straight onto the grant row (`pending_claude_*`,
+     * `encrypted` casts) — durable, no TTL.
      *
      * @param  User  $user  the user being granted access
      * @param  Account  $account  the account to grant
@@ -89,48 +89,39 @@ final class AccountProvisioningService
             'status' => GrantStatus::Pending,
             'token_uuid' => $token['token_uuid'] ?? null,
             'provisioned_at' => Carbon::now(),
+            'pending_claude_access_token' => $token['access_token'],
+            'pending_claude_refresh_token' => $token['refresh_token'],
+            'pending_claude_expires_at' => Carbon::now()->addSeconds((int) $token['expires_in']),
         ]);
 
         $user->accounts()->syncWithoutDetaching([
             $account->id => ['status' => MembershipStatus::Tracked->value],
         ]);
 
-        $payload = [
-            'name' => $account->email,
-            'email' => $account->email,
-            'org_uuid' => $account->organization_uuid,
-            'access_token' => $token['access_token'],
-            'refresh_token' => $token['refresh_token'],
-            'expires_at' => Carbon::now()->addSeconds((int) $token['expires_in'])->timestamp,
-        ];
-        Cache::put(
-            CacheKeys::provisionedGrant($grant->id),
-            Crypt::encryptString(json_encode($payload)),
-            CacheKeys::PROVISIONED_GRANT_TTL_SECONDS,
-        );
-
         return $grant;
     }
 
     /**
      * Resolve the calling machine's device (spec §3) and serve every
-     * non-revoked, non-deprovisioned grant on it whose encrypted cache
-     * secret is still alive AND whose account the user is not Untracked on.
-     * A Pending grant is marked Claimed on first serve; the secret is NOT
-     * consumed, so re-running setup stays idempotent for the 24 h TTL. The
-     * `deprovisioned_at` exclusion is a belt for legacy rows stamped before
-     * {@see confirmSetup()} started revoking on confirm — those rows can
-     * still be Claimed with a live cache secret, and must never be
-     * re-served. The Untracked exclusion closes the window between an admin
-     * Unverify and the device's first confirm: without it, a claim response
-     * could hand back an org's credential while {@see removable()} orders
-     * the same org removed, and the CLI would plan an add+delete of the
-     * same slot. Invariant: a claim response never contains an org that the
-     * same request's `removable()` list orders removed. A grant whose
-     * account has no membership row at all (legacy backfilled data — a
-     * missing row cannot happen for grants provisioned through the current
-     * flow, which always upserts Tracked) is still served, since treating
-     * "no row" as blocking would silently break those pre-existing grants.
+     * non-revoked, non-deprovisioned grant on it whose durable secret field
+     * is still set AND whose account the user is not Untracked on. A Pending
+     * grant is marked Claimed on first serve; the secret field is NOT
+     * cleared here, so re-running setup stays idempotent until
+     * {@see ProvisionedAccountController::confirm()}
+     * reports success (see {@see confirmSetup()}). The `deprovisioned_at`
+     * exclusion is a belt for legacy rows stamped before {@see confirmSetup()}
+     * started revoking on confirm — those rows can still carry a live
+     * secret field, and must never be re-served. The Untracked exclusion
+     * closes the window between an admin Unverify and the device's first
+     * confirm: without it, a claim response could hand back an org's
+     * credential while {@see removable()} orders the same org removed, and
+     * the CLI would plan an add+delete of the same slot. Invariant: a claim
+     * response never contains an org that the same request's `removable()`
+     * list orders removed. A grant whose account has no membership row at
+     * all (legacy backfilled data — a missing row cannot happen for grants
+     * provisioned through the current flow, which always upserts Tracked)
+     * is still served, since treating "no row" as blocking would silently
+     * break those pre-existing grants.
      *
      * @param  User  $user  the hook-authenticated user pulling grants
      * @param  string|null  $fingerprint  the client device fingerprint; null = old CLI
@@ -153,18 +144,60 @@ final class AccountProvisioningService
                 continue; // user is Untracked on this org — must not contradict removable()
             }
 
-            $raw = Cache::get(CacheKeys::provisionedGrant($grant->id));
-            if ($raw === null) {
-                continue; // cache secret expired/revoked — nothing to hand off
+            $payload = $this->pendingPayloadFor($grant);
+            if ($payload === null) {
+                continue; // no live pending secret — revoked, already claimed-and-cleared, or never Claude
             }
 
-            $payloads[] = json_decode(Crypt::decryptString($raw), true);
+            $payloads[] = $payload;
             if ($grant->status === GrantStatus::Pending) {
                 $grant->forceFill(['status' => GrantStatus::Claimed, 'claimed_at' => Carbon::now()])->save();
             }
         }
 
         return $payloads;
+    }
+
+    /**
+     * Reconstruct the client-facing grant payload from `$grant`'s own
+     * durable secret field, or null when there is none to serve (revoked,
+     * or already claimed-and-cleared). `device->grants()` mixes both
+     * providers on purpose — the client's Claude-specific
+     * `reconcile_provisioned` and its separate, standalone Codex pull both
+     * read this SAME `accounts[]` response and filter by `provider`
+     * themselves (see `codex_provisioned.py`'s own docstring) — so this
+     * reconstructs whichever shape the grant actually holds, not Claude
+     * only. `name`/`email`/`org_uuid`/`chatgpt_account_id` are read fresh
+     * off `$grant->account` rather than duplicated onto the grant, since
+     * they are always the account's own current values.
+     *
+     * @param  AccountProvisionedGrant  $grant  the grant to read
+     * @return array<string, mixed>|null
+     */
+    private function pendingPayloadFor(AccountProvisionedGrant $grant): ?array
+    {
+        if ($grant->pending_claude_access_token !== null) {
+            return [
+                'name' => $grant->account->email,
+                'email' => $grant->account->email,
+                'org_uuid' => $grant->account->organization_uuid,
+                'access_token' => $grant->pending_claude_access_token,
+                'refresh_token' => $grant->pending_claude_refresh_token,
+                'expires_at' => $grant->pending_claude_expires_at?->timestamp,
+            ];
+        }
+
+        if ($grant->pending_codex_auth_json !== null) {
+            return [
+                'provider' => 'codex',
+                'name' => $grant->account->name ?? $grant->account->email,
+                'email' => $grant->account->email,
+                'chatgpt_account_id' => $grant->account->codexCredential?->chatgpt_account_id,
+                'auth_json' => $grant->pending_codex_auth_json,
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -230,10 +263,13 @@ final class AccountProvisioningService
      * @param  array<int, string>  $setUpOrgUuids  orgs the CLI finished setting up
      * @param  array<int, string>  $removedOrgUuids  orgs the CLI removed the local slot for
      * @param  Device|null  $device  the resolved claiming device; null = removed loop no-ops
+     * @param  array<int, array{org_uuid: string, refresh_token_expires_at: Carbon}>  $expiring  refresh-token deadlines the client observed
      * @return array{confirmed: int, deprovisioned: int}
      */
-    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null): array
+    public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null, array $expiring = []): array
     {
+        $this->recordObservedDeadlines($user, $expiring);
+
         $confirmed = 0;
         foreach (array_unique($setUpOrgUuids) as $orgUuid) {
             $account = $this->accountWithLiveGrantFor($user, $orgUuid);
@@ -245,6 +281,16 @@ final class AccountProvisioningService
                     $user->id => ['status' => MembershipStatus::Tracked->value],
                 ]);
                 $confirmed++;
+                // The secret exists to be fetched exactly once, by the machine
+                // being set up. Once that machine reports success it is spent,
+                // so it must not keep sitting on the grant row for anything
+                // else to read.
+                if ($device !== null) {
+                    $grant = $device->grants()->where('account_id', $account->id)->latest('id')->first();
+                    if ($grant !== null) {
+                        $this->clearPendingSecret($grant);
+                    }
+                }
             } catch (Throwable $e) {
                 report($e);
 
@@ -271,7 +317,7 @@ final class AccountProvisioningService
                             'revoked_at' => Carbon::now(),
                             'deprovisioned_at' => Carbon::now(),
                         ])->save();
-                        CacheKeys::forgetProvisionedGrant($grant->id);
+                        $this->clearPendingSecret($grant);
                     } else {
                         $device->grants()->create([
                             'account_id' => $account->id,
@@ -317,9 +363,47 @@ final class AccountProvisioningService
     }
 
     /**
-     * Soft-revoke a grant: mark it Revoked and forget the cached secret so
-     * a future claim cannot re-serve it. (A grant already handed to a
-     * client must be deleted separately at claude.ai using its token_uuid.)
+     * Store the refresh-token deadlines a client reported for its own orgs.
+     *
+     * The client is the only party that sees this value between the server's
+     * own refreshes, so it reports what it saw at setup time. Two guards make
+     * that safe to trust:
+     *
+     * The same self-graft check the set_up loop uses — without it any
+     * hook-token holder could overwrite the deadline on an account they do
+     * not own by naming a fabricated org uuid.
+     *
+     * And a never-regress rule: a value is written only when nothing is
+     * stored yet or the client's is LATER. The server's own refresher pushes
+     * this deadline out by weeks on every successful rotation, and a confirm
+     * request can arrive carrying an observation from before that happened;
+     * taking the older value would invent an expiry scare that is already
+     * resolved.
+     *
+     * @param  User  $user  the hook-authenticated user
+     * @param  array<int, array{org_uuid: string, refresh_token_expires_at: Carbon}>  $expiring  what the client observed
+     * @return void
+     */
+    private function recordObservedDeadlines(User $user, array $expiring): void
+    {
+        foreach ($expiring as $row) {
+            $account = $this->accountWithLiveGrantFor($user, $row['org_uuid']);
+
+            if ($account === null) {
+                continue;
+            }
+
+            if ($account->oauth_refresh_expires_at === null
+                || $row['refresh_token_expires_at']->isAfter($account->oauth_refresh_expires_at)) {
+                $account->update(['oauth_refresh_expires_at' => $row['refresh_token_expires_at']]);
+            }
+        }
+    }
+
+    /**
+     * Soft-revoke a grant: mark it Revoked and clear its secret field so a
+     * future claim cannot re-serve it. (A grant already handed to a client
+     * must be deleted separately at claude.ai using its token_uuid.)
      *
      * @param  AccountProvisionedGrant  $grant  the grant to revoke
      * @return void
@@ -327,7 +411,29 @@ final class AccountProvisioningService
     public function revoke(AccountProvisionedGrant $grant): void
     {
         $grant->forceFill(['status' => GrantStatus::Revoked, 'revoked_at' => Carbon::now()])->save();
-        CacheKeys::forgetProvisionedGrant($grant->id);
+        $this->clearPendingSecret($grant);
+    }
+
+    /**
+     * Null out every pending-secret column on `$grant`, regardless of which
+     * provider actually populated one — the grant is either being claimed
+     * (spent, one machine only) or revoked (dead), and either way nothing
+     * should be able to read a secret off it again. Public so
+     * {@see CodexProvisioningService::revoke()} (which already depends on
+     * this service for {@see resolveProvisionTarget()}) can reuse it instead
+     * of duplicating the field list.
+     *
+     * @param  AccountProvisionedGrant  $grant  the grant to clear
+     * @return void
+     */
+    public function clearPendingSecret(AccountProvisionedGrant $grant): void
+    {
+        $grant->forceFill([
+            'pending_claude_access_token' => null,
+            'pending_claude_refresh_token' => null,
+            'pending_claude_expires_at' => null,
+            'pending_codex_auth_json' => null,
+        ])->save();
     }
 
     /**

@@ -4,9 +4,11 @@ namespace App\Models;
 
 use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
+use App\Models\Contracts\CredentialsProvider;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * One account's Claude-specific OAuth credential and probe-health state —
@@ -16,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * onto a single shared table.
  */
 #[Hidden(['oauth_access_token', 'oauth_refresh_token'])]
-class ClaudeCredential extends Model
+class ClaudeCredential extends Model implements CredentialsProvider
 {
     protected $guarded = [];
 
@@ -55,7 +57,32 @@ class ClaudeCredential extends Model
             'oauth_refresh_token' => 'encrypted',
             'oauth_expires_at' => 'datetime',
             'oauth_refresh_expires_at' => 'datetime',
+            'last_refreshed_at' => 'datetime',
             'last_probed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function credentialStatus(): AccountStatus
+    {
+        return $this->status;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function credentialLastProbedAt(): ?Carbon
+    {
+        return $this->last_probed_at;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function credentialProbeError(): ?string
+    {
+        return $this->probe_error;
     }
 }

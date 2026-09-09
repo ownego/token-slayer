@@ -29,7 +29,9 @@ Events POST `account_email`, `account_uuid`, `account_source`, `client_version`.
 
 ## Provisioning (admin sets up an account for a user)
 
-Provisioning is folded into the Members tab's **Add member** action: a *provision* toggle (default on) runs the admin OAuth code-paste flow on the user's behalf, stores the encrypted grant, and writes the pivot as `pending`. Turning it off just adds a `tracked` membership. (The former standalone "Provision for user" button is retired.)
+Provisioning is folded into the Members tab's **Add member** action: a *provision* toggle (default on, Claude accounts only — Codex has no in-UI equivalent, see `admin-provisioning.md` in the `token-slayer-cli` repo) runs the admin OAuth code-paste flow on the user's behalf, stores the encrypted grant, and writes the pivot as `pending`. Turning it off just adds a `tracked` membership. (The former standalone "Provision for user" button is retired.)
+
+**The grant's raw secret lives on `account_provisioned_grants` itself** (`pending_claude_access_token`/`pending_claude_refresh_token`/`pending_claude_expires_at` for Claude, `pending_codex_auth_json` for Codex — all `encrypted` casts), **not in a cache with a TTL** (2026-09-08 fix: the earlier cache-with-TTL design lost several real, unclaimed production grants outright when their TTL elapsed before the employee ran `setup`). It lives until Claimed (`AccountProvisioningService::confirmSetup()`/`CodexProvisioningService::revoke()` clear it) or Revoked — never on a clock. `AccountProvisioningService::claim()` reads whichever field a grant actually holds and is shared across both providers, since `device->grants()` mixes them on one device.
 
 The user's machine finishes the handoff: `token-slayer setup` pulls each provisioned grant and, once configured, calls `POST /api/provisioned/confirm` (`hook.token` bearer) with the `organization_uuid`s it set up. `AccountProvisioningService::confirmSetup` then, per org:
 

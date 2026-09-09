@@ -2,7 +2,10 @@
 
 namespace App\Filament\Pages;
 
+use App\Enums\MembershipStatus;
+use App\Models\User;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Filament\Pages\Dashboard as BaseDashboard;
@@ -30,8 +33,11 @@ class Dashboard extends BaseDashboard
     public function filtersForm(Schema $schema): Schema
     {
         return $schema
-            ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
+            ->columns(['default' => 1, 'sm' => 2, 'lg' => 5])
             ->components([
+                Placeholder::make('total_active_users')
+                    ->label('Total active users')
+                    ->content((string) $this->totalActiveUsersCount()),
                 Select::make('range')
                     ->options([
                         'today' => 'Today',
@@ -51,5 +57,20 @@ class Dashboard extends BaseDashboard
                         .'<span style="display:block"><strong>On:</strong> each member\'s full usage, including other accounts and private.</span>'
                     )),
             ]);
+    }
+
+    /**
+     * Count of distinct users with a Tracked membership on any account, of
+     * any provider — the `account_user` pivot keys off the shared envelope
+     * `accounts.id`, provider-agnostic by construction, so this needs no
+     * provider-conditional branching at all.
+     *
+     * @return int
+     */
+    private function totalActiveUsersCount(): int
+    {
+        return User::query()
+            ->whereHas('accounts', fn ($query) => $query->wherePivot('status', MembershipStatus::Tracked->value))
+            ->count();
     }
 }

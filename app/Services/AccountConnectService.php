@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Services\Accounts\PlanResolver;
 use App\Services\Connect\ConnectDraft;
 use App\Services\Connect\ConnectResolution;
+use App\Services\Contracts\AccountDisconnecterContract;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -27,7 +28,7 @@ use Throwable;
  * Per token-hygiene requirements, raw token material is never logged,
  * exposed in exception messages, or written to `probe_error`.
  */
-class AccountConnectService
+class AccountConnectService implements AccountDisconnecterContract
 {
     /**
      * Cache key prefix for a pending connect attempt, keyed by `state`. The
@@ -459,6 +460,10 @@ class AccountConnectService
         $account->oauth_refresh_token = $refreshToken;
         $account->oauth_expires_at = now()->addSeconds($expiresIn);
         $account->oauth_refresh_expires_at = $refreshExpiresIn !== null ? now()->addSeconds($refreshExpiresIn) : $account->oauth_refresh_expires_at;
+        // A fresh grant is a rotation like any other, so the staleness clock
+        // starts here too — otherwise a just-reconnected account would read as
+        // never having refreshed.
+        $account->last_refreshed_at = now();
         $account->status = AccountStatus::Active;
         $account->probe_error = null;
     }

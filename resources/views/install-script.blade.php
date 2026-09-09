@@ -144,7 +144,11 @@ if [ -f "$HELPER" ]; then
     fi
 fi
 
-cat > "$HELPER" <<'HOOK_SH'
+# Written to a temp file in the same directory and renamed into place: the
+# hook may be EXECUTING right now, and bash reads a script lazily by byte
+# offset, so truncating it mid-run makes the running copy read past the end
+# and lose that turn's event with no error anywhere.
+cat > "$HELPER.tmp" <<'HOOK_SH'
 #!/usr/bin/env bash
 set -u
 
@@ -158,29 +162,136 @@ BODY=$(cat)
 # system jq -- so hook behavior can never drift between machines.
 JQ="$HOME/.config/{{ $namespace }}/bin/jq"
 
+# A SubagentStop's session_id is the PARENT session's id, not unique per
+# subagent (per the official hook payload docs) -- fold in agent_id so this
+# agent's Event can never be conflated with the parent session's own Stop
+# events, which share that same session_id.
 if [ -x "$JQ" ]; then
-  TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '.transcript_path // .transcriptPath // ""' 2>/dev/null)
+  BODY=$(printf '%s' "$BODY" | "$JQ" -c '
+    if .hook_event_name == "SubagentStop" and ((.agent_id // "") != "") then
+      .session_id = ((.session_id // "") + ":" + .agent_id)
+    else . end
+  ' 2>/dev/null || printf '%s' "$BODY")
+fi
+
+if [ -x "$JQ" ]; then
+  # Verified live: a SubagentStop's top-level transcript_path is the PARENT
+  # session's file -- present on every hook event, never subagent-specific.
+  # The subagent's OWN transcript only lives under agent_transcript_path.
+  # Reading transcript_path here would silently re-walk the parent's last
+  # turn instead of the subagent's, attributing the parent's tokens/model to
+  # a fake "subagent" session_id instead of the real (usually much smaller)
+  # subagent usage.
+  TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '
+    if .hook_event_name == "SubagentStop" then (.agent_transcript_path // "")
+    else (.transcript_path // .transcriptPath // "") end
+  ' 2>/dev/null)
   if [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ]; then
-    TOKENS=$("$JQ" -sr '
-      . as $a
-      | (length - 1) as $end
-      | reduce range($end; -1; -1) as $i ({t:0, stop:false};
-          if .stop then . else
-            ($a[$i]) as $e
-            | if $e.type == "assistant" or $e.type == "PLANNER_RESPONSE" or $e.source == "MODEL" then
-                .t += ($e.message.usage.output_tokens // $e.usage.output_tokens // $e.usage.outputTokens // 0)
-              elif ($e.type == "USER_INPUT" or $e.source == "USER_EXPLICIT") then
-                .stop = true
-              elif $e.type == "user"
-                   and ((try $e.message.content[0].type catch null) != "tool_result") then
-                .stop = true
-              else . end
-          end)
-      | .t
-    ' "$TRANSCRIPT" 2>/dev/null)
-    if [ -n "${TOKENS:-}" ]; then
-      BODY=$(printf '%s' "$BODY" | "$JQ" -c --argjson t "$TOKENS" '. + {tokens:$t}' 2>/dev/null || printf '%s' "$BODY")
+    # Emits {tokens, models}. The capture and the merge below MUST change
+    # together: with the old scalar merge this object would be nested under
+    # `tokens`, and the server's (int) cast on an array yields 1 with no
+    # warning -- every Stop would deal 1 token of damage.
+    # Codex rollout JSONL shares no shape with a Claude transcript: no
+    # type:"assistant" entries, usage under event_msg.payload.type ==
+    # "token_count", model only in turn_context. Running the Claude walk over
+    # it returns 0, which is why Codex ingestion was silently dead from
+    # 2026-06-28. antigravity deliberately keeps the Claude walk: its shape is
+    # unverified and must not change here.
+    #
+    # The Claude walk dedupes by message.id ($mid): when a single API
+    # response mixes content-block types (e.g. thinking + tool_use, or
+    # thinking + text), Claude Code writes ONE JSONL row per block type but
+    # repeats that message's full output_tokens on every row -- verified via
+    # two rows sharing the same message.id. Summing every assistant row
+    # blindly double-counts (or worse, with 3+ block types) any turn that
+    # used extended thinking, which is common. A row with no id (an
+    # unverified shape from PLANNER_RESPONSE/MODEL sources) is never
+    # deduped, matching the pre-dedup behavior for those.
+    extract_usage() {
+      if [ "${PROVIDER:-}" = "codex" ]; then
+        "$JQ" -sr '
+          . as $a
+          | (length - 1) as $end
+          | reduce range($end; -1; -1) as $i ({t:0, k:null, stop:false};
+              if .stop then . else
+                ($a[$i]) as $e
+                | if $e.type == "event_msg" and $e.payload.type == "token_count" then
+                    .t += ($e.payload.info.last_token_usage.output_tokens // 0)
+                  elif $e.type == "turn_context" then
+                    .k = (.k // $e.payload.model)
+                  elif $e.type == "event_msg" and $e.payload.type == "task_started" then
+                    .stop = true
+                  else . end
+              end)
+          | {tokens: .t, models: (if (.k != null and .t > 0) then {(.k): .t} else {} end)}
+        ' "$TRANSCRIPT" 2>/dev/null
+      else
+        "$JQ" -sr '
+          . as $a
+          | (length - 1) as $end
+          | reduce range($end; -1; -1) as $i ({t:0, m:{}, seen:{}, stop:false};
+              if .stop then . else
+                ($a[$i]) as $e
+                | if $e.type == "assistant" or $e.type == "PLANNER_RESPONSE" or $e.source == "MODEL" then
+                    ($e.message.id // $e.id // null) as $mid
+                    | if ($mid != null and (.seen[$mid] // false)) then .
+                      else
+                        (($e.message.usage.output_tokens // $e.usage.output_tokens // $e.usage.outputTokens // 0)) as $tok
+                        | (($e.message.model // $e.model) // null) as $k
+                        | .t += $tok
+                        | (if $tok > 0 and $k != null then .m[$k] += $tok else . end)
+                        | (if $mid != null then .seen[$mid] = true else . end)
+                      end
+                  elif ($e.type == "USER_INPUT" or $e.source == "USER_EXPLICIT") then
+                    .stop = true
+                  elif $e.type == "user"
+                       and ((try $e.message.content[0].type catch null) != "tool_result") then
+                    .stop = true
+                  else . end
+              end)
+          | {tokens: .t, models: .m}
+        ' "$TRANSCRIPT" 2>/dev/null
+      fi
+    }
+
+    # Claude Code fires Stop before the final assistant message is
+    # guaranteed flushed to disk; reading right away can see a truncated
+    # file and compute tokens=0, silently dropping the whole turn (the
+    # server only creates an Event when tokens>0 -- a zero read is never
+    # retried server-side). A first read that already sees tokens>0 is
+    # trusted immediately with no added latency, unchanged from before.
+    # Only a zero first read is retried: reread the same file every 300ms,
+    # up to 5 extra times (~1.5s), until two CONSECUTIVE reads agree on a
+    # non-zero result. The transcript is append-only, so identical output
+    # twice in a row means nothing landed between the two reads -- it has
+    # settled. Two consecutive zeros do NOT count as agreement: a
+    # still-flushing file reads zero every time until the write lands, so
+    # zero must exhaust the full retry budget rather than being accepted
+    # early. Comparing the whole USAGE string (not just the token count)
+    # also catches a boundary shift into a different turn's models, since
+    # that would change the models object even if the count coincided --
+    # and reading a genuinely later turn would require a full
+    # prompt-to-response round trip inside this same short window, which
+    # does not happen in practice.
+    USAGE=$(extract_usage)
+    TOK=$(printf '%s' "$USAGE" | "$JQ" -r '.tokens // 0' 2>/dev/null)
+    if [ "${TOK:-0}" = "0" ]; then
+      PREV="$USAGE"
+      ATTEMPT=0
+      while [ "$ATTEMPT" -lt 5 ]; do
+        sleep 0.3
+        USAGE=$(extract_usage)
+        TOK=$(printf '%s' "$USAGE" | "$JQ" -r '.tokens // 0' 2>/dev/null)
+        ATTEMPT=$((ATTEMPT + 1))
+        if [ "${TOK:-0}" != "0" ] && [ "$USAGE" = "$PREV" ]; then
+          break
+        fi
+        PREV="$USAGE"
+      done
     fi
+    case "$USAGE" in
+      '{'*) BODY=$(printf '%s' "$BODY" | "$JQ" -c --argjson u "$USAGE" '. + $u' 2>/dev/null || printf '%s' "$BODY") ;;
+    esac
   fi
 fi
 
@@ -192,6 +303,7 @@ elif [ "${PROVIDER:-}" = "antigravity" ]; then
 fi
 
 CLIENT_VERSION='{{ $clientVersion }}'
+HOOK_VERSION='{{ $hookVersion }}'
 HOOK_UA='token-slayer-hook/{{ $clientVersion }} (external, cli)'
 NS_DIR="$HOME/.config/{{ $namespace }}"
 
@@ -437,7 +549,8 @@ if [ -x "$JQ" ]; then
   resolve_account
   BODY=$(printf '%s' "$BODY" | "$JQ" -c --arg e "$ACC_EMAIL" --arg u "$ACC_UUID" \
     --arg s "$ACC_SOURCE" --arg v "$CLIENT_VERSION" --arg o "$ACC_ORG_ID" \
-    '. + {client_version: $v} + (if $s != "" then {account_source: $s} else {} end)
+    --arg hv "$HOOK_VERSION" \
+    '. + {client_version: $v, hook_version: $hv} + (if $s != "" then {account_source: $s} else {} end)
        + (if $e != "" then {account_email: $e, account_uuid: $u} else {} end)
        + (if $o != "" then {account_org_id: $o} else {} end)' \
     2>/dev/null || printf '%s' "$BODY")
@@ -451,14 +564,21 @@ CUSTOM_SH="$HOME/.config/{{ $namespace }}/custom.sh"
 # their own private accounts here (exit 0 before POST) so those events never
 # leave the machine. Not active yet -- default is track everything.
 
-# Opt-in minimal payload: set SLAYER_MINIMAL_PAYLOAD=1 to send only the usage
-# and attribution fields the dashboard reads, dropping prompt text, tool_input,
-# tool_response, and the last assistant message so no session content leaves the
-# machine. Runs after custom.sh so a fighter's custom_activity still rides along.
-if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then
+# The server reads exactly these eleven fields. Everything else the hook
+# receives on stdin -- the prompt, tool_input, tool_response, the last
+# assistant message, cwd, permission_mode, transcript_path -- would cross the
+# network and be discarded unread, so it is not sent at all. This is
+# unconditional, not opt-in: content leaving the machine should not depend on
+# a developer knowing to set an env var.
+#
+# It runs AFTER custom.sh, which shares this shell and therefore still sees the
+# full body: the documented custom_activity recipes that read tool_input keep
+# working, and only the resulting label leaves the machine.
+if [ -x "$JQ" ]; then
   FILTERED=$(printf '%s' "$BODY" | "$JQ" -c '{
-    hook_event_name, session_id, tokens, tool_name, custom_activity,
-    client_version, account_email, account_uuid, account_source, account_org_id
+    hook_event_name, session_id, tokens, models, tool_name, custom_activity,
+    client_version, hook_version, account_email, account_uuid, account_source,
+    account_org_id
   } | with_entries(select(.value != null))' 2>/dev/null)
   case "$FILTERED" in '{'*) BODY="$FILTERED" ;; esac
 fi
@@ -468,12 +588,41 @@ fi
 # mangles every non-ASCII byte, and the server then drops the event with
 # "Malformed UTF-8". A single argument is also length-capped (~32 KB on
 # Windows, 128 KB per arg on Linux) while a long assistant message is not.
-printf '%s' "$BODY" | curl -s --max-time 3 -X POST "$URL" \
-  -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
-  -H 'Content-Type: application/json' \
-  --data-binary @- >/dev/null 2>&1 &
+# The response used to be discarded. It carries the version the server wants
+# clients on, the sha256 of the artifacts, and a fleet-wide pause flag -- so it
+# is captured here instead, which is why no second endpoint is needed.
+#
+# -f so a non-2xx body is never stored; a PID-unique temp name so concurrent
+# hooks cannot interleave; mv so a DNS failure or a 3s timeout leaves the
+# PREVIOUS signal intact rather than truncating it to nothing.
+( printf '%s' "$BODY" | curl -sf --max-time 3 -X POST "$URL" \
+    -H "Authorization: Bearer $(cat "$TOKEN_FILE")" \
+    -H 'Content-Type: application/json' \
+    --data-binary @- -o "$NS_DIR/.update-state.$$.tmp" \
+  && chmod 600 "$NS_DIR/.update-state.$$.tmp" \
+  && mv -f "$NS_DIR/.update-state.$$.tmp" "$NS_DIR/update-state" \
+  || rm -f "$NS_DIR/.update-state.$$.tmp" ) >/dev/null 2>&1 &
+
+# Bring the client up to date, but only ever from SessionStart and only when
+# the developer has not opted out. Everything that decides WHETHER to update --
+# reading the signal above, honouring `paused`, verifying the sha256, locking --
+# lives in the CLI, in a language with real primitives for it. The hook stays a
+# thin, fast bash script that cannot block a session.
+if [ "$(printf '%s' "$BODY" | "$JQ" -r '.hook_event_name // ""' 2>/dev/null)" = "SessionStart" ] \
+   && [ -z "${SLAYER_NO_AUTO_UPDATE:-}" ]; then
+  # The Windows installer writes .cmd shims into the same directory, and this
+  # hook runs under Git Bash there -- checking only the extension-less name
+  # would make auto-update silently never fire on Windows.
+  for _tsl in "$HOME/.local/bin/token-slayer" "$HOME/.local/bin/token-slayer.cmd"; do
+    if [ -x "$_tsl" ] || [ -f "$_tsl" ]; then
+      ( "$_tsl" update --if-newer ) >/dev/null 2>&1 &
+      break
+    fi
+  done
+fi
 HOOK_SH
-chmod +x "$HELPER"
+chmod +x "$HELPER.tmp"
+mv -f "$HELPER.tmp" "$HELPER"
 
 sha256 < "$HELPER" > "$CHECKSUM_FILE"
 
@@ -498,6 +647,9 @@ if [ -n "$HOOK_BACKUP" ]; then
 fi
 
 printf '%s' "{{ $clientVersion }}" > "$HOME/.config/{{ $namespace }}/version"
+# Separate from `version`: the CLI wheel and the hook are released by different
+# repos, so a hook-only change must be visible without a CLI release.
+printf '%s' "{{ $hookVersion }}" > "$HOME/.config/{{ $namespace }}/hook-version"
 
 mkdir -p "$HOME/.local/bin"
 
@@ -600,6 +752,19 @@ if [ "$SLAYER_HTTP" = "200" ]; then
   # unlike an unrecognized env var, which old pip just ignores.
   # PIP_BREAK_SYSTEM_PACKAGES=1 (exported above) already covers the bypass for
   # pip versions that understand it, so it alone is enough here.
+  # Verify the wheel before installing it, when the caller supplied the digest
+  # the server published. Without this the wheel would be the one artifact in
+  # the chain executing with no integrity check at all -- the install script
+  # itself is already verified by `token-slayer update`, and jq has been
+  # checksum-pinned for the same reason since long before this.
+  if [ -n "${SLAYER_EXPECTED_WHEEL_SHA:-}" ]; then
+    SLAYER_WHL_SHA=$(sha256 < "$SLAYER_WHL")
+    if [ "$SLAYER_WHL_SHA" != "$SLAYER_EXPECTED_WHEEL_SHA" ]; then
+      echo "error: wheel checksum mismatch -- expected $SLAYER_EXPECTED_WHEEL_SHA, got $SLAYER_WHL_SHA. Refusing to install it." >&2
+      exit 1
+    fi
+  fi
+
   if SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet "$SLAYER_WHL" 2>&1) \
       && SLAYER_PIP_ERR=$("$SLAYER_PIP" install --quiet --force-reinstall --no-deps "$SLAYER_WHL" 2>&1); then
     :
@@ -631,7 +796,7 @@ sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -
 # update/status behavior when the venv is missing so a failed venv/pip step
 # never bricks the token-slayer command.
 if [ -x "$SLAYER_VENV/bin/python" ]; then
-  exec env SLAYER_NS={{ $namespace }} SLAYER_INSTALL_URL={{ $installUrl }} "$SLAYER_VENV/bin/python" -m slayer_cli "$@"
+  exec env SLAYER_NS={{ $namespace }} SLAYER_INSTALL_URL={{ $installUrl }} SLAYER_PROG_NAME="$(basename "$0")" "$SLAYER_VENV/bin/python" -m slayer_cli "$@"
 fi
 
 case "${1:-}" in
@@ -643,6 +808,7 @@ case "${1:-}" in
     ;;
   status)
     echo "client version: $(cat "$NS_DIR/version" 2>/dev/null || echo none) (latest known at install: $LATEST)"
+    echo "hook version: $(cat "$NS_DIR/hook-version" 2>/dev/null || echo none) (served: {{ $hookVersion }})"
     [ -s "$NS_DIR/token" ] && echo "hook token: present" || echo "hook token: MISSING"
     if [ -r "$NS_DIR/account.json" ]; then
       echo "account: $("$HOME/.config/{{ $namespace }}/bin/jq" -r '.email' "$NS_DIR/account.json" 2>/dev/null) (manual)"
@@ -653,11 +819,6 @@ case "${1:-}" in
       echo "custom.sh: active"
     else
       echo "custom.sh: none"
-    fi
-    if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ]; then
-      echo "minimal payload: on (prompt and tool content dropped)"
-    else
-      echo "minimal payload: off (full event sent)"
     fi
     if [ -r "$NS_DIR/.hook-checksum" ]; then
       CURRENT_SHA=$(sha256 < "$NS_DIR/send-hook.sh" 2>/dev/null)
@@ -721,10 +882,18 @@ import json, os, sys
 
 path = sys.argv[1]
 cmd = os.environ["CLAUDE_CMD"]
-events = [
-    "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
-    "Stop", "SubagentStop", "SessionEnd", "Notification",
-]
+# Only the events EventController actually handles. PostToolUse, SessionEnd
+# and Notification fell through to a bare 201 -- and PostToolUse is both the
+# highest-frequency event (one per tool call) and the one carrying
+# tool_response, so not registering it stops that content at the source.
+# Liveness is unaffected: PreToolUse fires immediately before every PostToolUse,
+# with UserPromptSubmit and Stop bracketing the turn. SubagentStop fires once
+# per completed subagent with its OWN transcript_path (never the parent
+# session's file) -- without it, every Task-dispatched subagent's real token
+# usage is invisible: it never shares an assistant-type entry with the parent
+# transcript, so no amount of retrying or dedup on the parent's own Stop walk
+# can recover it.
+events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop", "SubagentStop"]
 
 try:
     with open(path) as f:
@@ -745,15 +914,33 @@ except (ValueError, OSError):
 
 data.setdefault("hooks", {})
 fingerprint = os.environ["HOOK_FINGERPRINT"]  # e.g. "{{ $namespace }}/send-hook.sh" not in json.dumps(e) filters out our own stale entries
-for event in events:
-    entries = [e for e in data["hooks"].get(event, [])
-               if fingerprint not in json.dumps(e)]
-    entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
-    data["hooks"][event] = entries
 
-with open(path, "w") as f:
+# Strip our own entries from EVERY event, not just the ones about to be
+# re-added. Shrinking the event list otherwise leaves stale registrations (e.g.
+# PostToolUse) in place, still firing the old hook, with no error anywhere.
+for event in list(data["hooks"].keys()):
+    kept = [e for e in data["hooks"].get(event, [])
+            if fingerprint not in json.dumps(e)]
+    if kept:
+        data["hooks"][event] = kept
+    else:
+        del data["hooks"][event]
+
+for event in events:
+    data["hooks"].setdefault(event, []).append(
+        {"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]}
+    )
+
+# Write-then-rename: these files are read by a live Claude Code / Codex
+# session, and truncate-in-place leaves a window where a reader sees a
+# partial or empty config.
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp, path)
 PY
 
 echo "installed Claude Code hooks -> $SETTINGS"
@@ -791,9 +978,16 @@ for event in events:
     entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
     data["hooks"][event] = entries
 
-with open(path, "w") as f:
+# Write-then-rename: these files are read by a live Claude Code / Codex
+# session, and truncate-in-place leaves a window where a reader sees a
+# partial or empty config.
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp, path)
 PY
 
 echo "installed Claude Code usage-refresh hook -> $SETTINGS"
@@ -831,9 +1025,16 @@ for event in events:
     entries.append({"hooks": [{"type": "command", "command": cmd, "shell": "bash"}]})
     data["hooks"][event] = entries
 
-with open(path, "w") as f:
+# Write-then-rename: these files are read by a live Claude Code / Codex
+# session, and truncate-in-place leaves a window where a reader sees a
+# partial or empty config.
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp, path)
 PY
 
 echo "installed Claude Code session-tracking hook -> $SETTINGS"
@@ -863,13 +1064,29 @@ text = re.sub(
     text,
 )
 
-with open(path, "w") as f:
+# Write-then-rename: config.toml is Codex's own file and may be read while a
+# session is live; truncating it in place could hand Codex a partial config.
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
     f.write(text)
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp, path)
 PY
 fi
 
 # Current Codex reads hooks from hooks.json, top-level "hooks" key, PascalCase
 # event names -- the array-of-tables TOML shape healed above is obsolete.
+#
+# SubagentStop is registered alongside Stop for the same reason as Claude's:
+# its payload carries agent_transcript_path (the subagent's own rollout, not
+# the parent's), so the existing transcript-selection and extract_usage()
+# logic below already handles it -- both are provider-agnostic already, no
+# Codex-specific branch needed. Verified live: codex-cli 0.142.3 never fires
+# this event for its own "collab" (spawn_agent/wait_agent) subagent mechanism
+# regardless of registration; 0.153.4 does, with exactly this shape. No
+# version gate needed either way -- an older Codex that doesn't implement the
+# event simply never sends it, the same as any hook it doesn't support.
 CODEX_HOOKS="$HOME/.codex/hooks.json"
 [ -s "$CODEX_HOOKS" ] || echo '{"hooks": {}}' > "$CODEX_HOOKS"
 
@@ -879,7 +1096,7 @@ import json, os, sys, time
 path = sys.argv[1]
 cmd = os.environ["CODEX_CMD"]
 fingerprint = os.environ["HOOK_FINGERPRINT"]
-events = ["SessionStart", "Stop"]
+events = ["SessionStart", "Stop", "SubagentStop"]
 
 try:
     with open(path) as f:
@@ -912,9 +1129,16 @@ for event in events:
     groups.append({"hooks": [{"type": "command", "command": cmd}]})
     data["hooks"][event] = groups
 
-with open(path, "w") as f:
+# Write-then-rename: these files are read by a live Claude Code / Codex
+# session, and truncate-in-place leaves a window where a reader sees a
+# partial or empty config.
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp, path)
 PY
 
 echo "installed Codex CLI hooks -> $CODEX_HOOKS"
@@ -952,16 +1176,26 @@ if not isinstance(ns_data, dict):
 for event in ["SessionStart", "PreInvocation", "Stop"]:
     ns_data[event] = [{"type": "command", "command": cmd}]
 
-# Events with matchers (tool hooks)
-for event in ["PreToolUse", "PostToolUse"]:
+# Events with matchers (tool hooks). PostToolUse is deliberately absent -- the
+# server does nothing with it and it carries tool_response -- and any previously
+# registered one is removed rather than left behind.
+ns_data.pop("PostToolUse", None)
+for event in ["PreToolUse"]:
     ns_data[event] = [{
         "matcher": "*",
         "hooks": [{"type": "command", "command": cmd}]
     }]
 
-with open(path, "w") as f:
+# Write-then-rename: these files are read by a live Claude Code / Codex
+# session, and truncate-in-place leaves a window where a reader sees a
+# partial or empty config.
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp, path)
 PY
 
 echo "installed Antigravity CLI hooks -> $AGY_HOOKS"
@@ -973,4 +1207,3 @@ fi
 
 echo ""
 echo "Tip: create ~/.config/{{ $namespace }}/custom.sh to customize what your fighter shows -- it survives every install and update."
-echo "Tip: set SLAYER_MINIMAL_PAYLOAD=1 to send only usage and attribution fields, dropping prompt and tool content from every event."

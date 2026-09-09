@@ -3,12 +3,13 @@
 namespace App\Filament\Resources\Accounts\RelationManagers;
 
 use App\Enums\GrantStatus;
+use App\Enums\Provider;
 use App\Exceptions\AccountConnectException;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
-use App\Services\CodexProvisioningService;
+use App\Services\ProviderServiceFactory;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -92,7 +93,7 @@ class ProvisionsRelationManager extends RelationManager
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(fn (GrantStatus $state, AccountProvisionedGrant $record): string => $state === GrantStatus::Pending
-                        && $record->provisioned_at->addSeconds(CacheKeys::PROVISIONED_GRANT_TTL_SECONDS)->isPast()
+                        && $record->provisioned_at->addSeconds(CacheKeys::PROVISIONED_GRANT_PENDING_BADGE_SECONDS)->isPast()
                             ? 'Pending (expired)'
                             : $state->getLabel()),
                 TextColumn::make('provisioned_at')
@@ -145,7 +146,7 @@ class ProvisionsRelationManager extends RelationManager
             ->label('Reissue')
             ->icon(Heroicon::OutlinedArrowPath)
             ->visible(fn (AccountProvisionedGrant $record): bool => $record->status !== GrantStatus::Revoked
-                && $record->account->provider === 'claude')
+                && $record->account->provider === Provider::Claude)
             ->action(function (AccountProvisionedGrant $record, Component $livewire): void {
                 $started = app(AccountConnectService::class)->start();
 
@@ -206,10 +207,10 @@ class ProvisionsRelationManager extends RelationManager
 
     /**
      * Build the "Revoke" row action: soft-revokes the grant and forgets the
-     * cached secret, via {@see AccountProvisioningService::revoke()} for a
-     * Claude grant or {@see CodexProvisioningService::revoke()} (which
-     * additionally calls the real OpenAI revoke endpoint first) for a Codex
-     * one. Hidden once a row is already revoked.
+     * cached secret, via the provider's revoker
+     * ({@see ProviderServiceFactory::revokerFor()}) — Codex's additionally
+     * calls the real OpenAI revoke endpoint first. Hidden once a row is
+     * already revoked.
      *
      * @return Action
      */
@@ -221,17 +222,13 @@ class ProvisionsRelationManager extends RelationManager
             ->color('danger')
             ->requiresConfirmation()
             ->modalHeading('Revoke grant')
-            ->modalDescription(fn (AccountProvisionedGrant $record): string => $record->account->provider === 'codex'
+            ->modalDescription(fn (AccountProvisionedGrant $record): string => $record->account->provider === Provider::Codex
                 ? 'Marks this grant revoked, calls OpenAI to revoke the refresh token, and forgets the cached secret.'
                 : 'Marks this grant revoked and forgets the cached secret so it cannot be claimed. A grant already handed to the client must be deleted separately at claude.ai using its token_uuid.')
             ->modalSubmitActionLabel('Revoke')
             ->visible(fn (AccountProvisionedGrant $record): bool => $record->status !== GrantStatus::Revoked)
             ->action(function (AccountProvisionedGrant $record): void {
-                if ($record->account->provider === 'codex') {
-                    app(CodexProvisioningService::class)->revoke($record);
-                } else {
-                    app(AccountProvisioningService::class)->revoke($record);
-                }
+                app(ProviderServiceFactory::class)->revokerFor($record->account)->revoke($record);
 
                 Notification::make()->success()->title('Grant revoked')->send();
             });

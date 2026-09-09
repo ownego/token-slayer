@@ -7,10 +7,7 @@ use App\Models\AccountProvisionedGrant;
 use App\Models\Device;
 use App\Models\User;
 use App\Services\AccountProvisioningService;
-use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Crypt;
 
 uses(RefreshDatabase::class);
 
@@ -155,13 +152,14 @@ it('reissued-then-unverified device receives the removal instruction again', fun
     expect($service->removable($user, $device))->toBe([['org_uuid' => 'org-reissue']]);
 });
 
-it('revokes the existing grant and forgets its cached secret when a device confirms removal', function () {
+it('revokes the existing grant and clears its pending-secret fields when a device confirms removal', function () {
     $user = User::factory()->create();
     $account = Account::factory()->create(['organization_uuid' => 'org-kill']);
     untrackedMembership($user, $account);
     $device = Device::factory()->for($user)->create(['device_id' => 'fp-a']);
-    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
-    Cache::put(CacheKeys::provisionedGrant($grant->id), 'secret', 60);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'pending_claude_access_token' => 'secret',
+    ]);
 
     $service = app(AccountProvisioningService::class);
     $result = $service->confirmSetup($user, [], ['org-kill'], $device);
@@ -171,20 +169,20 @@ it('revokes the existing grant and forgets its cached secret when a device confi
     expect($fresh->status)->toBe(GrantStatus::Revoked)
         ->and($fresh->revoked_at)->not->toBeNull()
         ->and($fresh->deprovisioned_at)->not->toBeNull()
-        ->and(Cache::get(CacheKeys::provisionedGrant($grant->id)))->toBeNull();
+        ->and($fresh->pending_claude_access_token)->toBeNull();
 });
 
-it('does not re-serve a claimed grant whose removal was already confirmed, even if its cache secret is still alive', function () {
+it('does not re-serve a claimed grant whose removal was already confirmed, even if its pending secret is still set', function () {
     // Belt for pre-fix data: legacy rows may have deprovisioned_at set
-    // without having been revoked, with the cache secret still alive
-    // inside its 24h TTL. claim() must not re-serve them regardless.
+    // without having been revoked, with the pending secret still set.
+    // claim() must not re-serve them regardless.
     $user = User::factory()->create();
     $account = Account::factory()->create(['organization_uuid' => 'org-legacy']);
     $device = Device::factory()->for($user)->create(['device_id' => 'fp-legacy']);
-    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
         'deprovisioned_at' => now(),
+        'pending_claude_access_token' => 'AT',
     ]);
-    Cache::put(CacheKeys::provisionedGrant($grant->id), Crypt::encryptString('{}'), 60);
 
     $payloads = app(AccountProvisioningService::class)->claim($user, 'fp-legacy');
 

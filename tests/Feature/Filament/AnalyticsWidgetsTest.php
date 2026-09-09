@@ -57,6 +57,14 @@ test('the fleet quota overview widget renders and flags a near-cap account', fun
         ->assertSee('hot@example.com');
 });
 
+test('the fleet quota card shows the provider badge after the email, not before', function () {
+    $account = Account::factory()->create(['email' => 'ordered@example.com']);
+
+    Livewire::test(FleetQuotaOverview::class)
+        ->assertOk()
+        ->assertSeeInOrder(['ordered@example.com', 'Claude']);
+});
+
 test('the fleet quota overview lists each account contributor with all-time tokens', function () {
     $account = Account::factory()->create(['email' => 'team@example.com']);
     $user = User::factory()->create(['slack_handle' => 'devon']);

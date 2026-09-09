@@ -5,26 +5,28 @@ namespace App\Services;
 use App\Enums\AccountStatus;
 use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
+use App\Enums\Provider;
 use App\Exceptions\CodexConnectException;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\CodexCredential;
 use App\Models\User;
-use App\Support\CacheKeys;
+use App\Services\Contracts\GrantRevokerContract;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Crypt;
 
 /**
  * Admin-side Codex account provisioning: Step A ({@see connectAccount()})
  * populates a shared Codex account's own persistent credential; Step B
- * ({@see provisionForDevice()}) issues a per-device grant, cached the same
- * way {@see AccountProvisioningService} caches Claude's. Standalone from
- * `AccountProvisioningService` — never touches its Claude-specific
- * `claim()`/`removable()`/`confirmSetup()`/`memberships()` methods (those
- * stay Claude-only; see the spec's §7 correction for why).
+ * ({@see provisionForDevice()}) issues a per-device grant, its secret held
+ * the same durable way {@see AccountProvisioningService} holds Claude's
+ * (`pending_codex_auth_json`, no cache/TTL). Standalone from
+ * `AccountProvisioningService` for `removable()`/`confirmSetup()`/
+ * `memberships()` (those stay Claude-only; see the spec's §7 correction for
+ * why) — but `claim()` IS shared: it reads whichever pending-secret field a
+ * grant actually holds, Claude or Codex, since `device->grants()` mixes
+ * both providers on one device.
  */
-final class CodexProvisioningService
+final class CodexProvisioningService implements GrantRevokerContract
 {
     /**
      * @param  AccountProvisioningService  $accounts  supplies provider-agnostic device resolution
@@ -51,7 +53,7 @@ final class CodexProvisioningService
     {
         $chatgptAccountId = $this->identity($authJson, 'chatgpt_account_id');
         if ($chatgptAccountId === null) {
-            throw new CodexConnectException('missing chatgpt_account_id in the uploaded auth.json');
+            throw new CodexConnectException('codex_connect_invalid_authjson', 'missing chatgpt_account_id in the uploaded auth.json');
         }
 
         $credential = CodexCredential::query()->where('chatgpt_account_id', $chatgptAccountId)->first();
@@ -59,7 +61,7 @@ final class CodexProvisioningService
         $account->fill([
             'name' => $name,
             'email' => $this->identity($authJson, 'email', namespaced: false),
-            'provider' => 'codex',
+            'provider' => Provider::Codex,
         ]);
         $account->save();
 
@@ -72,6 +74,7 @@ final class CodexProvisioningService
             'codex_access_token' => $authJson['tokens']['access_token'] ?? null,
             'codex_refresh_token' => $authJson['tokens']['refresh_token'] ?? null,
             'codex_expires_at' => $this->accessTokenExpiry($authJson),
+            'earliest_refresh_at' => $this->earliestRefreshAt($authJson),
             'last_refreshed_at' => $this->lastRefresh($authJson),
             'status' => AccountStatus::Active,
         ]);
@@ -82,7 +85,9 @@ final class CodexProvisioningService
 
     /**
      * Step B: issue a per-device grant. Confirms the uploaded auth.json's
-     * identity matches `$account` (self-graft guard), revokes any live
+     * identity matches `$account` (self-graft guard) and that its login
+     * session isn't already live for a different employee (shared-session
+     * guard — see {@see guardAgainstSharedSession()}), revokes any live
      * grant already on the resolved device (one-live-grant invariant,
      * mirrors `AccountProvisioningService::provisionForDevice()`), and
      * caches the FULL raw auth.json — the employee-side pull writes it back
@@ -95,14 +100,18 @@ final class CodexProvisioningService
      * @param  array<string, mixed>  $authJson  the uploaded auth.json content, for a fresh login into `$account`
      * @return AccountProvisionedGrant the new Pending grant
      *
-     * @throws CodexConnectException when the auth.json's identity doesn't match `$account`
+     * @throws CodexConnectException when the auth.json's identity doesn't match `$account`, or its
+     *                               login session is already live for a different employee
      */
     public function provisionForDevice(Account $account, User $user, array $authJson): AccountProvisionedGrant
     {
         $chatgptAccountId = $this->identity($authJson, 'chatgpt_account_id');
         if ($chatgptAccountId === null || $chatgptAccountId !== $account->codexCredential?->chatgpt_account_id) {
-            throw new CodexConnectException('the uploaded auth.json does not match the target account');
+            throw new CodexConnectException('codex_connect_identity_mismatch', 'the uploaded auth.json does not match the target account');
         }
+
+        $sessionId = $this->identity($authJson, 'sid', namespaced: false);
+        $this->guardAgainstSharedSession($account, $user, $sessionId);
 
         $device = $this->accounts->resolveProvisionTarget($user, null);
 
@@ -113,65 +122,82 @@ final class CodexProvisioningService
         $grant = $account->provisionedGrants()->create([
             'device_id' => $device->id,
             'status' => GrantStatus::Pending,
+            'token_uuid' => $sessionId,
             'provisioned_at' => Carbon::now(),
+            'pending_codex_auth_json' => $authJson,
         ]);
 
         $user->accounts()->syncWithoutDetaching([
             $account->id => ['status' => MembershipStatus::Tracked->value],
         ]);
 
-        $payload = [
-            'provider' => 'codex',
-            'name' => $account->name ?? $account->email,
-            'email' => $this->identity($authJson, 'email', namespaced: false),
-            'chatgpt_account_id' => $chatgptAccountId,
-            'auth_json' => $authJson,
-        ];
-        Cache::put(
-            CacheKeys::provisionedGrant($grant->id),
-            Crypt::encryptString(json_encode($payload)),
-            CacheKeys::PROVISIONED_GRANT_TTL_SECONDS,
-        );
-
         return $grant;
     }
 
     /**
+     * Refuse to hand the exact same OpenAI login session (its `sid` claim)
+     * to a second employee while it's still live for someone else.
+     * `provisionForDevice()` mints no fresh token per call — it re-uploads
+     * whatever the admin currently has logged in locally — so reusing one
+     * login across two `--for` targets hands both employees the identical
+     * access/refresh token pair. OpenAI's refresh endpoint is assumed to
+     * rotate the refresh token on use the same way Anthropic's does (see
+     * the token-slayer KB's `codex-provision reused-login collision` entry
+     * for why this wasn't verified live), so whichever employee's Codex CLI
+     * refreshes first would silently invalidate the other's copy. Reusing
+     * the SAME session for the SAME employee again (a re-provision) is left
+     * alone — no collision risk, and blocking it would break re-running the
+     * command by mistake for the person it was always meant for. A null
+     * `$sessionId` (an id_token missing its `sid` claim, which real Codex
+     * logins always carry) fails open rather than blocking a legitimate
+     * upload on a technicality this service can't otherwise verify.
+     *
+     * @param  Account  $account  the target Codex account
+     * @param  User  $user  the employee being provisioned
+     * @param  string|null  $sessionId  the uploaded auth.json's `sid` claim
+     * @return void
+     *
+     * @throws CodexConnectException when `$sessionId` is already live on a different employee's grant
+     */
+    private function guardAgainstSharedSession(Account $account, User $user, ?string $sessionId): void
+    {
+        if ($sessionId === null) {
+            return;
+        }
+
+        $alreadyAssignedElsewhere = $account->provisionedGrants()
+            ->live()
+            ->where('token_uuid', $sessionId)
+            ->whereHas('device', fn ($query) => $query->where('user_id', '!=', $user->id))
+            ->exists();
+
+        if ($alreadyAssignedElsewhere) {
+            throw new CodexConnectException(
+                'codex_connect_session_already_assigned',
+                'this Codex login is already provisioned to a different employee — run `codex login` again for a fresh session before provisioning another person.',
+            );
+        }
+    }
+
+    /**
      * Soft-revoke a grant: calls the real OpenAI revoke endpoint with the
-     * cached refresh token first (a genuine capability Claude doesn't
-     * have), then marks the row Revoked and forgets the cached secret —
-     * mirrors `AccountProvisioningService::revoke()`'s local half exactly.
+     * grant's own pending refresh token first (a genuine capability Claude
+     * doesn't have), then marks the row Revoked and clears its secret field
+     * — mirrors `AccountProvisioningService::revoke()`'s local half exactly
+     * (and reuses its field-clearing helper directly).
      *
      * @param  AccountProvisionedGrant  $grant  the grant to revoke
      * @return void
      */
     public function revoke(AccountProvisionedGrant $grant): void
     {
-        $refreshToken = $this->cachedRefreshToken($grant);
+        $refreshToken = $grant->pending_codex_auth_json['tokens']['refresh_token'] ?? null;
         if ($refreshToken !== null) {
             $this->oauth->revoke($refreshToken);
         }
 
         $grant->forceFill(['status' => GrantStatus::Revoked, 'revoked_at' => Carbon::now()])->save();
-        CacheKeys::forgetProvisionedGrant($grant->id);
-    }
-
-    /**
-     * Read the cached refresh token for a still-live grant, or null once
-     * the cache secret has already expired/been forgotten.
-     *
-     * @param  AccountProvisionedGrant  $grant  the grant being revoked
-     * @return string|null
-     */
-    private function cachedRefreshToken(AccountProvisionedGrant $grant): ?string
-    {
-        $raw = Cache::get(CacheKeys::provisionedGrant($grant->id));
-        if ($raw === null) {
-            return null;
-        }
-        $payload = json_decode(Crypt::decryptString($raw), true);
-
-        return $payload['auth_json']['tokens']['refresh_token'] ?? null;
+        $this->accounts->clearPendingSecret($grant);
     }
 
     /**
@@ -187,6 +213,22 @@ final class CodexProvisioningService
         $exp = $this->decodeJwtClaim($authJson['tokens']['access_token'] ?? '', 'exp');
 
         return is_int($exp) ? Carbon::createFromTimestamp($exp) : null;
+    }
+
+    /**
+     * Parse the optional top-level `earliest_refresh_at` the device-code
+     * exchange response carries (a Unix timestamp) — absent entirely from
+     * CLI-sourced `auth.json` uploads, which is why this stays nullable and
+     * the caller must never assume it's populated.
+     *
+     * @param  array<string, mixed>  $authJson  the uploaded/exchanged auth data
+     * @return ?Carbon
+     */
+    private function earliestRefreshAt(array $authJson): ?Carbon
+    {
+        $value = $authJson['earliest_refresh_at'] ?? null;
+
+        return $value === null ? null : Carbon::createFromTimestamp($value);
     }
 
     /**

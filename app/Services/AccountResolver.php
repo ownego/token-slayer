@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\Provider;
 use App\Models\Account;
 use App\Models\ClaudeCredential;
 use App\Models\CodexCredential;
@@ -144,7 +145,7 @@ final class AccountResolver
      */
     private function resolveByClaudeEmail(?string $email): ?int
     {
-        return $this->resolveByProviderEmail($email, self::CACHE_KEY, 'claude');
+        return $this->resolveByProviderEmail($email, self::CACHE_KEY, Provider::Claude);
     }
 
     /**
@@ -153,7 +154,7 @@ final class AccountResolver
      */
     private function resolveByCodexEmail(?string $email): ?int
     {
-        return $this->resolveByProviderEmail($email, CacheKeys::ACCOUNTS_CODEX_EMAIL_MAP, 'codex');
+        return $this->resolveByProviderEmail($email, CacheKeys::ACCOUNTS_CODEX_EMAIL_MAP, Provider::Codex);
     }
 
     /**
@@ -163,10 +164,10 @@ final class AccountResolver
      *
      * @param  ?string  $email  raw email claimed by the client, any case
      * @param  string  $cacheKey  the provider-scoped cache key to use
-     * @param  string  $provider  the `accounts.provider` value to scope the map to
+     * @param  Provider  $provider  the `accounts.provider` value to scope the map to
      * @return ?int the matching account id, or null when unknown/absent
      */
-    private function resolveByProviderEmail(?string $email, string $cacheKey, string $provider): ?int
+    private function resolveByProviderEmail(?string $email, string $cacheKey, Provider $provider): ?int
     {
         if ($email === null || trim($email) === '') {
             return null;
@@ -194,7 +195,7 @@ final class AccountResolver
      */
     private function learnOrganizationUuid(int $accountId, string $orgId): void
     {
-        $account = Account::query()->where('provider', 'claude')->find($accountId);
+        $account = Account::query()->where('provider', Provider::Claude)->find($accountId);
         if ($account === null || $account->organization_uuid === $orgId) {
             return;
         }
@@ -233,7 +234,7 @@ final class AccountResolver
      */
     private function learnChatgptAccountId(int $accountId, string $chatgptAccountId): void
     {
-        $account = Account::query()->where('provider', 'codex')->find($accountId);
+        $account = Account::query()->where('provider', Provider::Codex)->find($accountId);
         if ($account === null) {
             return;
         }

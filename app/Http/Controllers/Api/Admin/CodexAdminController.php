@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
+use App\Enums\Provider;
 use App\Exceptions\CodexConnectException;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\AuthenticateHookToken;
 use App\Models\Account;
 use App\Models\User;
 use App\Services\CodexProvisioningService;
@@ -15,6 +17,10 @@ use Illuminate\Http\Request;
  * `codex-provision` — see {@see CodexProvisioningService} for the actual
  * connect/provision logic; this controller only validates the request
  * shape and maps outcomes to HTTP responses.
+ *
+ * Authenticated by the same hook token every employee already has
+ * (`hook.token:admin` in routes/api.php) plus a live role check, not a
+ * second credential — see {@see AuthenticateHookToken}.
  */
 class CodexAdminController extends Controller
 {
@@ -60,7 +66,7 @@ class CodexAdminController extends Controller
             'auth_json' => ['required', 'array'],
         ]);
 
-        $account = Account::query()->where('provider', 'codex')->where('name', $data['account'])->first();
+        $account = Account::query()->where('provider', Provider::Codex)->where('name', $data['account'])->first();
         if ($account === null) {
             return response()->json(['error' => "no Codex account named '{$data['account']}'"], 404);
         }

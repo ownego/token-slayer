@@ -63,6 +63,18 @@
                     Your client is running an outdated version{{ $attribution['clientVersion'] ? " ({$attribution['clientVersion']})" : '' }}. Run <code>token-slayer update</code> to get the latest.
                 </p>
             @endif
+            @if ($attribution['hookOutdated'])
+                <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                    @if ($attribution['hookCanSelfUpdate'])
+                        Your hook is on v{{ $attribution['hookVersion'] }} but v{{ $attribution['latestHookVersion'] }} is available &mdash; usage may be recorded with less detail until you run <code>token-slayer update</code>.
+                    @else
+                        {{-- No version to print, and no `token-slayer update`
+                             to point at: both ship in the release this hook is
+                             missing. --}}
+                        Your hook is out of date &mdash; usage is being recorded with less detail. Re-run the install command below to move to v{{ $attribution['latestHookVersion'] }}.
+                    @endif
+                </p>
+            @endif
         </section>
 
         <section class="bg-white border border-gray-200 rounded-xl p-5 space-y-4">

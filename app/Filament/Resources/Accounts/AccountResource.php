@@ -4,7 +4,9 @@ namespace App\Filament\Resources\Accounts;
 
 use App\Enums\AccountPlan;
 use App\Enums\AccountStatus;
-use App\Exceptions\AccountConnectException;
+use App\Enums\CodexPlan;
+use App\Enums\Provider;
+use App\Filament\Actions\ClaudeReconnectModal;
 use App\Filament\Resources\Accounts\Pages\CreateAccount;
 use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\Pages\ListAccounts;
@@ -15,8 +17,11 @@ use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
 use App\Models\ClaudeCredential;
 use App\Services\AccountConnectService;
+use App\Services\Accounts\CodexUsageWindows;
+use App\Services\Accounts\ModelQuotaLimits;
+use App\Services\Accounts\PlanBadgeResolver;
 use App\Services\Accounts\PlanResolver;
-use App\Services\UsageProber;
+use App\Services\ProviderServiceFactory;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -25,7 +30,6 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
@@ -76,7 +80,10 @@ class AccountResource extends Resource
                 TextInput::make('email')
                     ->email()
                     ->required()
-                    ->unique(ignoreRecord: true)
+                    ->unique(
+                        ignoreRecord: true,
+                        modifyRuleUsing: fn (Unique $rule): Unique => $rule->where('provider', Provider::Claude),
+                    )
                     ->maxLength(255)
                     ->disabledOn('edit'),
                 TextInput::make('organization_uuid')
@@ -117,6 +124,9 @@ class AccountResource extends Resource
     {
         return $table
             ->columns([
+                TextColumn::make('provider')
+                    ->badge()
+                    ->sortable(),
                 TextColumn::make('email')
                     ->searchable()
                     ->sortable(),
@@ -124,23 +134,35 @@ class AccountResource extends Resource
                     ->searchable()
                     ->toggleable(),
                 TextColumn::make('plan')
-                    ->badge(),
+                    ->badge()
+                    ->state(fn (Account $record): AccountPlan|CodexPlan|null => app(PlanBadgeResolver::class)->for($record))
+                    ->placeholder('Unknown'),
                 TextColumn::make('tracked_users_count')
                     ->counts('trackedUsers')
                     ->label('Members')
                     ->sortable(),
                 TextColumn::make('status')
                     ->badge(),
-                TextColumn::make('latestUsageSnapshot.util_5h')
-                    ->label('5h')
+                // Each cell names its own window rather than the header doing
+                // it: Codex does not report Claude's 5h/7d pair, so a fixed
+                // "5h" header would either mislabel its 30-day cap or, once
+                // that misfiling was corrected, leave the column empty.
+                TextColumn::make('usage_window_1')
+                    ->label('Usage')
                     ->badge()
-                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : "{$state}%")
-                    ->color(fn (?int $state): string => static::utilizationColor($state)),
-                TextColumn::make('latestUsageSnapshot.util_7d')
-                    ->label('7d')
+                    ->state(fn (Account $record): ?string => static::usageWindowLabel($record, 0))
+                    ->placeholder('—')
+                    ->color(fn (Account $record): string => static::utilizationColor(
+                        static::usageWindows($record)[0]['percent'] ?? null,
+                    )),
+                TextColumn::make('usage_window_2')
+                    ->label('')
                     ->badge()
-                    ->formatStateUsing(fn (?int $state): string => $state === null ? '—' : "{$state}%")
-                    ->color(fn (?int $state): string => static::utilizationColor($state)),
+                    ->state(fn (Account $record): ?string => static::usageWindowLabel($record, 1))
+                    ->placeholder('')
+                    ->color(fn (Account $record): string => static::utilizationColor(
+                        static::usageWindows($record)[1]['percent'] ?? null,
+                    )),
                 TextColumn::make('last_probed_at')
                     ->since()
                     ->placeholder('Never')
@@ -197,18 +219,36 @@ class AccountResource extends Resource
                 TextEntry::make('name')
                     ->placeholder('—'),
                 TextEntry::make('plan')
-                    ->badge(),
+                    ->badge()
+                    ->visible(fn (Account $record): bool => $record->provider === Provider::Claude),
                 TextEntry::make('organization_type')
                     ->label('Org type')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->visible(fn (Account $record): bool => $record->provider === Provider::Claude),
                 TextEntry::make('rate_limit_tier')
                     ->label('Rate limit tier')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->visible(fn (Account $record): bool => $record->provider === Provider::Claude),
+                TextEntry::make('codexCredential.plan_type')
+                    ->label('Codex plan')
+                    ->placeholder('—')
+                    ->visible(fn (Account $record): bool => $record->provider === Provider::Codex),
                 TextEntry::make('status')
                     ->badge(),
                 TextEntry::make('last_probed_at')
                     ->since()
                     ->placeholder('Never'),
+                TextEntry::make('model_quota')
+                    ->label('Per-model quota')
+                    // Read from the probe response's limits[], which names its
+                    // own model -- see {@see ModelQuotaLimits} for why the
+                    // top-level keys that look like the source are not it.
+                    ->state(fn (Account $record): array => array_map(
+                        fn (array $limit): string => "{$limit['model']} — {$limit['percent']}%",
+                        ModelQuotaLimits::from($record->latestUsageSnapshot?->raw),
+                    ))
+                    ->badge()
+                    ->placeholder('No per-model limits in the last probe'),
             ]);
     }
 
@@ -228,58 +268,20 @@ class AccountResource extends Resource
         return Action::make('connect')
             ->label('Connect')
             ->icon(Heroicon::OutlinedLink)
-            ->visible(fn (Account $record): bool => $record->status !== AccountStatus::Active)
+            ->visible(fn (Account $record): bool => $record->provider === Provider::Claude && $record->status !== AccountStatus::Active)
             ->modalHeading('Re-connect Claude account')
             ->modalDescription('Open the authorize URL, approve access, then paste the code back here. You must authorize the same account this row represents.')
             ->modalSubmitActionLabel('Complete connect')
-            ->fillForm(function (): array {
-                $started = app(AccountConnectService::class)->start();
-
-                return [
-                    'authorize_url' => $started['url'],
-                    'state' => $started['state'],
-                    'code' => '',
-                ];
-            })
-            ->schema([
-                TextInput::make('authorize_url')
-                    ->label('Authorize URL')
-                    ->readOnly()
-                    ->copyable(),
-                Hidden::make('state'),
-                TextInput::make('code')
-                    ->label('Paste the code here')
-                    ->required(),
-            ])
-            ->action(function (array $data, Account $record): void {
-                try {
-                    app(AccountConnectService::class)->resolve($data['state'], $data['code'], $record);
-                } catch (AccountConnectException $exception) {
-                    Notification::make()
-                        ->danger()
-                        ->title('Connect failed')
-                        ->body(match ($exception->reason) {
-                            'connect_identity_mismatch' => $exception->getMessage(),
-                            'connect_state_expired' => 'This connect link expired or was already used. Click Connect to start again.',
-                            'connect_no_identity' => 'Could not read an email from the authorized Claude account.',
-                            default => 'Something went wrong completing the connect.',
-                        })
-                        ->send();
-
-                    return;
-                }
-
-                Notification::make()
-                    ->success()
-                    ->title('Account re-connected')
-                    ->send();
-            });
+            ->fillForm(fn (): array => ClaudeReconnectModal::start())
+            ->schema(ClaudeReconnectModal::schema())
+            ->action(fn (array $data, Account $record) => ClaudeReconnectModal::complete($record, $data, 'Connect'));
     }
 
     /**
      * Build the "Refresh now" record action: runs the usage prober against the
      * account on demand and reports the fresh 5h/7d utilization, or the recorded
-     * probe error. Delegates all work to {@see UsageProber}.
+     * probe error. Delegates to the provider's prober via
+     * {@see ProviderServiceFactory::proberFor()}.
      *
      * @return Action
      */
@@ -289,7 +291,7 @@ class AccountResource extends Resource
             ->label('Refresh now')
             ->icon(Heroicon::OutlinedArrowPath)
             ->action(function (Account $record): void {
-                $snapshot = app(UsageProber::class)->probe($record);
+                $snapshot = app(ProviderServiceFactory::class)->proberFor($record)->probe($record);
 
                 if ($snapshot === null) {
                     Notification::make()
@@ -328,7 +330,7 @@ class AccountResource extends Resource
             ->modalDescription('Wipes the stored access and refresh tokens immediately and marks the account as needing re-auth. If the token may be compromised, this alone is NOT enough — also sign into this Claude account at claude.ai and revoke app access / sign out of all sessions, then Connect again for a fresh grant.')
             ->modalSubmitActionLabel('Disconnect')
             ->action(function (Account $record): void {
-                app(AccountConnectService::class)->disconnect($record);
+                app(ProviderServiceFactory::class)->disconnecterFor($record)->disconnect($record);
 
                 Notification::make()
                     ->success()
@@ -347,6 +349,55 @@ class AccountResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with('latestUsageSnapshot');
+    }
+
+    /**
+     * The usage windows an account's latest probe reported, in the order it
+     * reported them.
+     *
+     * Claude always reports the same 5h/7d pair, so those come straight off
+     * the typed columns. Codex reports whatever its plan carries — a
+     * free-tier account a single 30-day cap — so its windows are read back
+     * from the stored response with the duration each one states. See
+     * {@see CodexUsageWindows} for why that is not assumed by position.
+     *
+     * @param  Account  $record  the account row being rendered
+     * @return array<int, array{label: string, percent: int}>
+     */
+    public static function usageWindows(Account $record): array
+    {
+        $snapshot = $record->latestUsageSnapshot;
+
+        if ($snapshot === null) {
+            return [];
+        }
+
+        if ($record->provider === Provider::Codex) {
+            return array_map(
+                fn (array $window): array => ['label' => $window['label'], 'percent' => $window['percent']],
+                CodexUsageWindows::from($snapshot->raw),
+            );
+        }
+
+        return array_values(array_filter([
+            $snapshot->util_5h === null ? null : ['label' => '5h', 'percent' => $snapshot->util_5h],
+            $snapshot->util_7d === null ? null : ['label' => '7d', 'percent' => $snapshot->util_7d],
+        ]));
+    }
+
+    /**
+     * One usage window rendered for a table cell, or null when the account
+     * reported no such window.
+     *
+     * @param  Account  $record  the account row being rendered
+     * @param  int  $position  0 for the first window, 1 for the second
+     * @return ?string
+     */
+    private static function usageWindowLabel(Account $record, int $position): ?string
+    {
+        $window = static::usageWindows($record)[$position] ?? null;
+
+        return $window === null ? null : "{$window['label']} {$window['percent']}%";
     }
 
     /**

@@ -35,6 +35,15 @@ Fighter entry object (lives in `scene.fighters: Map<userId, entry>`):
   waypointMoving,        // boolean — local waypoint animation in progress
   hasCustomPosition,     // boolean — true once fighter has moved (click-to-move or restored from persisted position); relayoutFighters() must not grid-snap these
   rescaleTween,          // active tween or null
+  flairState,            // {flair, expiresAt} from fighter/flair.js, or undefined before the first flair hit
+  flairColor,            // hex string for the active flair's orbit ring/burst, or null when no flair is active
+  flairRing,             // Array<{ch, phase, glowBack, text: Phaser.GameObjects.Text, trail: Phaser.GameObjects.Arc[]}> | null — the orbiting name-ring glyphs + their comet-trail dots; glowBack tracks the last front/back side so glow (setShadow) only re-fires on an actual transition
+  flairSparkles,         // Array<{text, phase, speed, sizeScale}> | null — independently-twinkling sparkles orbiting wider than the ring
+  flairRingTicker,       // Phaser.Time.TimerEvent | null — drives updateFlairRing() every 16ms while flairRing is active
+  flairAngle,            // radians — the ring's current rotation, advanced each tick by updateFlairRing()
+  flairLastBurstAt,      // timestamp (ms) of the last triggering hit — drives the post-hit spin-up (flair.js's spinMultiplier)
+  flairBurstAt,          // timestamp (ms) of the last burstFlair() call — debounces re-bursting within 300ms
+  flairTimer,            // Phaser.Time.TimerEvent | null — fires destroyFlair() when the flair expires
 }
 ```
 
@@ -94,7 +103,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `projectile.js` | `class Projectile` — all projectile types (slash, blast, shuriken, arrow, blade) |
 | `impact.js` | `class Impact` — damage popup, hit flash effects |
 | `boss.js` → `boss/` | `class Boss` (`index.js`) — boss patrol, react animations, HP bar; `dreadknight.js` (abyssal-dreadknight deterministic turn-based patrol); `stun.js` (visual-only stun effect) |
-| `fighter.js` → `fighter/` | `class Fighter` (`index.js`) — fighter lifecycle; `avatar.js` (avatar texture loading + fallback generation) |
+| `fighter.js` → `fighter/` | `class Fighter` (`index.js`) — fighter lifecycle; `avatar.js` (avatar texture loading + fallback generation); `flair.js` (pure flair state/ring-layout helpers); `flair-font.js` (the model ring's self-hosted webfont + its load gate — the only battlefield text not set in the browser default `monospace`) |
 
 ## Test Files
 | Test | What it covers |

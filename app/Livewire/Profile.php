@@ -6,6 +6,7 @@ use App\Models\Event;
 use App\Models\User;
 use App\Services\DamageTotals;
 use App\Services\GitHub\CachedLatestVersion;
+use App\Support\HookVersionStatus;
 use Livewire\Component;
 
 class Profile extends Component
@@ -19,7 +20,7 @@ class Profile extends Component
      *
      * @param  User  $user  the profile owner whose latest event is being inspected
      * @param  CachedLatestVersion  $latest  supplies the latest released CLI version
-     * @return array{event:?Event, clientVersion:?string, latestVersion:?string, outdated:bool}
+     * @return array{event:?Event, clientVersion:?string, latestVersion:?string, outdated:bool, hookVersion:?string, latestHookVersion:string, hookOutdated:bool}
      */
     private function attributionStatus(User $user, CachedLatestVersion $latest): array
     {
@@ -30,6 +31,12 @@ class Profile extends Component
             'clientVersion' => $user->client_version,
             'latestVersion' => $latestVersion,
             'outdated' => $latestVersion !== null && $user->client_version !== $latestVersion,
+            'hookVersion' => $user->hook_version,
+            'latestHookVersion' => config('token_slayer.hook_version'),
+            'hookOutdated' => HookVersionStatus::isOutdated($user, config('token_slayer.hook_version')),
+            // A hook old enough not to report its version predates
+            // `token-slayer update` too, so it gets sent somewhere that works.
+            'hookCanSelfUpdate' => $user->hook_version !== null,
         ];
     }
 

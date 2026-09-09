@@ -4,16 +4,16 @@ namespace App\Services\Provisioning;
 
 use App\Enums\GrantStatus;
 use App\Models\Device;
-use App\Support\CacheKeys;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
  * One-shot migration helper: converts legacy `account_user` provisioning
  * rows into `devices` + `account_provisioned_grants`. Each provisioned user
  * gets one `'default'` device; every legacy row becomes one grant with a
- * mapped status; a still-alive legacy cache secret is copied to the new
- * per-grant key so an in-flight (<24 h) provision survives the deploy.
+ * mapped status. Never copies a legacy secret forward — the grant's own
+ * `pending_claude_*`/`pending_codex_auth_json` columns didn't exist yet when
+ * this migration originally ran, and a fresh replay (new environment) has no
+ * legacy `account_user` rows to begin with.
  */
 final class LegacyGrantBackfiller
 {
@@ -38,7 +38,7 @@ final class LegacyGrantBackfiller
                 $status = GrantStatus::Claimed;
             }
 
-            $grantId = DB::table('account_provisioned_grants')->insertGetId([
+            DB::table('account_provisioned_grants')->insert([
                 'account_id' => $row['account_id'],
                 'device_id' => $device->id,
                 'status' => $status->value,
@@ -50,11 +50,6 @@ final class LegacyGrantBackfiller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-
-            $legacySecret = Cache::get(CacheKeys::legacyProvisionedSetup($row['user_id'], $row['account_id']));
-            if ($legacySecret !== null && $status === GrantStatus::Pending) {
-                Cache::put(CacheKeys::provisionedGrant($grantId), $legacySecret, CacheKeys::PROVISIONED_GRANT_TTL_SECONDS);
-            }
         }
     }
 }

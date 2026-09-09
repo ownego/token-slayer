@@ -9,6 +9,7 @@ use App\Services\AccountProvisioningService;
 use App\Services\Provisioning\DeviceClaimResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 
 /**
  * Hands a user's provisioned grants (held encrypted in the cache) to the
@@ -69,7 +70,16 @@ final class ProvisionedAccountController extends Controller
         $removed = array_column($payload['removed'] ?? [], 'org_uuid');
         $device = $this->resolver->resolve($user, Arr::get($payload, 'device_id'));
 
-        $result = $this->provisioning->confirmSetup($user, $setUp, $removed, $device);
+        // The client is the only party that sees a refresh-token deadline
+        // between the server's own refreshes, so it reports what it saw.
+        $expiring = collect($payload['expiring'] ?? [])
+            ->map(fn (array $row): array => [
+                'org_uuid' => $row['org_uuid'],
+                'refresh_token_expires_at' => Carbon::createFromTimestampMs($row['refresh_token_expires_at']),
+            ])
+            ->all();
+
+        $result = $this->provisioning->confirmSetup($user, $setUp, $removed, $device, $expiring);
 
         return response()->json($result);
     }

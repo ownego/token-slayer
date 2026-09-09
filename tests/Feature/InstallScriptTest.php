@@ -26,28 +26,29 @@ test('install.sh drops a hook helper script that enriches Stop events with trans
 
     expect($script)
         ->toContain('HELPER="$HOME/.config/token_slayer/send-hook.sh"')
-        ->toContain("cat > \"\$HELPER\" <<'HOOK_SH'")
-        ->toContain('chmod +x "$HELPER"')
+        ->toContain("cat > \"\$HELPER.tmp\" <<'HOOK_SH'")
+        ->toContain('chmod +x "$HELPER.tmp"')
+        ->toContain('mv -f "$HELPER.tmp" "$HELPER"')
         ->toContain('transcript_path')
         ->toContain('output_tokens')
         ->toContain('CLAUDE_CMD="bash $HELPER"')
         ->toContain('CODEX_CMD="PROVIDER=codex bash $HELPER"');
 });
 
-test('install.sh covers every claude code hook event', function () {
+test('install.sh registers the claude code hook events the server handles', function () {
+    // A bare toContain($event) is not enough: these names also appear in
+    // comments and in the line that REMOVES a stale registration, so such a
+    // test stays green while registering nothing. Assert the list itself.
     $script = $this->get('/install')->getContent();
 
-    foreach (['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop', 'SessionEnd', 'Notification'] as $event) {
-        expect($script)->toContain($event);
-    }
+    expect($script)->toContain('events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop", "SubagentStop"]');
 });
 
-test('install.sh covers every antigravity CLI hook event', function () {
+test('install.sh registers the antigravity CLI hook events the server handles', function () {
     $script = $this->get('/install')->getContent();
 
-    foreach (['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as $event) {
-        expect($script)->toContain($event);
-    }
+    expect($script)->toContain('for event in ["SessionStart", "PreInvocation", "Stop"]:')
+        ->and($script)->toContain('for event in ["PreToolUse"]:');
 });
 
 test('install.sh writes to claude settings, codex hooks, and antigravity hooks, and heals legacy codex config.toml with idempotent markers', function () {
@@ -86,9 +87,22 @@ test('install.sh merges codex hooks into hooks.json in the modern shape', functi
 
     expect($script)
         ->toContain('CODEX_HOOKS="$HOME/.codex/hooks.json"')
-        ->toContain('events = ["SessionStart", "Stop"]')
+        ->toContain('events = ["SessionStart", "Stop", "SubagentStop"]')
         ->toContain('"type": "command", "command": cmd')
         ->toContain('installed Codex CLI hooks -> $CODEX_HOOKS');
+});
+
+test('install.sh registers codex SubagentStop -- fires only from 0.153.4+, harmless no-op on older Codex', function () {
+    // Verified live: codex-cli 0.142.3 never fires SubagentStop for its own
+    // "collab" (spawn_agent/wait_agent) subagent mechanism at all, regardless
+    // of registration -- 0.153.4 does, with an agent_transcript_path field
+    // (same shape Claude's SubagentStop already carries). No version gate:
+    // an unsupported older Codex simply never sends the event, the same as
+    // any other hook it does not implement -- nothing to double-count or
+    // break, unlike Claude's pre-v5 transcript_path collision.
+    $script = $this->get('/install')->getContent();
+
+    expect($script)->toContain('events = ["SessionStart", "Stop", "SubagentStop"]');
 });
 
 test('install.sh dedupes codex hooks per namespace via a fingerprint substring match', function () {
@@ -170,30 +184,33 @@ it('sources the user custom.sh before sending', function () {
         ->toContain('[ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"');
 
     $customShPosition = strpos($script, 'CUSTOM_SH="$HOME/.config/token_slayer/custom.sh"');
-    $sendPosition = strpos($script, 'curl -s --max-time 3 -X POST "$URL"');
+    $sendPosition = strpos($script, 'curl -sf --max-time 3 -X POST "$URL"');
 
     expect($customShPosition)->toBeLessThan($sendPosition);
 });
 
-it('filters the payload to usage fields when SLAYER_MINIMAL_PAYLOAD is set, after custom.sh and before sending', function () {
+it('filters the payload to usage fields unconditionally, after custom.sh and before sending', function () {
+    // The ordering is the load-bearing part: the filter runs AFTER custom.sh,
+    // so a custom.sh following the guide's documented tool_input recipes still
+    // sees the full body and only its resulting label leaves the machine.
     $script = $this->get(route('install-script'))->content();
 
     expect($script)
-        ->toContain('if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then')
+        ->toContain('FILTERED=$(printf \'%s\' "$BODY" | "$JQ" -c \'{')
         ->toContain('case "$FILTERED" in \'{\'*) BODY="$FILTERED" ;; esac');
 
     $customShPosition = strpos($script, '[ -r "$CUSTOM_SH" ] && . "$CUSTOM_SH"');
-    $filterPosition = strpos($script, 'if [ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]');
-    $sendPosition = strpos($script, 'curl -s --max-time 3 -X POST "$URL"');
+    $filterPosition = strpos($script, 'FILTERED=$(');
+    $sendPosition = strpos($script, 'curl -sf --max-time 3 -X POST "$URL"');
 
     expect($customShPosition)->toBeLessThan($filterPosition);
     expect($filterPosition)->toBeLessThan($sendPosition);
 });
 
-it('keeps only usage and attribution fields in the minimal payload allowlist', function () {
+it('keeps only usage and attribution fields in the payload allowlist', function () {
     $script = $this->get(route('install-script'))->content();
 
-    foreach (['hook_event_name', 'session_id', 'tokens', 'tool_name', 'custom_activity', 'client_version', 'account_email', 'account_uuid', 'account_source', 'account_org_id'] as $kept) {
+    foreach (['hook_event_name', 'session_id', 'tokens', 'models', 'tool_name', 'custom_activity', 'client_version', 'account_email', 'account_uuid', 'account_source', 'account_org_id'] as $kept) {
         expect($script)->toContain($kept);
     }
 });
@@ -207,7 +224,7 @@ it('pipes the event body into curl over stdin instead of passing it as an argv a
     $script = $this->get(route('install-script'))->content();
 
     expect($script)
-        ->toContain('printf \'%s\' "$BODY" | curl -s --max-time 3 -X POST "$URL"')
+        ->toContain('printf \'%s\' "$BODY" | curl -sf --max-time 3 -X POST "$URL"')
         ->toContain('--data-binary @-')
         ->not->toContain('-d "$BODY"');
 });
@@ -230,7 +247,7 @@ it('compares the existing send-hook.sh against the stored checksum before overwr
         ->toContain('[ -z "$STORED_SHA" ] || [ "$OLD_SHA" != "$STORED_SHA" ]');
 
     $compareBlockPosition = strpos($script, 'if [ -f "$HELPER" ]');
-    $overwritePosition = strpos($script, "cat > \"\$HELPER\" <<'HOOK_SH'");
+    $overwritePosition = strpos($script, "cat > \"\$HELPER.tmp\" <<'HOOK_SH'");
 
     expect($compareBlockPosition)->toBeLessThan($overwritePosition);
 });
@@ -243,7 +260,7 @@ it('backs up a hand-modified send-hook.sh before overwriting it', function () {
         ->toContain('cp "$HELPER" "$HOOK_BACKUP"');
 
     $backupPosition = strpos($script, 'HOOK_BACKUP="$HELPER.bak.$(date +%Y%m%d%H%M%S)"');
-    $overwritePosition = strpos($script, "cat > \"\$HELPER\" <<'HOOK_SH'");
+    $overwritePosition = strpos($script, "cat > \"\$HELPER.tmp\" <<'HOOK_SH'");
 
     expect($backupPosition)->toBeLessThan($overwritePosition);
 });
@@ -482,7 +499,7 @@ it('reserves the exclude-check hook point between attribution and the POST', fun
 
     $marker = strpos($script, 'exclude-check hook point (Phase 3)');
     expect($marker)->toBeGreaterThan(strpos($script, 'resolve_account'));
-    expect($marker)->toBeLessThan(strpos($script, 'curl -s --max-time 3 -X POST'));
+    expect($marker)->toBeLessThan(strpos($script, 'curl -sf --max-time 3 -X POST'));
 });
 
 it('sets up a python venv and installs slayer-cli, with a shim that execs the venv module', function () {
@@ -495,6 +512,22 @@ it('sets up a python venv and installs slayer-cli, with a shim that execs the ve
         ->toContain('exec env SLAYER_NS')
         ->toContain('SLAYER_NS=token_slayer')
         ->toContain('SLAYER_INSTALL_URL=');
+});
+
+it('carries the invoked shim name through to the CLI so tok --help says tok, not token-slayer', function () {
+    // `token-slayer`/`slayer`/`tok` are one shim script (`slayer`/`tok` are
+    // symlinks to it) that always execs `python -m slayer_cli` -- Click can
+    // never recover which alias was actually typed from argv[0] once that
+    // happens, unless the shim passes it through some other way first.
+    $script = $this->get(route('install-script'))->content();
+
+    expect($script)->toContain('SLAYER_PROG_NAME="$(basename "$0")"');
+
+    $progNamePos = strpos($script, 'SLAYER_PROG_NAME="$(basename "$0")"');
+    $execPos = strpos($script, '-m slayer_cli "$@"');
+    expect($progNamePos)->not->toBeFalse()
+        ->and($execPos)->not->toBeFalse()
+        ->and($progNamePos)->toBeLessThan($execPos);
 });
 
 it('registers the current Claude login as a base account slot after installing the CLI', function () {
@@ -726,7 +759,7 @@ it('bootstraps a pinned jq binary instead of relying on the system jq', function
     // Must run before the HOOK_SH heredoc is written, so a jq failure stops
     // the install before any jq-dependent file is even created.
     $jqBootstrapPos = strpos($script, 'JQ_VERSION="1.8.2"');
-    $hookWritePos = strpos($script, "cat > \"\$HELPER\" <<'HOOK_SH'");
+    $hookWritePos = strpos($script, "cat > \"\$HELPER.tmp\" <<'HOOK_SH'");
     expect($jqBootstrapPos)->not->toBeFalse()
         ->and($hookWritePos)->not->toBeFalse()
         ->and($jqBootstrapPos)->toBeLessThan($hookWritePos);
@@ -763,7 +796,7 @@ it('never falls back to a system jq inside the hook -- every jq call resolves to
     // The resolver is declared before BODY is read and before the first jq
     // call site (transcript token enrichment).
     $resolverPos = strpos($script, 'JQ="$HOME/.config/token_slayer/bin/jq"');
-    $firstJqCallPos = strpos($script, '"$JQ" -r \'.transcript_path');
+    $firstJqCallPos = strpos($script, '"$JQ" -r \'');
     expect($resolverPos)->not->toBeFalse()
         ->and($firstJqCallPos)->not->toBeFalse()
         ->and($resolverPos)->toBeLessThan($firstJqCallPos);
@@ -789,16 +822,16 @@ it('guards jq calls with -x (executable check), not the always-true -n', functio
     // string) is always true regardless of whether that file actually exists or
     // is executable -- it provided none of the "defensive against a manually
     // deleted binary" protection it was meant to. `-x` actually tests existence
-    // + executability. Three guards: transcript-enrichment, post-resolve_account
-    // body-merge, and the minimal-payload guard's `-x "$JQ"` half of the `&&`.
+    // + executability. Four guards: the SubagentStop session_id fold-in,
+    // transcript-enrichment, post-resolve_account body-merge, and the
+    // now-unconditional payload filter.
     $script = $this->get(route('install-script'))->content();
 
     expect($script)
         ->not->toContain('[ -n "$JQ" ]')
-        ->toContain('[ -x "$JQ" ]; then')
-        ->toContain('[ "${SLAYER_MINIMAL_PAYLOAD:-}" = "1" ] && [ -x "$JQ" ]; then');
+        ->toContain('[ -x "$JQ" ]; then');
 
-    expect(substr_count($script, '-x "$JQ"'))->toBe(3);
+    expect(substr_count($script, '-x "$JQ"'))->toBe(4);
 });
 
 it('a Codex-provider event can resolve identity via a provider-scoped active file, not just Claude events', function () {
@@ -817,3 +850,345 @@ it('a Codex-provider event can resolve identity via a provider-scoped active fil
         ->and($providerScopedLookup)->not->toBeFalse()
         ->and($script)->toContain('CODEX_CMD="PROVIDER=codex bash $HELPER"');
 });
+
+test('both installers accumulate a per-model token breakdown', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('.m[$k] += $tok')
+        ->and($script)->toContain('$e.message.model // $e.model');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers merge the usage object without nesting tokens', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // The jq now returns an object. Left with the old scalar merge, the body
+    // would become {"tokens":{"tokens":478,"models":{...}}}, and the server's
+    // (int) cast on an array yields 1 with no warning -- every claude-code Stop
+    // would deal 1 token of damage into the append-only ledger.
+    expect($script)->not->toContain('{tokens:$t}')
+        ->and($script)->toContain('--argjson u "$USAGE"');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers retry the transcript read once instead of trusting a zero-token first read', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // Claude Code fires Stop before the final assistant message is
+    // guaranteed flushed to disk. A first read of tokens=0 must not be
+    // trusted outright -- it must be re-attempted a bounded number of times
+    // before the body is sent.
+    expect($script)->toContain('extract_usage')
+        ->and($script)->toContain('sleep 0.3');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers only accept a retried read once two consecutive reads agree', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // Two consecutive identical non-zero reads mean nothing was appended to
+    // the transcript between them -- the write has settled. Comparing the
+    // full USAGE string (not just the token count) means a boundary shift
+    // into a different turn's models is caught too, since it would change
+    // the models object even if the token count coincided.
+    expect($script)->toContain('"$USAGE" = "$PREV"');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers do not retry when the first transcript read already sees tokens', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // A first read that already sees tokens>0 must be trusted immediately --
+    // no added latency for the case that already works today. Only a
+    // zero-token first read enters the retry branch.
+    expect($script)->toContain('if [ "${TOK:-0}" = "0" ]; then');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers cap the transcript re-read retry so a stuck flush cannot hang the hook', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('"$ATTEMPT" -lt 5');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers dedupe a single API message split across multiple content-block rows before summing tokens', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // Claude Code writes one JSONL row per content-block type (thinking,
+    // tool_use, text) for a single API message, and every row repeats that
+    // message's FULL output_tokens -- verified live via message.id: two
+    // rows sharing the same id are the same underlying call. Summing every
+    // row without deduping double-counts (or worse) any turn that used
+    // extended thinking, which is common.
+    expect($script)->toContain('$mid')
+        ->and($script)->toContain('.seen[$mid]');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers dispatch a Codex-shaped walk for codex', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('token_count')
+        ->and($script)->toContain('last_token_usage.output_tokens')
+        ->and($script)->toContain('turn_context')
+        ->and($script)->toContain('task_started');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('the Codex walk never reads cumulative or total token fields', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // total_token_usage is cumulative for the whole session, so a turn would
+    // deal the session total. total_tokens includes input plus cached input,
+    // which for Codex is ~30x output. reasoning_output_tokens is a SUBSET of
+    // output_tokens (verified: input 13463 + output 715 = total 14178, with
+    // reasoning 503 inside the 715), so adding it double-counts.
+    expect($script)->not->toContain('total_token_usage.output_tokens')
+        ->and($script)->not->toContain('last_token_usage.total_tokens')
+        ->and($script)->not->toContain('reasoning_output_tokens');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('the rendered hook helper is syntactically valid shell', function (string $url, string $pattern) {
+    // A misplaced `fi` in the provider-dispatched extractor would break the
+    // hook for everyone with no error anywhere -- the hook is fire-and-forget
+    // and its output is discarded, so the only symptom is missing events.
+    // String assertions cannot catch that; parsing it can.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect(preg_match($pattern, $script, $matches))->toBe(1);
+
+    $path = tempnam(sys_get_temp_dir(), 'hook-syntax-');
+    file_put_contents($path, $matches[1]);
+    exec('sh -n '.escapeshellarg($path).' 2>&1', $output, $exitCode);
+    @unlink($path);
+
+    expect($exitCode)->toBe(0, implode("\n", $output));
+})->with([
+    'sh' => ['/install', "/cat > \"\\\$HELPER\\.tmp\" <<'HOOK_SH'\n(.*?)\nHOOK_SH/s"],
+    'ps1' => ['/install.ps1', "/\\\$hookShTemplate = @'\n(.*?)\n'@/s"],
+]);
+
+test('the payload filter is unconditional, not opt-in', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->not->toContain('SLAYER_MINIMAL_PAYLOAD');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers whitelist exactly the eleven allowed fields', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // Assert against the whitelist BLOCK, not the whole script: several of
+    // these names also appear in the account-enrichment merge, so a
+    // whole-script toContain would pass even with the block missing entirely.
+    // That matters most for ps1, which has no such block today and must gain
+    // one -- otherwise Windows clients ship unfiltered with a green suite.
+    $start = strpos($script, 'FILTERED=$(');
+    expect($start)->not->toBeFalse();
+    $block = substr($script, $start, 400);
+
+    foreach ([
+        'hook_event_name', 'session_id', 'tokens', 'models', 'tool_name',
+        'custom_activity', 'client_version', 'account_email', 'account_uuid',
+        'account_source', 'account_org_id',
+    ] as $field) {
+        expect($block)->toContain($field);
+    }
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('only the five handled hook events are registered', function (string $url) {
+    // EventController handles session-start, user-prompt-submit/pre-invocation,
+    // pre-tool-use, stop, and subagent-stop (SubagentStop's transcript_path
+    // points at the subagent's own file, so it reuses the same stop handling).
+    // PostToolUse, SessionEnd and Notification still fall through to a bare
+    // 201 -- and PostToolUse is both the highest-frequency event and the one
+    // carrying tool_response, so not registering it stops that content at
+    // the source rather than filtering it.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    // Assert on the registration list itself. A bare not->toContain of a name
+    // would also match the line that REMOVES a stale registration.
+    expect($script)->toContain('events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop", "SubagentStop"]')
+        ->and($script)->not->toContain('"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"')
+        ->and($script)->not->toContain('"Stop", "SubagentStop", "SessionEnd", "Notification"')
+        ->and($script)->not->toContain('for event in ["PreToolUse", "PostToolUse"]:');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the SubagentStop hook combines the parent session_id with agent_id before sending', function (string $url) {
+    // SubagentStop's session_id is the PARENT session's id, not unique per
+    // subagent (verified against the official hook payload docs) -- without
+    // this, every subagent's Event would be indistinguishable from the
+    // parent session's own Stop events sharing the same session_id.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('.hook_event_name == "SubagentStop"')
+        ->and($script)->toContain('.session_id = ((.session_id // "") + ":" + .agent_id)');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the SubagentStop hook reads agent_transcript_path, not the parent transcript_path', function (string $url) {
+    // Verified live: SubagentStop's top-level transcript_path is the PARENT
+    // session's file (present on every hook event, not subagent-specific) --
+    // the subagent's OWN transcript only lives under agent_transcript_path.
+    // Reading transcript_path here silently re-walks the parent's own last
+    // turn instead of the subagent's, attributing the parent's tokens/model
+    // to a fake "subagent" session_id instead of the tiny real subagent
+    // usage.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('if .hook_event_name == "SubagentStop" then (.agent_transcript_path // "")')
+        ->and($script)->toContain('else (.transcript_path // .transcriptPath // "") end');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('stale registrations are stripped from every event, not just the kept ones', function (string $url) {
+    // The loop only ever cleaned events still in its own list. Shrinking the
+    // list would therefore leave the old PostToolUse entry in settings.json,
+    // still firing the old hook -- the change would appear to work while doing
+    // nothing, with no error anywhere.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('for event in list(data["hooks"].keys()):');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the Antigravity registration drops PostToolUse too', function (string $url) {
+    // Otherwise Antigravity clients keep firing the hook on PostToolUse and
+    // keep shipping tool_response, making the payload claim false for them.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('ns_data.pop("PostToolUse", None)')
+        ->and($script)->toContain('for event in ["PreToolUse"]:');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the POSIX install script stamps the repo-owned hook version', function () {
+    config(['token_slayer.hook_version' => '7']);
+
+    // NOT assertSee('7'): the rendered script already contains that digit in
+    // the pinned jq sha256 lines, so such a test would be green before any code
+    // is written and would prove nothing about the route wiring.
+    $script = $this->get('/install')->assertOk()->getContent();
+
+    expect($script)->toContain("HOOK_VERSION='7'")
+        ->and($script)->toContain('/hook-version');
+});
+
+test('the Windows install script stamps the hook version through its placeholder chain', function () {
+    // The ps1 hook lives in a single-quoted PowerShell here-string, so nothing
+    // interpolates: the value reaches it through .Replace() at install time.
+    // Asserting the rendered literal would be wrong here, and forgetting the
+    // Replace link would ship Windows hooks reporting "__TS_HOOK_VERSION__".
+    config(['token_slayer.hook_version' => '7']);
+
+    $script = $this->get('/install.ps1')->assertOk()->getContent();
+
+    expect($script)->toContain("\$HookVersion = '7'")
+        ->and($script)->toContain(".Replace('__TS_HOOK_VERSION__', \$HookVersion)")
+        ->and($script)->toContain("HOOK_VERSION='__TS_HOOK_VERSION__'")
+        ->and($script)->toContain("'hook-version'");
+});
+
+test('the hook reports its own version alongside the CLI version', function (string $url) {
+    // A dedicated field rather than an encoding inside client_version: the
+    // payload filter exists to keep session CONTENT off the wire, and a version
+    // number is not content. Parsing a composite string would also risk
+    // rendering "1.0.4+hook5" wherever client_version is displayed.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    $start = strpos($script, 'FILTERED=$(');
+    expect(substr($script, $start, 420))->toContain('hook_version');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the POSIX installer writes the hook through a temp file and a rename', function () {
+    // cat > truncates in place. bash reads a script lazily by byte offset, so a
+    // Stop hook executing inside that window reads past the end of a truncated
+    // file and the turn's event is lost -- silently, because the hook is
+    // fire-and-forget with its output discarded.
+    $script = $this->get('/install')->assertOk()->getContent();
+
+    expect($script)->toContain('cat > "$HELPER.tmp" <<\'HOOK_SH\'')
+        ->and($script)->toContain('mv -f "$HELPER.tmp" "$HELPER"')
+        ->and($script)->not->toContain('cat > "$HELPER" <<\'HOOK_SH\'');
+});
+
+test('the PowerShell installer replaces its hook atomically', function () {
+    // The ps1 has no cat > and no $HELPER: it writes via WriteAllText, so the
+    // POSIX assertions above would be vacuous on one half and unsatisfiable on
+    // the other.
+    $script = $this->get('/install.ps1')->assertOk()->getContent();
+
+    expect($script)->toContain('WriteAllText("$Helper.tmp"')
+        ->and($script)->toContain('Move-Item -Force "$Helper.tmp" $Helper');
+});
+
+test('both installers replace merged JSON config atomically', function (string $url) {
+    // settings.json / hooks.json are written by embedded Python, not by cat --
+    // and they are the files Claude Code itself reads while a session is live.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('os.replace(tmp, path)')
+        ->and($script)->not->toContain('with open(path, "w") as f:');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the hook stores the update signal from the response it already receives', function (string $url) {
+    // The POST was fire-and-forget into /dev/null; capturing the body it
+    // already gets is what removes the need for a second endpoint entirely.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('update-state')
+        ->and($script)->toContain('curl -sf --max-time 3');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('a failed request never truncates the stored update signal', function (string $url) {
+    // A plain redirect into update-state opens and truncates it the instant
+    // the subshell starts -- before curl has even connected. A DNS failure or
+    // a 3s timeout would then leave an empty file gating unattended execution.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('.update-state.$$.tmp')
+        ->and($script)->toContain('mv -f "$NS_DIR/.update-state.$$.tmp"');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the hook delegates updating to the CLI rather than reimplementing it', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('update --if-newer')
+        ->and($script)->toContain('SLAYER_NO_AUTO_UPDATE')
+        // The Windows installer writes .cmd shims and the hook runs under Git
+        // Bash there, so checking only the extension-less name would make
+        // auto-update silently never fire on Windows.
+        ->and($script)->toContain('token-slayer.cmd')
+        // Locking lives in the CLI: flock(1) exists on neither macOS nor Git Bash.
+        ->and($script)->not->toContain('flock');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
+
+test('the installer verifies the wheel before pip installs it', function (string $url) {
+    // Verifying the script but not the wheel would leave code executing in the
+    // developer's venv with no integrity check at all.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('SLAYER_EXPECTED_WHEEL_SHA')
+        ->and($script)->toContain('wheel checksum mismatch');
+})->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);

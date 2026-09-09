@@ -13,17 +13,44 @@ use App\Models\Boss;
 use App\Models\Event;
 use App\Services\AccountResolver;
 use App\Services\Accounts\AccountMembershipRecorder;
+use App\Services\Battlefield\ModelFlairResolver;
+use App\Services\Client\ReleaseArtifacts;
 use App\Services\DamageService;
+use App\Services\Events\ModelUsageParser;
+use App\Services\Events\TurnUsage;
 use App\Services\FighterChargingCache;
-use App\Services\TranscriptReader;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class EventController extends Controller
 {
+    /**
+     * The first hook version that reads a SubagentStop's OWN transcript.
+     *
+     * Every earlier hook computes tokens on every invocation from
+     * `transcript_path`, which on a SubagentStop is the PARENT session's
+     * file — so it reports the parent's last turn under the subagent's event.
+     * That was harmless while the server ignored SubagentStop entirely; now
+     * that the event counts, an un-upgraded hook would charge the same turn
+     * again for every subagent dispatched. Those clients cannot upgrade
+     * themselves either — the auto-update mechanism ships in the same release
+     * — so the server has to refuse the value rather than wait for them.
+     *
+     * Read per request, never from `users.hook_version`: one developer can
+     * run an upgraded laptop and an un-upgraded desktop, and the stored
+     * column only remembers whichever reported last.
+     *
+     * Remove this guard once `users.hook_version` shows no one below it.
+     *
+     * @var int
+     */
+    private const int SUBAGENT_TOKENS_MIN_HOOK_VERSION = 5;
+
     public function __construct(
         private DamageService $damage,
-        private TranscriptReader $transcripts,
+        private ModelUsageParser $models,
+        private ModelFlairResolver $flair,
+        private ReleaseArtifacts $artifacts,
         private FighterChargingCache $chargingCache,
         private AccountResolver $accounts,
         private AccountMembershipRecorder $membership,
@@ -40,15 +67,19 @@ class EventController extends Controller
         $provider = $request->query('provider', 'claude-code');
         $accountId = $this->accounts->resolve($accountOrgId, $accountEmail, $provider);
         $clientVersion = $this->trimmedStringOrNull($payload['client_version'] ?? null);
+        $hookVersion = $this->trimmedStringOrNull($payload['hook_version'] ?? null);
         $customActivity = $this->trimmedStringOrNull($payload['custom_activity'] ?? null);
 
         $hookName = $payload['hook_event_name'] ?? 'unknown';
         $eventType = $this->normalizeEventType($hookName);
-        $tokens = $this->resolveStopTokens($eventType, $payload);
+        $usage = $this->resolveStopUsage($eventType, $payload);
+        $tokens = $usage?->tokens ?? 0;
+        $model = $usage !== null ? $this->models->primaryModel($usage->modelTokens) : null;
 
         $user->forceFill([
             'last_event_at' => now(),
             'client_version' => $clientVersion ?? $user->client_version,
+            'hook_version' => $hookVersion ?? $user->hook_version,
         ])->save();
 
         if ($eventType === 'user-prompt-submit' || $eventType === 'pre-invocation') {
@@ -67,7 +98,7 @@ class EventController extends Controller
             $this->dispatchSafely(new FighterJoined($user, $this->aliveBoss()));
         }
 
-        if ($eventType === 'stop') {
+        if ($eventType === 'stop' || $eventType === 'subagent-stop') {
             // Trackers that only emit Stop events (claude.ai, cowork) carry no
             // pre-action signal, so surface a persistent source label as their
             // charging activity instead of clearing the bubble outright.
@@ -80,6 +111,7 @@ class EventController extends Controller
                     'user_id' => $user->id,
                     'boss_id' => $boss?->id,
                     'provider' => $provider,
+                    'model' => $model,
                     'tokens' => $tokens,
                     'session_id' => $payload['session_id'] ?? null,
                     'account_id' => $accountId,
@@ -106,7 +138,16 @@ class EventController extends Controller
                     $this->dispatchSafely(new BossSpawned($result->boss));
                 }
 
-                $this->dispatchSafely(new HitDealt($user, $tokens, $result->boss));
+                $flairDecision = $this->flair->resolve($model);
+                $this->dispatchSafely(new HitDealt(
+                    $user,
+                    $tokens,
+                    $result->boss,
+                    $model,
+                    $flairDecision?->flair,
+                    $flairDecision?->durationMs,
+                    $flairDecision?->color,
+                ));
 
                 if ($activityLabel !== null) {
                     // Dispatched after HitDealt: the client clears the charge
@@ -126,7 +167,14 @@ class EventController extends Controller
             }
         }
 
-        return response()->json(['ok' => true], 201);
+        return response()->json(array_filter([
+            'ok' => true,
+            'hook_version' => config('token_slayer.hook_version'),
+            'install_sha256' => $this->artifacts->digest('install-script'),
+            'install_ps1_sha256' => $this->artifacts->digest('install-script-ps1'),
+            'wheel_sha256' => $this->artifacts->wheelDigest(),
+            'paused' => config('token_slayer.updates_paused'),
+        ], fn (mixed $value): bool => $value !== null), 201);
     }
 
     private function aliveBoss(): ?Boss
@@ -203,43 +251,49 @@ class EventController extends Controller
     }
 
     /**
-     * Resolve the damage tokens for a Stop event. Inline payload wins so
-     * cross-machine deployments can extract tokens client-side; otherwise
-     * fall back to reading the transcript when the hook host is the same
-     * machine as the server. Non-Stop events return null.
+     * Resolve a Stop or SubagentStop event's usage from its payload. The hook
+     * computes both the token total and the per-model split on the machine
+     * that owns the transcript (the subagent's own transcript for
+     * SubagentStop), so the server never opens a file and needs no retry
+     * loop — the old server-side fallback only ever ran when the hook host
+     * and the server were the same machine, and `transcript_path` is no
+     * longer sent.
      *
-     * @param  array<string, mixed>  $payload
+     * @param  string  $eventType  the normalized hook event name
+     * @param  array<string, mixed>  $payload  the raw hook payload
+     * @return ?TurnUsage null for anything that is not a Stop/SubagentStop event
      */
-    private function resolveStopTokens(string $eventType, array $payload): ?int
+    private function resolveStopUsage(string $eventType, array $payload): ?TurnUsage
     {
-        if ($eventType !== 'stop') {
+        if ($eventType !== 'stop' && $eventType !== 'subagent-stop') {
             return null;
         }
 
-        $inline = (int) ($payload['tokens'] ?? 0);
-        if ($inline > 0) {
-            return $inline;
+        if ($eventType === 'subagent-stop' && ! $this->reportsItsOwnSubagentTranscript($payload)) {
+            return null;
         }
 
-        $path = $payload['transcript_path'] ?? $payload['transcriptPath'] ?? null;
-        if (! is_string($path)) {
-            return 0;
-        }
+        return TurnUsage::fromPayload($payload, $this->models);
+    }
 
-        // The transcript file is sometimes still being flushed at the
-        // instant the Stop hook fires, so the latest assistant entry
-        // hasn't landed yet. Retry briefly to ride out the race.
-        for ($attempt = 0; $attempt < 3; $attempt++) {
-            $tokens = $this->transcripts->latestTurnOutputTokens($path);
-            if ($tokens > 0) {
-                return $tokens;
-            }
-            if ($attempt < 2) {
-                usleep(100_000);
-            }
-        }
+    /**
+     * Whether this payload came from a hook new enough for its SubagentStop
+     * token count to mean the subagent's own usage.
+     *
+     * `hook_version` is the only field that appears exactly with such a hook —
+     * every other field it sends, an older hook sends too. It is also the
+     * only one always present: the payload is filtered through
+     * `with_entries(select(.value != null))` before it leaves the machine, so
+     * `models` can legitimately be absent from a new hook's event.
+     *
+     * @param  array<string, mixed>  $payload  the raw hook payload
+     * @return bool
+     */
+    private function reportsItsOwnSubagentTranscript(array $payload): bool
+    {
+        $version = $payload['hook_version'] ?? null;
 
-        return 0;
+        return is_numeric($version) && (int) $version >= self::SUBAGENT_TOKENS_MIN_HOOK_VERSION;
     }
 
     /**

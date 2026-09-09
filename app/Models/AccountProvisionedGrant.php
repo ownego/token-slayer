@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\GrantStatus;
-use App\Support\CacheKeys;
 use Database\Factories\AccountProvisionedGrantFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,8 +11,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * A provisioned OAuth grant issued to one device for one org account. The
- * raw secret lives only in the cache ({@see CacheKeys::provisionedGrant()},
- * 24 h TTL); this row is the durable audit and lifecycle record.
+ * raw secret is a durable field on THIS row (`pending_claude_*`/
+ * `pending_codex_auth_json`, `encrypted` casts) — no cache, no TTL. It lives
+ * until claimed (then cleared) or the admin revokes the grant.
  */
 class AccountProvisionedGrant extends Model
 {
@@ -35,6 +35,10 @@ class AccountProvisionedGrant extends Model
             'claimed_at' => 'datetime',
             'revoked_at' => 'datetime',
             'deprovisioned_at' => 'datetime',
+            'pending_claude_access_token' => 'encrypted',
+            'pending_claude_refresh_token' => 'encrypted',
+            'pending_claude_expires_at' => 'datetime',
+            'pending_codex_auth_json' => 'encrypted:array',
         ];
     }
 

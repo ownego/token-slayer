@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AccountStatus;
+use App\Enums\Provider;
 use App\Models\Account;
 use App\Models\CodexCredential;
 use Illuminate\Database\QueryException;
@@ -12,7 +13,7 @@ uses(RefreshDatabase::class);
 it('defaults accounts.provider to claude', function (): void {
     $account = Account::create(['email' => 'claude-default@example.com']);
 
-    expect($account->provider)->toBe('claude');
+    expect($account->provider)->toBe(Provider::Claude);
 });
 
 it('belongs to an account and casts its columns', function (): void {

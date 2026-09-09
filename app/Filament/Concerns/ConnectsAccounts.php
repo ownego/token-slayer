@@ -13,16 +13,16 @@ use Filament\Notifications\Notification;
 use Livewire\Component;
 
 /**
- * Hosts the two-step "Connect account" flow (open PKCE attempt → resolve pasted
- * code by identity → confirm-and-create for a brand-new account) so any Filament
- * page can offer it. Filament resolves `connectAccount`/`confirmCreateAccount`
- * actions by the `{name}Action` method convention, which finds these trait
- * methods on the using class.
+ * Hosts the two-step "Connect Claude account" flow (open PKCE attempt →
+ * resolve pasted code by identity → confirm-and-create for a brand-new
+ * account) so any Filament page can offer it. Filament resolves
+ * `connectAccount`/`confirmCreateAccount` actions by the `{name}Action`
+ * method convention, which finds these trait methods on the using class.
  */
 trait ConnectsAccounts
 {
     /**
-     * The open "Connect account" header action: starts a fresh PKCE attempt,
+     * The open "Connect Claude account" header action: starts a fresh PKCE attempt,
      * shows the authorize URL, and on submit resolves the pasted code by
      * identity. An existing account has its token updated in place; a brand-new
      * identity opens the {@see confirmCreateAccountAction()} modal.
@@ -32,7 +32,7 @@ trait ConnectsAccounts
     public function connectAccountAction(): Action
     {
         return Action::make('connectAccount')
-            ->label('Connect account')
+            ->label('Connect Claude account')
             ->icon('heroicon-o-link')
             ->modalHeading('Connect a Claude account')
             ->modalDescription('Open the authorize URL, log in as the account you want to add, approve, then paste the code back here.')
