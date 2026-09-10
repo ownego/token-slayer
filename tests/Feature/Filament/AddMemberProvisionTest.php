@@ -11,6 +11,7 @@ use App\Models\AccountUser;
 use App\Models\Device;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -89,6 +90,32 @@ it('a failed provision (bad/expired code) leaves no orphan placeholder device or
         ->setActionData(['code' => 'bad-code'])
         ->callMountedAction()
         ->assertNotified();
+
+    expect($newcomer->devices()->count())->toBe(0)
+        ->and(AccountProvisionedGrant::query()->count())->toBe(0);
+});
+
+it('shows a friendly notification instead of crashing when Anthropic rejects the pasted code', function () {
+    // Anthropic's token endpoint returns 400/401 for a stale, already-used,
+    // or otherwise invalid code -- AnthropicOAuthClient wraps that as
+    // UsageProbeException('invalid_grant'), a different class from the
+    // AccountConnectException the catch block here was written for. Before
+    // this fix, that exception went uncaught and crashed the action instead
+    // of leaving the admin a clear reason to retry.
+    fakeAnthropic(['token' => Http::response('', 400)]);
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $newcomer = User::factory()->create();
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->setActionData(['user_id' => $newcomer->id, 'provision' => true])
+        ->callMountedAction()
+        ->assertActionMounted('confirmProvisionMember')
+        ->setActionData(['code' => 'stale-code'])
+        ->callMountedAction()
+        ->assertNotified('Provisioning failed');
 
     expect($newcomer->devices()->count())->toBe(0)
         ->and(AccountProvisionedGrant::query()->count())->toBe(0);

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Accounts\RelationManagers;
 use App\Enums\MembershipStatus;
 use App\Enums\Provider;
 use App\Exceptions\AccountConnectException;
+use App\Exceptions\UsageProbeException;
 use App\Filament\Concerns\ConnectsAccounts;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
@@ -420,6 +421,21 @@ class MembersRelationManager extends RelationManager
                             'connect_state_expired' => 'This connect link expired or was already used. Start again.',
                             default => 'Something went wrong completing the provisioning.',
                         })
+                        ->send();
+
+                    return;
+                } catch (UsageProbeException $exception) {
+                    // exchangeVerifiedToken() calls out to Anthropic's token
+                    // endpoint, which can reject the pasted code directly
+                    // (stale, already-used, or otherwise invalid) rather than
+                    // through this app's own AccountConnectException path --
+                    // a different exception class the catch above doesn't see.
+                    Notification::make()
+                        ->danger()
+                        ->title('Provisioning failed')
+                        ->body($exception->reason === 'invalid_grant'
+                            ? 'Anthropic rejected that code — it may be stale or already used. Open a fresh authorize link and try again.'
+                            : "Anthropic error ({$exception->reason}): {$exception->getMessage()}")
                         ->send();
 
                     return;

@@ -4,6 +4,7 @@ namespace App\Filament\Concerns;
 
 use App\Enums\AccountPlan;
 use App\Exceptions\AccountConnectException;
+use App\Exceptions\UsageProbeException;
 use App\Services\AccountConnectService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -68,6 +69,21 @@ trait ConnectsAccounts
                             'connect_no_identity' => 'Could not read an email from the authorized Claude account.',
                             default => 'Something went wrong completing the connect.',
                         })
+                        ->send();
+
+                    return;
+                } catch (UsageProbeException $exception) {
+                    // resolve() calls out to Anthropic's token endpoint,
+                    // which can reject the pasted code directly (stale,
+                    // already-used, or otherwise invalid) rather than through
+                    // this app's own AccountConnectException path -- a
+                    // different exception class the catch above doesn't see.
+                    Notification::make()
+                        ->danger()
+                        ->title('Connect failed')
+                        ->body($exception->reason === 'invalid_grant'
+                            ? 'Anthropic rejected that code — it may be stale or already used. Open a fresh authorize link and try again.'
+                            : "Anthropic error ({$exception->reason}): {$exception->getMessage()}")
                         ->send();
 
                     return;

@@ -6,6 +6,7 @@ use App\Filament\Resources\Accounts\Pages\ListAccounts;
 use App\Models\Account;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -55,4 +56,20 @@ test('connecting a brand-new identity opens the confirm-create modal, and confir
         ->and($account->plan)->toBe(AccountPlan::Max20x)
         ->and($account->name)->toBe('New Org')
         ->and($account->status)->toBe(AccountStatus::Active);
+});
+
+test('shows a friendly notification instead of crashing when Anthropic rejects the pasted code', function () {
+    // Same UsageProbeException('invalid_grant') gap as the Members
+    // add-member flow: a stale, already-used, or otherwise invalid code
+    // returns 400/401 from Anthropic's token endpoint, which used to go
+    // uncaught here too.
+    fakeAnthropic(['token' => Http::response('', 400)]);
+
+    Livewire::actingAs($this->admin)
+        ->test(ListAccounts::class)
+        ->mountAction('connectAccount')
+        ->setActionData(['code' => 'stale-code'])
+        ->callMountedAction()
+        ->assertNotified('Connect failed')
+        ->assertActionNotMounted('confirmCreateAccount');
 });
