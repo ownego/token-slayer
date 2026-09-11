@@ -63,6 +63,17 @@ class Dashboard extends BaseDashboard
                         'total' => 'Total tokens',
                     ])
                     ->default('output')
+                    // Filament persists this form to the session
+                    // (Dashboard\Concerns\HasFilters); an admin session saved
+                    // before this field existed has no token_mode key at all,
+                    // and fill() leaves an absent key at null rather than
+                    // falling back to default() -- the select rendered blank
+                    // for anyone whose session predates this filter.
+                    ->afterStateHydrated(function (Select $component, ?string $state): void {
+                        if ($state === null) {
+                            $component->state('output');
+                        }
+                    })
                     ->helperText(new HtmlString(
                         '<span style="display:block"><strong>Output:</strong> what damage is dealt from (unchanged from before this filter existed).</span>'
                         .'<span style="display:block"><strong>Total:</strong> output + input + cache tokens, for analytics only.</span>'

@@ -27,6 +27,25 @@ it('renders the dashboard with the time filter and total-across-accounts toggle'
         ->assertSee('Total usage across accounts');
 });
 
+it('keeps the token mode select showing Output tokens against a stale pre-feature session', function () {
+    // Filament persists the Dashboard filters form to the session
+    // (Pages\Dashboard\Concerns\HasFilters::$persistsFiltersInSession). An
+    // admin who had the Dashboard open before this filter shipped has a
+    // session array with no token_mode key at all, and fill() leaves an
+    // absent key at null rather than falling back to the field's own
+    // default() -- the select rendered blank ("Select an option") instead of
+    // Output tokens, even though the query layer already defaults correctly.
+    $admin = User::factory()->admin()->create();
+    $this->actingAs($admin);
+
+    $sessionKey = md5(Dashboard::class).'_filters';
+    session()->put($sessionKey, ['range' => 'week', 'from' => null, 'to' => null, 'total_across_accounts' => false]);
+
+    $html = $this->get(Dashboard::getUrl(panel: 'admin'))->getContent();
+
+    expect($html)->toContain('token_mode&quot;:&quot;output&quot;');
+});
+
 it('nudges an admin on a hook too old to self-update, in the topbar of every panel page', function () {
     config(['token_slayer.hook_version' => '7']);
     $admin = User::factory()->admin()->create(['hook_version' => null, 'client_version' => '1.0.0']);
