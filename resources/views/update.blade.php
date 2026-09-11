@@ -24,9 +24,17 @@
                 <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'unix' ? 'Copied' : 'Copy'"></span>
             </div>
 
-            <div x-show="platform === 'windows'" x-cloak class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer" @click="copy('windows', 'irm {{ route('install-script-ps1') }} | iex')">
-                irm {{ route('install-script-ps1') }} | iex
-                <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'windows' ? 'Copied' : 'Copy'"></span>
+            <div x-show="platform === 'windows'" x-cloak>
+                <p class="text-xs text-gray-500 mb-1">PowerShell:</p>
+                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer mb-3" @click="copy('windows-ps', 'irm {{ route('install-script-ps1') }} | iex')">
+                    irm {{ route('install-script-ps1') }} | iex
+                    <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'windows-ps' ? 'Copied' : 'Copy'"></span>
+                </div>
+                <p class="text-xs text-gray-500 mb-1">cmd.exe (don't mix with the PowerShell command above):</p>
+                <div class="bg-gray-900 text-amber-300 rounded-lg p-3 pr-24 relative font-mono text-sm cursor-pointer" @click="copy('windows-cmd', 'powershell -ExecutionPolicy ByPass -c &quot;irm {{ route('install-script-ps1') }} | iex&quot;')">
+                    powershell -ExecutionPolicy ByPass -c "irm {{ route('install-script-ps1') }} | iex"
+                    <span class="absolute right-2 top-2 bg-gray-800 text-gray-300 text-xs font-semibold px-2 py-1 rounded" x-text="copied === 'windows-cmd' ? 'Copied' : 'Copy'"></span>
+                </div>
             </div>
 
             <p class="text-xs text-gray-500 mt-4">A few seconds of silence after Enter is normal — it's installing, not frozen. Never worked before on this machine? Use <a href="{{ route('setup') }}" class="underline hover:text-orange-600">the full setup guide</a> instead.</p>
