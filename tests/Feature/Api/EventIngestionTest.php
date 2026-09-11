@@ -99,6 +99,42 @@ test('SubagentStop event persists the hook-combined session_id and model verbati
         ->and($event->model)->toBe('claude-haiku-4-5-20251001');
 });
 
+test('Stop event persists the input and cache token breakdown alongside output tokens', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-1',
+            'tokens' => 350,
+            'input_tokens' => 2,
+            'cache_creation_input_tokens' => 791,
+            'cache_read_input_tokens' => 140_177,
+        ])
+        ->assertCreated();
+
+    $event = Event::sole();
+    expect($event->tokens)->toBe(350)
+        ->and($event->input_tokens)->toBe(2)
+        ->and($event->cache_creation_input_tokens)->toBe(791)
+        ->and($event->cache_read_input_tokens)->toBe(140_177);
+});
+
+test('Stop event without an input/cache breakdown defaults those columns to zero', function () {
+    // A not-yet-updated hook (pre this feature) never sends these fields at
+    // all -- the not-yet-updated-client path, not an error.
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-1',
+            'tokens' => 350,
+        ])
+        ->assertCreated();
+
+    $event = Event::sole();
+    expect($event->input_tokens)->toBe(0)
+        ->and($event->cache_creation_input_tokens)->toBe(0)
+        ->and($event->cache_read_input_tokens)->toBe(0);
+});
+
 test('ignores subagent tokens from a hook too old to say which transcript it read', function () {
     // A pre-5 hook has no per-event guard: it walks `transcript_path` on every
     // invocation, and on SubagentStop that path is the PARENT session's

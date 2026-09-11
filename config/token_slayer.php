@@ -15,7 +15,7 @@ return [
     |
     */
 
-    'hook_version' => (string) env('TOKEN_SLAYER_HOOK_VERSION', '5'),
+    'hook_version' => (string) env('TOKEN_SLAYER_HOOK_VERSION', '6'),
 
     /*
     |--------------------------------------------------------------------------

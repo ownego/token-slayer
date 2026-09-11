@@ -410,9 +410,18 @@ if [ -x "$JQ" ]; then
   # turn instead of the subagent's, attributing the parent's tokens/model to
   # a fake "subagent" session_id instead of the real (usually much smaller)
   # subagent usage.
+  # Only Stop/SubagentStop ever get a transcript path here -- every other
+  # event resolves to "", so the [ -n "$TRANSCRIPT" ] check below skips the
+  # whole extract_usage() slurp for them. It used to fall through to the
+  # transcript_path branch for EVERY event (SessionStart, UserPromptSubmit,
+  # PreToolUse included), so extract_usage's `jq -s` full-file slurp ran on
+  # every single hook invocation. Its cost scales with transcript size, so on
+  # a long-running session that slurp alone could blow past the harness's 30s
+  # hook timeout on an event that has nothing to do with token usage.
   TRANSCRIPT=$(printf '%s' "$BODY" | "$JQ" -r '
     if .hook_event_name == "SubagentStop" then (.agent_transcript_path // "")
-    else (.transcript_path // .transcriptPath // "") end
+    elif .hook_event_name == "Stop" then (.transcript_path // .transcriptPath // "")
+    else "" end
   ' 2>/dev/null)
   if [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ]; then
     # Emits {tokens, models}. The capture and the merge below MUST change
@@ -435,29 +444,38 @@ if [ -x "$JQ" ]; then
     # used extended thinking, which is common. A row with no id (an
     # unverified shape from PLANNER_RESPONSE/MODEL sources) is never
     # deduped, matching the pre-dedup behavior for those.
+    # input/cache tokens are captured alongside output but never folded into
+    # `.t` (which becomes `tokens`, the field damage is dealt from): Claude
+    # Code caches almost all repeated context, so a single short turn can
+    # carry a cache_read_input_tokens in the hundreds of thousands against a
+    # few hundred output tokens. Summed into damage that number would be
+    # meaningless -- these are their own fields, for analytics only.
     extract_usage() {
       if [ "${PROVIDER:-}" = "codex" ]; then
         "$JQ" -sr '
           . as $a
           | (length - 1) as $end
-          | reduce range($end; -1; -1) as $i ({t:0, k:null, stop:false};
+          | reduce range($end; -1; -1) as $i ({t:0, it:0, crt:0, k:null, stop:false};
               if .stop then . else
                 ($a[$i]) as $e
                 | if $e.type == "event_msg" and $e.payload.type == "token_count" then
                     .t += ($e.payload.info.last_token_usage.output_tokens // 0)
+                    | .it += ($e.payload.info.last_token_usage.input_tokens // 0)
+                    | .crt += ($e.payload.info.last_token_usage.cached_input_tokens // 0)
                   elif $e.type == "turn_context" then
                     .k = (.k // $e.payload.model)
                   elif $e.type == "event_msg" and $e.payload.type == "task_started" then
                     .stop = true
                   else . end
               end)
-          | {tokens: .t, models: (if (.k != null and .t > 0) then {(.k): .t} else {} end)}
+          | {tokens: .t, models: (if (.k != null and .t > 0) then {(.k): .t} else {} end),
+             input_tokens: .it, cache_creation_input_tokens: 0, cache_read_input_tokens: .crt}
         ' "$TRANSCRIPT" 2>/dev/null
       else
         "$JQ" -sr '
           . as $a
           | (length - 1) as $end
-          | reduce range($end; -1; -1) as $i ({t:0, m:{}, seen:{}, stop:false};
+          | reduce range($end; -1; -1) as $i ({t:0, it:0, cct:0, crt:0, m:{}, seen:{}, stop:false};
               if .stop then . else
                 ($a[$i]) as $e
                 | if $e.type == "assistant" or $e.type == "PLANNER_RESPONSE" or $e.source == "MODEL" then
@@ -465,8 +483,14 @@ if [ -x "$JQ" ]; then
                     | if ($mid != null and (.seen[$mid] // false)) then .
                       else
                         (($e.message.usage.output_tokens // $e.usage.output_tokens // $e.usage.outputTokens // 0)) as $tok
+                        | (($e.message.usage.input_tokens // $e.usage.input_tokens // $e.usage.inputTokens // 0)) as $itok
+                        | (($e.message.usage.cache_creation_input_tokens // $e.usage.cache_creation_input_tokens // 0)) as $cctok
+                        | (($e.message.usage.cache_read_input_tokens // $e.usage.cache_read_input_tokens // 0)) as $crtok
                         | (($e.message.model // $e.model) // null) as $k
                         | .t += $tok
+                        | .it += $itok
+                        | .cct += $cctok
+                        | .crt += $crtok
                         | (if $tok > 0 and $k != null then .m[$k] += $tok else . end)
                         | (if $mid != null then .seen[$mid] = true else . end)
                       end
@@ -477,7 +501,7 @@ if [ -x "$JQ" ]; then
                     .stop = true
                   else . end
               end)
-          | {tokens: .t, models: .m}
+          | {tokens: .t, models: .m, input_tokens: .it, cache_creation_input_tokens: .cct, cache_read_input_tokens: .crt}
         ' "$TRANSCRIPT" 2>/dev/null
       fi
     }
@@ -781,7 +805,7 @@ CUSTOM_SH="$HOME/.config/__TS_NAMESPACE__/custom.sh"
 # their own private accounts here (exit 0 before POST) so those events never
 # leave the machine. Not active yet -- default is track everything.
 
-# The server reads exactly these eleven fields. Everything else the hook
+# The server reads exactly these fourteen fields. Everything else the hook
 # receives on stdin -- the prompt, tool_input, tool_response, the last
 # assistant message, cwd, permission_mode, transcript_path -- would cross the
 # network and be discarded unread, so it is not sent at all. This is
@@ -795,7 +819,7 @@ if [ -x "$JQ" ]; then
   FILTERED=$(printf '%s' "$BODY" | "$JQ" -c '{
     hook_event_name, session_id, tokens, models, tool_name, custom_activity,
     client_version, hook_version, account_email, account_uuid, account_source,
-    account_org_id
+    account_org_id, input_tokens, cache_creation_input_tokens, cache_read_input_tokens
   } | with_entries(select(.value != null))' 2>/dev/null)
   case "$FILTERED" in '{'*) BODY="$FILTERED" ;; esac
 fi

@@ -23,6 +23,9 @@ class Event extends Model
     {
         return [
             'tokens' => 'integer',
+            'input_tokens' => 'integer',
+            'cache_creation_input_tokens' => 'integer',
+            'cache_read_input_tokens' => 'integer',
         ];
     }
 

@@ -861,6 +861,41 @@ test('both installers accumulate a per-model token breakdown', function (string 
     'ps1' => ['/install.ps1'],
 ]);
 
+test('the transcript is only ever read for a Stop or SubagentStop event', function (string $url) {
+    // extract_usage() slurps the WHOLE transcript file via jq -s -- cheap for
+    // a short session, but its cost scales with transcript size. Without this
+    // gate it ran on every event carrying a transcript_path (SessionStart,
+    // UserPromptSubmit, PreToolUse too), and on a long-running session that
+    // slurp alone can blow past the harness's 30s hook timeout on an event
+    // that has nothing to do with token usage.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('elif .hook_event_name == "Stop" then (.transcript_path // .transcriptPath // "")')
+        ->and($script)->toContain('else "" end')
+        ->and($script)->not->toContain('else (.transcript_path // .transcriptPath // "") end');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers capture input and cache token usage alongside output', function (string $url) {
+    // Deliberately never summed into `tokens` (which drives damage): a
+    // single short turn can carry a cache_read_input_tokens in the hundreds
+    // of thousands against a few hundred output tokens, since Claude Code
+    // caches almost all repeated context. Folding that into damage would
+    // make the number meaningless. These are captured as their own fields,
+    // for analytics only.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('.message.usage.input_tokens')
+        ->and($script)->toContain('cache_creation_input_tokens')
+        ->and($script)->toContain('cache_read_input_tokens')
+        ->and($script)->toContain('cached_input_tokens'); // the Codex field name for cache_read
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
 test('both installers merge the usage object without nesting tokens', function (string $url) {
     $script = $this->get($url)->assertOk()->getContent();
 
@@ -997,7 +1032,7 @@ test('the payload filter is unconditional, not opt-in', function (string $url) {
     'ps1' => ['/install.ps1'],
 ]);
 
-test('both installers whitelist exactly the eleven allowed fields', function (string $url) {
+test('both installers whitelist exactly the fourteen allowed fields', function (string $url) {
     $script = $this->get($url)->assertOk()->getContent();
 
     // Assert against the whitelist BLOCK, not the whole script: several of
@@ -1007,12 +1042,13 @@ test('both installers whitelist exactly the eleven allowed fields', function (st
     // one -- otherwise Windows clients ship unfiltered with a green suite.
     $start = strpos($script, 'FILTERED=$(');
     expect($start)->not->toBeFalse();
-    $block = substr($script, $start, 400);
+    $block = substr($script, $start, 500);
 
     foreach ([
         'hook_event_name', 'session_id', 'tokens', 'models', 'tool_name',
         'custom_activity', 'client_version', 'account_email', 'account_uuid',
         'account_source', 'account_org_id',
+        'input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens',
     ] as $field) {
         expect($block)->toContain($field);
     }
@@ -1061,7 +1097,7 @@ test('the SubagentStop hook reads agent_transcript_path, not the parent transcri
     $script = $this->get($url)->assertOk()->getContent();
 
     expect($script)->toContain('if .hook_event_name == "SubagentStop" then (.agent_transcript_path // "")')
-        ->and($script)->toContain('else (.transcript_path // .transcriptPath // "") end');
+        ->and($script)->toContain('elif .hook_event_name == "Stop" then (.transcript_path // .transcriptPath // "")');
 })->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);
 
 test('stale registrations are stripped from every event, not just the kept ones', function (string $url) {
