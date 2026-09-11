@@ -161,10 +161,7 @@ class Battlefield extends Component
         $latest = config('token_slayer.hook_version');
 
         return view('livewire.battlefield', [
-            'hookOutdated' => HookVersionStatus::isOutdated($user, $latest),
-            // A hook old enough not to report its version predates
-            // `token-slayer update` too, so it gets sent somewhere that works.
-            'hookCanSelfUpdate' => $user?->hook_version !== null,
+            'hookOutdated' => HookVersionStatus::needsManualNudge($user, $latest),
             'latestHookVersion' => $latest,
         ]);
     }

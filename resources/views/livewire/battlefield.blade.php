@@ -17,14 +17,11 @@
             class="absolute top-0 inset-x-0 z-30 flex flex-wrap items-center justify-center gap-3 bg-amber-500/15 border-b border-amber-500/40 px-4 py-3 text-sm text-amber-200"
         >
             <span>Your hook is out of date &mdash; usage is being recorded with less detail.</span>
-            {{-- A hook old enough not to report its own version predates
-                 `tok update` as well, so pointing it at that command sends it
-                 at something its CLI may not have. --}}
-            @if ($hookCanSelfUpdate)
-                <code class="rounded bg-black/40 px-2 py-0.5 text-amber-100">tok update</code>
-            @else
-                <a href="{{ route('update') }}" class="text-amber-100 underline hover:text-white">Re-run the installer</a>
-            @endif
+            {{-- Only reached by a hook too old to report its own version, so
+                 it predates `tok update` too -- a hook that CAN report a
+                 version already self-updates on its own and never sets
+                 $hookOutdated in the first place. --}}
+            <a href="{{ route('update') }}" class="text-amber-100 underline hover:text-white">Re-run the installer</a>
             <button type="button" @click="dismiss()" class="ml-2 text-amber-300/70 hover:text-amber-100" aria-label="Dismiss">&times;</button>
         </div>
     @endif

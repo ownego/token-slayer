@@ -33,10 +33,7 @@ class Profile extends Component
             'outdated' => $latestVersion !== null && $user->client_version !== $latestVersion,
             'hookVersion' => $user->hook_version,
             'latestHookVersion' => config('token_slayer.hook_version'),
-            'hookOutdated' => HookVersionStatus::isOutdated($user, config('token_slayer.hook_version')),
-            // A hook old enough not to report its version predates
-            // `token-slayer update` too, so it gets sent somewhere that works.
-            'hookCanSelfUpdate' => $user->hook_version !== null,
+            'hookOutdated' => HookVersionStatus::needsManualNudge($user, config('token_slayer.hook_version')),
         ];
     }
 

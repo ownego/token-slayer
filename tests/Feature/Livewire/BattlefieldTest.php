@@ -194,11 +194,18 @@ test('battlefield state carries global damage totals across rolling windows', fu
         ->assertSeeHtml('&quot;globalDamage&quot;:{&quot;allTime&quot;:125,&quot;monthly&quot;:100,&quot;daily&quot;:100,&quot;hourly&quot;:100}');
 });
 
-test('nudges a developer whose hook is behind', function () {
+test('says nothing to a developer whose hook is behind but will self-update', function () {
+    // Any hook that reports hook_version at all already carries the self-heal
+    // capture logic (App\Support\HookVersionStatus::needsManualNudge), so it
+    // upgrades itself on the developer's next SessionStart with no action on
+    // their part -- nagging them to run `tok update` manually is noise, not a
+    // nudge, for this population.
     config(['token_slayer.hook_version' => '7']);
     $user = User::factory()->create(['hook_version' => '6']);
 
-    Livewire::actingAs($user)->test(Battlefield::class)->assertSee('tok update');
+    Livewire::actingAs($user)->test(Battlefield::class)
+        ->assertDontSee('tok update')
+        ->assertDontSee('out of date');
 });
 
 test('says nothing to a developer who is current', function () {

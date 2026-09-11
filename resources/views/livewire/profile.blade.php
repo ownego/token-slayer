@@ -65,14 +65,13 @@
             @endif
             @if ($attribution['hookOutdated'])
                 <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-                    @if ($attribution['hookCanSelfUpdate'])
-                        Your hook is on v{{ $attribution['hookVersion'] }} but v{{ $attribution['latestHookVersion'] }} is available &mdash; usage may be recorded with less detail until you run <code>tok update</code>.
-                    @else
-                        {{-- No version to print, and no `tok update` to
-                             point at: both ship in the release this hook is
-                             missing. --}}
-                        Your hook is out of date &mdash; usage is being recorded with less detail. <a href="{{ route('update') }}" class="underline hover:text-amber-900">Re-run the install command</a> to move to v{{ $attribution['latestHookVersion'] }}.
-                    @endif
+                    {{-- Only reached by a hook too old to report its own
+                         version, so it has no version to print and no
+                         `tok update` to point at -- both ship in the release
+                         it is missing. A hook that CAN report a version
+                         already self-updates on its own and never reaches
+                         here. --}}
+                    Your hook is out of date &mdash; usage is being recorded with less detail. <a href="{{ route('update') }}" class="underline hover:text-amber-900">Re-run the install command</a> to move to v{{ $attribution['latestHookVersion'] }}.
                 </p>
             @endif
         </section>

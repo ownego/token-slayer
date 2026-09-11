@@ -41,4 +41,26 @@ final class HookVersionStatus
 
         return $user->hook_version !== $latest;
     }
+
+    /**
+     * Whether `$user` should be shown a manual "go update it" nudge, as
+     * opposed to being left alone because it will fix itself.
+     *
+     * Any hook that reports `hook_version` at all already carries the
+     * self-heal capture logic: it writes the server's response to
+     * `update-state` on every event, and the CLI's reconcile check reinstalls
+     * automatically on the developer's next SessionStart. Telling that
+     * population to run `tok update` by hand is noise for a bump that
+     * resolves itself. Only a hook old enough to never report a version
+     * (null `hook_version`, pre-dating the capture logic itself) is
+     * genuinely stuck and worth interrupting a developer for.
+     *
+     * @param  ?User  $user  the signed-in developer, or null
+     * @param  ?string  $latest  the hook version this server serves
+     * @return bool
+     */
+    public static function needsManualNudge(?User $user, ?string $latest): bool
+    {
+        return self::isOutdated($user, $latest) && $user->hook_version === null;
+    }
 }

@@ -63,10 +63,12 @@ test('is not outdated when the client already runs the latest version', function
         );
 });
 
-test('flags an outdated hook separately from an outdated CLI', function () {
+test('says nothing about a hook that will self-update, even while the CLI itself is outdated', function () {
     // The two versions move independently: the CLI wheel is released from
-    // another repo, so a hook-only change ships with an unchanged client_version
-    // and would otherwise be invisible.
+    // another repo, so a hook-only change ships with an unchanged client_version.
+    // But a hook that reports hook_version at all already self-heals on the
+    // next SessionStart -- nagging the developer to run `tok update` by hand
+    // for a version bump that fixes itself is noise, not a nudge.
     Http::fake(['api.github.com/*' => Http::response([
         'tag_name' => 'v1.0.4',
         'assets' => [['id' => 1, 'name' => 'slayer_cli-latest.whl']],
@@ -77,8 +79,9 @@ test('flags an outdated hook separately from an outdated CLI', function () {
 
     Livewire::actingAs($user)
         ->test(Profile::class)
-        ->assertViewHas('attribution', fn ($a) => $a['outdated'] === false && $a['hookOutdated'] === true)
-        ->assertSee('Your hook is on v6');
+        ->assertViewHas('attribution', fn ($a) => $a['outdated'] === false && $a['hookOutdated'] === false)
+        ->assertDontSee('Your hook is on v6')
+        ->assertDontSee('hook is out of date');
 });
 
 test('says nothing about the hook to someone who has never sent an event', function () {
