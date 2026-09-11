@@ -23,11 +23,12 @@ final class TokenVolumeQuery
     public function get(UsageFilters $filters): array
     {
         $bucketExpr = $this->bucketExpression($filters->bucket, 'events.created_at');
+        $tokenExpr = $filters->tokenColumnExpression();
 
         return $this->scopeEvents($filters)
             ->selectRaw("{$bucketExpr} as bucket")
             ->selectRaw('events.provider as provider')
-            ->selectRaw('SUM(events.tokens) as tokens')
+            ->selectRaw("SUM({$tokenExpr}) as tokens")
             ->groupByRaw("{$bucketExpr}, events.provider")
             ->orderByRaw("{$bucketExpr}")
             ->get()

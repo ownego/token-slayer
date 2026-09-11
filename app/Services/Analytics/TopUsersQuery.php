@@ -21,12 +21,14 @@ final class TopUsersQuery
      */
     public function get(UsageFilters $filters, int $limit): array
     {
+        $tokenExpr = $filters->tokenColumnExpression();
+
         return $this->scopeEvents($filters)
             ->join('users', 'users.id', '=', 'events.user_id')
             ->groupBy('users.id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url')
             ->selectRaw('users.id as user_id, users.slack_handle, users.display_name, users.name, users.avatar_url')
-            ->selectRaw('SUM(events.tokens) as tokens')
-            ->orderByRaw('SUM(events.tokens) DESC')
+            ->selectRaw("SUM({$tokenExpr}) as tokens")
+            ->orderByRaw("SUM({$tokenExpr}) DESC")
             ->limit($limit)
             ->get()
             ->map(fn ($row): array => [

@@ -23,12 +23,14 @@ final class TopAccountsQuery
      */
     public function get(UsageFilters $filters, int $limit): array
     {
+        $tokenExpr = $filters->tokenColumnExpression();
+
         return $this->scopeEvents($filters)
             ->leftJoin('accounts', 'accounts.id', '=', 'events.account_id')
             ->groupBy('events.account_id', 'accounts.email')
             ->selectRaw('events.account_id as account_id, accounts.email as email')
-            ->selectRaw('SUM(events.tokens) as tokens')
-            ->orderByRaw('SUM(events.tokens) DESC')
+            ->selectRaw("SUM({$tokenExpr}) as tokens")
+            ->orderByRaw("SUM({$tokenExpr}) DESC")
             ->limit($limit)
             ->get()
             ->map(fn ($row): array => [

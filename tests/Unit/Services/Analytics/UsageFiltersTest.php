@@ -66,3 +66,27 @@ test('a range of exactly 48 hours buckets hourly but just over buckets daily', f
     expect((new UsageFilters($from, $from->copy()->addHours(48), null, null, null))->bucket)->toBe('hour')
         ->and((new UsageFilters($from, $from->copy()->addHours(48)->addSecond(), null, null, null))->bucket)->toBe('day');
 });
+
+test('defaults the token mode to output when the filter form omits it', function () {
+    $f = UsageFilters::fromPageFilters(['range' => '7d']);
+
+    expect($f->tokenMode)->toBe('output')
+        ->and($f->tokenColumnExpression())->toBe('events.tokens');
+});
+
+test('carries the total token mode through and builds the sum-of-columns expression', function () {
+    $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'total']);
+
+    expect($f->tokenMode)->toBe('total')
+        ->and($f->tokenColumnExpression())->toBe(
+            '(events.tokens + events.input_tokens + events.cache_creation_input_tokens + events.cache_read_input_tokens)'
+        );
+});
+
+test('any token mode value other than total falls back to output', function () {
+    // A stray/unexpected value on the wire must never build an ad-hoc SQL
+    // fragment -- fall back to the safe, always-correct default instead.
+    $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'garbage']);
+
+    expect($f->tokenMode)->toBe('output');
+});

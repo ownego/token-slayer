@@ -4,6 +4,7 @@ namespace App\Services\Analytics;
 
 use App\Services\Analytics\Concerns\ScopesEventsByFilters;
 use App\Support\ModelName;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Range-wide token totals broken down by the model that produced them.
@@ -25,10 +26,12 @@ final class TokensByModelQuery
      */
     public function get(UsageFilters $filters): array
     {
+        $tokenExpr = $filters->tokenColumnExpression();
+
         return $this->scopeEvents($filters)
             ->groupBy('events.model')
-            ->selectRaw('events.model as model, SUM(events.tokens) as tokens, COUNT(*) as events')
-            ->orderByRaw('SUM(events.tokens) DESC')
+            ->selectRaw("events.model as model, SUM({$tokenExpr}) as tokens, COUNT(*) as events")
+            ->orderByRaw("SUM({$tokenExpr}) DESC")
             ->get()
             ->map(fn ($row): array => [
                 'model' => $row->model ?? UsageFilters::UNKNOWN_MODEL,
@@ -50,13 +53,14 @@ final class TokensByModelQuery
      */
     public function unknownShare(UsageFilters $filters): float
     {
-        $total = (int) $this->scopeEvents($filters)->sum('events.tokens');
+        $tokenExpr = $filters->tokenColumnExpression();
+        $total = (int) $this->scopeEvents($filters)->sum(DB::raw($tokenExpr));
 
         if ($total === 0) {
             return 0.0;
         }
 
-        $unknown = (int) $this->scopeEvents($filters)->whereNull('events.model')->sum('events.tokens');
+        $unknown = (int) $this->scopeEvents($filters)->whereNull('events.model')->sum(DB::raw($tokenExpr));
 
         return round($unknown / $total * 100, 1);
     }

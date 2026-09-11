@@ -27,9 +27,10 @@ final class ActivityHeatmapQuery
         $isSqlite = DB::connection()->getDriverName() === 'sqlite';
         $weekdayExpr = $isSqlite ? "cast(strftime('%w', events.created_at) as integer)" : 'extract(dow from events.created_at)::int';
         $hourExpr = $isSqlite ? "cast(strftime('%H', events.created_at) as integer)" : 'extract(hour from events.created_at)::int';
+        $tokenExpr = $filters->tokenColumnExpression();
 
         $sums = $this->scopeEvents($filters)
-            ->selectRaw("{$weekdayExpr} as weekday, {$hourExpr} as hour, SUM(events.tokens) as tokens")
+            ->selectRaw("{$weekdayExpr} as weekday, {$hourExpr} as hour, SUM({$tokenExpr}) as tokens")
             ->groupByRaw("{$weekdayExpr}, {$hourExpr}")
             ->get()
             ->keyBy(fn ($row): string => ((int) $row->weekday).':'.((int) $row->hour));

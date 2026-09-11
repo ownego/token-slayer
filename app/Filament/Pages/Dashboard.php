@@ -33,7 +33,7 @@ class Dashboard extends BaseDashboard
     public function filtersForm(Schema $schema): Schema
     {
         return $schema
-            ->columns(['default' => 1, 'sm' => 2, 'lg' => 5])
+            ->columns(['default' => 1, 'sm' => 2, 'lg' => 6])
             ->components([
                 Placeholder::make('total_active_users')
                     ->label('Total active users')
@@ -55,6 +55,17 @@ class Dashboard extends BaseDashboard
                     ->helperText(new HtmlString(
                         '<span style="display:block"><strong>Off:</strong> usage attributed to this account only.</span>'
                         .'<span style="display:block"><strong>On:</strong> each member\'s full usage, including other accounts and private.</span>'
+                    )),
+                Select::make('token_mode')
+                    ->label('Tokens')
+                    ->options([
+                        'output' => 'Output tokens',
+                        'total' => 'Total tokens',
+                    ])
+                    ->default('output')
+                    ->helperText(new HtmlString(
+                        '<span style="display:block"><strong>Output:</strong> what damage is dealt from (unchanged from before this filter existed).</span>'
+                        .'<span style="display:block"><strong>Total:</strong> output + input + cache tokens, for analytics only.</span>'
                     )),
             ]);
     }
