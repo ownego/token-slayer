@@ -5,8 +5,7 @@ namespace App\Filament\Resources\AiModels;
 use App\Enums\ModelFamily;
 use App\Filament\Resources\AiModels\Pages\ListAiModels;
 use App\Models\AiModel;
-use App\Services\Analytics\TokensByModelQuery;
-use App\Services\Analytics\UsageFilters;
+use App\Models\Event;
 use App\Services\Battlefield\AiModelSyncer;
 use App\Services\Battlefield\ModelFlairResolver;
 use App\Support\ModelName;
@@ -21,6 +20,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use UnitEnum;
 
 /**
@@ -77,6 +77,19 @@ class AiModelResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Tokens/events are not columns on `ai_models` -- they are
+            // aggregated here as correlated subqueries so the totals stay a
+            // single query (no N+1 across rows) and, unlike the old
+            // per-row `->state()` closures reading a PHP-side cache, are
+            // real selected values Filament can sort by.
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->addSelect([
+                'tokens' => Event::query()
+                    ->selectRaw('COALESCE(SUM(tokens), 0)')
+                    ->whereColumn('events.model', 'ai_models.model'),
+                'events' => Event::query()
+                    ->selectRaw('COUNT(*)')
+                    ->whereColumn('events.model', 'ai_models.model'),
+            ]))
             ->columns([
                 TextColumn::make('model')
                     ->label('Model')
@@ -90,21 +103,35 @@ class AiModelResource extends Resource
                     ->sortable(),
                 TextColumn::make('tokens')
                     ->label('Tokens')
-                    ->state(fn (AiModel $record): string => number_format(
-                        self::tokensByModel()[$record->model]['tokens'] ?? 0,
-                    )),
+                    ->numeric()
+                    ->sortable(),
                 TextColumn::make('events')
                     ->label('Events')
-                    ->state(fn (AiModel $record): int => self::tokensByModel()[$record->model]['events'] ?? 0),
+                    ->numeric()
+                    ->sortable(),
                 ToggleColumn::make('flair_enabled')
-                    ->label('Badge'),
+                    ->label('Badge')
+                    // ToggleColumn saves directly without consulting the
+                    // resource's Policy (Filament's own doc-comment on the
+                    // column says as much) -- without this, a role holding
+                    // only ViewAny:AiModel could flip the badge despite
+                    // having no Update:AiModel permission.
+                    ->disabled(fn (): bool => ! auth()->user()?->can('Update:AiModel')),
             ])
-            ->defaultSort('model')
+            // Biggest spender first: this is a usage registry, and an
+            // alphabetical default buried the models people actually care
+            // about below dozens of barely-used ones.
+            ->defaultSort('tokens', 'desc')
             ->headerActions([
                 Action::make('sync')
                     ->label('Sync')
                     ->icon(Heroicon::OutlinedArrowPath)
-                    ->authorize('update')
+                    // Not `->authorize('update')`: this is a header action
+                    // with no bound record, and the Policy's `update(User,
+                    // AiModel)` requires one -- Filament calls the ability
+                    // with no model argument here, which throws an arity
+                    // error before the policy method's own body ever runs.
+                    ->authorize(fn (): bool => auth()->user()?->can('Update:AiModel') ?? false)
                     ->action(function (): void {
                         $found = app(AiModelSyncer::class)->sync();
 
@@ -169,25 +196,6 @@ class AiModelResource extends Resource
 
                 Notification::make()->success()->title('Animation updated')->send();
             });
-    }
-
-    /**
-     * All-time tokens/events per raw model id, memoized for the request so
-     * every row's column state closure shares one query instead of N+1-ing.
-     *
-     * @return array<string, array{model:string, label:string, tokens:int, events:int}>
-     */
-    private static function tokensByModel(): array
-    {
-        static $cache = null;
-
-        if ($cache === null) {
-            $cache = collect(app(TokensByModelQuery::class)->get(UsageFilters::fromPageFilters(['range' => 'all'])))
-                ->keyBy('model')
-                ->all();
-        }
-
-        return $cache;
     }
 
     /**
