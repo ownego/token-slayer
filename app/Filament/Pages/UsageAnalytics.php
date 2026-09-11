@@ -103,7 +103,7 @@ class UsageAnalytics extends Page
                     ->searchable()
                     ->placeholder('All accounts'),
                 Select::make('provider')
-                    ->options(['claude-code' => 'Claude Code', 'codex' => 'Codex', 'claude.ai' => 'claude.ai'])
+                    ->options(['claude-code' => 'Claude Code', 'codex' => 'Codex', 'claude-ai' => 'claude.ai'])
                     ->placeholder('All providers'),
                 Select::make('model')
                     ->label('Model')

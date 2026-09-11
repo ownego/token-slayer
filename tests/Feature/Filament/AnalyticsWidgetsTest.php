@@ -24,6 +24,25 @@ test('the token volume chart renders with data for the default range', function 
         ->assertOk();
 });
 
+test('the token volume chart colors the claude-ai dataset by its real stored provider value', function () {
+    // events.provider stores "claude-ai" (hyphen) -- verified against real
+    // production data and the tracker userscript's own ?provider= query
+    // param. PROVIDER_COLORS used to be keyed "claude.ai" (dot), a display
+    // label that never matches the stored value, so the lookup silently fell
+    // through to the generic gray fallback for every claude-ai event.
+    $user = User::factory()->create();
+    Event::factory()->for($user)->create(['provider' => 'claude-ai', 'tokens' => 500, 'created_at' => now()->subDay()]);
+
+    $component = Livewire::test(TokenVolumeChart::class, ['filters' => ['range' => '7d']]);
+    $getData = new ReflectionMethod($component->instance(), 'getData');
+    $getData->setAccessible(true);
+    $data = $getData->invoke($component->instance());
+
+    $claudeAi = collect($data['datasets'])->firstWhere('label', 'claude-ai');
+    expect($claudeAi)->not->toBeNull()
+        ->and($claudeAi['borderColor'])->toBe('#059669');
+});
+
 test('the top users leaderboard renders', function () {
     $user = User::factory()->create(['slack_handle' => 'ada']);
     Event::factory()->for($user)->create(['tokens' => 500, 'created_at' => now()->subDay()]);

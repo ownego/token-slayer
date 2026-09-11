@@ -58,7 +58,7 @@ class TokenVolumeChart extends ChartWidget
     private const array PROVIDER_COLORS = [
         'claude-code' => '#d97706',
         'codex' => '#2563eb',
-        'claude.ai' => '#059669',
+        'claude-ai' => '#059669',
     ];
 
     /**
