@@ -89,6 +89,14 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::USER_MENU_BEFORE,
                 fn (): View => view('filament.topbar-battlefield-link'),
             )
+            // The Battlefield already shows this nudge, but some admins only
+            // ever open the panel and never that page -- CONTENT_START fires
+            // on every panel page (Dashboard, resources, everything), not
+            // just the Dashboard, so it reaches them wherever they land.
+            ->renderHook(
+                PanelsRenderHook::CONTENT_START,
+                fn (): View => view('filament.hook-outdated-banner'),
+            )
             // The panel has no global-search-worthy surface: accounts/users are
             // few and reachable from the nav, so the header search box is dead
             // weight.

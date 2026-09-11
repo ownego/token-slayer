@@ -27,6 +27,27 @@ it('renders the dashboard with the time filter and total-across-accounts toggle'
         ->assertSee('Total usage across accounts');
 });
 
+it('nudges an admin on a hook too old to self-update, wherever in the panel they land', function () {
+    config(['token_slayer.hook_version' => '7']);
+    $admin = User::factory()->admin()->create(['hook_version' => null, 'client_version' => '1.0.0']);
+
+    $this->actingAs($admin)
+        ->get(Dashboard::getUrl(panel: 'admin'))
+        ->assertOk()
+        ->assertSee('hook is out of date', escape: false)
+        ->assertSeeHtml('href="'.route('update').'"');
+});
+
+it('says nothing to an admin whose hook is current, or will self-update on its own', function () {
+    config(['token_slayer.hook_version' => '7']);
+    $admin = User::factory()->admin()->create(['hook_version' => '6']);
+
+    $this->actingAs($admin)
+        ->get(Dashboard::getUrl(panel: 'admin'))
+        ->assertOk()
+        ->assertDontSee('hook is out of date');
+});
+
 it('shows the total active users count in the filters form, on the same row as the range/toggle', function () {
     $account = Account::factory()->create();
     $tracked = User::factory()->create();
