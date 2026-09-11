@@ -37,13 +37,15 @@ test('toggling the badge column persists flair_enabled', function () {
     expect($row->fresh()->flair_enabled)->toBeTrue();
 });
 
-test('a role with only ViewAny:AiModel cannot toggle the badge column', function () {
+test('a role with only ViewAny:AiModel does not even see the badge column', function () {
     // ToggleColumn saves directly without consulting the resource's Policy
     // (Filament's own doc-comment on the column says as much) -- the Sync
     // and Edit-animation actions are `.authorize('update')`d, but the badge
-    // toggle had no `->disabled()` guard, so a viewer-only role could flip
-    // it through the same `updateTableColumnState` call the admin test above
-    // uses, despite holding no Update:AiModel permission.
+    // toggle had no `->visible()` guard, so a viewer-only role both saw it
+    // rendered AND could flip it through the same `updateTableColumnState`
+    // call the admin test above uses, despite holding no Update:AiModel
+    // permission. Hidden entirely, not just disabled: a read-only viewer has
+    // no business seeing a control they can never act on.
     $role = Role::create(['name' => 'model_viewer', 'guard_name' => 'web']);
     $role->givePermissionTo('ViewAny:AiModel');
     $user = User::factory()->create();
@@ -51,12 +53,13 @@ test('a role with only ViewAny:AiModel cannot toggle the badge column', function
     $row = AiModel::create(['model' => 'claude-opus-5', 'flair_enabled' => false]);
 
     Livewire::actingAs($user)->test(ListAiModels::class)
+        ->assertTableColumnHidden('flair_enabled')
         ->call('updateTableColumnState', 'flair_enabled', (string) $row->getKey(), true);
 
     expect($row->fresh()->flair_enabled)->toBeFalse();
 });
 
-test('a role with Update:AiModel can still toggle the badge column', function () {
+test('a role with Update:AiModel sees and can still toggle the badge column', function () {
     $role = Role::create(['name' => 'model_editor', 'guard_name' => 'web']);
     $role->givePermissionTo(['ViewAny:AiModel', 'Update:AiModel']);
     $user = User::factory()->create();
@@ -64,6 +67,7 @@ test('a role with Update:AiModel can still toggle the badge column', function ()
     $row = AiModel::create(['model' => 'claude-opus-5', 'flair_enabled' => false]);
 
     Livewire::actingAs($user)->test(ListAiModels::class)
+        ->assertTableColumnVisible('flair_enabled')
         ->call('updateTableColumnState', 'flair_enabled', (string) $row->getKey(), true);
 
     expect($row->fresh()->flair_enabled)->toBeTrue();

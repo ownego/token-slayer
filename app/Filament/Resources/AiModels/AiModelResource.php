@@ -114,9 +114,14 @@ class AiModelResource extends Resource
                     // ToggleColumn saves directly without consulting the
                     // resource's Policy (Filament's own doc-comment on the
                     // column says as much) -- without this, a role holding
-                    // only ViewAny:AiModel could flip the badge despite
-                    // having no Update:AiModel permission.
-                    ->disabled(fn (): bool => ! auth()->user()?->can('Update:AiModel')),
+                    // only ViewAny:AiModel could both see and flip the badge
+                    // despite having no Update:AiModel permission. Hidden
+                    // rather than merely disabled: a read-only viewer has no
+                    // business seeing a control they can never act on, and
+                    // `isHidden()` is also the first check
+                    // `updateTableColumnState()` makes, so hiding it closes
+                    // the write path too.
+                    ->visible(fn (): bool => auth()->user()?->can('Update:AiModel') ?? false),
             ])
             // Biggest spender first: this is a usage registry, and an
             // alphabetical default buried the models people actually care
