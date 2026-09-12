@@ -240,7 +240,7 @@ export class Fighter {
       this.scene.necromancer?.spawnSummonCircle(entry.pos.x, entry.pos.y);
       // Give the ground circle a moment to visibly form before the
       // character appears rising out of it, rather than both at once.
-      const CIRCLE_LEAD_MS = 350;
+      const CIRCLE_LEAD_MS = 150;
       this.scene.time.delayedCall(CIRCLE_LEAD_MS, () => {
         if (!entry.sprite?.active) return;
         entry.sprite.setAlpha(1);
@@ -268,7 +268,7 @@ export class Fighter {
       });
     };
     if (this.scene.necromancer) {
-      this.scene.necromancer.summon(reveal);
+      this.scene.necromancer.summon(entry.pos.x, entry.pos.y, reveal);
     } else {
       reveal();
     }

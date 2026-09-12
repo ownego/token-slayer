@@ -32,24 +32,26 @@ export class Necromancer {
   }
 
   /**
-   * Requests the Necromancer's Summon animation for a newly-joined fighter,
-   * then invokes onRevealed so the caller can reveal it. Multiple fighters
-   * joining close together are queued and summoned one at a time — the
-   * shared sprite can only play one animation at once, and playing a second
-   * Summon over an in-progress one left Phaser's animation state corrupted
-   * (an uncaught error deep in Phaser's animation start, from a rapid-join
-   * repro). Falls back to calling onRevealed immediately if the Necromancer
-   * sprite isn't available.
+   * Requests the Necromancer's Summon animation, casting toward (targetX,
+   * targetY), then invokes onRevealed so the caller can reveal the summoned
+   * fighter there. Multiple fighters joining close together are queued and
+   * summoned one at a time — the shared sprite can only play one animation
+   * at once, and playing a second Summon over an in-progress one left
+   * Phaser's animation state corrupted (an uncaught error deep in Phaser's
+   * animation start, from a rapid-join repro). Falls back to calling
+   * onRevealed immediately if the Necromancer sprite isn't available.
    *
+   * @param {number} targetX
+   * @param {number} targetY
    * @param {Function} onRevealed
    * @return {void}
    */
-  summon(onRevealed) {
+  summon(targetX, targetY, onRevealed) {
     if (!this.sprite?.active) {
       onRevealed();
       return;
     }
-    this.summonQueue.push(onRevealed);
+    this.summonQueue.push({ targetX, targetY, onRevealed });
     if (!this.isSummoning) {
       this._processSummonQueue();
     }
@@ -64,11 +66,12 @@ export class Necromancer {
    * @return {void}
    */
   _processSummonQueue() {
-    const onRevealed = this.summonQueue.shift();
-    if (!onRevealed) {
+    const job = this.summonQueue.shift();
+    if (!job) {
       this.isSummoning = false;
       return;
     }
+    const { targetX, targetY, onRevealed } = job;
     this.isSummoning = true;
     if (!this.sprite?.active) {
       onRevealed();
@@ -76,15 +79,43 @@ export class Necromancer {
       return;
     }
     this.scene.tweens.killTweensOf(this.sprite);
+    this.sprite.setTint(0xa855f7);
     this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
     const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
     const durationMs = Math.ceil((summonInfo.count / summonInfo.rate) * 1000);
+    this._castBeam(targetX, targetY, durationMs);
     this.scene.time.delayedCall(durationMs, () => {
       if (this.sprite?.active) {
+        this.sprite.clearTint();
         this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
       }
       onRevealed();
       this._processSummonQueue();
+    });
+  }
+
+  /**
+   * Draws a fading purple beam from the Necromancer to the summon target for
+   * the duration of its cast, so the cast itself reads as visibly "calling"
+   * the circle into being rather than happening invisibly off to the side.
+   *
+   * @param {number} targetX
+   * @param {number} targetY
+   * @param {number} durationMs
+   * @return {void}
+   */
+  _castBeam(targetX, targetY, durationMs) {
+    const beam = this.scene.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
+    beam.lineStyle(4, 0xa855f7, 0.8);
+    beam.lineBetween(this.sprite.x, this.sprite.y, targetX, targetY);
+    beam.lineStyle(2, 0xe9d5ff, 0.9);
+    beam.lineBetween(this.sprite.x, this.sprite.y, targetX, targetY);
+    this.scene.tweens.add({
+      targets: beam,
+      alpha: 0,
+      duration: durationMs,
+      ease: 'Sine.easeIn',
+      onComplete: () => beam.destroy(),
     });
   }
 

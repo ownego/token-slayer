@@ -112,7 +112,7 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 8, rate: 10 },
       attack: { frames: 6, rate: 12 },
       death:  { frames: 4, rate: 6  },
-      summon: { frames: 5, rate: 10 },
+      summon: { frames: 5, rate: 6  },
     },
     attacks: [
       { frames: 6, rate: 12, effectFrames: 6 },
@@ -126,7 +126,7 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 8, rate: 10 },
       attack: { frames: 8, rate: 12 },
       death:  { frames: 4, rate: 6  },
-      summon: { frames: 5, rate: 10 },
+      summon: { frames: 5, rate: 6  },
     },
     attacks: [
       { frames: 8, rate: 12, effectFrames: 8 },
@@ -207,7 +207,7 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 9, rate: 10 },
       attack: { frames: 9, rate: 12 },
       death:  { frames: 4, rate: 6  },
-      summon: { frames: 5, rate: 10 },
+      summon: { frames: 5, rate: 6  },
     },
     attacks: [
       { frames: 9,  rate: 12, effectFrames: 9  },
@@ -275,7 +275,7 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 8, rate: 10 },
       attack: { frames: 9, rate: 12 },
       death:  { frames: 4, rate: 6  },
-      summon: { frames: 5, rate: 10 },
+      summon: { frames: 5, rate: 6  },
     },
     attacks: [
       { frames: 9, rate: 12 },
