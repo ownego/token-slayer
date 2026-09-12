@@ -3,6 +3,7 @@ import { NECROMANCER_CONFIG, TIMINGS } from '@battlefield/config.js';
 import { randomWanderPoint } from './boss/bat-wander.js';
 import { isValidMoveTarget } from './move-geometry.js';
 import { Boss } from './boss.js';
+import { shouldSkipSummonFlourish } from './boss/summon-queue.js';
 
 // Rough footprint used only to size isValidMoveTarget's exclusion margins
 // for the Necromancer's own (much larger than a fighter's) sprite.
@@ -11,6 +12,13 @@ const SUMMON_SPOT_FSIZE = 90;
 const SUMMON_SPOT_OFFSET = 100;
 // Minimum clearance from any other already-placed fighter.
 const SUMMON_SPOT_MIN_FIGHTER_GAP = 50;
+// Safety net for _processSummonQueue: comfortably above the full
+// teleport-out/cast/teleport-back cycle's own worst-case duration (roughly
+// 4.2s with the current asset pack's frame counts/rates), so a job that
+// stalls for any reason (a thrown exception, a destroyed sprite mid-flight)
+// still reveals its fighter and frees the queue instead of stranding every
+// later join invisible for the rest of the browser session.
+const SUMMON_WATCHDOG_MS = 7000;
 
 /** Manages the permanent Necromancer fixture: idle wander and the summon-on-join effect. */
 export class Necromancer {
@@ -83,7 +91,8 @@ export class Necromancer {
    * teleports back home once done. Multiple fighters joining close together
    * are queued and summoned one at a time — the shared sprite can only play
    * one animation/be in one place at once. Falls back to calling onRevealed
-   * immediately if the Necromancer sprite isn't available.
+   * immediately if the Necromancer sprite isn't available, or if a burst of
+   * joins has already backed the queue up past SUMMON_QUEUE_BURST_LIMIT.
    *
    * @param {number} targetX
    * @param {number} targetY
@@ -91,7 +100,7 @@ export class Necromancer {
    * @return {void}
    */
   summon(targetX, targetY, onRevealed) {
-    if (!this.sprite?.active) {
+    if (!this.sprite?.active || shouldSkipSummonFlourish(this.summonQueue.length)) {
       onRevealed();
       return;
     }
@@ -108,6 +117,14 @@ export class Necromancer {
    * loop's independent .play() calls could otherwise strand), teleports back
    * home, then recurses onto the next queued job, if any.
    *
+   * A SUMMON_WATCHDOG_MS timeout backstops the whole chain: reveal() and
+   * advance() are each idempotent (a second call is a no-op), so whichever
+   * fires first — the chain's own natural completion or the watchdog — wins,
+   * and the other becomes harmless. Without this, a single stall anywhere in
+   * the chain (a thrown exception, a sprite destroyed mid-flight) would leave
+   * isSummoning stuck true forever, permanently hiding every fighter queued
+   * after it.
+   *
    * @return {void}
    */
   _processSummonQueue() {
@@ -118,17 +135,36 @@ export class Necromancer {
     }
     const { targetX, targetY, onRevealed } = job;
     this.isSummoning = true;
-    if (!this.sprite?.active) {
+
+    let revealed = false;
+    let advanced = false;
+    const reveal = () => {
+      if (revealed) return;
+      revealed = true;
       onRevealed();
+    };
+    const advance = () => {
+      if (advanced) return;
+      advanced = true;
+      watchdog.remove();
       this._processSummonQueue();
+    };
+    const watchdog = this.scene.time.delayedCall(SUMMON_WATCHDOG_MS, () => {
+      reveal();
+      advance();
+    });
+
+    if (!this.sprite?.active) {
+      reveal();
+      advance();
       return;
     }
     this.scene.tweens.killTweensOf(this.sprite);
     const spot = this._pickSummonSpot(targetX, targetY);
     this._teleportTo(spot.x, spot.y, spot.flip, () => {
       if (!this.sprite?.active) {
-        onRevealed();
-        this._processSummonQueue();
+        reveal();
+        advance();
         return;
       }
       this.sprite.setTint(0xa855f7);
@@ -148,12 +184,12 @@ export class Necromancer {
         if (this.sprite?.active) {
           this.sprite.clearTint();
         }
-        onRevealed();
+        reveal();
         this._teleportTo(this.homeAnchor.x, this.homeAnchor.y, false, () => {
           if (this.sprite?.active) {
             this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
           }
-          this._processSummonQueue();
+          advance();
         });
       });
     });
