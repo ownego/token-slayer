@@ -54,13 +54,20 @@ export class Necromancer {
    */
   _createHomePlatform() {
     const key = `${NECROMANCER_CONFIG.key}-circle`;
-    this.scene.add
+    const platform = this.scene.add
       .sprite(this.homeAnchor.x, this.homeAnchor.y, key)
       .setDepth(0.5)
       .setScale(4.2)
       .setAlpha(0.55)
       .setBlendMode(Phaser.BlendModes.ADD)
       .play(key);
+    this.scene.tweens.add({
+      targets: platform,
+      angle: 360,
+      duration: 9000,
+      repeat: -1,
+      ease: 'Linear',
+    });
   }
 
   /**
@@ -299,6 +306,13 @@ export class Necromancer {
     const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(2.6).setBlendMode(Phaser.BlendModes.ADD);
     circle.play(key);
     circle.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => circle.destroy());
+    const circleInfo = NECROMANCER_CONFIG.animFiles.circle;
+    this.scene.tweens.add({
+      targets: circle,
+      angle: 180,
+      duration: Math.ceil((circleInfo.count / circleInfo.rate) * 1000),
+      ease: 'Sine.easeOut',
+    });
   }
 
   /**
