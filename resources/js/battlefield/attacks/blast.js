@@ -3,12 +3,12 @@ import { AttackType } from '@battlefield/constants.js';
 import { restScale, slashBurst } from './fx.js';
 import { isHealRoll } from './priest-heal.js';
 
-// Priest's heal flourish plays its own effect1 strip bigger and at half
-// speed (twice the normal ~417ms playtime) so it reads as a deliberate heal
+// Priest's heal flourish plays its own effect1 strip bigger and much slower
+// (almost 3x the normal ~417ms playtime) so it reads as a deliberate heal
 // rather than the normal quick attack-impact flash.
-const PRIEST_HEAL_SCALE_MULT = 1.8;
-const PRIEST_HEAL_TIME_SCALE = 0.5;
-const PRIEST_HEAL_EFFECT_MS = 840;
+const PRIEST_HEAL_SCALE_MULT = 2.8;
+const PRIEST_HEAL_TIME_SCALE = 0.35;
+const PRIEST_HEAL_EFFECT_MS = 1200;
 
 /**
  * Redhat — magic circle → beam.
