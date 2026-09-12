@@ -181,8 +181,12 @@ test('a guest bounced off the dashboard still lands there after a stale-state re
 test('slack callback stops retrying after one restart so it cannot loop', function () {
     bindSlackProviderThrowingInvalidState();
 
-    $this->withSession(['slack_login_retried' => true])
-        ->get('/auth/slack/callback')
+    // The retry guard is keyed by IP in the cache, not the session (see
+    // RETRY_CACHE_PREFIX's docblock in SlackController) — the test client's
+    // default IP is 127.0.0.1.
+    Cache::put('slack_login_retried:127.0.0.1', true, 30);
+
+    $this->get('/auth/slack/callback')
         ->assertRedirect(route('battlefield'))
         ->assertSessionHas('error');
 });
@@ -238,7 +242,9 @@ test('slack callback clears the retry flag once a login succeeds', function () {
     Http::fake(['slack.com/api/users.info*' => Http::response(usersInfoResponse([]))]);
     bindSlackProvider(fakeSlackUser());
 
-    $this->withSession(['slack_login_retried' => true])
-        ->get('/auth/slack/callback')
-        ->assertSessionMissing('slack_login_retried');
+    Cache::put('slack_login_retried:127.0.0.1', true, 30);
+
+    $this->get('/auth/slack/callback');
+
+    expect(Cache::has('slack_login_retried:127.0.0.1'))->toBeFalse();
 });

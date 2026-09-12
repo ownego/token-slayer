@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Slack\SlackProfileFetcher;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\InvalidStateException;
@@ -16,12 +17,29 @@ use Symfony\Component\HttpFoundation\RedirectResponse as SymfonyRedirectResponse
 class SlackController extends Controller
 {
     /**
-     * Session key marking that this visitor already had one OAuth round trip
-     * restarted, so a permanently broken session can't ping-pong forever.
+     * Cache key prefix (per client IP) marking that this visitor already had
+     * one OAuth round trip restarted, so a permanently broken session can't
+     * ping-pong forever. Deliberately NOT stored in the session: the trigger
+     * for this guard is exactly "the session lost track of state across the
+     * round trip to Slack and back," so a session-backed flag fails open —
+     * every retry looks like a first attempt again and the loop never
+     * breaks (observed live: tens of thousands of `/auth/slack` hits from
+     * the same visitors). Keyed by IP with a short TTL instead, since that
+     * survives even when the session cookie doesn't.
      *
      * @var string
      */
-    private const string RETRY_FLAG = 'slack_login_retried';
+    private const string RETRY_CACHE_PREFIX = 'slack_login_retried:';
+
+    /**
+     * How long a restarted attempt is remembered for, in seconds — long
+     * enough to cover one real round trip through Slack's authorize screen,
+     * short enough that a genuinely new visit from the same IP shortly after
+     * isn't mistaken for a retry of an old, abandoned one.
+     *
+     * @var int
+     */
+    private const int RETRY_TTL_SECONDS = 30;
 
     /**
      * Session key holding the flow state (`ide_oauth`/`ccrc_oauth`) that
@@ -134,8 +152,12 @@ class SlackController extends Controller
             $defaultRoute = 'battlefield';
         }
 
-        auth()->login($user);
-        session()->forget(self::RETRY_FLAG);
+        // Remembered so the session's own 120-minute idle timeout (a login
+        // via Slack has no password to re-prompt for) doesn't force a full
+        // OAuth round trip every couple hours of inactivity — Laravel's
+        // remember cookie transparently re-authenticates on the next visit.
+        auth()->login($user, remember: true);
+        Cache::forget($this->retryCacheKey());
 
         if (($ide = $this->consumeIdeFlowState()) !== null) {
             return $this->redirectToIde($user, $ide['state'], $ide['client'], $ide['redirect']);
@@ -159,7 +181,8 @@ class SlackController extends Controller
      * response carrying no user id.
      *
      * An already-authenticated visitor simply continues to where they were
-     * headed; a guest restarts the flow once, guarded by RETRY_FLAG.
+     * headed; a guest restarts the flow once, guarded by the IP-keyed retry
+     * cache entry (see RETRY_CACHE_PREFIX's docblock for why not session).
      *
      * @return RedirectResponse
      */
@@ -169,12 +192,14 @@ class SlackController extends Controller
             return redirect()->intended(route('battlefield'));
         }
 
-        if (session()->pull(self::RETRY_FLAG) === true) {
+        $retryKey = $this->retryCacheKey();
+
+        if (Cache::pull($retryKey) === true) {
             return redirect()->route('battlefield')
                 ->with('error', 'Slack sign-in did not complete. Please try again.');
         }
 
-        session()->put(self::RETRY_FLAG, true);
+        Cache::put($retryKey, true, self::RETRY_TTL_SECONDS);
 
         // Carry this attempt's flow state into the retry inside the marker
         // itself, rather than leaving it sitting in ide_oauth/ccrc_oauth, and
@@ -287,5 +312,16 @@ class SlackController extends Controller
         return is_array($parts)
             && ($parts['scheme'] ?? null) === 'http'
             && in_array($parts['host'] ?? null, ['127.0.0.1', 'localhost'], true);
+    }
+
+    /**
+     * The cache key restartLogin() uses to track one retry per visitor,
+     * scoped by IP rather than session — see RETRY_CACHE_PREFIX's docblock.
+     *
+     * @return string
+     */
+    private function retryCacheKey(): string
+    {
+        return self::RETRY_CACHE_PREFIX.request()->ip();
     }
 }
