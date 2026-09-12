@@ -184,9 +184,15 @@ export class Necromancer {
       this.scene.time.delayedCall(beamDelayMs, () => {
         if (this.sprite?.active) {
           // Re-read again rather than reusing targetX/Y from above — a
-          // relayout can still land between the teleport landing and the
-          // beam actually firing.
+          // relayout can still land during the ~1.4s teleport-out itself.
+          // Re-pick and snap the Necromancer's own standing spot too, not
+          // just the beam's endpoint: otherwise it stays parked wherever it
+          // originally teleported to (now stale) while the beam correctly
+          // points at the fighter's new spot, reading as firing from a
+          // nonsensical position instead of just "the wrong direction".
           const { x: beamX, y: beamY } = getTargetPos();
+          const freshSpot = this._pickSummonSpot(beamX, beamY);
+          this.sprite.setPosition(freshSpot.x, freshSpot.y).setFlipX(freshSpot.flip);
           this._castBeam(beamX, beamY, durationMs - beamDelayMs);
         }
       });
