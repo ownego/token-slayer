@@ -94,17 +94,22 @@ export class Necromancer {
    * immediately if the Necromancer sprite isn't available, or if a burst of
    * joins has already backed the queue up past SUMMON_QUEUE_BURST_LIMIT.
    *
-   * @param {number} targetX
-   * @param {number} targetY
+   * getTargetPos is called fresh right before each use, not captured once
+   * here — a fighter queued behind another can have its grid slot shifted by
+   * relayoutFighters() (triggered by a later fighter joining) before its own
+   * turn comes up, and a snapshot taken at queue time would then point the
+   * teleport/beam at a stale position the fighter no longer rises at.
+   *
+   * @param {Function} getTargetPos - () => {x: number, y: number}, read live
    * @param {Function} onRevealed
    * @return {void}
    */
-  summon(targetX, targetY, onRevealed) {
+  summon(getTargetPos, onRevealed) {
     if (!this.sprite?.active || shouldSkipSummonFlourish(this.summonQueue.length)) {
       onRevealed();
       return;
     }
-    this.summonQueue.push({ targetX, targetY, onRevealed });
+    this.summonQueue.push({ getTargetPos, onRevealed });
     if (!this.isSummoning) {
       this._processSummonQueue();
     }
@@ -133,7 +138,7 @@ export class Necromancer {
       this.isSummoning = false;
       return;
     }
-    const { targetX, targetY, onRevealed } = job;
+    const { getTargetPos, onRevealed } = job;
     this.isSummoning = true;
 
     let revealed = false;
@@ -160,6 +165,7 @@ export class Necromancer {
       return;
     }
     this.scene.tweens.killTweensOf(this.sprite);
+    const { x: targetX, y: targetY } = getTargetPos();
     const spot = this._pickSummonSpot(targetX, targetY);
     this._teleportTo(spot.x, spot.y, spot.flip, () => {
       if (!this.sprite?.active) {
@@ -177,7 +183,11 @@ export class Necromancer {
       const beamDelayMs = Math.round(durationMs * 0.45);
       this.scene.time.delayedCall(beamDelayMs, () => {
         if (this.sprite?.active) {
-          this._castBeam(targetX, targetY, durationMs - beamDelayMs);
+          // Re-read again rather than reusing targetX/Y from above — a
+          // relayout can still land between the teleport landing and the
+          // beam actually firing.
+          const { x: beamX, y: beamY } = getTargetPos();
+          this._castBeam(beamX, beamY, durationMs - beamDelayMs);
         }
       });
       this.scene.time.delayedCall(durationMs, () => {

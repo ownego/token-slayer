@@ -317,7 +317,11 @@ export class Fighter {
       });
     };
     if (this.scene.necromancer) {
-      this.scene.necromancer.summon(entry.pos.x, entry.pos.y, reveal);
+      // A getter, not a captured (x, y) snapshot: a fighter queued behind
+      // another can have relayoutFighters() (triggered by a later fighter
+      // joining) move its grid slot before the Necromancer gets to it, and
+      // entry.pos always reflects wherever it will actually rise.
+      this.scene.necromancer.summon(() => entry.pos, reveal);
     } else {
       reveal();
     }
