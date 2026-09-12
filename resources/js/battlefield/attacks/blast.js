@@ -2,7 +2,11 @@ import Phaser from 'phaser';
 import { AttackType } from '@battlefield/constants.js';
 import { restScale, slashBurst } from './fx.js';
 import { isHealRoll } from './priest-heal.js';
-import { castHealOrbToNecromancer } from './priest-heal-fx.js';
+
+// Roughly how long Priest's own effect1 strip (5 frames @ 12fps) plays —
+// used to time the Necromancer's bolt-the-boss reaction after it, since
+// blast() doesn't otherwise know that attack-slot's exact frame count/rate.
+const PRIEST_HEAL_EFFECT_MS = 420;
 
 /**
  * Redhat — magic circle → beam.
@@ -69,13 +73,18 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   scene.tweens.add({ targets: g, alpha: isKillShot ? 0.95 : 0.82, duration: chargeDur, ease: 'Power2.easeOut' });
   scene.tweens.add({ targets: g, rotation: towardBoss * Math.PI * 2, duration: isKillShot ? 560 : 400, ease: 'Linear' });
 
+  const necromancer = scene.necromancer;
+  const isPriestHeal = fighter.ftype?.key === 'priest' && isHealRoll(damage) && necromancer?.sprite?.active;
+
   scene.time.delayedCall(chargeDur + 15, () => {
-    // Priest's own coin-flip flourish: odd damage sends a heal orb to the
-    // Necromancer (who then bolts the boss itself) instead of the normal
-    // elemental burst — purely cosmetic, the beam/projectile below still
-    // land the real damage either way.
-    if (fighter.ftype?.key === 'priest' && isHealRoll(damage)) {
-      castHealOrbToNecromancer(scene, strikeX, strikeY);
+    // Priest's own coin-flip flourish: odd damage plays Priest's own
+    // effect1 art (already the "heal" animation in the asset pack) directly
+    // on the Necromancer instead of the normal elemental burst on the boss,
+    // then has the Necromancer bolt the boss itself — purely cosmetic, the
+    // beam/projectile below still land the real damage either way.
+    if (isPriestHeal) {
+      onEffect?.(necromancer.sprite.x, necromancer.sprite.y);
+      scene.time.delayedCall(PRIEST_HEAL_EFFECT_MS, () => necromancer.receiveHealAndBoltBoss());
     } else {
       onEffect?.(strikeX, strikeY);
     }
