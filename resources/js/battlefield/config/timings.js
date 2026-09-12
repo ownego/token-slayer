@@ -18,6 +18,12 @@ export const TIMINGS = {
   flairOrbitPeriodMs: 3200,
   batAutoAttackMinMs: 8000,
   batAutoAttackMaxMs: 12000,
+  // Necromancer-only: it pauses between short wander steps, unlike bats,
+  // which fly continuously (see batHopDurationMinMs/MaxMs below).
   batWanderMinMs: 1500,
   batWanderMaxMs: 3000,
+  // Continuous zigzag bat flight: each short hop's duration scales with its
+  // distance, clamped to this range, so bats never stand still between hops.
+  batHopDurationMinMs: 220,
+  batHopDurationMaxMs: 700,
 };

@@ -3,14 +3,14 @@ import { BAT_CONFIG, TIMINGS } from '@battlefield/config.js';
 import { computeBatHitTarget, BAT_HP_THRESHOLDS } from './bat-targeting.js';
 import { randomWanderPoint } from './bat-wander.js';
 
-/** Manages the 5-bat boss-minion swarm: spawn, hit routing, auto-attacks, and wander movement. */
+/** Manages the 5-bat boss-minion swarm: spawn, hit routing, auto-attacks, and continuous wander flight. */
 export class BatSwarm {
   /**
    * @param {Phaser.Scene} scene
    */
   constructor(scene) {
     this.scene = scene;
-    /** @type {Map<number, {sprite: Phaser.GameObjects.Sprite|null, alive: boolean, wanderTimer: Phaser.Time.TimerEvent|null}>} */
+    /** @type {Map<number, {sprite: Phaser.GameObjects.Sprite|null, alive: boolean}>} */
     this.bats = new Map();
     this.maxHp = 1;
     this.autoAttackTimer = null;
@@ -36,7 +36,7 @@ export class BatSwarm {
     const hpPct = currentHp / maxHp;
     for (let i = 1; i <= BAT_CONFIG.count; i++) {
       if (hpPct <= BAT_HP_THRESHOLDS[i - 1]) {
-        this.bats.set(i, { sprite: null, alive: false, wanderTimer: null });
+        this.bats.set(i, { sprite: null, alive: false });
         continue;
       }
       const point = randomWanderPoint(zone);
@@ -45,9 +45,9 @@ export class BatSwarm {
         .setScale(BAT_CONFIG.scale)
         .setDepth(4)
         .play(`${BAT_CONFIG.key}-flying`);
-      const entry = { sprite, alive: true, wanderTimer: null };
+      const entry = { sprite, alive: true };
       this.bats.set(i, entry);
-      this._scheduleWander(entry);
+      this._flyToNextHop(entry);
     }
     this._scheduleAutoAttack();
   }
@@ -85,7 +85,8 @@ export class BatSwarm {
   }
 
   /**
-   * Plays a bat's Hurt reaction after it takes a non-lethal hit.
+   * Plays a bat's Hurt reaction after it takes a non-lethal hit: it briefly
+   * stops flying in place, then resumes its continuous wander flight.
    *
    * @param {{index: number}} target
    * @return {void}
@@ -95,16 +96,18 @@ export class BatSwarm {
     if (!entry?.sprite?.active || !entry.alive) {
       return;
     }
+    this.scene.tweens.killTweensOf(entry.sprite);
     entry.sprite.play(`${BAT_CONFIG.key}-hurt`);
     entry.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       if (entry.sprite?.active && entry.alive) {
         entry.sprite.play(`${BAT_CONFIG.key}-flying`);
+        this._flyToNextHop(entry);
       }
     });
   }
 
   /**
-   * Kills one bat: plays Death, cancels its loops, and fades the sprite out.
+   * Kills one bat: plays Death, cancels its flight, and fades the sprite out.
    *
    * @param {number} index
    * @return {void}
@@ -115,7 +118,6 @@ export class BatSwarm {
       return;
     }
     entry.alive = false;
-    entry.wanderTimer?.remove();
     this.scene.tweens.killTweensOf(entry.sprite);
     entry.sprite.play(`${BAT_CONFIG.key}-death`);
     entry.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
@@ -129,27 +131,34 @@ export class BatSwarm {
   }
 
   /**
-   * Schedules this bat's next random-wander tween, re-scheduling itself on completion.
+   * Flies this bat to a short, randomly-zigzagging hop within its wander
+   * zone, immediately chaining the next hop on completion — bats never
+   * stand still between hops, only a Hurt/Death reaction interrupts this.
    *
-   * @param {{sprite: Phaser.GameObjects.Sprite, alive: boolean, wanderTimer: Phaser.Time.TimerEvent|null}} entry
+   * @param {{sprite: Phaser.GameObjects.Sprite, alive: boolean}} entry
    * @return {void}
    */
-  _scheduleWander(entry) {
-    const delay = Phaser.Math.Between(TIMINGS.batWanderMinMs, TIMINGS.batWanderMaxMs);
-    entry.wanderTimer = this.scene.time.delayedCall(delay, () => {
-      if (!entry.alive || !entry.sprite?.active) {
-        return;
-      }
-      const point = randomWanderPoint(this.scene.layout.bats);
-      const dist = Phaser.Math.Distance.Between(entry.sprite.x, entry.sprite.y, point.x, point.y);
-      this.scene.tweens.add({
-        targets: entry.sprite,
-        x: point.x,
-        y: point.y,
-        duration: Phaser.Math.Clamp(dist * 4, 400, 1400),
-        ease: 'Sine.easeInOut',
-        onComplete: () => this._scheduleWander(entry),
-      });
+  _flyToNextHop(entry) {
+    const zone = this.scene.layout.bats;
+    const raw = randomWanderPoint({
+      centerX: entry.sprite.x,
+      centerY: entry.sprite.y,
+      radiusX: zone.hopRadius,
+      radiusY: zone.hopRadius,
+    });
+    const point = {
+      x: Phaser.Math.Clamp(raw.x, zone.centerX - zone.radiusX, zone.centerX + zone.radiusX),
+      y: Phaser.Math.Clamp(raw.y, zone.centerY - zone.radiusY, zone.centerY + zone.radiusY),
+    };
+    const dist = Phaser.Math.Distance.Between(entry.sprite.x, entry.sprite.y, point.x, point.y);
+    entry.sprite.setFlipX(point.x < entry.sprite.x);
+    this.scene.tweens.add({
+      targets: entry.sprite,
+      x: point.x,
+      y: point.y,
+      duration: Phaser.Math.Clamp(dist * 6, TIMINGS.batHopDurationMinMs, TIMINGS.batHopDurationMaxMs),
+      ease: 'Sine.easeInOut',
+      onComplete: () => this._flyToNextHop(entry),
     });
   }
 
@@ -199,7 +208,7 @@ export class BatSwarm {
   }
 
   /**
-   * Destroys every bat sprite and cancels all pending timers — called before a respawn and on BossKilled.
+   * Destroys every bat sprite and cancels all pending timers/tweens — called before a respawn and on BossKilled.
    *
    * @return {void}
    */
@@ -207,7 +216,6 @@ export class BatSwarm {
     this.autoAttackTimer?.remove();
     this.autoAttackTimer = null;
     for (const entry of this.bats.values()) {
-      entry.wanderTimer?.remove();
       this.scene.tweens.killTweensOf(entry.sprite);
       entry.sprite?.destroy();
     }
