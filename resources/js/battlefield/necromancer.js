@@ -160,18 +160,52 @@ export class Necromancer {
     // waist instead.
     const facingSign = this.sprite.flipX ? -1 : 1;
     const handX = this.sprite.x + facingSign * NECROMANCER_CONFIG.scale * 100 * 0.22;
-    const handY = this.sprite.y - NECROMANCER_CONFIG.scale * 100 * 0.18;
+    const handY = this.sprite.y - NECROMANCER_CONFIG.scale * 100 * 0.12;
+    const dx = targetX - handX;
+    const dy = targetY - handY;
+    const dist = Math.hypot(dx, dy) || 1;
+    // Perpendicular unit vector, used to jitter the arc's midpoints so it
+    // redraws as a flickering lightning-like bolt instead of one static,
+    // stiff-looking straight line.
+    const nx = -dy / dist;
+    const ny = dx / dist;
+    const segments = 8;
+    const jitterPx = 10;
+
     const beam = this.scene.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
-    beam.lineStyle(4, 0xa855f7, 0.8);
-    beam.lineBetween(handX, handY, targetX, targetY);
-    beam.lineStyle(2, 0xe9d5ff, 0.9);
-    beam.lineBetween(handX, handY, targetX, targetY);
+    const redraw = () => {
+      const points = [{ x: handX, y: handY }];
+      for (let i = 1; i < segments; i++) {
+        const t = i / segments;
+        const jitter = (Math.random() - 0.5) * jitterPx;
+        points.push({ x: handX + dx * t + nx * jitter, y: handY + dy * t + ny * jitter });
+      }
+      points.push({ x: targetX, y: targetY });
+      beam.clear();
+      beam.lineStyle(4, 0xa855f7, 0.8);
+      for (let i = 0; i < points.length - 1; i++) {
+        beam.lineBetween(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+      }
+      beam.lineStyle(2, 0xe9d5ff, 0.9);
+      for (let i = 0; i < points.length - 1; i++) {
+        beam.lineBetween(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+      }
+    };
+    redraw();
+    const flicker = this.scene.time.addEvent({
+      delay: 60,
+      repeat: Math.max(0, Math.ceil(durationMs / 60) - 1),
+      callback: redraw,
+    });
     this.scene.tweens.add({
       targets: beam,
       alpha: 0,
       duration: durationMs,
       ease: 'Sine.easeIn',
-      onComplete: () => beam.destroy(),
+      onComplete: () => {
+        flicker.remove();
+        beam.destroy();
+      },
     });
   }
 
