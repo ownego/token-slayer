@@ -102,7 +102,7 @@ export class Necromancer {
     if (!this.scene.anims.exists(key)) {
       return;
     }
-    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(2.6);
+    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(2.6).setBlendMode(Phaser.BlendModes.ADD);
     circle.play(key);
     circle.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => circle.destroy());
   }

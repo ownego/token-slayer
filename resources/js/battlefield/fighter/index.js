@@ -228,32 +228,44 @@ export class Fighter {
     const summonAnim = entry.ftype?.animations?.summon;
     const summonAnimKey = summonAnim ? `${entry.ftype.key}-summon` : null;
     const finalScale = entry.sprite.scaleX;
-    if (!summonAnimKey) {
-      entry.sprite.setScale(0);
-    }
+    // Hidden immediately, regardless of which reveal path this character
+    // uses below — addFighter() already left it sitting fully visible in
+    // its idle pose, which (for the summon-animation path especially) made
+    // the character appear to pop in well before the Necromancer's own cast
+    // even finished, with the "summon" animation only playing afterward on
+    // something already there.
+    entry.sprite.setAlpha(0);
     const reveal = () => {
       if (!entry.sprite?.active) return;
       this.scene.necromancer?.spawnSummonCircle(entry.pos.x, entry.pos.y);
-      if (summonAnimKey && entry.body) {
-        entry.body.play(summonAnimKey);
-        const durationMs = Math.ceil((summonAnim.frames / summonAnim.rate) * 1000);
-        this.scene.time.delayedCall(durationMs, () => {
-          // A real hit may have landed mid-summon and already be animating
-          // its own attack (handleHit always plays over whatever was
-          // showing) — in that case animState is ATTACK for that real
-          // reason, and its own completion handler owns the transition back.
-          if (!entry.body?.scene || entry.animState === AnimState.ATTACK) return;
-          entry.animState = AnimState.IDLE;
-          entry.body.play(`${entry.ftype.key}-idle`);
-        });
-      } else {
-        this.scene.tweens.add({
-          targets: entry.sprite,
-          scale: finalScale,
-          duration: TIMINGS.fighterJoinMs,
-          ease: 'Back.easeOut',
-        });
-      }
+      // Give the ground circle a moment to visibly form before the
+      // character appears rising out of it, rather than both at once.
+      const CIRCLE_LEAD_MS = 350;
+      this.scene.time.delayedCall(CIRCLE_LEAD_MS, () => {
+        if (!entry.sprite?.active) return;
+        entry.sprite.setAlpha(1);
+        if (summonAnimKey && entry.body) {
+          entry.body.play(summonAnimKey);
+          const durationMs = Math.ceil((summonAnim.frames / summonAnim.rate) * 1000);
+          this.scene.time.delayedCall(durationMs, () => {
+            // A real hit may have landed mid-summon and already be animating
+            // its own attack (handleHit always plays over whatever was
+            // showing) — in that case animState is ATTACK for that real
+            // reason, and its own completion handler owns the transition back.
+            if (!entry.body?.scene || entry.animState === AnimState.ATTACK) return;
+            entry.animState = AnimState.IDLE;
+            entry.body.play(`${entry.ftype.key}-idle`);
+          });
+        } else {
+          entry.sprite.setScale(0);
+          this.scene.tweens.add({
+            targets: entry.sprite,
+            scale: finalScale,
+            duration: TIMINGS.fighterJoinMs,
+            ease: 'Back.easeOut',
+          });
+        }
+      });
     };
     if (this.scene.necromancer) {
       this.scene.necromancer.summon(reveal);
