@@ -11,6 +11,8 @@ export class Necromancer {
     this.scene = scene;
     this.sprite = null;
     this.isSummoning = false;
+    /** @type {Array<Function>} pending onRevealed callbacks, processed one at a time */
+    this.summonQueue = [];
   }
 
   /**
@@ -30,17 +32,14 @@ export class Necromancer {
   }
 
   /**
-   * Plays the Necromancer's Summon animation, then invokes onRevealed so the
-   * caller can fade the newly-joined fighter in. Falls back to calling
-   * onRevealed immediately if the Necromancer sprite isn't available.
-   *
-   * Uses a fixed delayedCall matched to the animation's own frame count/rate
-   * rather than waiting on Phaser's ANIMATION_COMPLETE event: the wander
-   * loop below independently calls .play() on this same sprite on its own
-   * timer, which — if it lands mid-summon — replaces the summon animation
-   * before it completes naturally and ANIMATION_COMPLETE never fires,
-   * leaving onRevealed stuck forever. isSummoning also blocks the wander
-   * loop from firing at all while a summon is in progress.
+   * Requests the Necromancer's Summon animation for a newly-joined fighter,
+   * then invokes onRevealed so the caller can reveal it. Multiple fighters
+   * joining close together are queued and summoned one at a time — the
+   * shared sprite can only play one animation at once, and playing a second
+   * Summon over an in-progress one left Phaser's animation state corrupted
+   * (an uncaught error deep in Phaser's animation start, from a rapid-join
+   * repro). Falls back to calling onRevealed immediately if the Necromancer
+   * sprite isn't available.
    *
    * @param {Function} onRevealed
    * @return {void}
@@ -50,16 +49,42 @@ export class Necromancer {
       onRevealed();
       return;
     }
+    this.summonQueue.push(onRevealed);
+    if (!this.isSummoning) {
+      this._processSummonQueue();
+    }
+  }
+
+  /**
+   * Plays one queued summon to completion via a fixed delayedCall matched to
+   * the animation's own frame count/rate (not Phaser's ANIMATION_COMPLETE
+   * event, which the wander loop's independent .play() calls could
+   * otherwise strand), then recurses onto the next queued job, if any.
+   *
+   * @return {void}
+   */
+  _processSummonQueue() {
+    const onRevealed = this.summonQueue.shift();
+    if (!onRevealed) {
+      this.isSummoning = false;
+      return;
+    }
     this.isSummoning = true;
+    if (!this.sprite?.active) {
+      onRevealed();
+      this._processSummonQueue();
+      return;
+    }
+    this.scene.tweens.killTweensOf(this.sprite);
     this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
     const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
     const durationMs = Math.ceil((summonInfo.count / summonInfo.rate) * 1000);
     this.scene.time.delayedCall(durationMs, () => {
-      this.isSummoning = false;
       if (this.sprite?.active) {
         this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
       }
       onRevealed();
+      this._processSummonQueue();
     });
   }
 
