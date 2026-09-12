@@ -10,7 +10,7 @@ export class BatSwarm {
    */
   constructor(scene) {
     this.scene = scene;
-    /** @type {Map<number, {sprite: Phaser.GameObjects.Sprite|null, alive: boolean, speedFactor?: number}>} */
+    /** @type {Map<number, {sprite: Phaser.GameObjects.Sprite|null, alive: boolean, speedFactor?: number, isReacting?: boolean}>} */
     this.bats = new Map();
     this.maxHp = 1;
     this.autoAttackTimer = null;
@@ -96,17 +96,29 @@ export class BatSwarm {
    * Plays a bat's Hurt reaction after it takes a non-lethal hit: it briefly
    * stops flying in place, then resumes its continuous wander flight.
    *
+   * Uses a fixed delayedCall matched to the Hurt animation's own frame
+   * count/rate rather than Phaser's ANIMATION_COMPLETE event: the
+   * auto-attack loop independently calls .play() on the same sprite on its
+   * own timer, which — if it landed mid-hurt — would replace the animation
+   * before it completes naturally and strand this callback forever.
+   * isReacting also blocks the auto-attack loop from picking this bat while
+   * the reaction is in progress.
+   *
    * @param {{index: number}} target
    * @return {void}
    */
   reactHurt(target) {
     const entry = this.bats.get(target.index);
-    if (!entry?.sprite?.active || !entry.alive) {
+    if (!entry?.sprite?.active || !entry.alive || entry.isReacting) {
       return;
     }
+    entry.isReacting = true;
     this.scene.tweens.killTweensOf(entry.sprite);
     entry.sprite.play(`${BAT_CONFIG.key}-hurt`);
-    entry.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+    const hurtInfo = BAT_CONFIG.animFiles.hurt;
+    const durationMs = Math.ceil((hurtInfo.count / hurtInfo.rate) * 1000);
+    this.scene.time.delayedCall(durationMs, () => {
+      entry.isReacting = false;
       if (entry.sprite?.active && entry.alive) {
         entry.sprite.play(`${BAT_CONFIG.key}-flying`);
         this._flyToNextHop(entry);
@@ -188,24 +200,29 @@ export class BatSwarm {
   }
 
   /**
-   * Schedules the next autonomous bat attack, cycling through the living bats one at a time.
+   * Schedules the next autonomous bat attack, cycling through the living
+   * bats one at a time. Skips any bat currently mid-Hurt-reaction so an
+   * attack never overwrites and strands reactHurt's own completion.
    *
    * @return {void}
    */
   _scheduleAutoAttack() {
     const delay = Phaser.Math.Between(TIMINGS.batAutoAttackMinMs, TIMINGS.batAutoAttackMaxMs);
     this.autoAttackTimer = this.scene.time.delayedCall(delay, () => {
-      const living = [...this.bats.entries()].filter(([, e]) => e.alive).map(([i]) => i);
+      const living = [...this.bats.entries()].filter(([, e]) => e.alive && !e.isReacting).map(([i]) => i);
       if (living.length === 0) {
         this._scheduleAutoAttack();
         return;
       }
       this.attackCycleIndex = (this.attackCycleIndex + 1) % living.length;
       const entry = this.bats.get(living[this.attackCycleIndex]);
-      const animKey = Math.random() < 0.5 ? `${BAT_CONFIG.key}-attack1` : `${BAT_CONFIG.key}-attack2`;
+      const useAttack2 = Math.random() < 0.5;
+      const animKey = useAttack2 ? `${BAT_CONFIG.key}-attack2` : `${BAT_CONFIG.key}-attack1`;
+      const info = useAttack2 ? BAT_CONFIG.animFiles.attack2 : BAT_CONFIG.animFiles.attack1;
       entry.sprite.play(animKey);
-      entry.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-        if (entry.sprite?.active && entry.alive) {
+      const durationMs = Math.ceil((info.count / info.rate) * 1000);
+      this.scene.time.delayedCall(durationMs, () => {
+        if (entry.sprite?.active && entry.alive && !entry.isReacting) {
           entry.sprite.play(`${BAT_CONFIG.key}-flying`);
         }
       });

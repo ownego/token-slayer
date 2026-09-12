@@ -10,6 +10,7 @@ export class Necromancer {
   constructor(scene) {
     this.scene = scene;
     this.sprite = null;
+    this.isSummoning = false;
   }
 
   /**
@@ -33,6 +34,14 @@ export class Necromancer {
    * caller can fade the newly-joined fighter in. Falls back to calling
    * onRevealed immediately if the Necromancer sprite isn't available.
    *
+   * Uses a fixed delayedCall matched to the animation's own frame count/rate
+   * rather than waiting on Phaser's ANIMATION_COMPLETE event: the wander
+   * loop below independently calls .play() on this same sprite on its own
+   * timer, which — if it lands mid-summon — replaces the summon animation
+   * before it completes naturally and ANIMATION_COMPLETE never fires,
+   * leaving onRevealed stuck forever. isSummoning also blocks the wander
+   * loop from firing at all while a summon is in progress.
+   *
    * @param {Function} onRevealed
    * @return {void}
    */
@@ -41,8 +50,12 @@ export class Necromancer {
       onRevealed();
       return;
     }
+    this.isSummoning = true;
     this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
-    this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+    const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
+    const durationMs = Math.ceil((summonInfo.count / summonInfo.rate) * 1000);
+    this.scene.time.delayedCall(durationMs, () => {
+      this.isSummoning = false;
       if (this.sprite?.active) {
         this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
       }
@@ -51,7 +64,9 @@ export class Necromancer {
   }
 
   /**
-   * Schedules the Necromancer's next small wander step within its fixed zone.
+   * Schedules the Necromancer's next small wander step within its fixed
+   * zone. Reschedules without moving while a summon is in progress, so it
+   * never interrupts the summon animation on the shared sprite.
    *
    * @return {void}
    */
@@ -60,6 +75,10 @@ export class Necromancer {
     const delay = Phaser.Math.Between(TIMINGS.batWanderMinMs, TIMINGS.batWanderMaxMs);
     this.scene.time.delayedCall(delay, () => {
       if (!this.sprite?.active) {
+        return;
+      }
+      if (this.isSummoning) {
+        this._scheduleWander();
         return;
       }
       const point = randomWanderPoint({
@@ -77,7 +96,7 @@ export class Necromancer {
         duration: 1200,
         ease: 'Sine.easeInOut',
         onComplete: () => {
-          if (this.sprite?.active) {
+          if (this.sprite?.active && !this.isSummoning) {
             this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
           }
           this._scheduleWander();
