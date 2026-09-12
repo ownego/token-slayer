@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BOSS_TYPES, FIGHTER_TYPES } from '@battlefield/config.js';
+import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, NECROMANCER_CONFIG } from '@battlefield/config.js';
 
 const publicFile = (urlPath) => join(process.cwd(), 'public', urlPath.split('?')[0]);
 
@@ -49,6 +49,7 @@ describe('FIGHTER_TYPES', () => {
       'soldier', 'knight', 'swordsman', 'axeman', 'orc',
       'armored-orc', 'elite-orc', 'skeleton', 'armored-skeleton', 'slime',
       'archer', 'werewolf', 'werebear', 'orc-rider', 'greatsword-skeleton',
+      'knight-templar', 'lancer', 'wizard', 'priest', 'skeleton-archer',
     ]);
   });
 
@@ -149,5 +150,41 @@ describe('BOSS_TYPES', () => {
         expect(b.idleEnd, `${b.key}: idleEnd ${b.idleEnd} outside sheet (${totalFrames} frames)`).toBeLessThan(totalFrames);
       }
     }
+  });
+});
+
+describe('companion configs (Bat, Necromancer)', () => {
+  test.each([
+    ['BAT_CONFIG', BAT_CONFIG],
+    ['NECROMANCER_CONFIG', NECROMANCER_CONFIG],
+  ])('%s every animFiles strip exists on disk with a valid frame grid', (name, cfg) => {
+    for (const [anim, info] of Object.entries(cfg.animFiles)) {
+      const path = publicFile(info.file);
+      expect(existsSync(path), `${name}.${anim}: ${info.file}`).toBe(true);
+      const { width, height } = pngSize(path);
+      expect(width % info.frameWidth, `${name}.${anim} width`).toBe(0);
+      expect(height % info.frameHeight, `${name}.${anim} height`).toBe(0);
+      const total = (width / info.frameWidth) * (height / info.frameHeight);
+      expect(info.count, `${name}.${anim} count exceeds sheet total ${total}`).toBeLessThanOrEqual(total);
+    }
+  });
+
+  test('BAT_CONFIG has 5 bats and a flying loop', () => {
+    expect(BAT_CONFIG.count).toBe(5);
+    expect(BAT_CONFIG.animFiles.flying.loop).toBe(true);
+  });
+
+  test('NECROMANCER_CONFIG has looping idle and walk', () => {
+    expect(NECROMANCER_CONFIG.animFiles.idle.loop).toBe(true);
+    expect(NECROMANCER_CONFIG.animFiles.walk.loop).toBe(true);
+  });
+});
+
+describe('LAYOUTS companion zones', () => {
+  test.each(['landscape', 'portrait'])('%s has a bats wander zone and a necromancer anchor', (mode) => {
+    expect(LAYOUTS[mode].bats.radiusX).toBeGreaterThan(0);
+    expect(LAYOUTS[mode].bats.radiusY).toBeGreaterThan(0);
+    expect(LAYOUTS[mode].necromancer.anchor.x).toBeGreaterThan(0);
+    expect(LAYOUTS[mode].necromancer.anchor.y).toBeGreaterThan(0);
   });
 });

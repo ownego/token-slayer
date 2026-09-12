@@ -10,7 +10,7 @@ import { restScale, slashBurst } from './fx.js';
  * @param {{ isKillShot: boolean, damage: number, maxHp: number, onImpact: Function|null, onEffect: Function|null }} opts
  * @return {void}
  */
-export function shuriken(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect }) {
+export function shuriken(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect, target }) {
   const sc         = fighter.sprite.scaleX;
   const fx         = fighter.pos.x;
   const fy         = fighter.pos.y;
@@ -81,7 +81,7 @@ export function shuriken(scene, fighter, { isKillShot, damage, maxHp, onImpact, 
         rotation: towardBoss * 0.08, duration: isKillShot ? 62 : 46, ease: 'Power3.easeIn',
       });
 
-      scene.projectile.spawn(dashX, impactY, AttackType.SHURIKEN, damage, maxHp, onImpact, fighter.sprite.scaleX);
+      scene.projectile.spawn(dashX, impactY, AttackType.SHURIKEN, damage, maxHp, onImpact, fighter.sprite.scaleX, target);
 
       const rest = restScale(fighter);
       scene.tweens.add({

@@ -10,7 +10,7 @@ import { restScale, swingArc, slashBurst } from './fx.js';
  * @param {{ isKillShot: boolean, damage: number, maxHp: number, onImpact: Function|null, onEffect: Function|null }} opts
  * @return {void}
  */
-export function blade(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect }) {
+export function blade(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect, target }) {
   const sc         = fighter.sprite.scaleX;
   const fx         = fighter.pos.x;
   const fy         = fighter.pos.y;
@@ -85,7 +85,7 @@ export function blade(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
         rotation: towardBoss * 0.12, duration: isKillShot ? 70 : 52, ease: 'Power3.easeIn',
       });
 
-      scene.projectile.spawn(strikeX, strikeY, AttackType.BLADE, damage, maxHp, onImpact, fighter.sprite.scaleX);
+      scene.projectile.spawn(strikeX, strikeY, AttackType.BLADE, damage, maxHp, onImpact, fighter.sprite.scaleX, target);
 
       const retGhosts = isKillShot ? 2 : 1;
       for (let i = 0; i < retGhosts; i++) {

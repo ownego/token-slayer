@@ -141,8 +141,13 @@ export class Fighter {
   seedInitial(state) {
     const L = this.scene.layout;
     const config = fighterDisplayConfig(state.fighters.length, this.scene.mode);
+    // Grid slots are only for fighters without a saved custom position —
+    // sizing this array against the total fighter count and consuming one
+    // slot per fighter regardless left the grid ones scattered across gaps
+    // sized for slots the custom-positioned fighters were never going to use.
+    const gridFighterCount = state.fighters.filter(f => !f.position).length;
     const autoPositions = computeFighterPositions(
-      state.fighters.length,
+      gridFighterCount,
       L.fighters.rowXRange,
       config.topY,
       config.perRow,
@@ -150,14 +155,25 @@ export class Fighter {
     );
     const bossType = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
     const damageByUser = new Map(state.damageTotals ?? []);
-    state.fighters.forEach((f, i) => {
+    let gridIdx = 0;
+    state.fighters.forEach((f) => {
       const damageScale = damageScaleMultiplier(damageByUser.get(f.id) ?? 0, this.scene.bossState?.maxHp);
       const ctx = {
         layout: L,
         bossType,
         fsize: config.displaySize * damageScale,
       };
-      const { pos, isCustom } = resolveFighterPlacement(f.position, autoPositions[i], ctx);
+      // Peeked, not yet consumed — a fighter whose saved position turns out
+      // invalid (resolveFighterPlacement falls back to grid) still needs a
+      // slot despite being excluded from gridFighterCount above; the bounds
+      // fallback covers that rare overflow.
+      const gridPos = autoPositions[gridIdx]
+        ?? autoPositions[autoPositions.length - 1]
+        ?? { x: L.logicalWidth / 2, y: config.topY };
+      const { pos, isCustom } = resolveFighterPlacement(f.position, gridPos, ctx);
+      if (!isCustom) {
+        gridIdx++;
+      }
       this.addFighter(f, pos, config);
       if (isCustom) {
         this.scene.fighters.get(f.id).hasCustomPosition = true;
@@ -193,8 +209,13 @@ export class Fighter {
 
     const count = this.scene.fighters.size + 1;
     const config = fighterDisplayConfig(count, this.scene.mode);
+    // Only fighters without a custom position occupy a grid slot — see
+    // relayoutFighters() for why sizing this array against the total count
+    // (including custom-positioned fighters) leaves the grid ones scattered
+    // across gaps sized for slots that were never going to be used.
+    const gridFighterCount = [...this.scene.fighters.values()].filter(e => !e.hasCustomPosition).length + 1;
     const positions = computeFighterPositions(
-      count,
+      gridFighterCount,
       this.scene.layout.fighters.rowXRange,
       config.topY,
       config.perRow,
@@ -221,14 +242,89 @@ export class Fighter {
     entry.hasCustomPosition = isCustom;
     this.relayoutFighters();
 
+    // Every character rises in via a Summon animation instead of a generic
+    // scale pop. The four skeleton variants ship their own dedicated Summon
+    // art (per the asset pack's own summon-in-tandem design); everyone else
+    // gets one fighter/animations.js derives from their own Death strip
+    // played in reverse — both already depict emerging from the ground, so
+    // no separate pop tween is needed.
+    const summonAnim = entry.ftype?.animations?.summon ?? entry.ftype?.animations?.death;
+    const summonAnimKey = summonAnim && entry.ftype ? `${entry.ftype.key}-summon` : null;
     const finalScale = entry.sprite.scaleX;
-    entry.sprite.setScale(0);
-    this.scene.tweens.add({
-      targets: entry.sprite,
-      scale: finalScale,
-      duration: TIMINGS.fighterJoinMs,
-      ease: 'Back.easeOut',
-    });
+    // Hidden immediately, regardless of which reveal path this character
+    // uses below — addFighter() already left it sitting fully visible in
+    // its idle pose, which (for the summon-animation path especially) made
+    // the character appear to pop in well before the Necromancer's own cast
+    // even finished, with the "summon" animation only playing afterward on
+    // something already there.
+    entry.sprite.setAlpha(0);
+    const reveal = () => {
+      if (!entry.sprite?.active) return;
+      this.scene.necromancer?.spawnSummonCircle(entry.pos.x, entry.pos.y);
+      // Give the ground circle a moment to visibly form before the
+      // character appears rising out of it, rather than both at once.
+      const CIRCLE_LEAD_MS = 150;
+      this.scene.time.delayedCall(CIRCLE_LEAD_MS, () => {
+        if (!entry.sprite?.active) return;
+        entry.sprite.setAlpha(1);
+        // Golden glow around the character's own silhouette while it rises —
+        // the same gold (#fbbf24) the flair ring already uses elsewhere in
+        // this game, faded in as it appears and back out once revealed.
+        const glow = entry.body?.preFX?.addGlow(0xfbbf24, 0, 0, false, 0.15, 20);
+        if (glow) {
+          this.scene.tweens.add({ targets: glow, outerStrength: 3, duration: 220, ease: 'Quad.easeOut' });
+        }
+        const clearGlow = () => {
+          if (!glow) return;
+          this.scene.tweens.add({
+            targets: glow,
+            outerStrength: 0,
+            duration: 260,
+            ease: 'Quad.easeIn',
+            onComplete: () => entry.body?.preFX?.remove(glow),
+          });
+        };
+        if (summonAnimKey && entry.body) {
+          entry.body.play(summonAnimKey);
+          const durationMs = Math.ceil((summonAnim.frames / summonAnim.rate) * 1000);
+          this.scene.time.delayedCall(durationMs, () => {
+            clearGlow();
+            // A real hit may have landed mid-summon and already be animating
+            // its own attack (handleHit always plays over whatever was
+            // showing) — in that case animState is ATTACK for that real
+            // reason, and its own completion handler owns the transition back.
+            if (!entry.body?.scene || entry.animState === AnimState.ATTACK) return;
+            entry.animState = AnimState.IDLE;
+            entry.body.play(`${entry.ftype.key}-idle`);
+          });
+        } else {
+          // Characters without their own Summon rise animation still rise —
+          // pop in from below their final spot rather than growing in place,
+          // so every character type reads as emerging from the circle.
+          const finalY = entry.sprite.y;
+          const riseOffset = entry.displaySize * 0.6;
+          entry.sprite.setScale(0);
+          entry.sprite.y = finalY + riseOffset;
+          this.scene.tweens.add({
+            targets: entry.sprite,
+            scale: finalScale,
+            y: finalY,
+            duration: TIMINGS.fighterJoinMs,
+            ease: 'Back.easeOut',
+            onComplete: clearGlow,
+          });
+        }
+      });
+    };
+    if (this.scene.necromancer) {
+      // A getter, not a captured (x, y) snapshot: a fighter queued behind
+      // another can have relayoutFighters() (triggered by a later fighter
+      // joining) move its grid slot before the Necromancer gets to it, and
+      // entry.pos always reflects wherever it will actually rise.
+      this.scene.necromancer.summon(() => entry.pos, reveal);
+    } else {
+      reveal();
+    }
   }
 
   /**
@@ -1055,8 +1151,14 @@ export class Fighter {
       return;
     }
     const config = fighterDisplayConfig(count, this.scene.mode);
+    // Grid slots are only for fighters without a custom (persisted or
+    // click-to-moved) position — sizing a `count`-length grid and then
+    // skipping some of it for custom-positioned fighters left the grid ones
+    // scattered across gaps sized for fighters that were never going to sit
+    // in them.
+    const gridFighterCount = [...this.scene.fighters.values()].filter(e => !e.hasCustomPosition).length;
     const positions = computeFighterPositions(
-      count,
+      gridFighterCount,
       this.scene.layout.fighters.rowXRange,
       config.topY,
       config.perRow,
@@ -1065,7 +1167,7 @@ export class Fighter {
 
     let i = 0;
     for (const [userId, entry] of this.scene.fighters.entries()) {
-      const gridTarget = positions[i++];
+      const gridTarget = entry.hasCustomPosition ? null : positions[i++];
       const target = entry.hasCustomPosition ? entry.pos : gridTarget;
       const newSize = config.displaySize;
       const sizeChanged = newSize !== entry.displaySize;
@@ -1228,6 +1330,16 @@ export class Fighter {
         fighter.body.play(`${key}-${next}`);
       });
     }
+    // A dedicated, always-synchronous HP tracker: `this.scene.bossState.currentHp`
+    // is only mutated inside impact.apply(), which fires after this hit's
+    // attack-animation delay — reading it here would race a second HitDealt
+    // that arrives before the first hit's impact has landed. lastKnownBossHp
+    // is updated the instant each HitDealt is handled, so hpBefore is always
+    // accurate regardless of animation timing.
+    const hpBefore = this.scene.lastKnownBossHp ?? this.scene.bossState?.currentHp ?? payload.boss_hp_after;
+    const hitTarget = this.scene.batSwarm?.resolveHitTarget(payload.damage, hpBefore, payload.boss_hp_after) ?? null;
+    this.scene.lastKnownBossHp = payload.boss_hp_after;
+
     const isKillShot = (payload.boss_hp_after ?? 1) <= 0;
     if (payload.damage > 0 && fighter) {
       const prev = this.scene.damageTotals.get(payload.user_id) ?? 0;
@@ -1241,12 +1353,18 @@ export class Fighter {
     }
     const onImpact = () => {
       this.scene.leaderboard?.onHit(payload.user_id, payload.damage, payload.slack_handle);
-      this.scene.impact.apply(payload.boss_hp_after);
+      this.scene.impact.apply(payload.boss_hp_after, hitTarget);
       if (this.scene.hoveredUserId === payload.user_id) {
         this.scene.bubble?.showFighterTooltip?.(payload.user_id);
       }
       if (!isKillShot) {
-        this.scene.time.delayedCall(90, () => this.scene.boss?.playBossReact?.());
+        this.scene.time.delayedCall(90, () => {
+          if (hitTarget) {
+            this.scene.batSwarm?.reactHurt(hitTarget);
+          } else {
+            this.scene.boss?.playBossReact?.();
+          }
+        });
       }
     };
     if (fighter) {
@@ -1268,6 +1386,7 @@ export class Fighter {
         maxHp: this.scene.bossState?.maxHp ?? 1,
         onImpact,
         onEffect,
+        target: hitTarget,
       });
     } else {
       this.scene.time.delayedCall(TIMINGS.projectileArcMs, onImpact);

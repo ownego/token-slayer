@@ -1,6 +1,15 @@
 import Phaser from 'phaser';
-import { AttackType } from '@battlefield/constants.js';
+import { AttackType, TextureKey } from '@battlefield/constants.js';
 import { restScale, slashBurst } from './fx.js';
+import { isHealRoll } from './priest-heal.js';
+
+// Priest's own dedicated heal-effect strip (config/fighters.js's
+// animations.heal, registered generically off that same config) played big
+// on the Necromancer for the odd-damage flourish.
+const PRIEST_HEAL_SCALE = 3.2;
+const PRIEST_HEAL_FRAMES = 4;
+const PRIEST_HEAL_RATE = 5;
+const PRIEST_HEAL_EFFECT_MS = Math.ceil((PRIEST_HEAL_FRAMES / PRIEST_HEAL_RATE) * 1000);
 
 /**
  * Redhat — magic circle → beam.
@@ -10,14 +19,21 @@ import { restScale, slashBurst } from './fx.js';
  * @param {{ isKillShot: boolean, damage: number, maxHp: number, onImpact: Function|null, onEffect: Function|null }} opts
  * @return {void}
  */
-export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect }) {
+export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect, target }) {
   const sc          = fighter.sprite.scaleX;
   const fx          = fighter.pos.x;
   const fy          = fighter.pos.y;
-  const towardBoss  = fx <= scene.layout.boss.anchor.x ? 1 : -1;
+  const bossX       = scene.layout.boss.anchor.x;
+  const bossY       = scene.layout.boss.anchor.y;
+  const towardBoss  = fx <= bossX ? 1 : -1;
   const ds          = fighter.displaySize;
   const circleX     = fx + towardBoss * ds * 0.48;
   const circleY     = fy - ds * 0.08;
+  // Where the spell actually lands — same "just past the boss" offset
+  // blade.js's dash-strike uses — not the casting circle beside the caster,
+  // which is only where the spell is drawn FROM.
+  const strikeX     = bossX + towardBoss * ds * 0.25;
+  const strikeY     = bossY;
   const r           = ds * (isKillShot ? 0.52 : 0.36);
   const chargeDur   = isKillShot ? 210 : 150;
 
@@ -60,14 +76,34 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   scene.tweens.add({ targets: g, alpha: isKillShot ? 0.95 : 0.82, duration: chargeDur, ease: 'Power2.easeOut' });
   scene.tweens.add({ targets: g, rotation: towardBoss * Math.PI * 2, duration: isKillShot ? 560 : 400, ease: 'Linear' });
 
+  const necromancer = scene.necromancer;
+  const isPriestHeal = fighter.ftype?.key === 'priest' && isHealRoll(damage) && necromancer?.sprite?.active;
+
   scene.time.delayedCall(chargeDur + 15, () => {
-    onEffect?.(fighter.pos.x, fighter.pos.y);
-    slashBurst(scene, fighter, circleX, circleY, {
+    // Priest's own coin-flip flourish: odd damage skips Priest's own
+    // beam/projectile at the boss entirely — the Necromancer's bolt (fired
+    // once the heal effect finishes) stands in for the hit landing instead,
+    // and carries onImpact so the real damage/HP-bar update still happens.
+    if (isPriestHeal) {
+      // Grounds the heal in place with the same magic-circle art the
+      // Necromancer's home platform and fighter-summon circles already use
+      // — it can be off wandering anywhere in its zone when this fires, not
+      // necessarily standing on its home platform's circle.
+      necromancer.spawnSummonCircle(necromancer.sprite.x, necromancer.sprite.y);
+      const healFx = scene.add.sprite(necromancer.sprite.x, necromancer.sprite.y, TextureKey.FIGHTERS, 'priest-heal-0')
+        .setScale(PRIEST_HEAL_SCALE)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(3)
+        .play('priest-heal');
+      healFx.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => healFx.destroy());
+      scene.time.delayedCall(PRIEST_HEAL_EFFECT_MS, () => necromancer.receiveHealAndBoltBoss(onImpact));
+      return;
+    }
+    onEffect?.(strikeX, strikeY);
+    slashBurst(scene, fighter, strikeX, strikeY, {
       isKillShot, tints: [0x7c3aed, 0xa855f7, 0x22d3ee, 0xc026d3, 0xffffff],
     });
 
-    const bossX = scene.layout.boss.anchor.x;
-    const bossY = scene.layout.boss.anchor.y;
     const beamG = scene.add.graphics().setDepth(3).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.9);
     beamG.lineStyle(isKillShot ? 10 : 6, 0x7c3aed, 0.45);
     beamG.lineBetween(circleX, circleY, bossX, bossY);
@@ -80,7 +116,7 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
       onComplete: () => beamG.destroy(),
     });
 
-    scene.projectile.spawn(circleX, circleY, AttackType.BLAST, damage, maxHp, onImpact, fighter.sprite.scaleX);
+    scene.projectile.spawn(circleX, circleY, AttackType.BLAST, damage, maxHp, onImpact, fighter.sprite.scaleX, target);
   });
 
   scene.time.delayedCall(chargeDur + 55, () => {

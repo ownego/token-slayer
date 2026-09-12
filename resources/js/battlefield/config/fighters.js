@@ -112,6 +112,7 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 8, rate: 10 },
       attack: { frames: 6, rate: 12 },
       death:  { frames: 4, rate: 6  },
+      summon: { frames: 5, rate: 6  },
     },
     attacks: [
       { frames: 6, rate: 12, effectFrames: 6 },
@@ -125,6 +126,7 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 8, rate: 10 },
       attack: { frames: 8, rate: 12 },
       death:  { frames: 4, rate: 6  },
+      summon: { frames: 5, rate: 6  },
     },
     attacks: [
       { frames: 8, rate: 12, effectFrames: 8 },
@@ -205,11 +207,82 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 9, rate: 10 },
       attack: { frames: 9, rate: 12 },
       death:  { frames: 4, rate: 6  },
+      summon: { frames: 5, rate: 6  },
     },
     attacks: [
       { frames: 9,  rate: 12, effectFrames: 9  },
       { frames: 12, rate: 12, effectFrames: 12 },
       { frames: 8,  rate: 12, effectFrames: 8  },
+    ],
+  },
+  {
+    key: 'knight-templar', attackType: AttackType.BLADE, chargeColors: FIRE_CHARGE,
+    animations: {
+      idle:   { frames: 6, rate: 8  },
+      walk:   { frames: 8, rate: 10 },
+      attack: { frames: 7, rate: 12 },
+      death:  { frames: 4, rate: 6  },
+    },
+    attacks: [
+      { frames: 7,  rate: 12 },
+      { frames: 8,  rate: 12 },
+      { frames: 11, rate: 12 },
+    ],
+  },
+  {
+    key: 'lancer', attackType: AttackType.BLADE, chargeColors: FIRE_CHARGE,
+    animations: {
+      idle:   { frames: 6, rate: 8  },
+      walk:   { frames: 8, rate: 10 },
+      attack: { frames: 6, rate: 12 },
+      death:  { frames: 4, rate: 6  },
+    },
+    attacks: [
+      { frames: 6, rate: 12 },
+      { frames: 9, rate: 12 },
+      { frames: 8, rate: 12 },
+    ],
+  },
+  {
+    key: 'wizard', attackType: AttackType.BLAST, chargeColors: PURPLE_CHARGE,
+    animations: {
+      idle:   { frames: 6, rate: 8  },
+      walk:   { frames: 8, rate: 10 },
+      attack: { frames: 6, rate: 12 },
+      death:  { frames: 4, rate: 6  },
+    },
+    attacks: [
+      { frames: 6, rate: 12, effectFrames: 10 },
+      { frames: 9, rate: 12, effectFrames: 7  },
+    ],
+  },
+  {
+    key: 'priest', attackType: AttackType.BLAST, chargeColors: PURPLE_CHARGE,
+    animations: {
+      idle:   { frames: 6, rate: 8  },
+      walk:   { frames: 8, rate: 10 },
+      attack: { frames: 9, rate: 12 },
+      death:  { frames: 4, rate: 6  },
+      // The asset pack's own dedicated heal-effect strip (Magic(projectile)/
+      // Priest_Heal_effect.png) — played on the Necromancer, not Priest
+      // itself, for the odd-damage heal roll (attacks/blast.js).
+      heal:   { frames: 4, rate: 5  },
+    },
+    attacks: [
+      { frames: 9, rate: 12, effectFrames: 5 },
+    ],
+  },
+  {
+    key: 'skeleton-archer', attackType: AttackType.ARROW, chargeColors: BLUE_CHARGE,
+    animations: {
+      idle:   { frames: 6, rate: 8  },
+      walk:   { frames: 8, rate: 10 },
+      attack: { frames: 9, rate: 12 },
+      death:  { frames: 4, rate: 6  },
+      summon: { frames: 5, rate: 6  },
+    },
+    attacks: [
+      { frames: 9, rate: 12 },
     ],
   },
 ];

@@ -3,7 +3,7 @@ import { TIMINGS } from '@battlefield/config.js';
 import { AttackType, TextureKey } from '@battlefield/constants.js';
 import { ensureSlashTexture, ensureShurikenTexture, ensureArrowTexture, ensureBladeTexture } from './projectile-textures.js';
 
-/** Spawns typed projectiles from a fighter position toward the boss. */
+/** Spawns typed projectiles from a fighter position toward the boss (or a redirected bat target). */
 export class Projectile {
   /**
    * @param {Phaser.Scene} scene
@@ -13,7 +13,8 @@ export class Projectile {
   }
 
   /**
-   * Spawns a projectile of the given type flying toward the boss.
+   * Spawns a projectile of the given type flying toward the boss, or toward
+   * `target` when the bat swarm has redirected this hit onto a bat.
    *
    * @param {number} fromX
    * @param {number} fromY
@@ -22,15 +23,16 @@ export class Projectile {
    * @param {number} maxHp
    * @param {Function|null} onImpact
    * @param {number} dmgScale
+   * @param {{x: number, y: number}|null} [target=null]
    * @return {void}
    */
-  spawn(fromX, fromY, type, damage, maxHp, onImpact, dmgScale = 1) {
+  spawn(fromX, fromY, type, damage, maxHp, onImpact, dmgScale = 1, target = null) {
     switch (type) {
-      case AttackType.SLASH:    return this._spawnSlash(fromX, fromY, dmgScale, onImpact);
-      case AttackType.SHURIKEN: return this._spawnShuriken(fromX, fromY, dmgScale, onImpact);
-      case AttackType.ARROW:    return this._spawnArrow(fromX, fromY, dmgScale, onImpact);
-      case AttackType.BLADE:    return this._spawnBlade(fromX, fromY, dmgScale, onImpact);
-      default:         return this._spawnBlast(fromX, fromY, dmgScale, onImpact);
+      case AttackType.SLASH:    return this._spawnSlash(fromX, fromY, dmgScale, onImpact, target);
+      case AttackType.SHURIKEN: return this._spawnShuriken(fromX, fromY, dmgScale, onImpact, target);
+      case AttackType.ARROW:    return this._spawnArrow(fromX, fromY, dmgScale, onImpact, target);
+      case AttackType.BLADE:    return this._spawnBlade(fromX, fromY, dmgScale, onImpact, target);
+      default:         return this._spawnBlast(fromX, fromY, dmgScale, onImpact, target);
     }
   }
 
@@ -43,12 +45,13 @@ export class Projectile {
    * @param {number} fromY
    * @param {number} dmgScale
    * @param {Function|null} onImpact
+   * @param {{x: number, y: number}|null} target
    * @return {void}
    */
-  _spawnSlash(fromX, fromY, dmgScale, onImpact) {
+  _spawnSlash(fromX, fromY, dmgScale, onImpact, target) {
     ensureSlashTexture(this.scene);
-    const toX     = this.scene.layout.boss.anchor.x;
-    const toY     = this.scene.layout.boss.anchor.y;
+    const toX     = target?.x ?? this.scene.layout.boss.anchor.x;
+    const toY     = target?.y ?? this.scene.layout.boss.anchor.y;
     const sc      = dmgScale * 2.0;
     const lift    = 60;
     const dur     = TIMINGS.projectileArcMs * 0.7;
@@ -96,9 +99,10 @@ export class Projectile {
    * @param {number} fromY
    * @param {number} dmgScale
    * @param {Function|null} onImpact
+   * @param {{x: number, y: number}|null} target
    * @return {void}
    */
-  _spawnBlast(fromX, fromY, dmgScale, onImpact) {
+  _spawnBlast(fromX, fromY, dmgScale, onImpact, target) {
     const sprite = this.scene.add.sprite(fromX, fromY, TextureKey.FIREBALL).setScale(4).setTint(0xc026d3).setDepth(10);
     if (!this.scene.anims.exists('fireball-loop')) {
       this.scene.anims.create({
@@ -110,8 +114,8 @@ export class Projectile {
     }
     sprite.play('fireball-loop');
     const lift  = 55;
-    const toX   = this.scene.layout.boss.anchor.x;
-    const toY   = this.scene.layout.boss.anchor.y;
+    const toX   = target?.x ?? this.scene.layout.boss.anchor.x;
+    const toY   = target?.y ?? this.scene.layout.boss.anchor.y;
     const trail = this.scene.add.particles(fromX, fromY, TextureKey.SPARK, {
       tint:      { onEmit: () => Phaser.Math.RND.pick([0xc026d3, 0x7c3aed, 0xe879f9, 0xfb923c, 0xffffff]) },
       scale:     { start: 2.8, end: 0 },
@@ -150,12 +154,13 @@ export class Projectile {
    * @param {number} fromY
    * @param {number} dmgScale
    * @param {Function|null} onImpact
+   * @param {{x: number, y: number}|null} target
    * @return {void}
    */
-  _spawnShuriken(fromX, fromY, dmgScale, onImpact) {
+  _spawnShuriken(fromX, fromY, dmgScale, onImpact, target) {
     ensureShurikenTexture(this.scene);
-    const toX   = this.scene.layout.boss.anchor.x;
-    const toY   = this.scene.layout.boss.anchor.y;
+    const toX   = target?.x ?? this.scene.layout.boss.anchor.x;
+    const toY   = target?.y ?? this.scene.layout.boss.anchor.y;
     const sc    = dmgScale * 1.8;
     const lift  = 40;
     const dur   = TIMINGS.projectileArcMs * 0.6;
@@ -200,12 +205,13 @@ export class Projectile {
    * @param {number} fromY
    * @param {number} dmgScale
    * @param {Function|null} onImpact
+   * @param {{x: number, y: number}|null} target
    * @return {void}
    */
-  _spawnArrow(fromX, fromY, dmgScale, onImpact) {
+  _spawnArrow(fromX, fromY, dmgScale, onImpact, target) {
     ensureArrowTexture(this.scene);
-    const toX     = this.scene.layout.boss.anchor.x;
-    const toY     = this.scene.layout.boss.anchor.y;
+    const toX     = target?.x ?? this.scene.layout.boss.anchor.x;
+    const toY     = target?.y ?? this.scene.layout.boss.anchor.y;
     const sc      = dmgScale * 2.0;
     const lift    = 80;
     const dur     = TIMINGS.projectileArcMs * 0.65;
@@ -253,12 +259,13 @@ export class Projectile {
    * @param {number} fromY
    * @param {number} dmgScale
    * @param {Function|null} onImpact
+   * @param {{x: number, y: number}|null} target
    * @return {void}
    */
-  _spawnBlade(fromX, fromY, dmgScale, onImpact) {
+  _spawnBlade(fromX, fromY, dmgScale, onImpact, target) {
     ensureBladeTexture(this.scene);
-    const toX     = this.scene.layout.boss.anchor.x;
-    const toY     = this.scene.layout.boss.anchor.y;
+    const toX     = target?.x ?? this.scene.layout.boss.anchor.x;
+    const toY     = target?.y ?? this.scene.layout.boss.anchor.y;
     const sc      = dmgScale * 1.4;
     const lift    = 36;
     const dur     = TIMINGS.projectileArcMs * 0.65;

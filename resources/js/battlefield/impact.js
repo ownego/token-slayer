@@ -3,7 +3,7 @@ import { TextureKey } from '@battlefield/constants.js';
 import { formatHp } from '@battlefield/format.js';
 import { Boss } from '@battlefield/boss.js';
 
-/** Handles hit-impact visuals: explosion, boss flinch, camera shake, damage popup, HP bar tween. */
+/** Handles hit-impact visuals: explosion, boss/bat flinch, camera shake, damage popup, HP bar tween. */
 export class Impact {
   /**
    * @param {Phaser.Scene} scene
@@ -16,11 +16,18 @@ export class Impact {
    * Triggers all hit-impact visuals for a boss HP change.
    *
    * @param {number} hpAfter
+   * @param {{sprite: Phaser.GameObjects.Sprite, x: number, y: number}|null} [target=null]
+   *   When present, the hit visually landed on this entity (a bat) instead
+   *   of the boss — the explosion/flinch/tint render there instead, and the
+   *   boss itself is left untouched. The HP bar always still reflects the
+   *   real boss HP regardless.
    * @return {void}
    */
-  apply(hpAfter) {
+  apply(hpAfter, target = null) {
     const bossAnchor = this.scene.layout.boss.anchor;
     const hpBar = this.scene.layout.hpBar;
+    const impactX = target?.x ?? bossAnchor.x;
+    const impactY = target?.y ?? bossAnchor.y;
 
     if (!this.scene.anims.exists('explosion-once')) {
       this.scene.anims.create({
@@ -30,23 +37,25 @@ export class Impact {
       });
     }
     const burst = this.scene.add
-      .sprite(bossAnchor.x, bossAnchor.y, TextureKey.EXPLOSION)
-      .setScale(4);
+      .sprite(impactX, impactY, TextureKey.EXPLOSION)
+      .setScale(target ? 2 : 4);
     burst.play('explosion-once').once('animationcomplete', () => burst.destroy());
 
-    const boss = this.scene.bossSprite;
-    const baseScaleX = boss.scaleX;
-    const baseScaleY = boss.scaleY;
-    this.scene.tweens.add({
-      targets: boss,
-      scaleX: baseScaleX * 1.1,
-      scaleY: baseScaleY * 0.9,
-      duration: TIMINGS.flinchMs / 2,
-      yoyo: true,
-      ease: 'Quad.easeOut',
-    });
-    boss.setTint(0xffffff);
-    this.scene.time.delayedCall(80, () => boss.clearTint());
+    if (!target) {
+      const boss = this.scene.bossSprite;
+      const baseScaleX = boss.scaleX;
+      const baseScaleY = boss.scaleY;
+      this.scene.tweens.add({
+        targets: boss,
+        scaleX: baseScaleX * 1.1,
+        scaleY: baseScaleY * 0.9,
+        duration: TIMINGS.flinchMs / 2,
+        yoyo: true,
+        ease: 'Quad.easeOut',
+      });
+      boss.setTint(0xffffff);
+      this.scene.time.delayedCall(80, () => boss.clearTint());
+    }
 
     this.scene.cameras.main.shake(
       TIMINGS.cameraShake.duration,
@@ -55,7 +64,7 @@ export class Impact {
 
     const damage = Math.max(0, this.scene.bossState.currentHp - hpAfter);
     if (damage > 0) {
-      this._spawnDamagePopup(damage);
+      this._spawnDamagePopup(damage, impactX, impactY);
     }
 
     const max = this.scene.bossState.maxHp;
@@ -75,16 +84,17 @@ export class Impact {
   }
 
   /**
-   * Spawns a floating damage number above the boss.
+   * Spawns a floating damage number above the given point.
    *
    * @param {number} damage
+   * @param {number} x
+   * @param {number} y
    * @return {void}
    */
-  _spawnDamagePopup(damage) {
-    const bossAnchor = this.scene.layout.boss.anchor;
+  _spawnDamagePopup(damage, x, y) {
     const jitter = (Math.random() - 0.5) * 60;
-    const startX = bossAnchor.x + jitter;
-    const startY = bossAnchor.y - 40;
+    const startX = x + jitter;
+    const startY = y - 40;
     const popup = this.scene.addSharpText(startX, startY, `-${damage.toLocaleString()}`, {
       fontFamily: 'monospace',
       fontSize: '20px',

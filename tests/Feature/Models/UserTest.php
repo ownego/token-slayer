@@ -45,14 +45,14 @@ test('characterForBoss assigns a fighter deterministically from user and boss id
         ->and($user->characterForBoss(7))->toBe($expected->value);
 });
 
-test('characterForBoss rotates through all fifteen fighters across consecutive bosses', function () {
+test('characterForBoss rotates through all twenty fighters across consecutive bosses', function () {
     $user = User::factory()->create();
 
-    $characters = collect(range(0, 14))
+    $characters = collect(range(0, 19))
         ->map(fn (int $bossId) => $user->characterForBoss($bossId))
         ->unique();
 
-    expect($characters)->toHaveCount(15);
+    expect($characters)->toHaveCount(20);
 });
 
 test('characterForBoss returns the equipped character when one is set, ignoring the boss id', function () {

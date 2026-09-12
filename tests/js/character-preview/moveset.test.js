@@ -8,18 +8,18 @@ describe('buildMoveset', () => {
     expect(buildMoveset('not-a-real-character')).toBeNull();
   });
 
-  test('a 2-attack character (orc) exposes exactly 5 skills: idle, walk, attack1, attack2, death', () => {
+  test('a 2-attack character (orc) exposes exactly 6 skills: idle, walk, attack1, attack2, death, summon', () => {
     const moveset = buildMoveset('orc');
 
     expect(moveset.key).toBe('orc');
     expect(moveset.attackType).toBe(AttackType.SLASH);
-    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'death']);
+    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'death', 'summon']);
   });
 
-  test('a 3-attack character (soldier) exposes exactly 6 skills, including attack3', () => {
+  test('a 3-attack character (soldier) exposes exactly 7 skills, including attack3 and summon', () => {
     const moveset = buildMoveset('soldier');
 
-    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'attack3', 'death']);
+    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'attack3', 'death', 'summon']);
   });
 
   test('idle and walk loop, have no effect/duration, and carry their frame count and rate', () => {
@@ -70,6 +70,86 @@ describe('buildMoveset', () => {
       const moveset = buildMoveset(ft.key);
       const attackSkills = moveset.skills.filter(s => s.id.startsWith('attack'));
       expect(attackSkills).toHaveLength(ft.attacks.length);
+    }
+  });
+
+  test('a character with a Summon animation (skeleton-archer) appends a summon skill at the end', () => {
+    const moveset = buildMoveset('skeleton-archer');
+    const summon = moveset.skills.find(s => s.id === 'summon');
+
+    expect(moveset.skills.at(-1).id).toBe('summon');
+    expect(summon).toMatchObject({
+      animKey: 'skeleton-archer-summon',
+      loop: false,
+      effectAnimKey: null,
+      durationMs: 833,
+      frames: 5,
+      rate: 6,
+    });
+  });
+
+  test('a character without a dedicated Summon animation (orc) derives one from Death reversed', () => {
+    const moveset = buildMoveset('orc');
+    const summon = moveset.skills.find(s => s.id === 'summon');
+
+    // orc has no animations.summon; animations.death = { frames: 4, rate: 6 } -> 667ms,
+    // same frame count/rate as Death since the derived anim just plays those frames reversed.
+    expect(moveset.skills.at(-1).id).toBe('summon');
+    expect(summon).toMatchObject({
+      animKey: 'orc-summon',
+      loop: false,
+      effectAnimKey: null,
+      durationMs: 667,
+      frames: 4,
+      rate: 6,
+    });
+  });
+
+  test('every FIGHTER_TYPES character ends up with a summon skill, dedicated or derived', () => {
+    for (const ft of FIGHTER_TYPES) {
+      const moveset = buildMoveset(ft.key);
+      expect(moveset.skills.at(-1).id).toBe('summon');
+    }
+  });
+
+  test('regular skills (idle, attack1, death) expose real atlas frame names matching their own animKey', () => {
+    const moveset = buildMoveset('soldier');
+    const idle = moveset.skills.find(s => s.id === 'idle');
+    const attack1 = moveset.skills.find(s => s.id === 'attack1');
+    const death = moveset.skills.find(s => s.id === 'death');
+
+    expect(idle.frameNames).toEqual(['soldier-idle-0', 'soldier-idle-1', 'soldier-idle-2', 'soldier-idle-3', 'soldier-idle-4', 'soldier-idle-5']);
+    expect(attack1.frameNames).toEqual(['soldier-attack1-0', 'soldier-attack1-1', 'soldier-attack1-2', 'soldier-attack1-3', 'soldier-attack1-4', 'soldier-attack1-5']);
+    expect(death.frameNames).toEqual(['soldier-death-0', 'soldier-death-1', 'soldier-death-2', 'soldier-death-3']);
+  });
+
+  test('a dedicated-Summon character (skeleton-archer) exposes its own real summon-N atlas frame names', () => {
+    const moveset = buildMoveset('skeleton-archer');
+    const summon = moveset.skills.find(s => s.id === 'summon');
+
+    expect(summon.frameNames).toEqual([
+      'skeleton-archer-summon-0', 'skeleton-archer-summon-1', 'skeleton-archer-summon-2',
+      'skeleton-archer-summon-3', 'skeleton-archer-summon-4',
+    ]);
+  });
+
+  test('a derived-Summon character (orc) exposes Death atlas frame names in REVERSE, not fake orc-summon-N names', () => {
+    const moveset = buildMoveset('orc');
+    const summon = moveset.skills.find(s => s.id === 'summon');
+
+    // The registered Phaser animation plays orc-death-3,2,1,0 (reversed) — the
+    // atlas has no orc-summon-N frames at all, so a naive `${animKey}-i}`
+    // thumbnail renderer (character-select.blade.php's _drawSkillThumbnails)
+    // would ask the atlas for a frame that was never packed.
+    expect(summon.frameNames).toEqual(['orc-death-3', 'orc-death-2', 'orc-death-1', 'orc-death-0']);
+  });
+
+  test('every skill in every FIGHTER_TYPES moveset carries frameNames matching its own frame count', () => {
+    for (const ft of FIGHTER_TYPES) {
+      const moveset = buildMoveset(ft.key);
+      for (const skill of moveset.skills) {
+        expect(skill.frameNames).toHaveLength(skill.frames);
+      }
     }
   });
 });

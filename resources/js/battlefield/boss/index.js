@@ -5,6 +5,7 @@ import { formatHp } from '@battlefield/format.js';
 import { Leaderboard } from '@battlefield/leaderboard.js';
 import { applyStunEffect } from './stun.js';
 import { isDreadknight, startDreadknightPatrol } from './dreadknight.js';
+import { BatSwarm } from './bats.js';
 
 /** Manages boss patrol cycle, attacks, HP bar updates, and spawn/kill events. */
 export class Boss {
@@ -65,6 +66,7 @@ export class Boss {
   create(state) {
     const L = this.scene.layout;
     this.scene.bossState = { ...state.boss };
+    this.scene.lastKnownBossHp = state.boss.currentHp;
 
     const initialType = Boss.bossTypeFor(state.boss.number);
     const initialKey = initialType.key;
@@ -80,6 +82,9 @@ export class Boss {
       this.scene.bossSprite.preFX?.addPixelate(initialType.pixelate);
     }
     this.startBossPatrol();
+
+    this.scene.batSwarm = new BatSwarm(this.scene);
+    this.scene.batSwarm.spawn(state.boss.maxHp, state.boss.currentHp);
 
     this.scene.bossNameText = this.scene.addSharpText(L.boss.name.x, L.boss.name.y, Boss.bossLabel(state.boss), {
       fontFamily: 'monospace',
@@ -410,6 +415,9 @@ export class Boss {
     this.bossPatrolPhase = BossPhase.MOVE;
     this.bossIdleRepeatListener = null;
     this.scene.charge?.clearAllCharges?.();
+    this.scene.batSwarm?.destroy();
+    this.scene.batSwarm = new BatSwarm(this.scene);
+    this.scene.batSwarm.spawn(payload.max_hp, payload.max_hp);
     const L = this.scene.layout;
     const oldSprite = this.scene.bossSprite;
     this.scene.tweens.killTweensOf(oldSprite);
@@ -467,6 +475,7 @@ export class Boss {
       number: payload.boss_number,
       name: payload.boss_name,
     };
+    this.scene.lastKnownBossHp = payload.max_hp;
     this.scene.bossNameText.setText(Boss.bossLabel(this.scene.bossState));
     this.scene.hpBarFill.width = L.hpBar.width;
     this.scene.hpBarFill.setFillStyle(0x22c55e);
@@ -491,6 +500,7 @@ export class Boss {
    */
   handleBossKilled(payload = {}) {
     this.scene.charge?.clearAllCharges?.();
+    this.scene.batSwarm?.destroy();
     if (this.scene.bossSprite) {
       this.scene.tweens.killTweensOf(this.scene.bossSprite);
       const bt = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);

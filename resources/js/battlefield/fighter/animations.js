@@ -55,6 +55,25 @@ export function registerFighterAnimations(scene, ft) {
       });
     }
   }
+  // Only the skeleton family ships dedicated Summon (rise-from-ground) art.
+  // Everyone else gets one derived from their own Death strip played in
+  // reverse — the same "forward to leave, reversed to return" convention
+  // boss/index.js uses for the dreadknight's fall/getup and necromancer.js
+  // uses for its vanish/appear teleport.
+  const summonKey = `${ft.key}-summon`;
+  if (!ft.animations.summon && !scene.anims.exists(summonKey)) {
+    const deathInfo = ft.animations.death;
+    const reversed = Array.from({ length: deathInfo.frames }, (_, i) => deathInfo.frames - 1 - i);
+    scene.anims.create({
+      key: summonKey,
+      frames: scene.anims.generateFrameNames(TextureKey.FIGHTERS, {
+        prefix: `${ft.key}-death-`,
+        frames: reversed,
+      }),
+      frameRate: deathInfo.rate,
+      repeat: 0,
+    });
+  }
 }
 
 /**
