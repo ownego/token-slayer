@@ -157,11 +157,11 @@ export class Necromancer {
   }
 
   /**
-   * Fades the Necromancer out with a summon-circle burst at its departure
-   * spot, repositions and re-faces it instantly, then fades it back in with
-   * another burst at the arrival spot — reusing the same ground-circle
-   * effect the fighter reveal already uses, rather than a bare alpha fade,
-   * so the vanish/reappear itself reads as a magical effect.
+   * Fades the Necromancer out, repositions and re-faces it instantly, then
+   * fades it back in — reads as "vanish and reappear" without competing
+   * with the fighter's own summon-circle burst, which lands just a beat
+   * later at a nearby but distinct spot (two circle bursts that close
+   * together read as one confusing effect, not two clear ones).
    *
    * @param {number} x
    * @param {number} y
@@ -170,7 +170,6 @@ export class Necromancer {
    * @return {void}
    */
   _teleportTo(x, y, flip, onArrived) {
-    this.spawnSummonCircle(this.sprite.x, this.sprite.y);
     this.scene.tweens.add({
       targets: this.sprite,
       alpha: 0,
@@ -182,7 +181,6 @@ export class Necromancer {
           return;
         }
         this.sprite.setPosition(x, y).setFlipX(flip);
-        this.spawnSummonCircle(x, y);
         this.scene.tweens.add({
           targets: this.sprite,
           alpha: 1,

@@ -141,8 +141,13 @@ export class Fighter {
   seedInitial(state) {
     const L = this.scene.layout;
     const config = fighterDisplayConfig(state.fighters.length, this.scene.mode);
+    // Grid slots are only for fighters without a saved custom position —
+    // sizing this array against the total fighter count and consuming one
+    // slot per fighter regardless left the grid ones scattered across gaps
+    // sized for slots the custom-positioned fighters were never going to use.
+    const gridFighterCount = state.fighters.filter(f => !f.position).length;
     const autoPositions = computeFighterPositions(
-      state.fighters.length,
+      gridFighterCount,
       L.fighters.rowXRange,
       config.topY,
       config.perRow,
@@ -150,14 +155,25 @@ export class Fighter {
     );
     const bossType = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
     const damageByUser = new Map(state.damageTotals ?? []);
-    state.fighters.forEach((f, i) => {
+    let gridIdx = 0;
+    state.fighters.forEach((f) => {
       const damageScale = damageScaleMultiplier(damageByUser.get(f.id) ?? 0, this.scene.bossState?.maxHp);
       const ctx = {
         layout: L,
         bossType,
         fsize: config.displaySize * damageScale,
       };
-      const { pos, isCustom } = resolveFighterPlacement(f.position, autoPositions[i], ctx);
+      // Peeked, not yet consumed — a fighter whose saved position turns out
+      // invalid (resolveFighterPlacement falls back to grid) still needs a
+      // slot despite being excluded from gridFighterCount above; the bounds
+      // fallback covers that rare overflow.
+      const gridPos = autoPositions[gridIdx]
+        ?? autoPositions[autoPositions.length - 1]
+        ?? { x: L.logicalWidth / 2, y: config.topY };
+      const { pos, isCustom } = resolveFighterPlacement(f.position, gridPos, ctx);
+      if (!isCustom) {
+        gridIdx++;
+      }
       this.addFighter(f, pos, config);
       if (isCustom) {
         this.scene.fighters.get(f.id).hasCustomPosition = true;
@@ -193,8 +209,13 @@ export class Fighter {
 
     const count = this.scene.fighters.size + 1;
     const config = fighterDisplayConfig(count, this.scene.mode);
+    // Only fighters without a custom position occupy a grid slot — see
+    // relayoutFighters() for why sizing this array against the total count
+    // (including custom-positioned fighters) leaves the grid ones scattered
+    // across gaps sized for slots that were never going to be used.
+    const gridFighterCount = [...this.scene.fighters.values()].filter(e => !e.hasCustomPosition).length + 1;
     const positions = computeFighterPositions(
-      count,
+      gridFighterCount,
       this.scene.layout.fighters.rowXRange,
       config.topY,
       config.perRow,
@@ -1098,8 +1119,14 @@ export class Fighter {
       return;
     }
     const config = fighterDisplayConfig(count, this.scene.mode);
+    // Grid slots are only for fighters without a custom (persisted or
+    // click-to-moved) position — sizing a `count`-length grid and then
+    // skipping some of it for custom-positioned fighters left the grid ones
+    // scattered across gaps sized for fighters that were never going to sit
+    // in them.
+    const gridFighterCount = [...this.scene.fighters.values()].filter(e => !e.hasCustomPosition).length;
     const positions = computeFighterPositions(
-      count,
+      gridFighterCount,
       this.scene.layout.fighters.rowXRange,
       config.topY,
       config.perRow,
@@ -1108,7 +1135,7 @@ export class Fighter {
 
     let i = 0;
     for (const [userId, entry] of this.scene.fighters.entries()) {
-      const gridTarget = positions[i++];
+      const gridTarget = entry.hasCustomPosition ? null : positions[i++];
       const target = entry.hasCustomPosition ? entry.pos : gridTarget;
       const newSize = config.displaySize;
       const sizeChanged = newSize !== entry.displaySize;
