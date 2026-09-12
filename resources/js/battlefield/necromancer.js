@@ -76,7 +76,20 @@ export class Necromancer {
       return;
     }
     this.scene.tweens.killTweensOf(this.sprite);
-    this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
+    const summonKey = `${NECROMANCER_CONFIG.key}-summon`;
+    // TEMPORARY diagnostic — remove once the animation-start crash reported
+    // on staging is root-caused; the sprite.play() below is the exact call
+    // site of the "e.currentFrame is undefined" crash.
+    console.log('[necromancer-debug]', {
+      summonKey,
+      animExists: this.scene.anims.exists(summonKey),
+      animFrameCount: this.scene.anims.get(summonKey)?.frames?.length,
+      textureExists: this.scene.textures.exists(summonKey),
+      textureFrameTotal: this.scene.textures.exists(summonKey) ? this.scene.textures.get(summonKey).frameTotal : null,
+      spriteCurrentAnim: this.sprite.anims?.currentAnim?.key ?? null,
+      spriteIsPlaying: this.sprite.anims?.isPlaying,
+    });
+    this.sprite.play(summonKey);
     const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
     const durationMs = Math.ceil((summonInfo.count / summonInfo.rate) * 1000);
     this.scene.time.delayedCall(durationMs, () => {
