@@ -571,8 +571,11 @@
                     soldier: '#ffbb00', knight: '#ffbb00', swordsman: '#ffbb00', axeman: '#ffbb00',
                     orc: '#88ee44', 'armored-orc': '#88ee44', 'elite-orc': '#88ee44',
                     skeleton: '#aaddff', 'armored-skeleton': '#aaddff', 'greatsword-skeleton': '#aaddff',
+                    'skeleton-archer': '#aaddff',
                     slime: '#ddff44', archer: '#ffee44', werewolf: '#cc88ff', werebear: '#cc88ff',
                     'orc-rider': '#88ee44',
+                    'knight-templar': '#ffbb00', lancer: '#ffbb00',
+                    wizard: '#cc88ff', priest: '#cc88ff',
                 };
                 return ACCENTS[key] ?? '#fbbf24';
             },
@@ -625,8 +628,8 @@
                     el.replaceChildren(canvas);
                     let frameIndex = 0;
                     const drawFrame = () => {
-                        bf.drawFighterFrame(bf.game, canvas, `${skill.animKey}-${frameIndex}`);
-                        frameIndex = (frameIndex + 1) % skill.frames;
+                        bf.drawFighterFrame(bf.game, canvas, skill.frameNames[frameIndex]);
+                        frameIndex = (frameIndex + 1) % skill.frameNames.length;
                     };
                     drawFrame();
                     // skill.rate is the animation's authored frames-per-second

@@ -111,4 +111,45 @@ describe('buildMoveset', () => {
       expect(moveset.skills.at(-1).id).toBe('summon');
     }
   });
+
+  test('regular skills (idle, attack1, death) expose real atlas frame names matching their own animKey', () => {
+    const moveset = buildMoveset('soldier');
+    const idle = moveset.skills.find(s => s.id === 'idle');
+    const attack1 = moveset.skills.find(s => s.id === 'attack1');
+    const death = moveset.skills.find(s => s.id === 'death');
+
+    expect(idle.frameNames).toEqual(['soldier-idle-0', 'soldier-idle-1', 'soldier-idle-2', 'soldier-idle-3', 'soldier-idle-4', 'soldier-idle-5']);
+    expect(attack1.frameNames).toEqual(['soldier-attack1-0', 'soldier-attack1-1', 'soldier-attack1-2', 'soldier-attack1-3', 'soldier-attack1-4', 'soldier-attack1-5']);
+    expect(death.frameNames).toEqual(['soldier-death-0', 'soldier-death-1', 'soldier-death-2', 'soldier-death-3']);
+  });
+
+  test('a dedicated-Summon character (skeleton-archer) exposes its own real summon-N atlas frame names', () => {
+    const moveset = buildMoveset('skeleton-archer');
+    const summon = moveset.skills.find(s => s.id === 'summon');
+
+    expect(summon.frameNames).toEqual([
+      'skeleton-archer-summon-0', 'skeleton-archer-summon-1', 'skeleton-archer-summon-2',
+      'skeleton-archer-summon-3', 'skeleton-archer-summon-4',
+    ]);
+  });
+
+  test('a derived-Summon character (orc) exposes Death atlas frame names in REVERSE, not fake orc-summon-N names', () => {
+    const moveset = buildMoveset('orc');
+    const summon = moveset.skills.find(s => s.id === 'summon');
+
+    // The registered Phaser animation plays orc-death-3,2,1,0 (reversed) — the
+    // atlas has no orc-summon-N frames at all, so a naive `${animKey}-i}`
+    // thumbnail renderer (character-select.blade.php's _drawSkillThumbnails)
+    // would ask the atlas for a frame that was never packed.
+    expect(summon.frameNames).toEqual(['orc-death-3', 'orc-death-2', 'orc-death-1', 'orc-death-0']);
+  });
+
+  test('every skill in every FIGHTER_TYPES moveset carries frameNames matching its own frame count', () => {
+    for (const ft of FIGHTER_TYPES) {
+      const moveset = buildMoveset(ft.key);
+      for (const skill of moveset.skills) {
+        expect(skill.frameNames).toHaveLength(skill.frames);
+      }
+    }
+  });
 });
