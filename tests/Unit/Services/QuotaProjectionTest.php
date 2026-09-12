@@ -35,3 +35,18 @@ test('it never returns below zero or above one hundred', function () {
     expect(QuotaProjection::projectedAtReset(0, $windowStart, $resetAt, $now))->toBe(0)
         ->and(QuotaProjection::projectedAtReset(95, $windowStart, $resetAt, $now))->toBe(100);
 });
+
+test('projectedAtResetFromDailyRate projects past 100 without clamping', function () {
+    $now = Carbon::parse('2026-09-12 00:00:00');
+    $resetAt = $now->copy()->addDays(4);
+
+    // 20% now, burning 30%/day for 4 more days => 20 + 120 = 140.
+    expect(QuotaProjection::projectedAtResetFromDailyRate(20, 30.0, $resetAt, $now))->toBe(140);
+});
+
+test('projectedAtResetFromDailyRate returns the current value unchanged once the reset has passed', function () {
+    $now = Carbon::parse('2026-09-12 00:00:00');
+    $resetAt = $now->copy()->subHour();
+
+    expect(QuotaProjection::projectedAtResetFromDailyRate(55, 10.0, $resetAt, $now))->toBe(55);
+});
