@@ -10,7 +10,7 @@ import { restScale, slashBurst } from './fx.js';
  * @param {{ isKillShot: boolean, damage: number, maxHp: number, onImpact: Function|null, onEffect: Function|null }} opts
  * @return {void}
  */
-export function arrow(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect }) {
+export function arrow(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect, target }) {
   const sc         = fighter.sprite.scaleX;
   const fx         = fighter.pos.x;
   const fy         = fighter.pos.y;
@@ -90,7 +90,7 @@ export function arrow(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
               isKillShot, tints: [0xfde68a, 0xfbbf24, 0xf97316, 0x86efac],
             });
 
-            scene.projectile.spawn(fx, fy, AttackType.ARROW, damage, maxHp, onImpact, fighter.sprite.scaleX);
+            scene.projectile.spawn(fx, fy, AttackType.ARROW, damage, maxHp, onImpact, fighter.sprite.scaleX, target);
 
             const rest = restScale(fighter);
             scene.tweens.add({

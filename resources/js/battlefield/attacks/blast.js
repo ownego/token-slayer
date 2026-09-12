@@ -10,7 +10,7 @@ import { restScale, slashBurst } from './fx.js';
  * @param {{ isKillShot: boolean, damage: number, maxHp: number, onImpact: Function|null, onEffect: Function|null }} opts
  * @return {void}
  */
-export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect }) {
+export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onEffect, target }) {
   const sc          = fighter.sprite.scaleX;
   const fx          = fighter.pos.x;
   const fy          = fighter.pos.y;
@@ -80,7 +80,7 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
       onComplete: () => beamG.destroy(),
     });
 
-    scene.projectile.spawn(circleX, circleY, AttackType.BLAST, damage, maxHp, onImpact, fighter.sprite.scaleX);
+    scene.projectile.spawn(circleX, circleY, AttackType.BLAST, damage, maxHp, onImpact, fighter.sprite.scaleX, target);
   });
 
   scene.time.delayedCall(chargeDur + 55, () => {

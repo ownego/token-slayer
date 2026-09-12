@@ -1228,6 +1228,16 @@ export class Fighter {
         fighter.body.play(`${key}-${next}`);
       });
     }
+    // A dedicated, always-synchronous HP tracker: `this.scene.bossState.currentHp`
+    // is only mutated inside impact.apply(), which fires after this hit's
+    // attack-animation delay — reading it here would race a second HitDealt
+    // that arrives before the first hit's impact has landed. lastKnownBossHp
+    // is updated the instant each HitDealt is handled, so hpBefore is always
+    // accurate regardless of animation timing.
+    const hpBefore = this.scene.lastKnownBossHp ?? this.scene.bossState?.currentHp ?? payload.boss_hp_after;
+    const hitTarget = this.scene.batSwarm?.resolveHitTarget(payload.damage, hpBefore, payload.boss_hp_after) ?? null;
+    this.scene.lastKnownBossHp = payload.boss_hp_after;
+
     const isKillShot = (payload.boss_hp_after ?? 1) <= 0;
     if (payload.damage > 0 && fighter) {
       const prev = this.scene.damageTotals.get(payload.user_id) ?? 0;
@@ -1241,12 +1251,18 @@ export class Fighter {
     }
     const onImpact = () => {
       this.scene.leaderboard?.onHit(payload.user_id, payload.damage, payload.slack_handle);
-      this.scene.impact.apply(payload.boss_hp_after);
+      this.scene.impact.apply(payload.boss_hp_after, hitTarget);
       if (this.scene.hoveredUserId === payload.user_id) {
         this.scene.bubble?.showFighterTooltip?.(payload.user_id);
       }
       if (!isKillShot) {
-        this.scene.time.delayedCall(90, () => this.scene.boss?.playBossReact?.());
+        this.scene.time.delayedCall(90, () => {
+          if (hitTarget) {
+            this.scene.batSwarm?.reactHurt(hitTarget);
+          } else {
+            this.scene.boss?.playBossReact?.();
+          }
+        });
       }
     };
     if (fighter) {
@@ -1268,6 +1284,7 @@ export class Fighter {
         maxHp: this.scene.bossState?.maxHp ?? 1,
         onImpact,
         onEffect,
+        target: hitTarget,
       });
     } else {
       this.scene.time.delayedCall(TIMINGS.projectileArcMs, onImpact);
