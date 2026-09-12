@@ -62,37 +62,16 @@ export class Necromancer {
       .setAlpha(0.55)
       .setBlendMode(Phaser.BlendModes.ADD)
       .play(key);
-    this._spinFlatDisc(platform, baseScale, 4500, -1);
-  }
-
-  /**
-   * Spins a flat ground-plane circle sprite (the artwork is a perspective
-   * ellipse, not a circle drawn face-on) by oscillating scaleX through
-   * cos(t) instead of rotating the 2D image — a plain `angle` rotation would
-   * tilt the ellipse's own axis, which reads as wrong for something meant to
-   * lie flat and spin around its vertical axis. Standard 2D "flat spinning
-   * disc" trick: scaleX passing through 0 and negative reads as the disc
-   * turning edge-on and showing its other face.
-   *
-   * @param {Phaser.GameObjects.Sprite} sprite
-   * @param {number} baseScale
-   * @param {number} durationMs one full spin's duration
-   * @param {number} repeat tween repeat count (-1 for infinite)
-   * @return {void}
-   */
-  _spinFlatDisc(sprite, baseScale, durationMs, repeat) {
-    const spin = { t: 0 };
+    // Slow, gentle breathing pulse — alpha and scale drifting a little and
+    // back, on a long cycle so it reads as ambient rather than animated.
     this.scene.tweens.add({
-      targets: spin,
-      t: Math.PI * 2,
-      duration: durationMs,
-      repeat,
-      ease: 'Linear',
-      onUpdate: () => {
-        if (sprite.active) {
-          sprite.scaleX = baseScale * Math.cos(spin.t);
-        }
-      },
+      targets: platform,
+      alpha: 0.3,
+      scale: baseScale * 0.92,
+      duration: 3200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
     });
   }
 
@@ -242,8 +221,18 @@ export class Necromancer {
         return;
       }
       this.sprite.setPosition(x, y).setFlipX(flip);
-      this.sprite.play(`${NECROMANCER_CONFIG.key}-appear`);
-      this.scene.time.delayedCall(transitionMs, onArrived);
+      this._spawnAppearBurst(x, y);
+      // The burst leads the reappearance by a beat rather than firing at
+      // the exact same instant as the Appear animation.
+      const burstLeadMs = 160;
+      this.scene.time.delayedCall(burstLeadMs, () => {
+        if (!this.sprite?.active) {
+          onArrived();
+          return;
+        }
+        this.sprite.play(`${NECROMANCER_CONFIG.key}-appear`);
+        this.scene.time.delayedCall(transitionMs, onArrived);
+      });
     });
   }
 
@@ -329,13 +318,28 @@ export class Necromancer {
     if (!this.scene.anims.exists(key)) {
       return;
     }
-    const baseScale = 2.6;
-    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(baseScale).setBlendMode(Phaser.BlendModes.ADD);
+    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(2.6).setBlendMode(Phaser.BlendModes.ADD);
     circle.play(key);
     circle.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => circle.destroy());
-    const circleInfo = NECROMANCER_CONFIG.animFiles.circle;
-    const lifeMs = Math.ceil((circleInfo.count / circleInfo.rate) * 1000);
-    this._spinFlatDisc(circle, baseScale, lifeMs, 0);
+  }
+
+  /**
+   * Spawns a one-shot burst at the Necromancer's own upcoming spot, a beat
+   * before it reappears there — reuses the Attack02 effect artwork as a
+   * "something is about to arrive here" flourish leading the reveal.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @return {void}
+   */
+  _spawnAppearBurst(x, y) {
+    const key = `${NECROMANCER_CONFIG.key}-appearBurst`;
+    if (!this.scene.anims.exists(key)) {
+      return;
+    }
+    const burst = this.scene.add.sprite(x, y, key).setDepth(2.5).setScale(2.2).setBlendMode(Phaser.BlendModes.ADD);
+    burst.play(key);
+    burst.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => burst.destroy());
   }
 
   /**

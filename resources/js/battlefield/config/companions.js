@@ -35,5 +35,8 @@ export const NECROMANCER_CONFIG = {
     // Source strip for the derived vanish/appear teleport transition (played
     // forward to vanish, reversed to reappear) — see Necromancer#_ensureAnims.
     death: { file: '/assets/battlefield/companions/necromancer/death.png', frameWidth: 100, frameHeight: 100, count: 9, rate: 14 },
+    // Burst spawned at the Necromancer's own spot just before it reappears
+    // there — see Necromancer#_spawnAppearBurst.
+    appearBurst: { file: '/assets/battlefield/companions/necromancer/appear-burst.png', frameWidth: 100, frameHeight: 100, count: 6, rate: 12 },
   },
 };
