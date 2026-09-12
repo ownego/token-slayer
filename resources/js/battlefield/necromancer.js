@@ -64,6 +64,25 @@ export class Necromancer {
   }
 
   /**
+   * Spawns a one-shot summon-circle burst at the given world position — used
+   * under a newly-joined fighter as it rises in, separate from the
+   * Necromancer's own sprite/position.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @return {void}
+   */
+  spawnSummonCircle(x, y) {
+    const key = `${NECROMANCER_CONFIG.key}-circle`;
+    if (!this.scene.anims.exists(key)) {
+      return;
+    }
+    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(1.4);
+    circle.play(key);
+    circle.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => circle.destroy());
+  }
+
+  /**
    * Schedules the Necromancer's next small wander step within its fixed
    * zone. Reschedules without moving while a summon is in progress, so it
    * never interrupts the summon animation on the shared sprite.

@@ -221,21 +221,44 @@ export class Fighter {
     entry.hasCustomPosition = isCustom;
     this.relayoutFighters();
 
+    // Characters with their own Summon animation (the four skeleton
+    // variants, per the asset pack's own summon-in-tandem design) rise in
+    // via that animation instead of a generic scale pop — it already
+    // depicts emerging from the ground, so no separate pop tween is needed.
+    const summonAnim = entry.ftype?.animations?.summon;
+    const summonAnimKey = summonAnim ? `${entry.ftype.key}-summon` : null;
     const finalScale = entry.sprite.scaleX;
-    entry.sprite.setScale(0);
-    const popIn = () => {
+    if (!summonAnimKey) {
+      entry.sprite.setScale(0);
+    }
+    const reveal = () => {
       if (!entry.sprite?.active) return;
-      this.scene.tweens.add({
-        targets: entry.sprite,
-        scale: finalScale,
-        duration: TIMINGS.fighterJoinMs,
-        ease: 'Back.easeOut',
-      });
+      this.scene.necromancer?.spawnSummonCircle(entry.pos.x, entry.pos.y);
+      if (summonAnimKey && entry.body) {
+        entry.body.play(summonAnimKey);
+        const durationMs = Math.ceil((summonAnim.frames / summonAnim.rate) * 1000);
+        this.scene.time.delayedCall(durationMs, () => {
+          // A real hit may have landed mid-summon and already be animating
+          // its own attack (handleHit always plays over whatever was
+          // showing) — in that case animState is ATTACK for that real
+          // reason, and its own completion handler owns the transition back.
+          if (!entry.body?.scene || entry.animState === AnimState.ATTACK) return;
+          entry.animState = AnimState.IDLE;
+          entry.body.play(`${entry.ftype.key}-idle`);
+        });
+      } else {
+        this.scene.tweens.add({
+          targets: entry.sprite,
+          scale: finalScale,
+          duration: TIMINGS.fighterJoinMs,
+          ease: 'Back.easeOut',
+        });
+      }
     };
     if (this.scene.necromancer) {
-      this.scene.necromancer.summon(popIn);
+      this.scene.necromancer.summon(reveal);
     } else {
-      popIn();
+      reveal();
     }
   }
 

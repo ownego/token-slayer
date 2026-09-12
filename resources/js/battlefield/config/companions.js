@@ -27,5 +27,8 @@ export const NECROMANCER_CONFIG = {
     idle:   { file: '/assets/battlefield/companions/necromancer/idle.png',   frameWidth: 100, frameHeight: 100, count: 6,  rate: 8,  loop: true },
     walk:   { file: '/assets/battlefield/companions/necromancer/walk.png',   frameWidth: 100, frameHeight: 100, count: 6,  rate: 10, loop: true },
     summon: { file: '/assets/battlefield/companions/necromancer/summon.png', frameWidth: 100, frameHeight: 100, count: 10, rate: 12 },
+    // The ground-circle burst spawned at a newly-joined fighter's own
+    // position (not on the Necromancer's own sprite) — see Necromancer#spawnSummonCircle.
+    circle: { file: '/assets/battlefield/companions/necromancer/summon-circle.png', frameWidth: 100, frameHeight: 100, count: 7, rate: 12 },
   },
 };
