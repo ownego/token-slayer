@@ -149,16 +149,19 @@ export class Necromancer {
         f.sprite?.active && Phaser.Math.Distance.Between(x, y, f.sprite.x, f.sprite.y) < SUMMON_SPOT_MIN_FIGHTER_GAP
       );
       if (tooCloseToFighter) continue;
-      return { x, y, flip: dx < 0 };
+      return { x, y, flip: dx > 0 };
     }
 
     const fallbackDx = offsets[0];
-    return { x: targetX + fallbackDx, y: targetY, flip: fallbackDx < 0 };
+    return { x: targetX + fallbackDx, y: targetY, flip: fallbackDx > 0 };
   }
 
   /**
-   * Fades the Necromancer out, repositions and re-faces it instantly, then
-   * fades it back in — reads as "vanish and reappear" rather than sliding.
+   * Fades the Necromancer out with a summon-circle burst at its departure
+   * spot, repositions and re-faces it instantly, then fades it back in with
+   * another burst at the arrival spot — reusing the same ground-circle
+   * effect the fighter reveal already uses, rather than a bare alpha fade,
+   * so the vanish/reappear itself reads as a magical effect.
    *
    * @param {number} x
    * @param {number} y
@@ -167,6 +170,7 @@ export class Necromancer {
    * @return {void}
    */
   _teleportTo(x, y, flip, onArrived) {
+    this.spawnSummonCircle(this.sprite.x, this.sprite.y);
     this.scene.tweens.add({
       targets: this.sprite,
       alpha: 0,
@@ -178,6 +182,7 @@ export class Necromancer {
           return;
         }
         this.sprite.setPosition(x, y).setFlipX(flip);
+        this.spawnSummonCircle(x, y);
         this.scene.tweens.add({
           targets: this.sprite,
           alpha: 1,
