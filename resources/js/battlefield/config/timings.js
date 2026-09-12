@@ -24,6 +24,6 @@ export const TIMINGS = {
   batWanderMaxMs: 3000,
   // Continuous zigzag bat flight: each short hop's duration scales with its
   // distance, clamped to this range, so bats never stand still between hops.
-  batHopDurationMinMs: 220,
-  batHopDurationMaxMs: 700,
+  batHopDurationMinMs: 700,
+  batHopDurationMaxMs: 1800,
 };

@@ -150,14 +150,31 @@ export class BatSwarm {
       x: Phaser.Math.Clamp(raw.x, zone.centerX - zone.radiusX, zone.centerX + zone.radiusX),
       y: Phaser.Math.Clamp(raw.y, zone.centerY - zone.radiusY, zone.centerY + zone.radiusY),
     };
-    const dist = Phaser.Math.Distance.Between(entry.sprite.x, entry.sprite.y, point.x, point.y);
-    entry.sprite.setFlipX(point.x < entry.sprite.x);
+    const fromX = entry.sprite.x;
+    const fromY = entry.sprite.y;
+    const dx = point.x - fromX;
+    const dy = point.y - fromY;
+    const dist = Math.hypot(dx, dy) || 1;
+    // Perpendicular unit vector, so the sine wave below wiggles the path
+    // side-to-side instead of just interpolating a straight line.
+    const nx = -dy / dist;
+    const ny = dx / dist;
+    const waveAmplitude = Phaser.Math.FloatBetween(10, 22);
+    const waveCycles = Phaser.Math.FloatBetween(1, 2);
+    const wavePhase = Math.random() < 0.5 ? 0 : Math.PI; // which side the wave starts curving
+    entry.sprite.setFlipX(dx < 0);
+    const state = { t: 0 };
     this.scene.tweens.add({
-      targets: entry.sprite,
-      x: point.x,
-      y: point.y,
-      duration: Phaser.Math.Clamp(dist * 6, TIMINGS.batHopDurationMinMs, TIMINGS.batHopDurationMaxMs),
+      targets: state,
+      t: 1,
+      duration: Phaser.Math.Clamp(dist * 14, TIMINGS.batHopDurationMinMs, TIMINGS.batHopDurationMaxMs),
       ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        if (!entry.sprite?.active) return;
+        const wave = Math.sin(state.t * Math.PI * waveCycles + wavePhase) * waveAmplitude;
+        entry.sprite.x = fromX + dx * state.t + nx * wave;
+        entry.sprite.y = fromY + dy * state.t + ny * wave;
+      },
       onComplete: () => this._flyToNextHop(entry),
     });
   }
