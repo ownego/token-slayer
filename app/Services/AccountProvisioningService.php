@@ -201,40 +201,36 @@ final class AccountProvisioningService implements GrantRevokerContract
     }
 
     /**
-     * The org accounts this request should be told to remove: the user's
-     * Untracked orgs minus those the resolved device already confirmed via
-     * its NEWEST grant per account (its `deprovisioned_at` stamp). Only the
-     * newest grant counts — an older, revoked grant (left behind by a
-     * Reissue) can carry a stale stamp from before the account was
-     * re-provisioned onto the same device, which must not silence a fresh
-     * removal instruction. Per-device on purpose — with the old per-user
-     * stamp, the first machine to confirm silenced the instruction for
-     * every other machine, which then kept the slot forever. When this
-     * request resolved no device (e.g. an unrecognized fingerprint), every
-     * one of the user's Untracked orgs is returned unconditionally — the
-     * client-side CLI safely no-ops a removal for a slot it doesn't have,
-     * and the broadcast self-terminates once the admin verifies or
-     * provisions the user.
+     * The org accounts this request should be told to remove: every account
+     * the user currently holds an `account_user` row for whose status is not
+     * `Tracked` or `Pending` (in practice, `Untracked`). Recomputed fresh on
+     * every call from live membership state — there is deliberately no
+     * per-device "already confirmed" suppression, so a removal keeps being
+     * reported for as long as the user stays unauthorized, on every device,
+     * every time. The client-side reconcile treats this as an idempotent
+     * no-op once a slot is already gone, so the repeat cost is zero; in
+     * exchange nothing can leave a removal signal permanently unresolved
+     * (see `docs/superpowers/specs/2026-09-12-account-blocklist-reconciliation-design.md`
+     * for why the previous per-device confirmation design was replaced).
+     *
+     * Starting from `$user->accounts()` (the pivot relation) rather than
+     * `Account::query()` is what keeps this scoped to rows that exist: an
+     * account the user has no `account_user` row for at all — including a
+     * legacy grant predating the membership-backfill pass — is not matched
+     * by `wherePivotNotIn` on a relation that requires the row to exist,
+     * and so is correctly left alone rather than misreported as removable.
      *
      * @param  User  $user  the hook-authenticated user
-     * @param  Device|null  $device  the resolved claiming device; null = this request resolved no device
      * @return array<int, array{org_uuid: string}>
      */
-    public function removable(User $user, ?Device $device): array
+    public function removable(User $user): array
     {
-        $confirmedAccountIds = $device === null
-            ? collect()
-            : $device->grants()
-                ->orderByDesc('id')
-                ->get()
-                ->unique('account_id')
-                ->whereNotNull('deprovisioned_at')
-                ->pluck('account_id');
-
         return $user->accounts()
-            ->wherePivot('status', MembershipStatus::Untracked->value)
+            ->wherePivotNotIn('status', [
+                MembershipStatus::Tracked->value,
+                MembershipStatus::Pending->value,
+            ])
             ->whereHas('claudeCredential', fn ($query) => $query->whereNotNull('organization_uuid'))
-            ->whereKeyNot($confirmedAccountIds)
             ->with('claudeCredential')
             ->get()
             ->map(fn (Account $account): array => ['org_uuid' => $account->organization_uuid])

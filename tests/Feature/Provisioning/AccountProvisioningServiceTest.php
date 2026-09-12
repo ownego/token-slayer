@@ -165,7 +165,27 @@ it('never serves a grant for an org the user is untracked on, keeping it consist
     $service = app(AccountProvisioningService::class);
 
     expect($service->claim($user, null))->toBe([])
-        ->and($service->removable($user, $device))->toBe([['org_uuid' => 'org-untracked']]);
+        ->and($service->removable($user))->toBe([['org_uuid' => 'org-untracked']]);
+});
+
+it('removable() no longer accepts a device argument and keeps reporting an untracked org on every call', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['organization_uuid' => 'org-repeat']);
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => MembershipStatus::Untracked->value],
+    ]);
+
+    $service = app(AccountProvisioningService::class);
+
+    expect($service->removable($user))->toBe([['org_uuid' => 'org-repeat']])
+        ->and($service->removable($user))->toBe([['org_uuid' => 'org-repeat']]);
+});
+
+it('does not report an account the user has no membership row for at all', function () {
+    $user = User::factory()->create();
+    Account::factory()->create(['organization_uuid' => 'org-unrelated']);
+
+    expect(app(AccountProvisioningService::class)->removable($user))->toBe([]);
 });
 
 it('still serves grants for Tracked and Pending memberships', function (MembershipStatus $status) {

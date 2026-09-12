@@ -42,9 +42,8 @@ final class ProvisionedAccountController extends Controller
         $fingerprint = Arr::get($payload, 'device_id');
 
         $accounts = $this->provisioning->claim($user, $fingerprint);
-        $device = $this->resolver->resolve($user, $fingerprint);
         $memberships = $this->provisioning->memberships($user);
-        $remove = $this->provisioning->removable($user, $device);
+        $remove = $this->provisioning->removable($user);
 
         return response()->json([
             'accounts' => $accounts,
