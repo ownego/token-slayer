@@ -11,6 +11,7 @@ import { Charge } from './charge.js';
 import { Bubble } from './bubble.js';
 import { MoveInput } from './move-input.js';
 import { Fighter } from './fighter.js';
+import { Necromancer } from './necromancer.js';
 import { ensureSparkTexture } from './spark-texture.js';
 import { registerAllFighterAnimations } from './fighter/animations.js';
 
@@ -106,6 +107,9 @@ export class BattlefieldScene extends Phaser.Scene {
     const state = this.game.registry.get('initialState');
     this.boss = new Boss(this);
     this.boss.create(state);
+
+    this.necromancer = new Necromancer(this);
+    this.necromancer.create();
 
     this.bubble = new Bubble(this);
     this.charge = new Charge(this);
