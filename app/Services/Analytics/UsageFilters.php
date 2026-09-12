@@ -90,7 +90,10 @@ final class UsageFilters
      *                          {@see self::UNKNOWN_MODEL} for events with no
      *                          recorded model, or null for all
      * @param  string  $tokenMode  `'output'` (default, what damage is dealt
-     *                             from) or `'total'` (output + input + cache)
+     *                             from), `'total'` (output + input + cache),
+     *                             or `'quota'` (total minus cache_read --
+     *                             the portion that actually counts against a
+     *                             rate-limit window)
      */
     public function __construct(
         public readonly Carbon $from,
@@ -156,27 +159,32 @@ final class UsageFilters
             ($filters['provider'] ?? null) ?: null,
             self::intOrNull($filters['user_id'] ?? null),
             ($filters['model'] ?? null) ?: null,
-            ($filters['token_mode'] ?? null) === 'total' ? 'total' : 'output',
+            in_array($filters['token_mode'] ?? null, ['total', 'quota'], true) ? $filters['token_mode'] : 'output',
         );
     }
 
     /**
      * The SQL fragment every analytics query sums/orders by, chosen by
      * {@see self::$tokenMode}. `output` reads the plain column (identical to
-     * pre-filter behavior, and to what {@see DamageService}
-     * deals damage from); `total` adds input and cache tokens back in for
-     * analytics only. Never itself passed to a query builder's `sum()`/
-     * `orderBy()` (those would try to quote it as a single identifier) --
-     * callers wrap it in `DB::raw()` or interpolate it into a `selectRaw`/
-     * `orderByRaw` string.
+     * pre-filter behavior, and to what {@see DamageService} deals damage
+     * from); `total` adds input and cache tokens back in for analytics only;
+     * `quota` adds fresh input and cache-write tokens back in but leaves
+     * `cache_read_input_tokens` out, since Anthropic's rate limits (and,
+     * by report, OpenAI's) don't count cache reads the way they count a
+     * fresh input or output token. Never itself passed to a query builder's
+     * `sum()`/`orderBy()` (those would try to quote it as a single
+     * identifier) -- callers wrap it in `DB::raw()` or interpolate it into a
+     * `selectRaw`/`orderByRaw` string.
      *
      * @return string
      */
     public function tokenColumnExpression(): string
     {
-        return $this->tokenMode === 'total'
-            ? '(events.tokens + events.input_tokens + events.cache_creation_input_tokens + events.cache_read_input_tokens)'
-            : 'events.tokens';
+        return match ($this->tokenMode) {
+            'total' => '(events.tokens + events.input_tokens + events.cache_creation_input_tokens + events.cache_read_input_tokens)',
+            'quota' => '(events.tokens + events.input_tokens + events.cache_creation_input_tokens)',
+            default => 'events.tokens',
+        };
     }
 
     /**

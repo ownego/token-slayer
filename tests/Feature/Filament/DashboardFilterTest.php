@@ -46,6 +46,16 @@ it('keeps the token mode select showing Output tokens against a stale pre-featur
     expect($html)->toContain('token_mode&quot;:&quot;output&quot;');
 });
 
+it('offers a Quota tokens option alongside Output and Total, describing what it excludes', function () {
+    $admin = User::factory()->admin()->create();
+
+    $this->actingAs($admin)
+        ->get(Dashboard::getUrl(panel: 'admin'))
+        ->assertOk()
+        ->assertSeeInOrder(['Output tokens', 'Total tokens', 'Quota tokens'])
+        ->assertSee('what actually counts against a rate-limit window', escape: false);
+});
+
 it('nudges an admin on a hook too old to self-update, in the topbar of every panel page', function () {
     config(['token_slayer.hook_version' => '7']);
     $admin = User::factory()->admin()->create(['hook_version' => null, 'client_version' => '1.0.0']);

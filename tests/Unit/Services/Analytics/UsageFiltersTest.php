@@ -83,10 +83,23 @@ test('carries the total token mode through and builds the sum-of-columns express
         );
 });
 
-test('any token mode value other than total falls back to output', function () {
+test('any token mode value other than total or quota falls back to output', function () {
     // A stray/unexpected value on the wire must never build an ad-hoc SQL
     // fragment -- fall back to the safe, always-correct default instead.
     $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'garbage']);
 
     expect($f->tokenMode)->toBe('output');
+});
+
+test('carries the quota token mode through and excludes cache_read from the expression', function () {
+    // cache_read_input_tokens is the one field that does not count against a
+    // rate-limit window (Anthropic's own docs: "only uncached input tokens
+    // count toward your ITPM rate limits") -- "quota" mode is output + fresh
+    // input + cache_creation, deliberately leaving cache_read out.
+    $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'quota']);
+
+    expect($f->tokenMode)->toBe('quota')
+        ->and($f->tokenColumnExpression())->toBe(
+            '(events.tokens + events.input_tokens + events.cache_creation_input_tokens)'
+        );
 });
