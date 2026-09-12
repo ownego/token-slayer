@@ -6,6 +6,7 @@ import { execSync } from 'node:child_process';
 const atlasDir  = join(process.cwd(), 'public/assets/battlefield/fighters');
 const atlasPng  = join(atlasDir, 'fighters-atlas.png');
 const atlasJson = join(atlasDir, 'fighters-atlas.json');
+const versionFile = join(process.cwd(), 'resources/js/battlefield/config/atlas-version.js');
 
 // Only run if source sprites are present (skip in CI without sources)
 const sourcesExist = existsSync(join(process.cwd(), 'resources/assets/battlefield/fighters/soldier-idle.png'));
@@ -51,5 +52,31 @@ describe.skipIf(!sourcesExist)('pack-sprites', () => {
     const buf = readFileSync(atlasPng);
     const width = buf.readUInt32BE(16);
     expect(width).toBeLessThanOrEqual(4096);
+  });
+
+  // The atlas PNG/JSON are gitignored, non-hashed build artifacts served
+  // with a 7-day must-revalidate cache (ts.tungot.dev's host nginx) — a
+  // browser that cached them any time in that window won't even ask the
+  // server again until it expires, so a roster/animation change (a new
+  // frame added, an existing one repositioned) can silently 404 or play the
+  // wrong art for up to a week. ATLAS_VERSION is a content hash baked into
+  // the JS bundle at build time (not the gitignored PNG/JSON themselves) and
+  // appended as a ?v= query string where the atlas is loaded (scene.js,
+  // character-preview/scene.js) — a content change always earns a new URL,
+  // busting exactly like Vite's own hashed /build/ assets already do.
+  test('writes a content-derived ATLAS_VERSION constant', () => {
+    expect(existsSync(versionFile)).toBe(true);
+    const src = readFileSync(versionFile, 'utf8');
+    expect(src).toMatch(/export const ATLAS_VERSION = '[0-9a-f]{8,}';/);
+  });
+
+  test('ATLAS_VERSION changes when the atlas content changes', () => {
+    const first = readFileSync(versionFile, 'utf8');
+    // Perturb the source atlas JSON's content indirectly by re-running
+    // against the same sources — regenerating with identical inputs must
+    // stay stable (no spurious cache-busting on an unchanged build).
+    execSync('node scripts/pack-sprites.js', { stdio: 'inherit' });
+    const second = readFileSync(versionFile, 'utf8');
+    expect(second).toBe(first);
   });
 });

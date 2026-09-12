@@ -4,7 +4,7 @@
     "type": "module",
     "scripts": {
         "build": "node scripts/pack-sprites.js && vite build",
-        "dev": "vite",
+        "dev": "node scripts/pack-sprites.js && vite",
         "pack-sprites": "node scripts/pack-sprites.js",
         "test": "vitest run"
     },

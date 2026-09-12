@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { FIGHTER_TYPES } from '@battlefield/config.js';
 import { PREVIEW_SPRITE_SCALE, TextureKey } from '@battlefield/constants.js';
 import { registerFighterAnimations } from '@battlefield/fighter/animations.js';
+import { ATLAS_VERSION } from '@battlefield/config/atlas-version.js';
 import { buildMoveset } from './moveset.js';
 import { createSkillLoop } from './skill-loop.js';
 
@@ -20,8 +21,8 @@ export class CharacterPreviewScene extends Phaser.Scene {
     if (!this.textures.exists(TextureKey.FIGHTERS)) {
       this.load.atlas(
         TextureKey.FIGHTERS,
-        '/assets/battlefield/fighters/fighters-atlas.png',
-        '/assets/battlefield/fighters/fighters-atlas.json',
+        `/assets/battlefield/fighters/fighters-atlas.png?v=${ATLAS_VERSION}`,
+        `/assets/battlefield/fighters/fighters-atlas.json?v=${ATLAS_VERSION}`,
       );
     }
   }

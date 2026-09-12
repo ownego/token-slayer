@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { join, basename, extname } from 'node:path';
+import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 
 const SRC_DIR  = 'resources/assets/battlefield/fighters';
@@ -7,6 +8,15 @@ const OUT_DIR  = 'public/assets/battlefield/fighters';
 const FRAME_H  = 100;
 const FRAME_W  = 100;
 const MAX_W    = 4096;
+// The gitignored atlas PNG/JSON are non-hashed filenames served with a
+// 7-day must-revalidate cache (ts.tungot.dev's host nginx) -- a browser
+// that already cached them won't even ask the server again until that
+// window expires, so a roster/animation change can silently show stale
+// art for up to a week. This constant is a content hash baked into the JS
+// BUNDLE at build time instead (see scene.js/character-preview/scene.js's
+// `?v=` query string), which busts exactly like Vite's own hashed /build/
+// assets already do.
+const VERSION_FILE = 'resources/js/battlefield/config/atlas-version.js';
 
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -84,5 +94,16 @@ const atlasJson = {
   },
 };
 
-writeFileSync(join(OUT_DIR, 'fighters-atlas.json'), JSON.stringify(atlasJson));
+const atlasJsonText = JSON.stringify(atlasJson);
+writeFileSync(join(OUT_DIR, 'fighters-atlas.json'), atlasJsonText);
+
+// Derived from the JSON (frame layout) rather than the PNG bytes: sharp's
+// PNG encoder isn't guaranteed byte-identical across otherwise-identical
+// runs (compression timing/metadata), which would bust the cache on every
+// build even when nothing actually changed. The JSON already captures
+// every frame's name, position, and size, so it changes if and only if the
+// visible content does.
+const version = createHash('sha256').update(atlasJsonText).digest('hex').slice(0, 10);
+writeFileSync(VERSION_FILE, `export const ATLAS_VERSION = '${version}';\n`);
+
 console.log(`[pack-sprites] ${placements.length} strips → fighters-atlas.png (${MAX_W}×${atlasH})`);

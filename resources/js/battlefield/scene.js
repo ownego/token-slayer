@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BAT_CONFIG, BG_COLOR, LAYOUTS, BOSS_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
 import { BusEvent, TextureKey, SCENE_KEY, WORLD_ZOOM } from '@battlefield/constants.js';
+import { ATLAS_VERSION } from './config/atlas-version.js';
 import { bus } from './bus.js';
 import { Leaderboard } from './leaderboard.js';
 import { Impact } from './impact.js';
@@ -27,12 +28,15 @@ export class BattlefieldScene extends Phaser.Scene {
    * @return {void}
    */
   preload() {
-    // Single atlas covers all 138 fighter strips
+    // Single atlas covers all 138 fighter strips. ?v= busts the host
+    // nginx's 7-day must-revalidate cache on this non-hashed filename the
+    // moment a roster/animation change actually changes its content — see
+    // pack-sprites.js's own docblock for ATLAS_VERSION.
     if (!this.textures.exists(TextureKey.FIGHTERS)) {
       this.load.atlas(
         TextureKey.FIGHTERS,
-        '/assets/battlefield/fighters/fighters-atlas.png',
-        '/assets/battlefield/fighters/fighters-atlas.json',
+        `/assets/battlefield/fighters/fighters-atlas.png?v=${ATLAS_VERSION}`,
+        `/assets/battlefield/fighters/fighters-atlas.json?v=${ATLAS_VERSION}`,
       );
     }
     for (const boss of BOSS_TYPES) {
