@@ -165,3 +165,27 @@ test('returns an empty list when the range has no events', function () {
     expect((new ModelContributorsQuery)->get(UsageFilters::fromPageFilters(['range' => 'all']), 5))
         ->toBe([]);
 });
+
+test('sums output plus input and cache tokens in total mode, like every other analytics query', function () {
+    // The dashboard's output/total token-mode select is meant to flip every
+    // widget's numbers at once (see TokenModeFilterTest), but this query
+    // still had `SUM(events.tokens)` hardcoded -- the "Tokens by model" bars
+    // and their contributor tooltips never moved off output-only totals no
+    // matter which mode was selected, while every sibling widget did.
+    $tung = User::factory()->create(['slack_handle' => 'tung']);
+    Event::factory()->for($tung)->create([
+        'model' => 'claude-opus-5',
+        'tokens' => 335,
+        'input_tokens' => 2,
+        'cache_creation_input_tokens' => 791,
+        'cache_read_input_tokens' => 140_177,
+    ]);
+
+    $rows = (new ModelContributorsQuery)->get(
+        UsageFilters::fromPageFilters(['range' => 'all', 'token_mode' => 'total']),
+        5,
+    );
+
+    expect($rows[0]['tokens'])->toBe(335 + 2 + 791 + 140_177)
+        ->and($rows[0]['top_users'][0]['tokens'])->toBe(335 + 2 + 791 + 140_177);
+});

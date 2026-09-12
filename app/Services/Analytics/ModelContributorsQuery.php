@@ -39,6 +39,8 @@ final class ModelContributorsQuery
      */
     public function get(UsageFilters $filters, int $topUsers): array
     {
+        $tokenExpr = $filters->tokenColumnExpression();
+
         $rows = $this->scopeEvents($filters)
             // "Unknown" (no model recorded) is not a model to compare against
             // real ones -- it is an artifact of pre-tracking history and
@@ -53,7 +55,7 @@ final class ModelContributorsQuery
             ->groupBy('events.model', 'users.id', 'users.slack_handle', 'users.display_name', 'users.name')
             ->selectRaw('events.model as model')
             ->selectRaw('users.id as user_id, users.slack_handle, users.display_name, users.name')
-            ->selectRaw('SUM(events.tokens) as tokens')
+            ->selectRaw("SUM({$tokenExpr}) as tokens")
             ->get();
 
         // label => ['family' => …, 'tokens' => total, 'users' => user_id => [handle, tokens]].
