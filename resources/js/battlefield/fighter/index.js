@@ -265,10 +265,28 @@ export class Fighter {
       this.scene.time.delayedCall(CIRCLE_LEAD_MS, () => {
         if (!entry.sprite?.active) return;
         entry.sprite.setAlpha(1);
+        // Golden glow around the character's own silhouette while it rises —
+        // the same gold (#fbbf24) the flair ring already uses elsewhere in
+        // this game, faded in as it appears and back out once revealed.
+        const glow = entry.body?.preFX?.addGlow(0xfbbf24, 0, 0, false, 0.15, 20);
+        if (glow) {
+          this.scene.tweens.add({ targets: glow, outerStrength: 3, duration: 220, ease: 'Quad.easeOut' });
+        }
+        const clearGlow = () => {
+          if (!glow) return;
+          this.scene.tweens.add({
+            targets: glow,
+            outerStrength: 0,
+            duration: 260,
+            ease: 'Quad.easeIn',
+            onComplete: () => entry.body?.preFX?.remove(glow),
+          });
+        };
         if (summonAnimKey && entry.body) {
           entry.body.play(summonAnimKey);
           const durationMs = Math.ceil((summonAnim.frames / summonAnim.rate) * 1000);
           this.scene.time.delayedCall(durationMs, () => {
+            clearGlow();
             // A real hit may have landed mid-summon and already be animating
             // its own attack (handleHit always plays over whatever was
             // showing) — in that case animState is ATTACK for that real
@@ -284,6 +302,7 @@ export class Fighter {
             scale: finalScale,
             duration: TIMINGS.fighterJoinMs,
             ease: 'Back.easeOut',
+            onComplete: clearGlow,
           });
         }
       });
