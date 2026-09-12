@@ -61,7 +61,7 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   scene.tweens.add({ targets: g, rotation: towardBoss * Math.PI * 2, duration: isKillShot ? 560 : 400, ease: 'Linear' });
 
   scene.time.delayedCall(chargeDur + 15, () => {
-    onEffect?.(fighter.pos.x, fighter.pos.y);
+    onEffect?.(circleX, circleY);
     slashBurst(scene, fighter, circleX, circleY, {
       isKillShot, tints: [0x7c3aed, 0xa855f7, 0x22d3ee, 0xc026d3, 0xffffff],
     });
