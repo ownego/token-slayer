@@ -220,3 +220,22 @@ it('serves a legacy grant whose membership row is absent, without breaking backf
     // No account_user row at all for this (user, account) pair.
     expect(app(AccountProvisioningService::class)->claim($user, null))->toHaveCount(1);
 });
+
+it('guards set_up promotion on holding a live grant via any of the user devices', function () {
+    $user = User::factory()->create();
+    $granted = Account::factory()->create(['organization_uuid' => 'org-g']);
+    $ungranted = Account::factory()->create(['organization_uuid' => 'org-u']);
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($granted)->for($device)->claimed()->create();
+    $user->accounts()->syncWithoutDetaching([
+        $granted->id => ['status' => MembershipStatus::Pending->value],
+        $ungranted->id => ['status' => MembershipStatus::Pending->value],
+    ]);
+
+    $result = app(AccountProvisioningService::class)
+        ->confirmSetup($user, ['org-g', 'org-u'], [], $device);
+
+    expect($result['confirmed'])->toBe(1)
+        ->and($user->accounts()->find($granted->id)->pivot->status)->toBe(MembershipStatus::Tracked)
+        ->and($user->accounts()->find($ungranted->id)->pivot->status)->toBe(MembershipStatus::Pending);
+});
