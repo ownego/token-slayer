@@ -263,6 +263,10 @@ export const FIGHTER_TYPES = [
       walk:   { frames: 8, rate: 10 },
       attack: { frames: 9, rate: 12 },
       death:  { frames: 4, rate: 6  },
+      // The asset pack's own dedicated heal-effect strip (Magic(projectile)/
+      // Priest_Heal_effect.png) — played on the Necromancer, not Priest
+      // itself, for the odd-damage heal roll (attacks/blast.js).
+      heal:   { frames: 4, rate: 5  },
     },
     attacks: [
       { frames: 9, rate: 12, effectFrames: 5 },

@@ -1,14 +1,15 @@
 import Phaser from 'phaser';
-import { AttackType } from '@battlefield/constants.js';
+import { AttackType, TextureKey } from '@battlefield/constants.js';
 import { restScale, slashBurst } from './fx.js';
 import { isHealRoll } from './priest-heal.js';
 
-// Priest's heal flourish plays its own effect1 strip bigger and much slower
-// (almost 3x the normal ~417ms playtime) so it reads as a deliberate heal
-// rather than the normal quick attack-impact flash.
-const PRIEST_HEAL_SCALE_MULT = 2.8;
-const PRIEST_HEAL_TIME_SCALE = 0.35;
-const PRIEST_HEAL_EFFECT_MS = 1200;
+// Priest's own dedicated heal-effect strip (config/fighters.js's
+// animations.heal, registered generically off that same config) played big
+// on the Necromancer for the odd-damage flourish.
+const PRIEST_HEAL_SCALE = 3.2;
+const PRIEST_HEAL_FRAMES = 4;
+const PRIEST_HEAL_RATE = 5;
+const PRIEST_HEAL_EFFECT_MS = Math.ceil((PRIEST_HEAL_FRAMES / PRIEST_HEAL_RATE) * 1000);
 
 /**
  * Redhat — magic circle → beam.
@@ -84,9 +85,12 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
     // once the heal effect finishes) stands in for the hit landing instead,
     // and carries onImpact so the real damage/HP-bar update still happens.
     if (isPriestHeal) {
-      onEffect?.(necromancer.sprite.x, necromancer.sprite.y, {
-        scaleMult: PRIEST_HEAL_SCALE_MULT, timeScale: PRIEST_HEAL_TIME_SCALE,
-      });
+      const healFx = scene.add.sprite(necromancer.sprite.x, necromancer.sprite.y, TextureKey.FIGHTERS, 'priest-heal-0')
+        .setScale(PRIEST_HEAL_SCALE)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setDepth(3)
+        .play('priest-heal');
+      healFx.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => healFx.destroy());
       scene.time.delayedCall(PRIEST_HEAL_EFFECT_MS, () => necromancer.receiveHealAndBoltBoss(onImpact));
       return;
     }

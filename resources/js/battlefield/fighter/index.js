@@ -1370,15 +1370,14 @@ export class Fighter {
     if (fighter) {
       const attackType = fighter.ftype?.attackType ?? AttackType.BLAST;
       const effKey = (pickIdx >= 0 && attacks?.[pickIdx]?.effectFrames) ? `${key}-effect${pickIdx + 1}` : null;
-      const onEffect = effKey ? (x, y, { scaleMult = 1, timeScale = 1 } = {}) => {
+      const onEffect = effKey ? (x, y) => {
         if (!fighter.body?.scene) return;
         const eff = this.scene.add.sprite(x, y, TextureKey.FIGHTERS, `${effKey}-0`)
-          .setScale(fighter.sprite.scaleX * fighter.body.scaleX * scaleMult)
+          .setScale(fighter.sprite.scaleX * fighter.body.scaleX)
           .setFlipX(flipTowardBoss)
           .setBlendMode(Phaser.BlendModes.ADD)
           .setDepth(3)
           .play(effKey);
-        eff.anims.timeScale = timeScale;
         eff.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => eff.destroy());
       } : null;
       this.scene.attacks.dispatch(attackType, fighter, {
