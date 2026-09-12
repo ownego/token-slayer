@@ -66,3 +66,18 @@ export const DreadknightAttack = {
  * @type {number}
  */
 export const PREVIEW_SPRITE_SCALE = 2.4;
+
+/**
+ * Extra camera zoom-out applied on top of renderScaleFor()'s crispness
+ * factor (index.js) — everyone/everything (boss, fighters, Necromancer,
+ * bats, HUD) reads smaller within the same on-screen game area, without
+ * touching a single LAYOUTS/config coordinate: 1.0 shows exactly the
+ * authored logicalWidth x logicalHeight world; below 1.0 shows proportionally
+ * more of it, so existing content occupies a smaller fraction of the canvas.
+ * The HTML Damage HUD (battlefield.blade.php's fitToCanvas()) reads this
+ * same constant off window.__battlefield.worldZoom to keep mirroring the
+ * in-canvas TOP DAMAGE panel's position/size exactly.
+ *
+ * @type {number}
+ */
+export const WORLD_ZOOM = 0.85;

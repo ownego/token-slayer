@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { BAT_CONFIG, BG_COLOR, LAYOUTS, BOSS_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
-import { BusEvent, TextureKey, SCENE_KEY } from '@battlefield/constants.js';
+import { BusEvent, TextureKey, SCENE_KEY, WORLD_ZOOM } from '@battlefield/constants.js';
 import { bus } from './bus.js';
 import { Leaderboard } from './leaderboard.js';
 import { Impact } from './impact.js';
@@ -94,10 +94,13 @@ export class BattlefieldScene extends Phaser.Scene {
     // The canvas is created at logical size * renderScale (see index.js's
     // renderScaleFor) purely for pixel density; zooming the camera by the
     // same factor keeps the whole scene authored in logical coordinates.
-    // centerOn is required: with zoom alone the camera's view stays anchored
-    // on its own midpoint, which would show the wrong half of the world.
+    // WORLD_ZOOM stacks an additional, deliberate zoom-out on top of that so
+    // the whole battlefield reads smaller within the same on-screen area —
+    // see its own docblock in constants.js. centerOn is required: with zoom
+    // alone the camera's view stays anchored on its own midpoint, which
+    // would show the wrong half of the world.
     const renderScale = this.game.registry.get('renderScale') ?? 1;
-    this.cameras.main.setZoom(renderScale);
+    this.cameras.main.setZoom(renderScale * WORLD_ZOOM);
     this.cameras.main.centerOn(L.logicalWidth / 2, L.logicalHeight / 2);
 
     this.add.rectangle(L.logicalWidth / 2, L.logicalHeight / 2, L.logicalWidth, L.logicalHeight, BG_COLOR);

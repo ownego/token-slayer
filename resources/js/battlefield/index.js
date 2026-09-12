@@ -7,7 +7,7 @@ import { computeHudTop } from './hud-position.js';
 import { formatHp } from './format.js';
 import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
 import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
-import { BusEvent, SCENE_KEY } from './constants.js';
+import { BusEvent, SCENE_KEY, WORLD_ZOOM } from './constants.js';
 
 const ECHO_EVENT_MAP = {
   HitDealt:        BusEvent.HIT,
@@ -156,6 +156,11 @@ function bootGame(mount, state, mode) {
       logicalWidth: layout.logicalWidth,
       logicalHeight: layout.logicalHeight,
       renderScale,
+      // See constants.js's own docblock — the DOM Damage HUD (battlefield.
+      // blade.php's fitToCanvas()) needs this to keep mirroring the
+      // in-canvas TOP DAMAGE panel now that the camera shows more of the
+      // world than the canvas's own pixel dimensions alone would suggest.
+      worldZoom: WORLD_ZOOM,
       bossHp: () => scene.bossState?.currentHp,
       bossMaxHp: () => scene.bossState?.maxHp,
       computeHudTop,

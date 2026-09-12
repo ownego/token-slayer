@@ -326,6 +326,15 @@
                     const rect = canvas.getBoundingClientRect();
                     const parent = (this.$el.offsetParent || document.body).getBoundingClientRect();
                     const scale = rect.width / logicalW;
+                    // The camera shows more of the world than the canvas's own pixel
+                    // dimensions alone (WORLD_ZOOM in constants.js, < 1 zooms out) --
+                    // logical (0,0) no longer sits at the canvas's own top-left
+                    // corner, but inset by this margin on every side, and 1 logical
+                    // unit now covers fewer real pixels than `scale` alone says.
+                    const worldZoom = bf.worldZoom ?? 1;
+                    const effectiveScale = scale * worldZoom;
+                    const marginX = rect.width * (1 - worldZoom) / 2;
+                    const marginY = rect.height * (1 - worldZoom) / 2;
                     const LOGICAL_X = 12; // mirrors the panel's left inset
                     // The HUD mirrors the in-canvas panel's y, but the top-left nav
                     // stack occupies the same corner in every orientation, so clear
@@ -333,14 +342,14 @@
                     // not hard-coded: the stack grows by a pill per added link.
                     const navRect = document.getElementById('bf-nav')?.getBoundingClientRect();
                     this.$el.style.transformOrigin = 'top left';
-                    this.$el.style.left = (rect.left - parent.left + LOGICAL_X * scale) + 'px';
+                    this.$el.style.left = (rect.left - parent.left + marginX + LOGICAL_X * effectiveScale) + 'px';
                     this.$el.style.top = bf.computeHudTop({
                         navBottom: navRect ? navRect.bottom : null,
-                        canvasTop: rect.top,
+                        canvasTop: rect.top + marginY,
                         parentTop: parent.top,
-                        scale,
+                        scale: effectiveScale,
                     }) + 'px';
-                    this.$el.style.transform = `scale(${scale})`;
+                    this.$el.style.transform = `scale(${effectiveScale})`;
                 },
                 fmt(n) {
                     // Delegate to the boss HP formatter exposed on window.__battlefield
