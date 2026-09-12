@@ -12,6 +12,13 @@ use Symfony\Component\HttpFoundation\Response;
  * instead of Filament's default login page — this panel never registers
  * ->login(), so every user reaches /admin already authenticated via Slack
  * on the shared `web` guard, or not at all.
+ *
+ * In practice this rarely fires for a genuine guest: Filament's own
+ * `Authenticate` middleware runs earlier in `authMiddleware` and throws
+ * first, so its redirect target — `bootstrap/app.php`'s app-wide
+ * `redirectGuestsTo()` closure, not this class — is what visitors actually
+ * hit. Kept as a defensive fallback for any request that reaches this
+ * middleware already past that check.
  */
 class RedirectGuestsToSlackLogin
 {
