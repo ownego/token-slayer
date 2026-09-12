@@ -396,7 +396,13 @@ export class Necromancer {
       }
       this.sprite.clearTint();
       this._castBeam(bossX, bossY, boltDurationMs);
-      this.scene.time.delayedCall(boltDurationMs, () => onImpact?.());
+      this.scene.time.delayedCall(boltDurationMs, () => {
+        // Reuses the same real Attack02-effect art _spawnAppearBurst already
+        // plays for its own arrival flourish, now as the actual damage-hit
+        // flash landing on the boss instead of a bare beam fade-out.
+        this._spawnAppearBurst(bossX, bossY);
+        onImpact?.();
+      });
     });
   }
 
