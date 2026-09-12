@@ -167,7 +167,7 @@ export class BatSwarm {
     this.scene.tweens.add({
       targets: state,
       t: 1,
-      duration: Phaser.Math.Clamp(dist * 14, TIMINGS.batHopDurationMinMs, TIMINGS.batHopDurationMaxMs),
+      duration: Phaser.Math.Clamp(dist * 30, TIMINGS.batHopDurationMinMs, TIMINGS.batHopDurationMaxMs),
       ease: 'Sine.easeInOut',
       onUpdate: () => {
         if (!entry.sprite?.active) return;
