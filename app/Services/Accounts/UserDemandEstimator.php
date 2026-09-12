@@ -3,6 +3,7 @@
 namespace App\Services\Accounts;
 
 use App\Models\Account;
+use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Analytics\Concerns\ScopesEventsByFilters;
@@ -134,5 +135,84 @@ final class UserDemandEstimator
         }
 
         return $best;
+    }
+
+    /**
+     * This user's own observed quota-cost-per-token on this account,
+     * measured only from 5h windows (`account_usage_snapshots.reset_5h_at`
+     * groups) where they were the account's ONLY contributor —
+     * unconfounded, no regression, no guess at how to split credit between
+     * simultaneous users. Expressed in the same units as
+     * {@see AccountCapacityEstimator::tokensPerPercent()} (tokens per 1% of
+     * util_5h) so a caller can use whichever is available interchangeably.
+     * Returns null when the user never had a qualifying clean window in the
+     * trend window — the caller falls back to the account's own uniform
+     * `tokensPerPercent()`.
+     *
+     * @param  User  $user  the user to measure
+     * @param  Account  $account  the account to measure their usage against
+     * @return float|null tokens per 1% of util_5h, or null with no qualifying window
+     */
+    public function cleanWindowQuotaWeight(User $user, Account $account): ?float
+    {
+        $trendDays = (int) config('token_slayer.rebalance.trend_window_days');
+
+        $resetTimes = AccountUsageSnapshot::query()
+            ->where('account_id', $account->id)
+            ->where('created_at', '>=', now()->subDays($trendDays))
+            ->distinct()
+            ->pluck('reset_5h_at');
+
+        $percentPerTokenRatios = [];
+
+        foreach ($resetTimes as $resetAt) {
+            $windowSnapshots = AccountUsageSnapshot::query()
+                ->where('account_id', $account->id)
+                ->where('reset_5h_at', $resetAt)
+                ->orderBy('created_at')
+                ->get(['util_5h', 'created_at']);
+
+            if ($windowSnapshots->count() < 2) {
+                continue;
+            }
+
+            $utilDelta = $windowSnapshots->last()->util_5h - $windowSnapshots->first()->util_5h;
+            if ($utilDelta <= 0) {
+                continue;
+            }
+
+            $windowStart = $windowSnapshots->first()->created_at;
+            $windowEnd = $windowSnapshots->last()->created_at;
+
+            $contributorIds = Event::query()
+                ->where('account_id', $account->id)
+                ->whereBetween('created_at', [$windowStart, $windowEnd])
+                ->distinct()
+                ->pluck('user_id');
+
+            if ($contributorIds->count() !== 1 || ! $contributorIds->contains($user->id)) {
+                continue;
+            }
+
+            $userTokens = (int) Event::query()
+                ->where('account_id', $account->id)
+                ->where('user_id', $user->id)
+                ->whereBetween('created_at', [$windowStart, $windowEnd])
+                ->sum('tokens');
+
+            if ($userTokens <= 0) {
+                continue;
+            }
+
+            $percentPerTokenRatios[] = $utilDelta / $userTokens;
+        }
+
+        if ($percentPerTokenRatios === []) {
+            return null;
+        }
+
+        $averagePercentPerToken = array_sum($percentPerTokenRatios) / count($percentPerTokenRatios);
+
+        return $averagePercentPerToken > 0.0 ? 1 / $averagePercentPerToken : null;
     }
 }

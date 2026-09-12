@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Accounts\UserDemandEstimator;
@@ -58,4 +59,39 @@ it('returns a burst factor of 1.0 when the user has no events in the trend windo
     $user = User::factory()->create();
 
     expect(app(UserDemandEstimator::class)->burstFactor($user, $account))->toBe(1.0);
+});
+
+it('measures a user\'s own quota-cost-per-token from a 5h window where they were the only contributor', function () {
+    Carbon::setTestNow('2026-09-12 12:00:00');
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $resetAt = now()->addHours(3);
+
+    // A clean window: util_5h climbs 10 -> 40 (delta 30) while only $user
+    // has events in it. They contributed 3,000 tokens, so their measured
+    // ratio is 30/3000 = 0.01 percent-per-token, i.e. tokensPerPercent = 100.
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetAt, 'created_at' => now()->subMinutes(10)]);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetAt, 'created_at' => now()]);
+    Event::factory()->for($account)->for($user)->create(['tokens' => 3_000, 'created_at' => now()->subMinutes(5)]);
+
+    expect(app(UserDemandEstimator::class)->cleanWindowQuotaWeight($user, $account))->toBe(100.0);
+
+    Carbon::setTestNow();
+});
+
+it('returns null when the user never had a clean (single-contributor) window', function () {
+    Carbon::setTestNow('2026-09-12 12:00:00');
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $other = User::factory()->create();
+    $resetAt = now()->addHours(3);
+
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetAt, 'created_at' => now()->subMinutes(10)]);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetAt, 'created_at' => now()]);
+    Event::factory()->for($account)->for($user)->create(['tokens' => 3_000, 'created_at' => now()->subMinutes(5)]);
+    Event::factory()->for($account)->for($other)->create(['tokens' => 1_000, 'created_at' => now()->subMinutes(4)]);
+
+    expect(app(UserDemandEstimator::class)->cleanWindowQuotaWeight($user, $account))->toBeNull();
+
+    Carbon::setTestNow();
 });
