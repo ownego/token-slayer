@@ -81,20 +81,63 @@ export class Necromancer {
     this.scene.tweens.killTweensOf(this.sprite);
     // The Summon artwork's default (unflipped) orientation already casts
     // toward the right; only mirror it when the target actually sits to
-    // the left, overriding whatever flip the wander loop last left it in.
-    this.sprite.setFlipX(targetX < this.sprite.x);
-    this.sprite.setTint(0xa855f7);
-    this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
-    const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
-    const durationMs = Math.ceil((summonInfo.count / summonInfo.rate) * 1000);
-    this._castBeam(targetX, targetY, durationMs);
-    this.scene.time.delayedCall(durationMs, () => {
-      if (this.sprite?.active) {
-        this.sprite.clearTint();
-        this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
+    // the left, overriding whatever flip the wander loop last left it in —
+    // via a quick squash-flip-unsquash turn instead of an instant mirror,
+    // so it reads as the character actually turning rather than snapping.
+    this._faceTarget(targetX, () => {
+      if (!this.sprite?.active) {
+        onRevealed();
+        this._processSummonQueue();
+        return;
       }
-      onRevealed();
-      this._processSummonQueue();
+      this.sprite.setTint(0xa855f7);
+      this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
+      const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
+      const durationMs = Math.ceil((summonInfo.count / summonInfo.rate) * 1000);
+      this._castBeam(targetX, targetY, durationMs);
+      this.scene.time.delayedCall(durationMs, () => {
+        if (this.sprite?.active) {
+          this.sprite.clearTint();
+          this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
+        }
+        onRevealed();
+        this._processSummonQueue();
+      });
+    });
+  }
+
+  /**
+   * Turns the Necromancer to face targetX before onDone runs — a quick
+   * horizontal squash, flip, and unsquash instead of an instant mirror, so
+   * facing the summon target reads as a natural turn. Calls onDone
+   * immediately if it's already facing the right way.
+   *
+   * @param {number} targetX
+   * @param {Function} onDone
+   * @return {void}
+   */
+  _faceTarget(targetX, onDone) {
+    const shouldFlip = targetX < this.sprite.x;
+    if (this.sprite.flipX === shouldFlip) {
+      onDone();
+      return;
+    }
+    const baseScaleX = Math.abs(this.sprite.scaleX);
+    this.scene.tweens.add({
+      targets: this.sprite,
+      scaleX: 0,
+      duration: 90,
+      ease: 'Quad.easeIn',
+      onComplete: () => {
+        this.sprite.setFlipX(shouldFlip);
+        this.scene.tweens.add({
+          targets: this.sprite,
+          scaleX: baseScaleX,
+          duration: 90,
+          ease: 'Quad.easeOut',
+          onComplete: onDone,
+        });
+      },
     });
   }
 
@@ -114,7 +157,7 @@ export class Necromancer {
     // Summon artwork is well above that, roughly a third of the way up the
     // rendered frame — starting the beam at sprite.y itself reads as coming
     // from around its feet/waist instead.
-    const handY = this.sprite.y - NECROMANCER_CONFIG.scale * 100 * 0.35;
+    const handY = this.sprite.y - NECROMANCER_CONFIG.scale * 100 * 0.18;
     const beam = this.scene.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
     beam.lineStyle(4, 0xa855f7, 0.8);
     beam.lineBetween(this.sprite.x, handY, targetX, targetY);
