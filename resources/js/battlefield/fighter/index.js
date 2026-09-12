@@ -242,12 +242,14 @@ export class Fighter {
     entry.hasCustomPosition = isCustom;
     this.relayoutFighters();
 
-    // Characters with their own Summon animation (the four skeleton
-    // variants, per the asset pack's own summon-in-tandem design) rise in
-    // via that animation instead of a generic scale pop — it already
-    // depicts emerging from the ground, so no separate pop tween is needed.
-    const summonAnim = entry.ftype?.animations?.summon;
-    const summonAnimKey = summonAnim ? `${entry.ftype.key}-summon` : null;
+    // Every character rises in via a Summon animation instead of a generic
+    // scale pop. The four skeleton variants ship their own dedicated Summon
+    // art (per the asset pack's own summon-in-tandem design); everyone else
+    // gets one fighter/animations.js derives from their own Death strip
+    // played in reverse — both already depict emerging from the ground, so
+    // no separate pop tween is needed.
+    const summonAnim = entry.ftype?.animations?.summon ?? entry.ftype?.animations?.death;
+    const summonAnimKey = summonAnim && entry.ftype ? `${entry.ftype.key}-summon` : null;
     const finalScale = entry.sprite.scaleX;
     // Hidden immediately, regardless of which reveal path this character
     // uses below — addFighter() already left it sitting fully visible in

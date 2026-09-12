@@ -8,18 +8,18 @@ describe('buildMoveset', () => {
     expect(buildMoveset('not-a-real-character')).toBeNull();
   });
 
-  test('a 2-attack character (orc) exposes exactly 5 skills: idle, walk, attack1, attack2, death', () => {
+  test('a 2-attack character (orc) exposes exactly 6 skills: idle, walk, attack1, attack2, death, summon', () => {
     const moveset = buildMoveset('orc');
 
     expect(moveset.key).toBe('orc');
     expect(moveset.attackType).toBe(AttackType.SLASH);
-    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'death']);
+    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'death', 'summon']);
   });
 
-  test('a 3-attack character (soldier) exposes exactly 6 skills, including attack3', () => {
+  test('a 3-attack character (soldier) exposes exactly 7 skills, including attack3 and summon', () => {
     const moveset = buildMoveset('soldier');
 
-    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'attack3', 'death']);
+    expect(moveset.skills.map(s => s.id)).toEqual(['idle', 'walk', 'attack1', 'attack2', 'attack3', 'death', 'summon']);
   });
 
   test('idle and walk loop, have no effect/duration, and carry their frame count and rate', () => {
@@ -88,9 +88,27 @@ describe('buildMoveset', () => {
     });
   });
 
-  test('a character without a Summon animation (orc) has no summon skill', () => {
+  test('a character without a dedicated Summon animation (orc) derives one from Death reversed', () => {
     const moveset = buildMoveset('orc');
+    const summon = moveset.skills.find(s => s.id === 'summon');
 
-    expect(moveset.skills.find(s => s.id === 'summon')).toBeUndefined();
+    // orc has no animations.summon; animations.death = { frames: 4, rate: 6 } -> 667ms,
+    // same frame count/rate as Death since the derived anim just plays those frames reversed.
+    expect(moveset.skills.at(-1).id).toBe('summon');
+    expect(summon).toMatchObject({
+      animKey: 'orc-summon',
+      loop: false,
+      effectAnimKey: null,
+      durationMs: 667,
+      frames: 4,
+      rate: 6,
+    });
+  });
+
+  test('every FIGHTER_TYPES character ends up with a summon skill, dedicated or derived', () => {
+    for (const ft of FIGHTER_TYPES) {
+      const moveset = buildMoveset(ft.key);
+      expect(moveset.skills.at(-1).id).toBe('summon');
+    }
   });
 });
