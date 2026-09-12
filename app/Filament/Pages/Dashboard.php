@@ -61,6 +61,7 @@ class Dashboard extends BaseDashboard
                     ->options([
                         'output' => 'Output tokens',
                         'total' => 'Total tokens',
+                        'quota' => 'Quota tokens',
                     ])
                     ->default('output')
                     // Filament persists this form to the session
@@ -77,6 +78,7 @@ class Dashboard extends BaseDashboard
                     ->helperText(new HtmlString(
                         '<span style="display:block"><strong>Output:</strong> what damage is dealt from (unchanged from before this filter existed).</span>'
                         .'<span style="display:block"><strong>Total:</strong> output + input + cache tokens, for analytics only.</span>'
+                        .'<span style="display:block"><strong>Quota:</strong> total minus cache-read tokens -- what actually counts against a rate-limit window.</span>'
                     )),
             ]);
     }
