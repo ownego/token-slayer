@@ -10,7 +10,7 @@ export class BatSwarm {
    */
   constructor(scene) {
     this.scene = scene;
-    /** @type {Map<number, {sprite: Phaser.GameObjects.Sprite|null, alive: boolean}>} */
+    /** @type {Map<number, {sprite: Phaser.GameObjects.Sprite|null, alive: boolean, speedFactor?: number}>} */
     this.bats = new Map();
     this.maxHp = 1;
     this.autoAttackTimer = null;
@@ -45,9 +45,17 @@ export class BatSwarm {
         .setScale(BAT_CONFIG.scale)
         .setDepth(4)
         .play(`${BAT_CONFIG.key}-flying`);
-      const entry = { sprite, alive: true };
+      // Stable per-bat speed variance so their hop cycles never resettle
+      // into lockstep, plus an index-staggered start so all 5 don't begin
+      // (and later re-sync) their very first hop on the same tick.
+      const entry = { sprite, alive: true, speedFactor: Phaser.Math.FloatBetween(0.75, 1.35) };
       this.bats.set(i, entry);
-      this._flyToNextHop(entry);
+      const startDelay = i * 220 + Phaser.Math.Between(0, 400);
+      this.scene.time.delayedCall(startDelay, () => {
+        if (entry.alive && entry.sprite?.active) {
+          this._flyToNextHop(entry);
+        }
+      });
     }
     this._scheduleAutoAttack();
   }
@@ -135,7 +143,7 @@ export class BatSwarm {
    * zone, immediately chaining the next hop on completion — bats never
    * stand still between hops, only a Hurt/Death reaction interrupts this.
    *
-   * @param {{sprite: Phaser.GameObjects.Sprite, alive: boolean}} entry
+   * @param {{sprite: Phaser.GameObjects.Sprite, alive: boolean, speedFactor: number}} entry
    * @return {void}
    */
   _flyToNextHop(entry) {
@@ -167,7 +175,7 @@ export class BatSwarm {
     this.scene.tweens.add({
       targets: state,
       t: 1,
-      duration: Phaser.Math.Clamp(dist * 30, TIMINGS.batHopDurationMinMs, TIMINGS.batHopDurationMaxMs),
+      duration: Phaser.Math.Clamp(dist * 30 * entry.speedFactor, TIMINGS.batHopDurationMinMs, TIMINGS.batHopDurationMaxMs),
       ease: 'Sine.easeInOut',
       onUpdate: () => {
         if (!entry.sprite?.active) return;
