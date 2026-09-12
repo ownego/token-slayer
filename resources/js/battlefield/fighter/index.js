@@ -223,12 +223,20 @@ export class Fighter {
 
     const finalScale = entry.sprite.scaleX;
     entry.sprite.setScale(0);
-    this.scene.tweens.add({
-      targets: entry.sprite,
-      scale: finalScale,
-      duration: TIMINGS.fighterJoinMs,
-      ease: 'Back.easeOut',
-    });
+    const popIn = () => {
+      if (!entry.sprite?.active) return;
+      this.scene.tweens.add({
+        targets: entry.sprite,
+        scale: finalScale,
+        duration: TIMINGS.fighterJoinMs,
+        ease: 'Back.easeOut',
+      });
+    };
+    if (this.scene.necromancer) {
+      this.scene.necromancer.summon(popIn);
+    } else {
+      popIn();
+    }
   }
 
   /**
