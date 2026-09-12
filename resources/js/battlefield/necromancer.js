@@ -54,19 +54,45 @@ export class Necromancer {
    */
   _createHomePlatform() {
     const key = `${NECROMANCER_CONFIG.key}-circle`;
+    const baseScale = 4.2;
     const platform = this.scene.add
       .sprite(this.homeAnchor.x, this.homeAnchor.y, key)
       .setDepth(0.5)
-      .setScale(4.2)
+      .setScale(baseScale)
       .setAlpha(0.55)
       .setBlendMode(Phaser.BlendModes.ADD)
       .play(key);
+    this._spinFlatDisc(platform, baseScale, 4500, -1);
+  }
+
+  /**
+   * Spins a flat ground-plane circle sprite (the artwork is a perspective
+   * ellipse, not a circle drawn face-on) by oscillating scaleX through
+   * cos(t) instead of rotating the 2D image — a plain `angle` rotation would
+   * tilt the ellipse's own axis, which reads as wrong for something meant to
+   * lie flat and spin around its vertical axis. Standard 2D "flat spinning
+   * disc" trick: scaleX passing through 0 and negative reads as the disc
+   * turning edge-on and showing its other face.
+   *
+   * @param {Phaser.GameObjects.Sprite} sprite
+   * @param {number} baseScale
+   * @param {number} durationMs one full spin's duration
+   * @param {number} repeat tween repeat count (-1 for infinite)
+   * @return {void}
+   */
+  _spinFlatDisc(sprite, baseScale, durationMs, repeat) {
+    const spin = { t: 0 };
     this.scene.tweens.add({
-      targets: platform,
-      angle: 360,
-      duration: 9000,
-      repeat: -1,
+      targets: spin,
+      t: Math.PI * 2,
+      duration: durationMs,
+      repeat,
       ease: 'Linear',
+      onUpdate: () => {
+        if (sprite.active) {
+          sprite.scaleX = baseScale * Math.cos(spin.t);
+        }
+      },
     });
   }
 
@@ -303,16 +329,13 @@ export class Necromancer {
     if (!this.scene.anims.exists(key)) {
       return;
     }
-    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(2.6).setBlendMode(Phaser.BlendModes.ADD);
+    const baseScale = 2.6;
+    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(baseScale).setBlendMode(Phaser.BlendModes.ADD);
     circle.play(key);
     circle.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => circle.destroy());
     const circleInfo = NECROMANCER_CONFIG.animFiles.circle;
-    this.scene.tweens.add({
-      targets: circle,
-      angle: 180,
-      duration: Math.ceil((circleInfo.count / circleInfo.rate) * 1000),
-      ease: 'Sine.easeOut',
-    });
+    const lifeMs = Math.ceil((circleInfo.count / circleInfo.rate) * 1000);
+    this._spinFlatDisc(circle, baseScale, lifeMs, 0);
   }
 
   /**
