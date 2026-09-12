@@ -1,5 +1,5 @@
 /** HP-fraction thresholds at which bat 1..5 dies, in order. */
-export const BAT_HP_THRESHOLDS = [0.80, 0.70, 0.60, 0.50, 0.40];
+export const BAT_HP_THRESHOLDS = [0.80, 0.60, 0.40, 0.20, 0.10];
 
 /**
  * Resolves which entity a single HitDealt visually lands on, purely from the

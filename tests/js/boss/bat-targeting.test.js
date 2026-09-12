@@ -29,7 +29,13 @@ describe('computeBatHitTarget', () => {
   });
 
   test('one big hit crossing multiple thresholds kills every crossed bat and targets the lowest', () => {
+    // Thresholds [0.80, 0.60, 0.40, 0.20, 0.10]: 0.95 -> 0.35 crosses 0.80, 0.60, 0.40 (bats 1-3), not 0.20/0.10.
     const result = computeBatHitTarget({ damage: 1, hpBeforePct: 0.95, hpAfterPct: 0.35, aliveBats: ALL_ALIVE });
+    expect(result).toEqual({ targetBat: 3, killedBats: [1, 2, 3] });
+  });
+
+  test('a hit crossing every remaining threshold down to 10% kills all five bats', () => {
+    const result = computeBatHitTarget({ damage: 1, hpBeforePct: 0.95, hpAfterPct: 0.05, aliveBats: ALL_ALIVE });
     expect(result).toEqual({ targetBat: 5, killedBats: [1, 2, 3, 4, 5] });
   });
 
@@ -39,7 +45,7 @@ describe('computeBatHitTarget', () => {
     expect(result).toEqual({ targetBat: null, killedBats: [] });
   });
 
-  test('BAT_HP_THRESHOLDS is the five descending 10%-apart marks', () => {
-    expect(BAT_HP_THRESHOLDS).toEqual([0.80, 0.70, 0.60, 0.50, 0.40]);
+  test('BAT_HP_THRESHOLDS spreads the five bat deaths down to 10% boss HP', () => {
+    expect(BAT_HP_THRESHOLDS).toEqual([0.80, 0.60, 0.40, 0.20, 0.10]);
   });
 });
