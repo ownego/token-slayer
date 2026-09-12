@@ -72,4 +72,25 @@ describe('buildMoveset', () => {
       expect(attackSkills).toHaveLength(ft.attacks.length);
     }
   });
+
+  test('a character with a Summon animation (skeleton-archer) appends a summon skill at the end', () => {
+    const moveset = buildMoveset('skeleton-archer');
+    const summon = moveset.skills.find(s => s.id === 'summon');
+
+    expect(moveset.skills.at(-1).id).toBe('summon');
+    expect(summon).toMatchObject({
+      animKey: 'skeleton-archer-summon',
+      loop: false,
+      effectAnimKey: null,
+      durationMs: 833,
+      frames: 5,
+      rate: 6,
+    });
+  });
+
+  test('a character without a Summon animation (orc) has no summon skill', () => {
+    const moveset = buildMoveset('orc');
+
+    expect(moveset.skills.find(s => s.id === 'summon')).toBeUndefined();
+  });
 });

@@ -41,5 +41,22 @@ export function buildMoveset(characterKey) {
     },
   ];
 
+  // Only the skeleton family ships a dedicated Summon (rise-from-ground)
+  // animation. Appended last, not first, so callers that default to
+  // skills[0] as idle (the character-preview scene's initial selection)
+  // are unaffected.
+  if (ftype.animations.summon) {
+    skills.push({
+      id: 'summon',
+      label: '✨ Summon',
+      animKey: `${ftype.key}-summon`,
+      loop: false,
+      effectAnimKey: null,
+      durationMs: Math.round((ftype.animations.summon.frames / ftype.animations.summon.rate) * 1000),
+      frames: ftype.animations.summon.frames,
+      rate: ftype.animations.summon.rate,
+    });
+  }
+
   return { key: ftype.key, attackType: ftype.attackType, skills };
 }
