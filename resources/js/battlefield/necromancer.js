@@ -357,6 +357,40 @@ export class Necromancer {
   }
 
   /**
+   * Reacts to Priest's odd-damage heal flourish (attacks/priest-heal.js):
+   * flashes a green heal tint, faces the boss, then bolts it with the same
+   * beam style _castBeam already draws for a summon cast — purely cosmetic,
+   * no HP change. Skipped entirely while a summon is in progress so it never
+   * competes with the shared sprite's teleport/cast animation.
+   *
+   * @return {void}
+   */
+  receiveHealAndBoltBoss() {
+    if (!this.sprite?.active || this.isSummoning) {
+      return;
+    }
+    this.sprite.setTint(0x4ade80);
+    this.scene.tweens.add({
+      targets: this.sprite,
+      scaleX: NECROMANCER_CONFIG.scale * 1.08,
+      scaleY: NECROMANCER_CONFIG.scale * 1.08,
+      duration: 120,
+      yoyo: true,
+      ease: 'Sine.easeOut',
+    });
+    const bossX = this.scene.layout.boss.anchor.x;
+    const bossY = this.scene.layout.boss.anchor.y;
+    this.sprite.setFlipX(bossX < this.sprite.x);
+    const healFlashMs = 160;
+    const boltDurationMs = 280;
+    this.scene.time.delayedCall(healFlashMs, () => {
+      if (!this.sprite?.active) return;
+      this.sprite.clearTint();
+      this._castBeam(bossX, bossY, boltDurationMs);
+    });
+  }
+
+  /**
    * Spawns a one-shot summon-circle burst at the given world position — used
    * under a newly-joined fighter as it rises in, separate from the
    * Necromancer's own sprite/position.

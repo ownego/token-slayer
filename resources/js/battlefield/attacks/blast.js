@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { AttackType } from '@battlefield/constants.js';
 import { restScale, slashBurst } from './fx.js';
+import { isHealRoll } from './priest-heal.js';
+import { castHealOrbToNecromancer } from './priest-heal-fx.js';
 
 /**
  * Redhat — magic circle → beam.
@@ -68,7 +70,15 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   scene.tweens.add({ targets: g, rotation: towardBoss * Math.PI * 2, duration: isKillShot ? 560 : 400, ease: 'Linear' });
 
   scene.time.delayedCall(chargeDur + 15, () => {
-    onEffect?.(strikeX, strikeY);
+    // Priest's own coin-flip flourish: odd damage sends a heal orb to the
+    // Necromancer (who then bolts the boss itself) instead of the normal
+    // elemental burst — purely cosmetic, the beam/projectile below still
+    // land the real damage either way.
+    if (fighter.ftype?.key === 'priest' && isHealRoll(damage)) {
+      castHealOrbToNecromancer(scene, strikeX, strikeY);
+    } else {
+      onEffect?.(strikeX, strikeY);
+    }
     slashBurst(scene, fighter, strikeX, strikeY, {
       isKillShot, tints: [0x7c3aed, 0xa855f7, 0x22d3ee, 0xc026d3, 0xffffff],
     });
