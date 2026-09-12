@@ -16,4 +16,8 @@ export const TIMINGS = {
   flairDefaultColor: '#fbbf24',
   // One lap of the orbit ring at rest (before/after a hit's spin-up boost).
   flairOrbitPeriodMs: 3200,
+  batAutoAttackMinMs: 8000,
+  batAutoAttackMaxMs: 12000,
+  batWanderMinMs: 1500,
+  batWanderMaxMs: 3000,
 };

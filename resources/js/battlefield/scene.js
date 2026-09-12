@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BG_COLOR, LAYOUTS, BOSS_TYPES } from '@battlefield/config.js';
+import { BAT_CONFIG, BG_COLOR, LAYOUTS, BOSS_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
 import { BusEvent, TextureKey, SCENE_KEY } from '@battlefield/constants.js';
 import { bus } from './bus.js';
 import { Leaderboard } from './leaderboard.js';
@@ -46,6 +46,14 @@ export class BattlefieldScene extends Phaser.Scene {
           this.load.spritesheet(boss.key, boss.file, { frameWidth: boss.frameWidth, frameHeight: boss.frameHeight });
       }
     }
+    for (const companion of [BAT_CONFIG, NECROMANCER_CONFIG]) {
+      for (const [anim, info] of Object.entries(companion.animFiles)) {
+        const texKey = `${companion.key}-${anim}`;
+        if (!this.textures.exists(texKey)) {
+          this.load.spritesheet(texKey, info.file, { frameWidth: info.frameWidth, frameHeight: info.frameHeight });
+        }
+      }
+    }
     if (!this.textures.exists(TextureKey.FIREBALL))
       this.load.spritesheet(TextureKey.FIREBALL, '/assets/battlefield/fx/fireball.png', { frameWidth: 16, frameHeight: 16 });
     if (!this.textures.exists(TextureKey.EXPLOSION))
@@ -59,6 +67,7 @@ export class BattlefieldScene extends Phaser.Scene {
         ...BOSS_TYPES.filter(b => b.pixelArt !== false).flatMap(b =>
           b.animFiles ? Object.keys(b.animFiles).map(anim => `${b.key}-${anim}`) : [b.key]
         ),
+        ...[BAT_CONFIG, NECROMANCER_CONFIG].flatMap(c => Object.keys(c.animFiles).map(anim => `${c.key}-${anim}`)),
         TextureKey.FIREBALL, TextureKey.EXPLOSION,
       ];
       for (const key of pixelArtKeys) {
