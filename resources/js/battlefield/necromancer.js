@@ -154,15 +154,18 @@ export class Necromancer {
    */
   _castBeam(targetX, targetY, durationMs) {
     // The sprite's origin sits at frame-center; the raised hand/staff in the
-    // Summon artwork is well above that, roughly a third of the way up the
-    // rendered frame — starting the beam at sprite.y itself reads as coming
-    // from around its feet/waist instead.
+    // Summon artwork sits above and to the side it's currently facing (the
+    // artwork casts toward its own right by default, mirrored with flipX) —
+    // starting the beam at sprite.x/y itself reads as coming from around its
+    // waist instead.
+    const facingSign = this.sprite.flipX ? -1 : 1;
+    const handX = this.sprite.x + facingSign * NECROMANCER_CONFIG.scale * 100 * 0.22;
     const handY = this.sprite.y - NECROMANCER_CONFIG.scale * 100 * 0.18;
     const beam = this.scene.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
     beam.lineStyle(4, 0xa855f7, 0.8);
-    beam.lineBetween(this.sprite.x, handY, targetX, targetY);
+    beam.lineBetween(handX, handY, targetX, targetY);
     beam.lineStyle(2, 0xe9d5ff, 0.9);
-    beam.lineBetween(this.sprite.x, handY, targetX, targetY);
+    beam.lineBetween(handX, handY, targetX, targetY);
     this.scene.tweens.add({
       targets: beam,
       alpha: 0,
