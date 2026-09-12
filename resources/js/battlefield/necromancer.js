@@ -11,7 +11,6 @@ const SUMMON_SPOT_FSIZE = 90;
 const SUMMON_SPOT_OFFSET = 100;
 // Minimum clearance from any other already-placed fighter.
 const SUMMON_SPOT_MIN_FIGHTER_GAP = 50;
-const TELEPORT_FADE_MS = 140;
 
 /** Manages the permanent Necromancer fixture: idle wander and the summon-on-join effect. */
 export class Necromancer {
@@ -157,11 +156,12 @@ export class Necromancer {
   }
 
   /**
-   * Fades the Necromancer out, repositions and re-faces it instantly, then
-   * fades it back in — reads as "vanish and reappear" without competing
-   * with the fighter's own summon-circle burst, which lands just a beat
-   * later at a nearby but distinct spot (two circle bursts that close
-   * together read as one confusing effect, not two clear ones).
+   * Plays the Death strip forward to vanish the Necromancer in place,
+   * repositions and re-faces it instantly while it's gone, then plays the
+   * same strip in reverse to reassemble it there — reusing the asset pack's
+   * own death artwork for the teleport rather than a bare alpha fade, the
+   * same "forward to leave, reversed to return" convention boss/index.js
+   * already uses for the dreadknight's fall/getup.
    *
    * @param {number} x
    * @param {number} y
@@ -170,25 +170,18 @@ export class Necromancer {
    * @return {void}
    */
   _teleportTo(x, y, flip, onArrived) {
-    this.scene.tweens.add({
-      targets: this.sprite,
-      alpha: 0,
-      duration: TELEPORT_FADE_MS,
-      ease: 'Quad.easeIn',
-      onComplete: () => {
-        if (!this.sprite?.active) {
-          onArrived();
-          return;
-        }
-        this.sprite.setPosition(x, y).setFlipX(flip);
-        this.scene.tweens.add({
-          targets: this.sprite,
-          alpha: 1,
-          duration: TELEPORT_FADE_MS,
-          ease: 'Quad.easeOut',
-          onComplete: onArrived,
-        });
-      },
+    this.scene.tweens.killTweensOf(this.sprite);
+    const deathInfo = NECROMANCER_CONFIG.animFiles.death;
+    const transitionMs = Math.ceil((deathInfo.count / deathInfo.rate) * 1000);
+    this.sprite.play(`${NECROMANCER_CONFIG.key}-vanish`);
+    this.scene.time.delayedCall(transitionMs, () => {
+      if (!this.sprite?.active) {
+        onArrived();
+        return;
+      }
+      this.sprite.setPosition(x, y).setFlipX(flip);
+      this.sprite.play(`${NECROMANCER_CONFIG.key}-appear`);
+      this.scene.time.delayedCall(transitionMs, onArrived);
     });
   }
 
@@ -322,7 +315,9 @@ export class Necromancer {
   }
 
   /**
-   * Registers every Necromancer animation against its own individually-loaded spritesheets.
+   * Registers every Necromancer animation against its own individually-loaded
+   * spritesheets, plus the derived vanish/appear pair (the Death strip
+   * played forward and reversed) used by the teleport.
    *
    * @return {void}
    */
@@ -337,6 +332,28 @@ export class Necromancer {
           repeat: info.loop ? -1 : 0,
         });
       }
+    }
+
+    const deathInfo = NECROMANCER_CONFIG.animFiles.death;
+    const deathTexKey = `${NECROMANCER_CONFIG.key}-death`;
+    const vanishKey = `${NECROMANCER_CONFIG.key}-vanish`;
+    const appearKey = `${NECROMANCER_CONFIG.key}-appear`;
+    if (!this.scene.anims.exists(vanishKey)) {
+      this.scene.anims.create({
+        key: vanishKey,
+        frames: this.scene.anims.generateFrameNumbers(deathTexKey, { start: 0, end: deathInfo.count - 1 }),
+        frameRate: deathInfo.rate,
+        repeat: 0,
+      });
+    }
+    if (!this.scene.anims.exists(appearKey)) {
+      const reversed = Array.from({ length: deathInfo.count }, (_, i) => deathInfo.count - 1 - i);
+      this.scene.anims.create({
+        key: appearKey,
+        frames: this.scene.anims.generateFrameNumbers(deathTexKey, { frames: reversed }),
+        frameRate: deathInfo.rate,
+        repeat: 0,
+      });
     }
   }
 }

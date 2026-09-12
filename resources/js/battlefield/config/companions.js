@@ -32,5 +32,8 @@ export const NECROMANCER_CONFIG = {
     // Slower rate than its frame count alone suggests: it needs to stay
     // clearly visible while the fighter rises through it, not just flash by.
     circle: { file: '/assets/battlefield/companions/necromancer/summon-circle.png', frameWidth: 100, frameHeight: 100, count: 7, rate: 4 },
+    // Source strip for the derived vanish/appear teleport transition (played
+    // forward to vanish, reversed to reappear) — see Necromancer#_ensureAnims.
+    death: { file: '/assets/battlefield/companions/necromancer/death.png', frameWidth: 100, frameHeight: 100, count: 9, rate: 14 },
   },
 };
