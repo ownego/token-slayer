@@ -296,10 +296,17 @@ export class Fighter {
             entry.body.play(`${entry.ftype.key}-idle`);
           });
         } else {
+          // Characters without their own Summon rise animation still rise —
+          // pop in from below their final spot rather than growing in place,
+          // so every character type reads as emerging from the circle.
+          const finalY = entry.sprite.y;
+          const riseOffset = entry.displaySize * 0.6;
           entry.sprite.setScale(0);
+          entry.sprite.y = finalY + riseOffset;
           this.scene.tweens.add({
             targets: entry.sprite,
             scale: finalScale,
+            y: finalY,
             duration: TIMINGS.fighterJoinMs,
             ease: 'Back.easeOut',
             onComplete: clearGlow,
