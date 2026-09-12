@@ -359,14 +359,20 @@ export class Necromancer {
   /**
    * Reacts to Priest's odd-damage heal flourish (attacks/priest-heal.js):
    * flashes a green heal tint, faces the boss, then bolts it with the same
-   * beam style _castBeam already draws for a summon cast — purely cosmetic,
-   * no HP change. Skipped entirely while a summon is in progress so it never
-   * competes with the shared sprite's teleport/cast animation.
+   * beam style _castBeam already draws for a summon cast — Priest's own
+   * projectile/beam are skipped entirely for a heal roll (attacks/blast.js),
+   * so this bolt is what actually stands in for "the hit landing" visually;
+   * onImpact is always invoked, even when the flourish itself is skipped
+   * (Necromancer unavailable, or mid-summon), so the real damage/HP-bar
+   * update and kill-shot handling upstream never wait on a bolt that isn't
+   * coming.
    *
+   * @param {Function|null} [onImpact]
    * @return {void}
    */
-  receiveHealAndBoltBoss() {
+  receiveHealAndBoltBoss(onImpact) {
     if (!this.sprite?.active || this.isSummoning) {
+      onImpact?.();
       return;
     }
     this.sprite.setTint(0x4ade80);
@@ -384,9 +390,13 @@ export class Necromancer {
     const healFlashMs = 160;
     const boltDurationMs = 280;
     this.scene.time.delayedCall(healFlashMs, () => {
-      if (!this.sprite?.active) return;
+      if (!this.sprite?.active) {
+        onImpact?.();
+        return;
+      }
       this.sprite.clearTint();
       this._castBeam(bossX, bossY, boltDurationMs);
+      this.scene.time.delayedCall(boltDurationMs, () => onImpact?.());
     });
   }
 

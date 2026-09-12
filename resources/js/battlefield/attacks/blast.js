@@ -3,10 +3,12 @@ import { AttackType } from '@battlefield/constants.js';
 import { restScale, slashBurst } from './fx.js';
 import { isHealRoll } from './priest-heal.js';
 
-// Roughly how long Priest's own effect1 strip (5 frames @ 12fps) plays —
-// used to time the Necromancer's bolt-the-boss reaction after it, since
-// blast() doesn't otherwise know that attack-slot's exact frame count/rate.
-const PRIEST_HEAL_EFFECT_MS = 420;
+// Priest's heal flourish plays its own effect1 strip bigger and at half
+// speed (twice the normal ~417ms playtime) so it reads as a deliberate heal
+// rather than the normal quick attack-impact flash.
+const PRIEST_HEAL_SCALE_MULT = 1.8;
+const PRIEST_HEAL_TIME_SCALE = 0.5;
+const PRIEST_HEAL_EFFECT_MS = 840;
 
 /**
  * Redhat — magic circle → beam.
@@ -77,17 +79,18 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   const isPriestHeal = fighter.ftype?.key === 'priest' && isHealRoll(damage) && necromancer?.sprite?.active;
 
   scene.time.delayedCall(chargeDur + 15, () => {
-    // Priest's own coin-flip flourish: odd damage plays Priest's own
-    // effect1 art (already the "heal" animation in the asset pack) directly
-    // on the Necromancer instead of the normal elemental burst on the boss,
-    // then has the Necromancer bolt the boss itself — purely cosmetic, the
-    // beam/projectile below still land the real damage either way.
+    // Priest's own coin-flip flourish: odd damage skips Priest's own
+    // beam/projectile at the boss entirely — the Necromancer's bolt (fired
+    // once the heal effect finishes) stands in for the hit landing instead,
+    // and carries onImpact so the real damage/HP-bar update still happens.
     if (isPriestHeal) {
-      onEffect?.(necromancer.sprite.x, necromancer.sprite.y);
-      scene.time.delayedCall(PRIEST_HEAL_EFFECT_MS, () => necromancer.receiveHealAndBoltBoss());
-    } else {
-      onEffect?.(strikeX, strikeY);
+      onEffect?.(necromancer.sprite.x, necromancer.sprite.y, {
+        scaleMult: PRIEST_HEAL_SCALE_MULT, timeScale: PRIEST_HEAL_TIME_SCALE,
+      });
+      scene.time.delayedCall(PRIEST_HEAL_EFFECT_MS, () => necromancer.receiveHealAndBoltBoss(onImpact));
+      return;
     }
+    onEffect?.(strikeX, strikeY);
     slashBurst(scene, fighter, strikeX, strikeY, {
       isKillShot, tints: [0x7c3aed, 0xa855f7, 0x22d3ee, 0xc026d3, 0xffffff],
     });
