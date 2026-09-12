@@ -14,10 +14,17 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   const sc          = fighter.sprite.scaleX;
   const fx          = fighter.pos.x;
   const fy          = fighter.pos.y;
-  const towardBoss  = fx <= scene.layout.boss.anchor.x ? 1 : -1;
+  const bossX       = scene.layout.boss.anchor.x;
+  const bossY       = scene.layout.boss.anchor.y;
+  const towardBoss  = fx <= bossX ? 1 : -1;
   const ds          = fighter.displaySize;
   const circleX     = fx + towardBoss * ds * 0.48;
   const circleY     = fy - ds * 0.08;
+  // Where the spell actually lands — same "just past the boss" offset
+  // blade.js's dash-strike uses — not the casting circle beside the caster,
+  // which is only where the spell is drawn FROM.
+  const strikeX     = bossX + towardBoss * ds * 0.25;
+  const strikeY     = bossY;
   const r           = ds * (isKillShot ? 0.52 : 0.36);
   const chargeDur   = isKillShot ? 210 : 150;
 
@@ -61,13 +68,11 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   scene.tweens.add({ targets: g, rotation: towardBoss * Math.PI * 2, duration: isKillShot ? 560 : 400, ease: 'Linear' });
 
   scene.time.delayedCall(chargeDur + 15, () => {
-    onEffect?.(circleX, circleY);
-    slashBurst(scene, fighter, circleX, circleY, {
+    onEffect?.(strikeX, strikeY);
+    slashBurst(scene, fighter, strikeX, strikeY, {
       isKillShot, tints: [0x7c3aed, 0xa855f7, 0x22d3ee, 0xc026d3, 0xffffff],
     });
 
-    const bossX = scene.layout.boss.anchor.x;
-    const bossY = scene.layout.boss.anchor.y;
     const beamG = scene.add.graphics().setDepth(3).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.9);
     beamG.lineStyle(isKillShot ? 10 : 6, 0x7c3aed, 0.45);
     beamG.lineBetween(circleX, circleY, bossX, bossY);
