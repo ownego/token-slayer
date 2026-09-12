@@ -85,6 +85,11 @@ export function blast(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
     // once the heal effect finishes) stands in for the hit landing instead,
     // and carries onImpact so the real damage/HP-bar update still happens.
     if (isPriestHeal) {
+      // Grounds the heal in place with the same magic-circle art the
+      // Necromancer's home platform and fighter-summon circles already use
+      // — it can be off wandering anywhere in its zone when this fires, not
+      // necessarily standing on its home platform's circle.
+      necromancer.spawnSummonCircle(necromancer.sprite.x, necromancer.sprite.y);
       const healFx = scene.add.sprite(necromancer.sprite.x, necromancer.sprite.y, TextureKey.FIGHTERS, 'priest-heal-0')
         .setScale(PRIEST_HEAL_SCALE)
         .setBlendMode(Phaser.BlendModes.ADD)
