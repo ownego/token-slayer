@@ -34,12 +34,33 @@ export class Necromancer {
   create() {
     this._ensureAnims();
     this.homeAnchor = this.scene.layout.necromancer.anchor;
+    this._createHomePlatform();
     this.sprite = this.scene.add
       .sprite(this.homeAnchor.x, this.homeAnchor.y, `${NECROMANCER_CONFIG.key}-idle`)
       .setScale(NECROMANCER_CONFIG.scale)
       .setDepth(2)
       .play(`${NECROMANCER_CONFIG.key}-idle`);
     this._scheduleWander();
+  }
+
+  /**
+   * Draws a permanent, larger summon-circle under the Necromancer's home
+   * wander area — a fixed "platform" marking where it lives, sized to cover
+   * the whole wander radius rather than one fighter's feet. The circle
+   * animation isn't set to loop, so playing it once leaves it sitting on its
+   * final (fully-formed) frame indefinitely, for free.
+   *
+   * @return {void}
+   */
+  _createHomePlatform() {
+    const key = `${NECROMANCER_CONFIG.key}-circle`;
+    this.scene.add
+      .sprite(this.homeAnchor.x, this.homeAnchor.y, key)
+      .setDepth(0.5)
+      .setScale(4.2)
+      .setAlpha(0.55)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .play(key);
   }
 
   /**
@@ -102,7 +123,15 @@ export class Necromancer {
       this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
       const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
       const durationMs = Math.ceil((summonInfo.count / summonInfo.rate) * 1000);
-      this._castBeam(targetX, targetY, durationMs);
+      // The Summon artwork only raises its hand/snaps around the midpoint of
+      // its frames (the streak shooting out starts around frame 5 of 10) —
+      // the beam shouldn't shoot out before that gesture actually happens.
+      const beamDelayMs = Math.round(durationMs * 0.45);
+      this.scene.time.delayedCall(beamDelayMs, () => {
+        if (this.sprite?.active) {
+          this._castBeam(targetX, targetY, durationMs - beamDelayMs);
+        }
+      });
       this.scene.time.delayedCall(durationMs, () => {
         if (this.sprite?.active) {
           this.sprite.clearTint();
