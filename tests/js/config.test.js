@@ -49,6 +49,7 @@ describe('FIGHTER_TYPES', () => {
       'soldier', 'knight', 'swordsman', 'axeman', 'orc',
       'armored-orc', 'elite-orc', 'skeleton', 'armored-skeleton', 'slime',
       'archer', 'werewolf', 'werebear', 'orc-rider', 'greatsword-skeleton',
+      'knight-templar', 'lancer', 'wizard', 'priest', 'skeleton-archer',
     ]);
   });
 

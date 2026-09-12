@@ -24,6 +24,11 @@ enum FighterCharacter: string
     case Werebear = 'werebear';
     case OrcRider = 'orc-rider';
     case GreatswordSkeleton = 'greatsword-skeleton';
+    case KnightTemplar = 'knight-templar';
+    case Lancer = 'lancer';
+    case Wizard = 'wizard';
+    case Priest = 'priest';
+    case SkeletonArcher = 'skeleton-archer';
 
     public static function forUserAndBoss(int $userId, ?int $bossId): self
     {
