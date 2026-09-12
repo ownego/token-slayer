@@ -79,6 +79,10 @@ export class Necromancer {
       return;
     }
     this.scene.tweens.killTweensOf(this.sprite);
+    // The Summon artwork's default (unflipped) orientation already casts
+    // toward the right; only mirror it when the target actually sits to
+    // the left, overriding whatever flip the wander loop last left it in.
+    this.sprite.setFlipX(targetX < this.sprite.x);
     this.sprite.setTint(0xa855f7);
     this.sprite.play(`${NECROMANCER_CONFIG.key}-summon`);
     const summonInfo = NECROMANCER_CONFIG.animFiles.summon;
