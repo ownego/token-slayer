@@ -14,6 +14,7 @@
                             <th style="padding:.4rem .6rem;">Sang account</th>
                             <th style="padding:.4rem .6rem;">Demand/ngày</th>
                             <th style="padding:.4rem .6rem;">Độ tin cậy</th>
+                            <th style="padding:.4rem .6rem;"></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -35,6 +36,9 @@
                                     @else
                                         <x-filament::badge color="warning">Dữ liệu chưa đủ</x-filament::badge>
                                     @endif
+                                </td>
+                                <td style="padding:.4rem .6rem;">
+                                    {{ ($this->switchUserAction)(['userId' => $move['userId'], 'fromAccountId' => $move['fromAccountId'], 'toAccountId' => $move['toAccountId']]) }}
                                 </td>
                             </tr>
                         @endforeach

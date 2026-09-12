@@ -2,14 +2,22 @@
 
 namespace App\Filament\Pages;
 
+use App\Enums\MembershipStatus;
 use App\Models\Account;
+use App\Models\User;
+use App\Services\AccountConnectService;
+use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMemberStatusQuery;
 use App\Services\Accounts\AccountRebalanceRecommender;
 use App\Services\Accounts\RebalanceRecommendation;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Locked;
 use UnitEnum;
 
@@ -166,5 +174,59 @@ class AccountRebalance extends Page
             ->get()
             ->mapWithKeys(fn ($account) => [$account->id => $query->get($account, $this->showUntracked)])
             ->all();
+    }
+
+    /**
+     * The per-move "Switch" action: opens the same OAuth code-paste popup
+     * `MembersRelationManager` already uses to provision a device on an
+     * account, targeting the recommendation's user and destination account.
+     * On success, demotes (never detaches) the source account's membership
+     * — required for the companion declarative-reconciliation change to
+     * ever pick up the removal.
+     *
+     * @return Action
+     */
+    public function switchUserAction(): Action
+    {
+        return Action::make('switchUser')
+            ->label('Switch')
+            ->modalHeading('Issue a token on the new account')
+            ->modalDescription('Open the authorize URL, log in as the target account, approve, then paste the code back here. The old account will be demoted (not deleted) once this succeeds — the affected device will drop the old local credential on its next sync, but the underlying Anthropic token itself is not revoked (there is no API for that).')
+            ->modalSubmitActionLabel('Switch')
+            ->fillForm(function (): array {
+                $started = app(AccountConnectService::class)->start();
+
+                return [
+                    'authorize_url' => $started['url'],
+                    'state' => $started['state'],
+                    'code' => '',
+                ];
+            })
+            ->schema([
+                TextInput::make('authorize_url')->label('Authorize URL')->readOnly()->copyable(),
+                Hidden::make('state'),
+                TextInput::make('code')->label('Paste the code here')->required(),
+            ])
+            ->action(function (array $data, array $arguments): void {
+                $user = User::query()->findOrFail($arguments['userId']);
+                $fromAccount = Account::query()->findOrFail($arguments['fromAccountId']);
+                $toAccount = Account::query()->findOrFail($arguments['toAccountId']);
+                $service = app(AccountProvisioningService::class);
+
+                DB::transaction(function () use ($service, $user, $toAccount, $data): void {
+                    $device = $service->resolveProvisionTarget($user, null);
+                    $service->provisionForDevice($user, $toAccount, $device, $data['state'], $data['code']);
+                });
+
+                $fromAccount->trackedUsers()->updateExistingPivot($user->id, [
+                    'status' => MembershipStatus::Untracked->value,
+                ]);
+
+                Notification::make()
+                    ->success()
+                    ->title('Switched')
+                    ->body("Issued a token on {$toAccount->email} and stopped tracking {$fromAccount->email}.")
+                    ->send();
+            });
     }
 }
