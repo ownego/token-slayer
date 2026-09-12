@@ -22,7 +22,7 @@ export const BAT_CONFIG = {
  */
 export const NECROMANCER_CONFIG = {
   key: 'necromancer',
-  scale: 1.8,
+  scale: 2.6,
   animFiles: {
     idle:   { file: '/assets/battlefield/companions/necromancer/idle.png',   frameWidth: 100, frameHeight: 100, count: 6,  rate: 8,  loop: true },
     walk:   { file: '/assets/battlefield/companions/necromancer/walk.png',   frameWidth: 100, frameHeight: 100, count: 6,  rate: 10, loop: true },

@@ -1,6 +1,17 @@
 import Phaser from 'phaser';
 import { NECROMANCER_CONFIG, TIMINGS } from '@battlefield/config.js';
 import { randomWanderPoint } from './boss/bat-wander.js';
+import { isValidMoveTarget } from './move-geometry.js';
+import { Boss } from './boss.js';
+
+// Rough footprint used only to size isValidMoveTarget's exclusion margins
+// for the Necromancer's own (much larger than a fighter's) sprite.
+const SUMMON_SPOT_FSIZE = 90;
+// How far to the side of the joining fighter the Necromancer appears.
+const SUMMON_SPOT_OFFSET = 100;
+// Minimum clearance from any other already-placed fighter.
+const SUMMON_SPOT_MIN_FIGHTER_GAP = 50;
+const TELEPORT_FADE_MS = 140;
 
 /** Manages the permanent Necromancer fixture: idle wander and the summon-on-join effect. */
 export class Necromancer {
@@ -13,6 +24,7 @@ export class Necromancer {
     this.isSummoning = false;
     /** @type {Array<Function>} pending onRevealed callbacks, processed one at a time */
     this.summonQueue = [];
+    this.homeAnchor = null;
   }
 
   /**
@@ -22,9 +34,9 @@ export class Necromancer {
    */
   create() {
     this._ensureAnims();
-    const anchor = this.scene.layout.necromancer.anchor;
+    this.homeAnchor = this.scene.layout.necromancer.anchor;
     this.sprite = this.scene.add
-      .sprite(anchor.x, anchor.y, `${NECROMANCER_CONFIG.key}-idle`)
+      .sprite(this.homeAnchor.x, this.homeAnchor.y, `${NECROMANCER_CONFIG.key}-idle`)
       .setScale(NECROMANCER_CONFIG.scale)
       .setDepth(2)
       .play(`${NECROMANCER_CONFIG.key}-idle`);
@@ -32,14 +44,14 @@ export class Necromancer {
   }
 
   /**
-   * Requests the Necromancer's Summon animation, casting toward (targetX,
-   * targetY), then invokes onRevealed so the caller can reveal the summoned
-   * fighter there. Multiple fighters joining close together are queued and
-   * summoned one at a time — the shared sprite can only play one animation
-   * at once, and playing a second Summon over an in-progress one left
-   * Phaser's animation state corrupted (an uncaught error deep in Phaser's
-   * animation start, from a rapid-join repro). Falls back to calling
-   * onRevealed immediately if the Necromancer sprite isn't available.
+   * Requests the Necromancer's Summon animation for a newly-joined fighter at
+   * (targetX, targetY), then invokes onRevealed so the caller can reveal the
+   * summoned fighter there. The Necromancer teleports beside the target to
+   * cast (rather than casting from its home spot across the screen), then
+   * teleports back home once done. Multiple fighters joining close together
+   * are queued and summoned one at a time — the shared sprite can only play
+   * one animation/be in one place at once. Falls back to calling onRevealed
+   * immediately if the Necromancer sprite isn't available.
    *
    * @param {number} targetX
    * @param {number} targetY
@@ -58,10 +70,11 @@ export class Necromancer {
   }
 
   /**
-   * Plays one queued summon to completion via a fixed delayedCall matched to
-   * the animation's own frame count/rate (not Phaser's ANIMATION_COMPLETE
-   * event, which the wander loop's independent .play() calls could
-   * otherwise strand), then recurses onto the next queued job, if any.
+   * Plays one queued summon to completion: teleports beside the target,
+   * casts (a fixed delayedCall matched to the animation's own frame
+   * count/rate, not Phaser's ANIMATION_COMPLETE event, which the wander
+   * loop's independent .play() calls could otherwise strand), teleports back
+   * home, then recurses onto the next queued job, if any.
    *
    * @return {void}
    */
@@ -79,12 +92,8 @@ export class Necromancer {
       return;
     }
     this.scene.tweens.killTweensOf(this.sprite);
-    // The Summon artwork's default (unflipped) orientation already casts
-    // toward the right; only mirror it when the target actually sits to
-    // the left, overriding whatever flip the wander loop last left it in —
-    // via a quick squash-flip-unsquash turn instead of an instant mirror,
-    // so it reads as the character actually turning rather than snapping.
-    this._faceTarget(targetX, () => {
+    const spot = this._pickSummonSpot(targetX, targetY);
+    this._teleportTo(spot.x, spot.y, spot.flip, () => {
       if (!this.sprite?.active) {
         onRevealed();
         this._processSummonQueue();
@@ -98,44 +107,83 @@ export class Necromancer {
       this.scene.time.delayedCall(durationMs, () => {
         if (this.sprite?.active) {
           this.sprite.clearTint();
-          this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
         }
         onRevealed();
-        this._processSummonQueue();
+        this._teleportTo(this.homeAnchor.x, this.homeAnchor.y, false, () => {
+          if (this.sprite?.active) {
+            this.sprite.play(`${NECROMANCER_CONFIG.key}-idle`);
+          }
+          this._processSummonQueue();
+        });
       });
     });
   }
 
   /**
-   * Turns the Necromancer to face targetX before onDone runs — a quick
-   * horizontal squash, flip, and unsquash instead of an instant mirror, so
-   * facing the summon target reads as a natural turn. Calls onDone
-   * immediately if it's already facing the right way.
+   * Picks a spot beside (targetX, targetY) for the Necromancer to appear at —
+   * whichever side (left/right, a fixed offset away) is clear of the
+   * boss/HP-bar column, the leaderboard and Damage HUD panels, the screen
+   * edges, and every other currently-placed fighter. Prefers the side
+   * toward screen-center first. Falls back to the preferred side's raw
+   * offset (unvalidated) if neither side comes up clear, so a summon can
+   * never silently fail to produce a spot.
    *
    * @param {number} targetX
-   * @param {Function} onDone
+   * @param {number} targetY
+   * @return {{x: number, y: number, flip: boolean}}
+   */
+  _pickSummonSpot(targetX, targetY) {
+    const L = this.scene.layout;
+    const bossType = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
+    const ctx = { layout: L, bossType, fsize: SUMMON_SPOT_FSIZE };
+    // Appear on whichever side points back toward screen-center, so the
+    // Necromancer favors open middle space over crowding a screen edge.
+    const preferLeft = targetX > L.logicalWidth / 2;
+    const offsets = preferLeft ? [-SUMMON_SPOT_OFFSET, SUMMON_SPOT_OFFSET] : [SUMMON_SPOT_OFFSET, -SUMMON_SPOT_OFFSET];
+
+    for (const dx of offsets) {
+      const x = targetX + dx;
+      const y = targetY;
+      if (!isValidMoveTarget(x, y, ctx)) continue;
+      const tooCloseToFighter = [...this.scene.fighters.values()].some(f =>
+        f.sprite?.active && Phaser.Math.Distance.Between(x, y, f.sprite.x, f.sprite.y) < SUMMON_SPOT_MIN_FIGHTER_GAP
+      );
+      if (tooCloseToFighter) continue;
+      return { x, y, flip: dx < 0 };
+    }
+
+    const fallbackDx = offsets[0];
+    return { x: targetX + fallbackDx, y: targetY, flip: fallbackDx < 0 };
+  }
+
+  /**
+   * Fades the Necromancer out, repositions and re-faces it instantly, then
+   * fades it back in — reads as "vanish and reappear" rather than sliding.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @param {boolean} flip
+   * @param {Function} onArrived
    * @return {void}
    */
-  _faceTarget(targetX, onDone) {
-    const shouldFlip = targetX < this.sprite.x;
-    if (this.sprite.flipX === shouldFlip) {
-      onDone();
-      return;
-    }
-    const baseScaleX = Math.abs(this.sprite.scaleX);
+  _teleportTo(x, y, flip, onArrived) {
     this.scene.tweens.add({
       targets: this.sprite,
-      scaleX: 0,
-      duration: 90,
+      alpha: 0,
+      duration: TELEPORT_FADE_MS,
       ease: 'Quad.easeIn',
       onComplete: () => {
-        this.sprite.setFlipX(shouldFlip);
+        if (!this.sprite?.active) {
+          onArrived();
+          return;
+        }
+        this.sprite.setPosition(x, y).setFlipX(flip);
         this.scene.tweens.add({
           targets: this.sprite,
-          scaleX: baseScaleX,
-          duration: 90,
+          alpha: 1,
+          duration: TELEPORT_FADE_MS,
           ease: 'Quad.easeOut',
-          onComplete: onDone,
+          onComplete: onArrived,
         });
       },
     });
@@ -144,8 +192,8 @@ export class Necromancer {
   /**
    * Draws a fading purple beam from the Necromancer's raised hand to the
    * summon target for the duration of its cast, so the cast itself reads as
-   * visibly "calling" the circle into being rather than happening invisibly
-   * off to the side.
+   * visibly "calling" the circle into being — now typically a short arc,
+   * since the Necromancer teleports beside the target before casting.
    *
    * @param {number} targetX
    * @param {number} targetY
