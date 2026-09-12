@@ -142,6 +142,66 @@ it('lists a tracked member with no attributed events: 0 tokens when off, whole u
         ->and($on[$account->id][0]['tokens'])->toBe(5000);
 });
 
+it('honors the total token mode in the per-account attributed figure', function () {
+    // The Fleet Quota widget's member cards never moved off output-only
+    // totals no matter which mode was selected on the dashboard -- this
+    // query, like ModelContributorsQuery before it, was missed when the
+    // output/total/quota filter shipped to every other analytics query.
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+    Event::factory()->for($user)->create([
+        'account_id' => $account->id,
+        'tokens' => 335,
+        'input_tokens' => 2,
+        'cache_creation_input_tokens' => 791,
+        'cache_read_input_tokens' => 140_177,
+        'created_at' => now(),
+    ]);
+
+    $filters = UsageFilters::fromPageFilters(['range' => 'all', 'token_mode' => 'total']);
+    $members = app(AccountContributorsQuery::class)->get($filters)[$account->id];
+
+    expect($members[0]['tokens'])->toBe(335 + 2 + 791 + 140_177);
+});
+
+it('honors the total token mode in the account grand-total figure', function () {
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    Event::factory()->for($user)->create([
+        'account_id' => $account->id,
+        'tokens' => 335,
+        'input_tokens' => 2,
+        'cache_creation_input_tokens' => 791,
+        'cache_read_input_tokens' => 140_177,
+        'created_at' => now(),
+    ]);
+
+    $filters = UsageFilters::fromPageFilters(['range' => 'all', 'token_mode' => 'total']);
+    $totals = app(AccountContributorsQuery::class)->accountTotals($filters);
+
+    expect($totals[$account->id])->toBe(335 + 2 + 791 + 140_177);
+});
+
+it('honors the total token mode in the total-across-accounts figure', function () {
+    $account = Account::factory()->create();
+    $user = User::factory()->create();
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+    Event::factory()->for($user)->create([
+        'account_id' => $account->id,
+        'tokens' => 335,
+        'input_tokens' => 2,
+        'cache_creation_input_tokens' => 791,
+        'cache_read_input_tokens' => 140_177,
+        'created_at' => now(),
+    ]);
+
+    $filters = UsageFilters::fromPageFilters(['range' => 'all', 'token_mode' => 'total']);
+    $members = app(AccountContributorsQuery::class)->get($filters, totalAcrossAccounts: true)[$account->id];
+
+    expect($members[0]['tokens'])->toBe(335 + 2 + 791 + 140_177);
+});
+
 it('shows tracked members alongside event contributors when across-accounts is on', function () {
     $account = Account::factory()->create();
     $contributor = User::factory()->create(['slack_handle' => 'worker']);

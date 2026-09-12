@@ -40,6 +40,8 @@ final class AccountContributorsQuery
      */
     public function get(?UsageFilters $filters = null, bool $totalAcrossAccounts = false): array
     {
+        $tokenExpr = $filters?->tokenColumnExpression() ?? 'events.tokens';
+
         $eventRows = Event::query()
             ->join('users', 'users.id', '=', 'events.user_id')
             ->leftJoin('account_user', function (JoinClause $join): void {
@@ -52,7 +54,7 @@ final class AccountContributorsQuery
             ->selectRaw('events.account_id as account_id')
             ->selectRaw('users.id as user_id, users.slack_handle, users.display_name, users.name, users.avatar_url')
             ->selectRaw('account_user.status as status')
-            ->selectRaw('SUM(events.tokens) as tokens')
+            ->selectRaw("SUM({$tokenExpr}) as tokens")
             ->get();
 
         $memberRows = DB::table('account_user')
@@ -146,12 +148,14 @@ final class AccountContributorsQuery
      */
     public function accountTotals(?UsageFilters $filters = null): array
     {
+        $tokenExpr = $filters?->tokenColumnExpression() ?? 'events.tokens';
+
         return Event::query()
             ->whereNotNull('events.account_id')
             ->when($filters !== null, fn ($q) => $q->whereBetween('events.created_at', [$filters->from, $filters->to]))
             ->groupBy('events.account_id')
             ->selectRaw('events.account_id as account_id')
-            ->selectRaw('SUM(events.tokens) as tokens')
+            ->selectRaw("SUM({$tokenExpr}) as tokens")
             ->get()
             ->mapWithKeys(fn ($row): array => [(int) $row->account_id => (int) $row->tokens])
             ->all();
@@ -170,11 +174,13 @@ final class AccountContributorsQuery
      */
     private function userTotals(?UsageFilters $filters): array
     {
+        $tokenExpr = $filters?->tokenColumnExpression() ?? 'events.tokens';
+
         return Event::query()
             ->when($filters !== null, fn ($q) => $q->whereBetween('events.created_at', [$filters->from, $filters->to]))
             ->groupBy('events.user_id')
             ->selectRaw('events.user_id as user_id')
-            ->selectRaw('SUM(events.tokens) as tokens')
+            ->selectRaw("SUM({$tokenExpr}) as tokens")
             ->get()
             ->mapWithKeys(fn ($row): array => [(int) $row->user_id => (int) $row->tokens])
             ->all();
