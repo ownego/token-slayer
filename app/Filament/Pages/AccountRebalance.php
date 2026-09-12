@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\Account;
+use App\Services\Accounts\AccountMemberStatusQuery;
 use App\Services\Accounts\AccountRebalanceRecommender;
 use App\Services\Accounts\RebalanceRecommendation;
 use BackedEnum;
@@ -137,5 +139,32 @@ class AccountRebalance extends Page
     protected function getHeaderActions(): array
     {
         return [$this->recommendAction()];
+    }
+
+    /**
+     * Whether the member list also shows Untracked members (red dot).
+     * Defaults to false, mirroring MembersRelationManager's "Unverified
+     * members" toggle — an untracked contributor is noise for this page's
+     * main purpose until an admin asks to see it.
+     *
+     * @var bool
+     */
+    public bool $showUntracked = false;
+
+    /**
+     * Member rows for every connected account, keyed by account id, for the
+     * Blade view's member list. Honors {@see $showUntracked}.
+     *
+     * @return array<int, array<int, array{user_id: int, handle: string, status: string}>>
+     */
+    public function memberRowsByAccount(): array
+    {
+        $query = app(AccountMemberStatusQuery::class);
+
+        return Account::query()
+            ->whereHas('claudeCredential', fn ($q) => $q->whereNotNull('organization_uuid'))
+            ->get()
+            ->mapWithKeys(fn ($account) => [$account->id => $query->get($account, $this->showUntracked)])
+            ->all();
     }
 }

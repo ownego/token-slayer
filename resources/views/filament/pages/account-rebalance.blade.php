@@ -49,4 +49,29 @@
             </p>
         @endif
     </x-filament::section>
+
+    <x-filament::section heading="Members" style="margin-top:1.5rem;">
+        <label style="display:flex; align-items:center; gap:.5rem; font-size:.85rem;">
+            <input type="checkbox" wire:model.live="showUntracked" />
+            Hiện cả user chưa xác thực (untracked)
+        </label>
+
+        @foreach ($this->memberRowsByAccount() as $accountId => $rows)
+            <div style="margin-top:.75rem;">
+                <span style="font-family:monospace; font-size:.8rem;">{{ \App\Models\Account::find($accountId)?->email }}</span>
+                <ul style="list-style:none; padding-left:0; margin-top:.25rem;">
+                    @foreach ($rows as $row)
+                        <li style="display:flex; align-items:center; gap:.5rem; padding:.15rem 0;">
+                            @if ($row['status'] === 'pending')
+                                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#3b82f6;" title="Pending"></span>
+                            @elseif ($row['status'] === 'untracked')
+                                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#ef4444;" title="Untracked"></span>
+                            @endif
+                            {{ $row['handle'] }}
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+        @endforeach
+    </x-filament::section>
 </x-filament-panels::page>
