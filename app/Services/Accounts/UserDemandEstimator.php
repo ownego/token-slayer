@@ -23,10 +23,15 @@ final class UserDemandEstimator
     use ScopesEventsByFilters;
 
     /**
-     * Lower and upper bound on a quota weight. A weight comes from however
-     * many solo windows happened to exist, which can be very few; clamping
-     * keeps one freak measurement from doubling or erasing a person's
-     * apparent demand in the plan.
+     * @param  QuotaCostSolver  $solver  prices each person from the windows they shared, rather than only the ones they had alone
+     */
+    public function __construct(private readonly QuotaCostSolver $solver) {}
+
+    /**
+     * Lower and upper bound on a quota weight. However many windows a person
+     * turns up in, the fit is still an estimate; clamping keeps one odd
+     * solution from doubling or erasing somebody's apparent demand in the
+     * plan.
      *
      * @var float
      */
@@ -47,14 +52,14 @@ final class UserDemandEstimator
     private const int WINDOW_DAYS = 7;
 
     /**
-     * Solo windows a person needs before their tokens are called heavier or
-     * lighter than anybody else's. A 5-hour window is a small, noisy sample
-     * — one of them said somebody's tokens were a quarter cheaper than the
-     * typical member's, which is not a claim a single afternoon can support.
+     * Windows a person must have taken part in before their solved burn rate
+     * is trusted. The solver can price somebody from windows they shared,
+     * but not from one or two of them — that is how a single afternoon came
+     * to discount somebody's whole week by a quarter.
      *
      * @var int
      */
-    private const int MIN_SOLO_WINDOWS = 3;
+    private const int MIN_PRICED_WINDOWS = 3;
 
     /**
      * This person's weekly demand, with the workings behind it so a
@@ -136,20 +141,19 @@ final class UserDemandEstimator
      * a quota compared with the typical member of the same account. 1.0 is
      * typical, 2.0 burns quota twice as fast per token.
      *
-     * Measured only from 5-hour windows in which ONE person used the
-     * account — those are the only windows where the utilisation moved for
-     * a single, attributable reason. Each account's own median normalises
-     * away how big that account is, so the weights compare people rather
-     * than plans. A user with no usable measurement is simply absent from
-     * the result, and the caller treats them as typical.
+     * Each account's own median normalises away how big that account is, so
+     * the weights compare people rather than plans. A user with no usable
+     * measurement is simply absent from the result, and the caller treats
+     * them as typical.
      *
-     * A person needs {@see MIN_SOLO_WINDOWS} of those windows before any
-     * weight is applied to them. This is not caution for its own sake: on
-     * the real fleet the weights were resting on a single window each, and
-     * one 5-hour sample was quietly discounting somebody's whole week by a
-     * quarter — enough to change which person a recommendation moved. Being
-     * treated as typical is the right answer when there is no evidence to
-     * the contrary.
+     * Windows are used whether or not the person was alone in them:
+     * {@see QuotaCostSolver} treats each one as an equation and solves for
+     * everybody at once, which is what makes fifteen shared windows worth
+     * more than the one or two solo ones an account happens to have. A
+     * person still needs {@see MIN_PRICED_WINDOWS} windows of their own
+     * before the answer is applied, and anyone the windows cannot separate
+     * from their companions is left out entirely — being treated as typical
+     * is the right answer when there is no evidence to the contrary.
      *
      * @param  Collection<int, Account>  $accounts  the accounts to read windows from
      * @param  RebalanceWindow  $window  how far back to read
@@ -161,10 +165,16 @@ final class UserDemandEstimator
         $windowCounts = [];
 
         foreach ($accounts as $account) {
-            $measured = array_filter(
-                $this->soloQuotaCosts($account, $window),
-                fn (array $entry): bool => $entry['windows'] >= self::MIN_SOLO_WINDOWS && $entry['cost'] > 0.0,
-            );
+            $windows = $this->quotaWindows($account, $window);
+            $appearances = $this->appearances($windows);
+            $costs = $this->solver->solve($windows);
+
+            $measured = [];
+            foreach ($costs as $userId => $cost) {
+                if ($cost > 0.0 && ($appearances[$userId] ?? 0) >= self::MIN_PRICED_WINDOWS) {
+                    $measured[$userId] = ['cost' => $cost, 'windows' => $appearances[$userId]];
+                }
+            }
 
             if (count($measured) < 2) {
                 continue; // with nobody to compare against, "heavier" has no meaning
@@ -194,16 +204,14 @@ final class UserDemandEstimator
     }
 
     /**
-     * Tokens each solo user needed to move this account's util_5h by one
-     * point, keyed by user id, with how many windows that average rests on.
-     * A smaller cost means heavier tokens; a smaller window count means less
-     * reason to believe it.
+     * This account's 5-hour quota windows as equations: how far the dial
+     * moved, and who spent what while it did.
      *
      * @param  Account  $account  the account whose windows to read
      * @param  RebalanceWindow  $window  how far back to read
-     * @return array<int, array{cost: float, windows: int}> user id => tokens per utilisation point, and the sample behind it
+     * @return array<int, array{delta: float, tokens: array<int, float>}>
      */
-    private function soloQuotaCosts(Account $account, RebalanceWindow $window): array
+    private function quotaWindows(Account $account, RebalanceWindow $window): array
     {
         $snapshots = AccountUsageSnapshot::query()
             ->where('account_id', $account->id)
@@ -255,26 +263,39 @@ final class UserDemandEstimator
                 $contributors[$userIds[$index]] = ($contributors[$userIds[$index]] ?? 0) + $tokenCounts[$index];
             }
 
-            if (count($contributors) !== 1) {
-                continue; // shared window: the movement cannot be attributed
+            if ($contributors === []) {
+                continue; // the dial moved with nobody on record; nothing to attribute
             }
 
-            $userId = array_key_first($contributors);
-            $tokens = $contributors[$userId];
-            if ($tokens <= 0) {
-                continue;
-            }
-
-            $costs[$userId][] = $tokens / $utilDelta;
+            $costs[] = [
+                'delta' => (float) $utilDelta,
+                'tokens' => array_map(fn (int $tokens): float => (float) $tokens, $contributors),
+            ];
         }
 
-        return array_map(
-            fn (array $samples): array => [
-                'cost' => array_sum($samples) / count($samples),
-                'windows' => count($samples),
-            ],
-            $costs,
-        );
+        return $costs;
+    }
+
+    /**
+     * How many windows each person took part in — the evidence behind
+     * whatever the solver says about them.
+     *
+     * @param  array<int, array{delta: float, tokens: array<int, float>}>  $windows  the account's windows
+     * @return array<int, int> user id => windows they spent anything in
+     */
+    private function appearances(array $windows): array
+    {
+        $counts = [];
+
+        foreach ($windows as $window) {
+            foreach ($window['tokens'] as $userId => $tokens) {
+                if ($tokens > 0.0) {
+                    $counts[$userId] = ($counts[$userId] ?? 0) + 1;
+                }
+            }
+        }
+
+        return $counts;
     }
 
     /**
