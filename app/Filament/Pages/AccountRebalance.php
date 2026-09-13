@@ -10,6 +10,7 @@ use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMemberStatusQuery;
 use App\Services\Accounts\AccountRebalanceRecommender;
 use App\Services\Accounts\RebalanceRecommendation;
+use App\Services\Accounts\RebalanceWindow;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -22,11 +23,10 @@ use Livewire\Attributes\Locked;
 use UnitEnum;
 
 /**
- * On-demand admin page recommending which tracked members should move to a
- * different account so no account exhausts its weekly quota before reset.
- * Nothing here runs automatically — an admin triggers the computation and
- * reviews it before acting (see the "Switch" row action, added in a later
- * task).
+ * On-demand admin page recommending which members should move to a different
+ * account so no account exhausts its weekly quota before reset. Nothing here
+ * runs automatically — an admin picks a range, triggers the computation,
+ * inspects the reasoning behind each row, and only then acts on it.
  */
 class AccountRebalance extends Page
 {
@@ -77,30 +77,73 @@ class AccountRebalance extends Page
     protected string $view = 'filament.pages.account-rebalance';
 
     /**
-     * The most recently computed moves, kept in Livewire state so the table
-     * survives re-renders between the recommend action and any row action
-     * on it (added in a later task). Empty until "Recalculate" runs.
-     * Stored as plain arrays (Livewire has no built-in synthesizer for an
-     * arbitrary readonly class), each shaped like
-     * `RebalanceRecommendation`'s own public properties.
+     * How far back the analysis reads: `'week'`, `'month'`, or `'all'`.
+     * Admin-chosen rather than fixed, because the right answer differs by
+     * question — a week says who is heavy right now, all-time says who is
+     * heavy in general — and a plan built on the wrong one is misleading
+     * rather than merely imprecise.
      *
-     * @var array<int, array{userId: int, fromAccountId: int, toAccountId: int, fromProjectedBefore: int, fromProjectedAfter: int, toProjectedBefore: int, toProjectedAfter: int, demandTokensPerDay: float, demandBasis: string, confident: bool}>
+     * @var string
+     */
+    public string $range = 'month';
+
+    /**
+     * The most recently computed moves, kept in Livewire state so the table
+     * survives re-renders between the recommend action and the row actions
+     * on it. Stored as plain arrays (Livewire has no built-in synthesizer
+     * for an arbitrary readonly class), each carrying every figure behind
+     * the move plus the display labels, so the Blade view never has to go
+     * back to the database per row.
+     *
+     * @var array<int, array<string, mixed>>
      */
     #[Locked]
     public array $moves = [];
 
     /**
-     * Fleet-wide overflow tokens the last computation could not resolve
-     * with any move, or 0 before the first computation.
+     * Per-account capacity and fill figures from the last computation, keyed
+     * by account id, for the fleet summary above the table.
      *
-     * @var float
+     * @var array<int, array<string, mixed>>
      */
     #[Locked]
-    public float $unresolvedOverflowTokens = 0.0;
+    public array $accounts = [];
 
     /**
-     * The on-demand "Recalculate" header action: runs the recommender and
-     * stores its output on the page for the Blade view to render.
+     * Fleet-wide headline figures from the last computation: the fullest
+     * account before and after, tokens that fit nowhere, the safety margin
+     * in force, and which range produced it.
+     *
+     * @var array<string, mixed>
+     */
+    #[Locked]
+    public array $summary = [];
+
+    /**
+     * Whether a computation has run yet in this page session — the empty
+     * table means "press Recalculate" before one has and "the fleet is
+     * already balanced" after one has, and those must not read the same.
+     *
+     * @var bool
+     */
+    #[Locked]
+    public bool $computed = false;
+
+    /**
+     * Re-run the analysis when the range changes, so the table on screen
+     * always matches the range selected above it.
+     *
+     * @return void
+     */
+    public function updatedRange(): void
+    {
+        if ($this->computed) {
+            $this->compute();
+        }
+    }
+
+    /**
+     * The on-demand "Recalculate" header action.
      *
      * @return Action
      */
@@ -109,33 +152,68 @@ class AccountRebalance extends Page
         return Action::make('recommend')
             ->label('Recalculate')
             ->icon(Heroicon::OutlinedCalculator)
-            ->action(function (): void {
-                $result = app(AccountRebalanceRecommender::class)->recommend();
-                $this->moves = array_map($this->recommendationToArray(...), $result['moves']);
-                $this->unresolvedOverflowTokens = $result['unresolved_overflow_tokens'];
-            });
+            ->action(fn () => $this->compute());
     }
 
     /**
-     * Converts one recommendation DTO into the plain array shape stored on
-     * {@see $moves}.
+     * Run the recommender over the selected range and store its output on
+     * the page.
      *
-     * @param  RebalanceRecommendation  $recommendation  the recommendation to convert
-     * @return array{userId: int, fromAccountId: int, toAccountId: int, fromProjectedBefore: int, fromProjectedAfter: int, toProjectedBefore: int, toProjectedAfter: int, demandTokensPerDay: float, demandBasis: string, confident: bool}
+     * @return void
      */
-    private function recommendationToArray(RebalanceRecommendation $recommendation): array
+    public function compute(): void
+    {
+        $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::fromFilter($this->range));
+
+        $this->accounts = $result['accounts'];
+        $this->moves = array_map(
+            fn (RebalanceRecommendation $move): array => $this->moveToArray($move, $result['accounts']),
+            $result['moves'],
+        );
+        $this->summary = [
+            'peak_fill_before_percent' => $result['peak_fill_before_percent'],
+            'peak_fill_after_percent' => $result['peak_fill_after_percent'],
+            'unplaced_tokens' => $result['unplaced_tokens'],
+            'safety_margin_percent' => $result['safety_margin_percent'],
+            'window_label' => $result['window_label'],
+        ];
+        $this->computed = true;
+    }
+
+    /**
+     * Flatten one recommendation into the array shape stored on
+     * {@see $moves}, resolving display labels up front.
+     *
+     * @param  RebalanceRecommendation  $move  the recommendation to convert
+     * @param  array<int, array<string, mixed>>  $accounts  per-account summaries, for the email labels
+     * @return array<string, mixed>
+     */
+    private function moveToArray(RebalanceRecommendation $move, array $accounts): array
     {
         return [
-            'userId' => $recommendation->userId,
-            'fromAccountId' => $recommendation->fromAccountId,
-            'toAccountId' => $recommendation->toAccountId,
-            'fromProjectedBefore' => $recommendation->fromProjectedBefore,
-            'fromProjectedAfter' => $recommendation->fromProjectedAfter,
-            'toProjectedBefore' => $recommendation->toProjectedBefore,
-            'toProjectedAfter' => $recommendation->toProjectedAfter,
-            'demandTokensPerDay' => $recommendation->demandTokensPerDay,
-            'demandBasis' => $recommendation->demandBasis,
-            'confident' => $recommendation->confident,
+            'userId' => $move->userId,
+            'userLabel' => User::query()->find($move->userId)?->displayHandle() ?? "#{$move->userId}",
+            'fromAccountId' => $move->fromAccountId,
+            'fromAccountLabel' => $accounts[$move->fromAccountId]['email'] ?? "#{$move->fromAccountId}",
+            'toAccountId' => $move->toAccountId,
+            'toAccountLabel' => $accounts[$move->toAccountId]['email'] ?? "#{$move->toAccountId}",
+            'swapWithUserId' => $move->swapWithUserId,
+            'swapWithLabel' => $move->swapWithUserId === null
+                ? null
+                : (User::query()->find($move->swapWithUserId)?->displayHandle() ?? "#{$move->swapWithUserId}"),
+            'demandWeeklyTokens' => $move->demandWeeklyTokens,
+            'demandPerDayTokens' => $move->demandPerDayTokens,
+            'demandBasis' => $move->demandBasis,
+            'trailingAvgPerDayTokens' => $move->trailingAvgPerDayTokens,
+            'peakAvgPerDayTokens' => $move->peakAvgPerDayTokens,
+            'burstFactor' => $move->burstFactor,
+            'quotaWeight' => $move->quotaWeight,
+            'daysOfHistory' => $move->daysOfHistory,
+            'fromFillBeforePercent' => $move->fromFillBeforePercent,
+            'fromFillAfterPercent' => $move->fromFillAfterPercent,
+            'toFillBeforePercent' => $move->toFillBeforePercent,
+            'toFillAfterPercent' => $move->toFillAfterPercent,
+            'confident' => $move->confident,
         ];
     }
 
@@ -150,18 +228,10 @@ class AccountRebalance extends Page
     }
 
     /**
-     * Whether the member list also shows Untracked members (red dot).
-     * Defaults to false, mirroring MembersRelationManager's "Unverified
-     * members" toggle — an untracked contributor is noise for this page's
-     * main purpose until an admin asks to see it.
-     *
-     * @var bool
-     */
-    public bool $showUntracked = false;
-
-    /**
      * Member rows for every connected account, keyed by account id, for the
-     * Blade view's member list. Honors {@see $showUntracked}.
+     * Blade view's member list. Tracked and pending only — an untracked
+     * contributor plays no part in a plan, so showing them here would only
+     * invite an admin to reason about people the arithmetic ignored.
      *
      * @return array<int, array<int, array{user_id: int, handle: string, status: string}>>
      */
@@ -172,12 +242,34 @@ class AccountRebalance extends Page
         return Account::query()
             ->whereHas('claudeCredential', fn ($q) => $q->whereNotNull('organization_uuid'))
             ->get()
-            ->mapWithKeys(fn ($account) => [$account->id => $query->get($account, $this->showUntracked)])
+            ->mapWithKeys(fn ($account) => [$account->id => $query->get($account)])
             ->all();
     }
 
     /**
-     * The per-move "Switch" action: opens the same OAuth code-paste popup
+     * The per-row "Why?" action: a read-only modal laying out every figure
+     * the move was derived from. The table can only carry a handful of
+     * columns, and a recommendation nobody can interrogate is one nobody
+     * will act on.
+     *
+     * @return Action
+     */
+    public function explainMoveAction(): Action
+    {
+        return Action::make('explainMove')
+            ->label('Why?')
+            ->link()
+            ->modalHeading('Why this move')
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close')
+            ->modalContent(fn (array $arguments) => view('filament.pages.partials.rebalance-move-detail', [
+                'move' => $this->moves[$arguments['index']],
+                'summary' => $this->summary,
+            ]));
+    }
+
+    /**
+     * The per-row "Switch" action: opens the same OAuth code-paste popup
      * `MembersRelationManager` already uses to provision a device on an
      * account, targeting the recommendation's user and destination account.
      * On success, demotes (never detaches) the source account's membership
