@@ -101,6 +101,23 @@ it('recomputes when the admin changes the range instead of leaving a stale table
     Carbon::setTestNow();
 });
 
+it('says on the rebalance table itself that its percentages are the worst case', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $admin = User::factory()->admin()->create();
+    lopsidedFleet();
+
+    // Without this the page contradicts itself: a table of accounts over
+    // 100% sitting directly above a sizing panel saying the fleet fits.
+    Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('recommend')
+        ->callMountedAction()
+        ->assertSee('worst case')
+        ->assertSee('on a typical week this fleet runs at');
+
+    Carbon::setTestNow();
+});
+
 it('sizes the fleet both ways, so a capacity decision is not made on the worst case alone', function () {
     Carbon::setTestNow('2026-09-12 06:00:00');
     $admin = User::factory()->admin()->create();

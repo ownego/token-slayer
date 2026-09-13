@@ -7,19 +7,28 @@
                 <option value="month">the last month</option>
                 <option value="all">all time</option>
             </select>
-            @if ($computed)
-                <span style="opacity:.6;">
-                    Planning to {{ 100 - ($summary['safety_margin_percent'] ?? 0) }}% of each account's measured weekly capacity.
-                </span>
-            @endif
         </div>
+
+        @if ($computed)
+            <p style="margin-top:.5rem; font-size:.8rem; opacity:.6;">
+                Every percentage here is <strong>worst case</strong>: what an account would carry if all of its
+                members hit their heaviest week at once. That is what an arrangement has to survive, so it is
+                normally well above 100%
+                @if (! empty($capacity))
+                    — on a typical week this fleet runs at {{ number_format($capacity['typical']['percent'], 0) }}%.
+                    See <strong>Fleet sizing</strong> below.
+                @endif
+                People are placed to {{ 100 - ($summary['safety_margin_percent'] ?? 0) }}% of each account's capacity,
+                leaving the rest as slack.
+            </p>
+        @endif
 
         @if (! $computed)
             <p style="opacity:.6; margin-top:.75rem;">Click "Recalculate" to see recommendations.</p>
         @elseif (empty($moves))
             <p style="opacity:.6; margin-top:.75rem;">
                 No move would meaningfully relieve the fullest account — the fleet is already as balanced as
-                reassignment can make it (fullest account: {{ number_format($summary['peak_fill_before_percent'], 1) }}% of its weekly capacity).
+                reassignment can make it (fullest account: {{ number_format($summary['peak_fill_before_percent'], 1) }}% worst case).
             </p>
         @else
             <p style="margin-top:.75rem; font-size:.85rem;">
@@ -27,7 +36,8 @@
                 <strong>{{ number_format($summary['peak_fill_before_percent'], 1) }}%</strong>
                 to
                 <strong>{{ number_format($summary['peak_fill_after_percent'], 1) }}%</strong>
-                of its weekly capacity if every move below is applied.
+                if every move below is applied. Accounts converge rather than all drop: the load has to go
+                somewhere, and levelling it is what stops one account burning out days before the others.
             </p>
 
             <div style="overflow-x:auto; margin-top:.75rem;">
@@ -81,8 +91,10 @@
         @endif
 
         @if ($computed && ($summary['unplaced_tokens'] ?? 0) > 0)
-            <p style="color:var(--danger-500, #dc2626); margin-top:.75rem; font-size:.85rem;">
-                {{ number_format($summary['unplaced_tokens']) }} tokens/week still do not fit after rebalancing. See <strong>Fleet sizing</strong> below for whether that actually means buying accounts.
+            <p style="margin-top:.75rem; font-size:.85rem; opacity:.75;">
+                In that worst case, {{ number_format($summary['unplaced_tokens']) }} tokens/week exceed the whole
+                fleet's capacity — no arrangement can absorb them. Whether that means buying accounts depends on how
+                close the fleet runs to its worst case: see <strong>Fleet sizing</strong>.
             </p>
         @endif
     </x-filament::section>
@@ -130,13 +142,20 @@
 
             @if ($capacity['projection'] !== null)
                 <div style="margin-top:1rem;">
+                    @php($target = 100 - $capacity['safety_margin_percent'])
+                    @php($peak = $capacity['projection']['peak_fill_percent'])
                     <p style="font-size:.85rem;">
-                        With {{ $capacity['projection']['extra_accounts'] }} more, the fullest account sits at
-                        <strong>{{ number_format($capacity['projection']['peak_fill_percent'], 0) }}%</strong>
+                        With {{ $capacity['projection']['extra_accounts'] }} more, the worst case puts the fullest
+                        account at <strong>{{ number_format($peak, 0) }}%</strong>
                         @if ($capacity['projection']['overflow_tokens'] > 0)
-                            and <strong style="color:var(--danger-500, #dc2626);">{{ number_format($capacity['projection']['overflow_tokens']) }}</strong> tokens/week still do not fit.
+                            and <strong style="color:var(--danger-500, #dc2626);">{{ number_format($capacity['projection']['overflow_tokens']) }}</strong>
+                            tokens/week still exceed the fleet outright.
+                        @elseif ($peak > $target)
+                            — nothing is turned away any more, but it is above the {{ $target }}% planning target,
+                            which is the difference between "never blocked" and "comfortable". That gap is why the
+                            badge above asks for more accounts than it takes to merely fit.
                         @else
-                            and everything fits.
+                            — everything fits with the {{ $target }}% slack intact.
                         @endif
                     </p>
 
@@ -194,7 +213,7 @@
                         <tr style="text-align:left; opacity:.6;">
                             <th style="padding:.4rem .6rem;">Account</th>
                             <th style="padding:.4rem .6rem;">Measured capacity / week</th>
-                            <th style="padding:.4rem .6rem;">Planned load</th>
+                            <th style="padding:.4rem .6rem;">Worst-case load</th>
                             <th style="padding:.4rem .6rem;">Members</th>
                         </tr>
                     </thead>
