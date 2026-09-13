@@ -32,11 +32,12 @@ final class AccountRebalanceRecommender
      * The current recommendation for the fleet, read over `$window`.
      *
      * @param  RebalanceWindow|null  $window  how far back to read, defaulting to the configured trend window
+     * @param  FleetReading|null  $reading  a reading already taken over that window; measuring the fleet is by far the most expensive part of this, and a caller that also asks for a capacity forecast should not pay for it twice
      * @return array{moves: array<int, RebalanceRecommendation>, accounts: array<int, array{id: int, email: string, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>, peak_fill_before_percent: float, peak_fill_after_percent: float, unplaced_tokens: float, safety_margin_percent: int, window_label: string}
      */
-    public function recommend(?RebalanceWindow $window = null): array
+    public function recommend(?RebalanceWindow $window = null, ?FleetReading $reading = null): array
     {
-        $reading = $this->snapshot->take($window ?? RebalanceWindow::fromFilter(null));
+        $reading ??= $this->snapshot->take($window ?? RebalanceWindow::fromFilter(null));
         $capacities = $reading->capacities;
 
         $plan = $this->planner->plan(

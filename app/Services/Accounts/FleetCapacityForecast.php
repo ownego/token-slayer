@@ -32,11 +32,12 @@ final class FleetCapacityForecast
      *
      * @param  RebalanceWindow|null  $window  how far back to read, defaulting to the configured trend window
      * @param  int  $extraAccounts  how many hypothetical accounts to add
+     * @param  FleetReading|null  $reading  a reading already taken over that window, so a page showing both this and the rebalance table measures the fleet once
      * @return array{assumed_capacity_tokens: float, capacity_tokens: float, usable_tokens: float, safety_margin_percent: int, window_label: string, typical: array{tokens: float, percent: float, accounts_needed: int}, worst_case: array{tokens: float, percent: float, accounts_needed: int}, projection: array{extra_accounts: int, peak_fill_percent: float, overflow_tokens: float, accounts: array<int, array{label: string, is_new: bool, capacity_tokens: float, fill_percent: float, members: int}>, arrivals: array<int, array{user_id: int, user_label: string, account_label: string, weekly_tokens: float}>}|null}
      */
-    public function forecast(?RebalanceWindow $window = null, int $extraAccounts = 0): array
+    public function forecast(?RebalanceWindow $window = null, int $extraAccounts = 0, ?FleetReading $reading = null): array
     {
-        $reading = $this->snapshot->take($window ?? RebalanceWindow::fromFilter(null));
+        $reading ??= $this->snapshot->take($window ?? RebalanceWindow::fromFilter(null));
 
         $capacity = (float) array_sum($reading->capacities);
         $median = $reading->medianCapacity();

@@ -10,6 +10,7 @@ use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMemberStatusQuery;
 use App\Services\Accounts\AccountRebalanceRecommender;
 use App\Services\Accounts\FleetCapacityForecast;
+use App\Services\Accounts\FleetSnapshot;
 use App\Services\Accounts\RebalanceRecommendation;
 use App\Services\Accounts\RebalanceWindow;
 use BackedEnum;
@@ -196,9 +197,14 @@ class AccountRebalance extends Page
      */
     public function compute(): void
     {
+        // Measured once and handed to both: reading the fleet dominates the
+        // cost of this page, and the two answers must come off the same
+        // numbers anyway.
         $window = RebalanceWindow::fromFilter($this->range);
-        $result = app(AccountRebalanceRecommender::class)->recommend($window);
-        $this->capacity = app(FleetCapacityForecast::class)->forecast($window, max(0, $this->extraAccounts));
+        $reading = app(FleetSnapshot::class)->take($window);
+
+        $result = app(AccountRebalanceRecommender::class)->recommend($window, $reading);
+        $this->capacity = app(FleetCapacityForecast::class)->forecast($window, max(0, $this->extraAccounts), $reading);
 
         $this->accounts = $result['accounts'];
         $this->moves = array_map(

@@ -186,11 +186,25 @@ final class UserDemandEstimator
             ->orderBy('created_at')
             ->get(['util_5h', 'reset_5h_at', 'created_at']);
 
+        // Events are flattened into parallel arrays of plain integers, once,
+        // rather than re-parsed per window. Scanning every event inside every
+        // window and building a Carbon for each comparison is quadratic and
+        // measured 24 seconds on a fleet of seven accounts and 37,000 events
+        // — effectively the entire cost of a recalculation.
         $events = Event::query()
             ->where('account_id', $account->id)
             ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
             ->orderBy('created_at')
             ->get(['user_id', 'tokens', 'created_at']);
+
+        $times = [];
+        $userIds = [];
+        $tokenCounts = [];
+        foreach ($events as $event) {
+            $times[] = Carbon::parse($event->created_at)->getTimestamp();
+            $userIds[] = (int) $event->user_id;
+            $tokenCounts[] = (int) $event->tokens;
+        }
 
         $costs = [];
 
@@ -206,12 +220,12 @@ final class UserDemandEstimator
                 continue;
             }
 
+            $from = Carbon::parse($first->created_at)->getTimestamp();
+            $to = Carbon::parse($last->created_at)->getTimestamp();
+
             $contributors = [];
-            foreach ($events as $event) {
-                $at = Carbon::parse($event->created_at);
-                if ($at->betweenIncluded(Carbon::parse($first->created_at), Carbon::parse($last->created_at))) {
-                    $contributors[(int) $event->user_id] = ($contributors[(int) $event->user_id] ?? 0) + (int) $event->tokens;
-                }
+            for ($index = $this->firstAtOrAfter($times, $from); $index < count($times) && $times[$index] <= $to; $index++) {
+                $contributors[$userIds[$index]] = ($contributors[$userIds[$index]] ?? 0) + $tokenCounts[$index];
             }
 
             if (count($contributors) !== 1) {
@@ -228,6 +242,31 @@ final class UserDemandEstimator
         }
 
         return array_map(fn (array $samples): float => array_sum($samples) / count($samples), $costs);
+    }
+
+    /**
+     * Index of the first timestamp at or after `$target` in an ascending
+     * list, or the list length when every entry is earlier.
+     *
+     * @param  array<int, int>  $times  unix timestamps, ascending
+     * @param  int  $target  the moment to seek
+     * @return int
+     */
+    private function firstAtOrAfter(array $times, int $target): int
+    {
+        $low = 0;
+        $high = count($times);
+
+        while ($low < $high) {
+            $middle = intdiv($low + $high, 2);
+            if ($times[$middle] < $target) {
+                $low = $middle + 1;
+            } else {
+                $high = $middle;
+            }
+        }
+
+        return $low;
     }
 
     /**
