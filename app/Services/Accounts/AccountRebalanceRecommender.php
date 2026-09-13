@@ -218,6 +218,6 @@ final class AccountRebalanceRecommender
 
         $earliest = Event::query()->where('account_id', $account->id)->min('created_at');
 
-        return $earliest !== null && now()->diffInDays($earliest) >= $minDays;
+        return $earliest !== null && now()->diffInDays($earliest, absolute: true) >= $minDays;
     }
 }

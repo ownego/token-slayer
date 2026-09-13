@@ -25,6 +25,11 @@ it('recommends moving the heaviest contributor off an overflowing account onto o
     AccountUsageSnapshot::factory()->for($overflowing)->create(['util_7d' => 30, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
     $heavy = User::factory()->create();
     Event::factory()->for($overflowing)->for($heavy)->create(['tokens' => 84_000, 'created_at' => now()->subDay()]);
+    // A tiny, much-older event pushes this account's earliest-event date
+    // back without affecting tokensPerPercent/peak-day (both scoped to the
+    // trailing 7-day window, well after this one) -- purely so the
+    // min_history_days confidence check below has enough history to pass.
+    Event::factory()->for($overflowing)->for($heavy)->create(['tokens' => 1, 'created_at' => now()->subDays(20)]);
     $overflowing->users()->syncWithoutDetaching([$heavy->id => ['status' => MembershipStatus::Tracked->value]]);
 
     // healthy: tokensPerPercent = 10,000 / 5 = 2,000; rate = 10,000 / 2,000
@@ -32,6 +37,7 @@ it('recommends moving the heaviest contributor off an overflowing account onto o
     // 2,000 = 150,000 -- comfortably above heavy's ~84,000 weekly demand.
     AccountUsageSnapshot::factory()->for($healthy)->create(['util_7d' => 5, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
     Event::factory()->for($healthy)->for(User::factory())->create(['tokens' => 10_000, 'created_at' => now()->subDays(3)]);
+    Event::factory()->for($healthy)->for(User::factory())->create(['tokens' => 1, 'created_at' => now()->subDays(20)]);
 
     $result = app(AccountRebalanceRecommender::class)->recommend();
 
@@ -39,7 +45,11 @@ it('recommends moving the heaviest contributor off an overflowing account onto o
     $move = $result['moves'][0];
     expect($move->userId)->toBe($heavy->id)
         ->and($move->fromAccountId)->toBe($overflowing->id)
-        ->and($move->toAccountId)->toBe($healthy->id);
+        ->and($move->toAccountId)->toBe($healthy->id)
+        // Both accounts have 20 days of history, well past the default
+        // 7-day min_history_days -- this must read as confident, not
+        // "not enough data".
+        ->and($move->confident)->toBeTrue();
 
     Carbon::setTestNow();
 });
