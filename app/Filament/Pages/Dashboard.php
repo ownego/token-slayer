@@ -76,7 +76,10 @@ class Dashboard extends BaseDashboard
                             $component->state('output');
                         }
                     })
-                    ->helperText('Total = + input/cache tokens. Quota = total minus cache-read (real rate-limit cost).')
+                    ->helperText(new HtmlString(
+                        '<span style="display:block">Total = + input/cache tokens.</span>'
+                        .'<span style="display:block">Quota = total minus cache-read (real rate-limit cost).</span>'
+                    ))
                     ->columnSpan(2),
             ]);
     }
