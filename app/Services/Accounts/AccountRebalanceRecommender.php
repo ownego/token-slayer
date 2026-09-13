@@ -34,7 +34,7 @@ final class AccountRebalanceRecommender
      * @param  RebalanceWindow|null  $window  how far back to read, defaulting to the configured trend window
      * @param  FleetReading|null  $reading  a reading already taken over that window; measuring the fleet is by far the most expensive part of this, and a caller that also asks for a capacity forecast should not pay for it twice
      * @param  int  $extraAccounts  how many accounts to plan as though they had been bought; the moves onto them cannot be executed yet, but a plan that ignores an account about to exist is planning the wrong fleet
-     * @return array{moves: array<int, RebalanceRecommendation>, accounts: array<int, array{id: int, email: string, is_new: bool, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>, peak_fill_before_percent: float, peak_fill_after_percent: float, unplaced_tokens: float, safety_margin_percent: int, window_label: string, simulated_accounts: int, capacity_tokens: float}
+     * @return array{moves: array<int, RebalanceRecommendation>, accounts: array<int, array{id: int, email: string, is_new: bool, capacity_basis: string, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>, peak_fill_before_percent: float, peak_fill_after_percent: float, unplaced_tokens: float, safety_margin_percent: int, window_label: string, simulated_accounts: int, capacity_tokens: float}
      */
     public function recommend(?RebalanceWindow $window = null, ?FleetReading $reading = null, int $extraAccounts = 0): array
     {
@@ -64,7 +64,7 @@ final class AccountRebalanceRecommender
 
         return [
             'moves' => $this->recommendationsFor($plan['moves'], $reading->details, $reading->burstFactors, $fillBefore, $fillAfter, $reading->accounts),
-            'accounts' => $this->accountSummaries($reading->accounts, $capacities, $fillBefore, $fillAfter, $reading->current, $plan['assignment']),
+            'accounts' => $this->accountSummaries($reading->accounts, $capacities, $fillBefore, $fillAfter, $reading->current, $plan['assignment'], $reading->capacityBasis),
             'peak_fill_before_percent' => $fillBefore === [] ? 0.0 : max($fillBefore),
             'peak_fill_after_percent' => $fillAfter === [] ? 0.0 : max($fillAfter),
             'unplaced_tokens' => (float) array_sum($plan['overflow']),
@@ -183,7 +183,8 @@ final class AccountRebalanceRecommender
      * @param  array<int, float>  $fillAfter  account id => percentage of capacity, after
      * @param  array<int, int>  $current  user id => account id today
      * @param  array<int, int>  $assignment  user id => account id under the plan
-     * @return array<int, array{id: int, email: string, is_new: bool, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>
+     * @param  array<int, array{basis: string, windows: int}>  $capacityBasis  account id => how its capacity was arrived at
+     * @return array<int, array{id: int, email: string, is_new: bool, capacity_basis: string, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>
      */
     private function accountSummaries(
         Collection $accounts,
@@ -192,6 +193,7 @@ final class AccountRebalanceRecommender
         array $fillAfter,
         array $current,
         array $assignment,
+        array $capacityBasis = [],
     ): array {
         $before = array_count_values($current);
         $after = array_count_values($assignment);
@@ -207,6 +209,7 @@ final class AccountRebalanceRecommender
                 'id' => $accountId,
                 'email' => 'New account '.abs($accountId),
                 'is_new' => true,
+                'capacity_basis' => 'assumed',
                 'capacity_tokens' => $capacity,
                 'fill_before_percent' => 0.0,
                 'fill_after_percent' => $fillAfter[$accountId] ?? 0.0,
@@ -223,6 +226,7 @@ final class AccountRebalanceRecommender
             $summaries[$account->id] = [
                 'id' => $account->id,
                 'is_new' => false,
+                'capacity_basis' => $capacityBasis[$account->id]['basis'] ?? 'unknown',
                 'email' => (string) $account->email,
                 'capacity_tokens' => $capacities[$account->id],
                 'fill_before_percent' => $fillBefore[$account->id] ?? 0.0,

@@ -18,6 +18,7 @@ final readonly class FleetReading
     /**
      * @param  Collection<int, Account>  $accounts  every connected account in scope
      * @param  array<int, float>  $capacities  account id => weekly capacity in tokens, measurable accounts only
+     * @param  array<int, array{basis: string, windows: int}>  $capacityBasis  account id => whether that capacity was read off a week the account ran out of, extrapolated from a quieter one, or inherited from its siblings
      * @param  array<int, int>  $current  user id => the account they sit on today
      * @param  array<int, float>  $demands  user id => quota-weighted heaviest week in tokens
      * @param  array<int, float>  $burstFactors  user id => busiest hour over mean hour
@@ -27,6 +28,7 @@ final readonly class FleetReading
     public function __construct(
         public Collection $accounts,
         public array $capacities,
+        public array $capacityBasis,
         public array $current,
         public array $demands,
         public array $burstFactors,

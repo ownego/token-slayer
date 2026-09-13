@@ -35,6 +35,23 @@ final class AccountCapacityEstimator
     private const int MIN_PEAK_UTIL = 25;
 
     /**
+     * Utilization at which a window stops being an estimate and becomes a
+     * reading. An account that ran its quota out cut its users off, so what
+     * they managed to spend IS the week's worth — no scaling, no amplified
+     * error.
+     *
+     * Anything below this multiplies a fraction of a week up to a whole one,
+     * and multiplies the probe's error with it: at 25% a single point of
+     * error moves the answer by 4%. Weighing the two kinds of window equally
+     * read the real fleet 10-26% larger than its own saturated weeks plainly
+     * showed, and that inflation was the whole reason one account looked
+     * roomy enough to send the fleet's heaviest person to.
+     *
+     * @var int
+     */
+    private const int SATURATED_PERCENT = 95;
+
+    /**
      * The quota window length Anthropic reports util_7d against.
      *
      * @var int
@@ -51,7 +68,24 @@ final class AccountCapacityEstimator
      */
     public function weeklyCapacityTokens(Account $account, RebalanceWindow $window): ?float
     {
-        $estimates = [];
+        return $this->measure($account, $window)['tokens'];
+    }
+
+    /**
+     * This account's weekly capacity and how it was arrived at.
+     *
+     * Weeks the account ran out of are used alone when there are any: each is
+     * a direct reading, and mixing readings with extrapolations lets the
+     * noisier evidence move an answer the quieter evidence already settled.
+     *
+     * @param  Account  $account  the account to measure
+     * @param  RebalanceWindow  $window  how far back to look
+     * @return array{tokens: float|null, basis: string, windows: int}
+     */
+    public function measure(Account $account, RebalanceWindow $window): array
+    {
+        $measured = [];
+        $extrapolated = [];
 
         foreach ($this->closedWindows($account, $window) as $closed) {
             if ($closed['peak_util'] < self::MIN_PEAK_UTIL) {
@@ -63,10 +97,24 @@ final class AccountCapacityEstimator
                 continue;
             }
 
-            $estimates[] = $tokens * 100 / $closed['peak_util'];
+            if ($closed['peak_util'] >= self::SATURATED_PERCENT) {
+                $measured[] = (float) $tokens;
+
+                continue;
+            }
+
+            $extrapolated[] = $tokens * 100 / $closed['peak_util'];
         }
 
-        return $this->median($estimates);
+        if ($measured !== []) {
+            return ['tokens' => $this->median($measured), 'basis' => 'measured', 'windows' => count($measured)];
+        }
+
+        if ($extrapolated !== []) {
+            return ['tokens' => $this->median($extrapolated), 'basis' => 'extrapolated', 'windows' => count($extrapolated)];
+        }
+
+        return ['tokens' => null, 'basis' => 'unknown', 'windows' => 0];
     }
 
     /**
@@ -79,33 +127,39 @@ final class AccountCapacityEstimator
      *
      * @param  Collection<int, Account>  $accounts  the accounts to resolve
      * @param  RebalanceWindow  $window  how far back to look
-     * @return array<int, float|null> account id => weekly capacity tokens
+     * @return array<int, array{tokens: float|null, basis: string, windows: int}> account id => capacity and how it was arrived at
      */
     public function capacitiesFor(Collection $accounts, RebalanceWindow $window): array
     {
-        $measured = [];
+        $resolved = [];
         foreach ($accounts as $account) {
-            $measured[$account->id] = $this->weeklyCapacityTokens($account, $window);
+            $resolved[$account->id] = $this->measure($account, $window);
         }
 
         $byPlan = [];
         foreach ($accounts as $account) {
-            if ($measured[$account->id] !== null) {
-                $byPlan[$account->plan->value][] = $measured[$account->id];
+            if ($resolved[$account->id]['tokens'] !== null) {
+                $byPlan[$account->plan->value][] = $resolved[$account->id]['tokens'];
             }
         }
 
-        $fleetMedian = $this->median(array_values(array_filter($measured, fn (?float $c): bool => $c !== null)));
+        $known = array_column(array_filter($resolved, fn (array $r): bool => $r['tokens'] !== null), 'tokens');
+        $fleetMedian = $this->median($known);
 
         foreach ($accounts as $account) {
-            if ($measured[$account->id] !== null) {
+            if ($resolved[$account->id]['tokens'] !== null) {
                 continue;
             }
 
-            $measured[$account->id] = $this->median($byPlan[$account->plan->value] ?? []) ?? $fleetMedian;
+            $inherited = $this->median($byPlan[$account->plan->value] ?? []) ?? $fleetMedian;
+            $resolved[$account->id] = [
+                'tokens' => $inherited,
+                'basis' => $inherited === null ? 'unknown' : 'inherited',
+                'windows' => 0,
+            ];
         }
 
-        return $measured;
+        return $resolved;
     }
 
     /**

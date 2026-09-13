@@ -40,10 +40,12 @@ final class FleetSnapshot
             ->with('claudeCredential')
             ->get();
 
-        $capacities = array_filter(
+        $resolved = array_filter(
             $this->capacity->capacitiesFor($accounts, $window),
-            fn (?float $tokens): bool => $tokens !== null && $tokens > 0.0,
+            fn (array $entry): bool => $entry['tokens'] !== null && $entry['tokens'] > 0.0,
         );
+        $capacities = array_map(fn (array $entry): float => $entry['tokens'], $resolved);
+        $capacityBasis = array_map(fn (array $entry): array => ['basis' => $entry['basis'], 'windows' => $entry['windows']], $resolved);
 
         $current = $this->homes->resolve($accounts, $window);
         $users = User::query()->whereIn('id', array_keys($current))->get()->keyBy('id');
@@ -77,6 +79,7 @@ final class FleetSnapshot
         return new FleetReading(
             accounts: $accounts,
             capacities: $capacities,
+            capacityBasis: $capacityBasis,
             current: array_intersect_key($current, $demands),
             demands: $demands,
             burstFactors: $burstFactors,

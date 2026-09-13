@@ -345,7 +345,16 @@
                                         <x-filament::badge color="info">not bought yet</x-filament::badge>
                                     @endif
                                 </td>
-                                <td style="padding:.4rem .6rem;">{{ number_format($account['capacity_tokens']) }} tokens</td>
+                                <td style="padding:.4rem .6rem;">
+                                    {{ number_format($account['capacity_tokens']) }} tokens
+                                    @if (($account['capacity_basis'] ?? '') === 'measured')
+                                        <span style="opacity:.55;" title="Read off a week this account ran its quota out — what its users managed to spend is exactly a week's worth.">measured</span>
+                                    @elseif (($account['capacity_basis'] ?? '') === 'extrapolated')
+                                        <span style="opacity:.55; color:var(--warning-600, #ca8a04);" title="It has never run out in this range, so this scales a quieter week up to a full one — and scales the probe's error up with it.">estimated</span>
+                                    @elseif (($account['capacity_basis'] ?? '') === 'inherited')
+                                        <span style="opacity:.55; color:var(--warning-600, #ca8a04);" title="Nothing usable of its own; borrowed from the accounts on its plan.">borrowed</span>
+                                    @endif
+                                </td>
                                 <td style="padding:.4rem .6rem; {{ $peak !== null && $peak > 100 ? 'color:var(--danger-500, #dc2626); font-weight:600;' : '' }}">
                                     {{ $peak === null ? '—' : number_format($peak, 0) . '%' }}
                                 </td>
@@ -363,8 +372,10 @@
             <ul style="opacity:.6; font-size:.75rem; margin-top:.75rem; list-style:none; padding-left:0; display:flex; flex-direction:column; gap:.35rem;">
                 <li>
                     <strong>Measured capacity</strong> — from closed quota windows over
-                    {{ $summary['window_label'] ?? '' }}: the tokens an account consumed in a window, scaled up by the
-                    highest utilisation that consumption reached.
+                    {{ $summary['window_label'] ?? '' }}. A week the account ran out of measures it directly: its users
+                    were cut off, so what they spent is exactly a week's worth. A week it never filled has to be scaled
+                    up instead, which scales the probe's error up too, so those are marked <em>estimated</em> and
+                    trusted only when no saturated week exists.
                 </li>
                 <li>
                     <strong>Actually peaked at</strong> — the heaviest seven days this account really carried.
