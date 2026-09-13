@@ -60,7 +60,7 @@ final class FleetSnapshot
             }
 
             $measured = $this->demand->demandFor($user, $window);
-            $weight = $weights[$userId] ?? 1.0;
+            $weight = $weights[$userId]['weight'] ?? 1.0;
             $weekly = $measured['weekly'] * $weight;
             if ($weekly <= 0.0) {
                 continue; // nobody to plan around; leave them where they are
@@ -68,7 +68,10 @@ final class FleetSnapshot
 
             $demands[$userId] = $weekly;
             $burstFactors[$userId] = $this->demand->burstFactor($user, $window);
-            $details[$userId] = $measured + ['quota_weight' => $weight];
+            $details[$userId] = $measured + [
+                'quota_weight' => $weight,
+                'quota_weight_windows' => $weights[$userId]['windows'] ?? 0,
+            ];
         }
 
         return new FleetReading(

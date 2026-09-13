@@ -126,33 +126,74 @@ it('reports a flat burst factor for a user with no usage at all', function () {
     expect(app(UserDemandEstimator::class)->burstFactor($user, RebalanceWindow::days(14)))->toBe(1.0);
 });
 
+/**
+ * One 5-hour window in which a single person moved util_5h from 10 to 40,
+ * spending `$tokens` doing it — the only shape from which a person's quota
+ * cost can be attributed.
+ *
+ * @param  Account  $account  the account the window belongs to
+ * @param  User  $user  the only person active in it
+ * @param  int  $slot  which of the disjoint time slots to place it in
+ * @param  int  $tokens  what they spent
+ * @return void
+ */
+function soloWindow(Account $account, User $user, int $slot, int $tokens): void
+{
+    $opens = now()->subMinutes(600 - $slot * 60);
+    $closes = $opens->copy()->addMinutes(50);
+
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => now()->addHours(3 + $slot), 'created_at' => $opens]);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => now()->addHours(3 + $slot), 'created_at' => $closes]);
+    Event::factory()->for($account)->for($user)->create(['tokens' => $tokens, 'created_at' => $opens->copy()->addMinutes(25)]);
+}
+
 it('weighs a user who burns quota faster per token heavier than their account peers', function () {
     Carbon::setTestNow('2026-09-12 12:00:00');
     $account = Account::factory()->connected()->create();
     $heavyMix = User::factory()->create();
     $lightMix = User::factory()->create();
 
-    // Window 1: heavyMix alone moves util_5h 10 -> 40 (30 points) on 3,000
-    // tokens -> 100 tokens per point.
-    $resetOne = now()->addHours(3);
-    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetOne, 'created_at' => now()->subMinutes(40)]);
-    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetOne, 'created_at' => now()->subMinutes(30)]);
-    Event::factory()->for($account)->for($heavyMix)->create(['tokens' => 3_000, 'created_at' => now()->subMinutes(35)]);
-
-    // Window 2: lightMix alone moves util_5h 10 -> 40 but needs 9,000
-    // tokens -> 300 tokens per point, i.e. three times cheaper per token.
-    $resetTwo = now()->addHours(9);
-    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetTwo, 'created_at' => now()->subMinutes(20)]);
-    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetTwo, 'created_at' => now()->subMinutes(10)]);
-    Event::factory()->for($account)->for($lightMix)->create(['tokens' => 9_000, 'created_at' => now()->subMinutes(15)]);
+    // heavyMix moves 30 points on 3,000 tokens -> 100 tokens per point.
+    // lightMix moves the same 30 on 9,000 -> 300 per point, three times
+    // cheaper. Three windows each, which is what it takes to be believed.
+    foreach ([0, 1, 2] as $slot) {
+        soloWindow($account, $heavyMix, $slot, 3_000);
+    }
+    foreach ([3, 4, 5] as $slot) {
+        soloWindow($account, $lightMix, $slot, 9_000);
+    }
 
     $weights = app(UserDemandEstimator::class)->quotaWeights(collect([$account]), RebalanceWindow::days(7));
 
     // Account median is 200 tokens/point. heavyMix needs only 100 -> each of
     // their tokens costs twice the typical quota -> weight 2. lightMix needs
     // 300 -> weight 0.67.
-    expect(round($weights[$heavyMix->id], 2))->toBe(2.0)
-        ->and(round($weights[$lightMix->id], 2))->toBe(0.67);
+    expect(round($weights[$heavyMix->id]['weight'], 2))->toBe(2.0)
+        ->and(round($weights[$lightMix->id]['weight'], 2))->toBe(0.67)
+        ->and($weights[$heavyMix->id]['windows'])->toBe(3);
+
+    Carbon::setTestNow();
+});
+
+it('refuses to discount somebody on the evidence of a single afternoon', function () {
+    Carbon::setTestNow('2026-09-12 12:00:00');
+    $account = Account::factory()->connected()->create();
+    $once = User::factory()->create();
+    $often = User::factory()->create();
+
+    // Exactly the shape found on the real fleet: two people, one window each,
+    // and a 24% discount falling out of it that changed which person a
+    // recommendation moved. A 5-hour sample cannot carry that.
+    soloWindow($account, $once, 0, 3_000);
+    foreach ([1, 2, 3] as $slot) {
+        soloWindow($account, $often, $slot, 9_000);
+    }
+
+    $weights = app(UserDemandEstimator::class)->quotaWeights(collect([$account]), RebalanceWindow::days(7));
+
+    // `often` qualifies but has nobody left to be compared against, so
+    // nobody is weighted at all and everyone is planned as typical.
+    expect($weights)->toBe([]);
 
     Carbon::setTestNow();
 });

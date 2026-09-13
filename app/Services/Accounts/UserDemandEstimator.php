@@ -47,6 +47,16 @@ final class UserDemandEstimator
     private const int WINDOW_DAYS = 7;
 
     /**
+     * Solo windows a person needs before their tokens are called heavier or
+     * lighter than anybody else's. A 5-hour window is a small, noisy sample
+     * — one of them said somebody's tokens were a quarter cheaper than the
+     * typical member's, which is not a claim a single afternoon can support.
+     *
+     * @var int
+     */
+    private const int MIN_SOLO_WINDOWS = 3;
+
+    /**
      * This person's weekly demand, with the workings behind it so a
      * recommendation can show why it is sized the way it is.
      *
@@ -130,39 +140,54 @@ final class UserDemandEstimator
      * account — those are the only windows where the utilisation moved for
      * a single, attributable reason. Each account's own median normalises
      * away how big that account is, so the weights compare people rather
-     * than plans. A user with no solo window anywhere is simply absent from
+     * than plans. A user with no usable measurement is simply absent from
      * the result, and the caller treats them as typical.
+     *
+     * A person needs {@see MIN_SOLO_WINDOWS} of those windows before any
+     * weight is applied to them. This is not caution for its own sake: on
+     * the real fleet the weights were resting on a single window each, and
+     * one 5-hour sample was quietly discounting somebody's whole week by a
+     * quarter — enough to change which person a recommendation moved. Being
+     * treated as typical is the right answer when there is no evidence to
+     * the contrary.
      *
      * @param  Collection<int, Account>  $accounts  the accounts to read windows from
      * @param  RebalanceWindow  $window  how far back to read
-     * @return array<int, float> user id => weight, clamped
+     * @return array<int, array{weight: float, windows: int}> user id => weight (clamped) and the windows behind it
      */
     public function quotaWeights(Collection $accounts, RebalanceWindow $window): array
     {
         $relative = [];
+        $windowCounts = [];
 
         foreach ($accounts as $account) {
-            $costs = $this->soloQuotaCosts($account, $window);
-            if (count($costs) < 2) {
+            $measured = array_filter(
+                $this->soloQuotaCosts($account, $window),
+                fn (array $entry): bool => $entry['windows'] >= self::MIN_SOLO_WINDOWS && $entry['cost'] > 0.0,
+            );
+
+            if (count($measured) < 2) {
                 continue; // with nobody to compare against, "heavier" has no meaning
             }
 
-            $median = $this->median(array_values($costs));
+            $median = $this->median(array_column($measured, 'cost'));
             if ($median === null || $median <= 0.0) {
                 continue;
             }
 
-            foreach ($costs as $userId => $cost) {
-                if ($cost > 0.0) {
-                    $relative[$userId][] = $median / $cost;
-                }
+            foreach ($measured as $userId => $entry) {
+                $relative[$userId][] = $median / $entry['cost'];
+                $windowCounts[$userId] = ($windowCounts[$userId] ?? 0) + $entry['windows'];
             }
         }
 
         $weights = [];
         foreach ($relative as $userId => $ratios) {
             $mean = array_sum($ratios) / count($ratios);
-            $weights[$userId] = max(self::MIN_WEIGHT, min(self::MAX_WEIGHT, $mean));
+            $weights[$userId] = [
+                'weight' => max(self::MIN_WEIGHT, min(self::MAX_WEIGHT, $mean)),
+                'windows' => $windowCounts[$userId],
+            ];
         }
 
         return $weights;
@@ -170,11 +195,13 @@ final class UserDemandEstimator
 
     /**
      * Tokens each solo user needed to move this account's util_5h by one
-     * point, keyed by user id. A smaller number means heavier tokens.
+     * point, keyed by user id, with how many windows that average rests on.
+     * A smaller cost means heavier tokens; a smaller window count means less
+     * reason to believe it.
      *
      * @param  Account  $account  the account whose windows to read
      * @param  RebalanceWindow  $window  how far back to read
-     * @return array<int, float> user id => tokens per utilisation point
+     * @return array<int, array{cost: float, windows: int}> user id => tokens per utilisation point, and the sample behind it
      */
     private function soloQuotaCosts(Account $account, RebalanceWindow $window): array
     {
@@ -241,7 +268,13 @@ final class UserDemandEstimator
             $costs[$userId][] = $tokens / $utilDelta;
         }
 
-        return array_map(fn (array $samples): float => array_sum($samples) / count($samples), $costs);
+        return array_map(
+            fn (array $samples): array => [
+                'cost' => array_sum($samples) / count($samples),
+                'windows' => count($samples),
+            ],
+            $costs,
+        );
     }
 
     /**

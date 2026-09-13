@@ -48,7 +48,7 @@
                             <th style="padding:.4rem .6rem;">User</th>
                             <th style="padding:.4rem .6rem;">From</th>
                             <th style="padding:.4rem .6rem;">To</th>
-                            <th style="padding:.4rem .6rem;">Demand / week</th>
+                            <th style="padding:.4rem .6rem;">Heaviest week</th>
                             <th style="padding:.4rem .6rem;">Swap with</th>
                             <th style="padding:.4rem .6rem;">Confidence</th>
                             <th style="padding:.4rem .6rem;"></th>
@@ -67,8 +67,13 @@
                                     <span style="opacity:.6;">({{ number_format($move['toFillBeforePercent'], 0) }}% → {{ number_format($move['toFillAfterPercent'], 0) }}%)</span>
                                 </td>
                                 <td style="padding:.4rem .6rem;">
-                                    {{ number_format($move['demandWeeklyTokens']) }}
-                                    <span style="opacity:.6;">({{ str_replace('_', ' ', $move['demandBasis']) }})</span>
+                                    {{ number_format($move['peakWeekTokens']) }}
+                                    @if (abs($move['quotaWeight'] - 1.0) > 0.005)
+                                        <span style="opacity:.6;">
+                                            × {{ number_format($move['quotaWeight'], 2) }} quota weight
+                                            = {{ number_format($move['demandWeeklyTokens']) }}
+                                        </span>
+                                    @endif
                                 </td>
                                 <td style="padding:.4rem .6rem;">
                                     {{ $move['swapWithLabel'] ?? '—' }}

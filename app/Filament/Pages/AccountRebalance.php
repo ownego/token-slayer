@@ -250,6 +250,7 @@ class AccountRebalance extends Page
             'peakWeekTokens' => $move->peakWeekTokens,
             'burstFactor' => $move->burstFactor,
             'quotaWeight' => $move->quotaWeight,
+            'quotaWeightWindows' => $move->quotaWeightWindows,
             'daysOfHistory' => $move->daysOfHistory,
             'fromFillBeforePercent' => $move->fromFillBeforePercent,
             'fromFillAfterPercent' => $move->fromFillAfterPercent,
