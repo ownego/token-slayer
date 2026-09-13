@@ -70,7 +70,7 @@ it('offers a Quota tokens option alongside Output and Total, describing what it 
         ->get(Dashboard::getUrl(panel: 'admin'))
         ->assertOk()
         ->assertSeeInOrder(['Output tokens', 'Total tokens', 'Quota tokens'])
-        ->assertSee('what actually counts against a rate-limit window', escape: false);
+        ->assertSee('real rate-limit cost', escape: false);
 });
 
 it('nudges an admin on a hook too old to self-update, in the topbar of every panel page', function () {

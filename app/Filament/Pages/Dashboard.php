@@ -76,7 +76,7 @@ class Dashboard extends BaseDashboard
                             $component->state('output');
                         }
                     })
-                    ->helperText('Output = what damage is dealt from. Total = + input/cache tokens. Quota = total minus cache-read (what actually counts against a rate-limit window).')
+                    ->helperText('Total = + input/cache tokens. Quota = total minus cache-read (real rate-limit cost).')
                     ->columnSpan(2),
             ]);
     }
