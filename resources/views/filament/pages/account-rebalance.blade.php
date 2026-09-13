@@ -1,7 +1,7 @@
 <x-filament-panels::page>
-    <x-filament::section heading="Gợi ý phân bổ">
+    <x-filament::section heading="Rebalance recommendations">
         @if (empty($moves) && $unresolvedOverflowTokens === 0.0)
-            <p style="opacity:.6;">Bấm "Tính lại phân bổ" để xem gợi ý.</p>
+            <p style="opacity:.6;">Click "Recalculate" to see recommendations.</p>
         @endif
 
         @if (! empty($moves))
@@ -10,10 +10,10 @@
                     <thead>
                         <tr style="text-align:left; opacity:.6;">
                             <th style="padding:.4rem .6rem;">User</th>
-                            <th style="padding:.4rem .6rem;">Từ account</th>
-                            <th style="padding:.4rem .6rem;">Sang account</th>
-                            <th style="padding:.4rem .6rem;">Demand/ngày</th>
-                            <th style="padding:.4rem .6rem;">Độ tin cậy</th>
+                            <th style="padding:.4rem .6rem;">From account</th>
+                            <th style="padding:.4rem .6rem;">To account</th>
+                            <th style="padding:.4rem .6rem;">Demand/day</th>
+                            <th style="padding:.4rem .6rem;">Confidence</th>
                             <th style="padding:.4rem .6rem;"></th>
                         </tr>
                     </thead>
@@ -32,9 +32,9 @@
                                 <td style="padding:.4rem .6rem;">{{ number_format($move['demandTokensPerDay']) }} ({{ $move['demandBasis'] }})</td>
                                 <td style="padding:.4rem .6rem;">
                                     @if ($move['confident'])
-                                        <x-filament::badge color="success">Đủ dữ liệu</x-filament::badge>
+                                        <x-filament::badge color="success">Confident</x-filament::badge>
                                     @else
-                                        <x-filament::badge color="warning">Dữ liệu chưa đủ</x-filament::badge>
+                                        <x-filament::badge color="warning">Not enough data</x-filament::badge>
                                     @endif
                                 </td>
                                 <td style="padding:.4rem .6rem;">
@@ -49,7 +49,7 @@
 
         @if ($unresolvedOverflowTokens > 0.0)
             <p style="color:var(--danger-500, #dc2626); margin-top:.75rem;">
-                Không tìm được account đủ chỗ cho {{ number_format($unresolvedOverflowTokens) }} token còn dư — cần thêm capacity.
+                Could not find enough headroom for {{ number_format($unresolvedOverflowTokens) }} remaining tokens — more capacity is needed.
             </p>
         @endif
     </x-filament::section>
@@ -57,8 +57,23 @@
     <x-filament::section heading="Members" style="margin-top:1.5rem;">
         <label style="display:flex; align-items:center; gap:.5rem; font-size:.85rem;">
             <input type="checkbox" wire:model.live="showUntracked" />
-            Hiện cả user chưa xác thực (untracked)
+            Show unverified (untracked) users
         </label>
+
+        <div style="display:flex; gap:1rem; align-items:center; font-size:.75rem; opacity:.7; margin-top:.5rem;">
+            <span style="display:flex; align-items:center; gap:.35rem;">
+                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#22c55e;"></span>
+                Tracked
+            </span>
+            <span style="display:flex; align-items:center; gap:.35rem;">
+                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#3b82f6;"></span>
+                Pending
+            </span>
+            <span style="display:flex; align-items:center; gap:.35rem;">
+                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#ef4444;"></span>
+                Untracked
+            </span>
+        </div>
 
         @foreach ($this->memberRowsByAccount() as $accountId => $rows)
             <div style="margin-top:.75rem;">
@@ -66,7 +81,9 @@
                 <ul style="list-style:none; padding-left:0; margin-top:.25rem;">
                     @foreach ($rows as $row)
                         <li style="display:flex; align-items:center; gap:.5rem; padding:.15rem 0;">
-                            @if ($row['status'] === 'pending')
+                            @if ($row['status'] === 'tracked')
+                                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#22c55e;" title="Tracked"></span>
+                            @elseif ($row['status'] === 'pending')
                                 <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#3b82f6;" title="Pending"></span>
                             @elseif ($row['status'] === 'untracked')
                                 <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#ef4444;" title="Untracked"></span>

@@ -47,7 +47,11 @@ final class AccountCapacityEstimator
      * the average is blind to a burn rate that spiked early and was then
      * throttled down (self- or ceiling-imposed), which is exactly the "runs
      * dry with days still left" pattern this estimator exists to catch.
-     * Unclamped: a value past 100 is the point, not a bug.
+     * Unclamped: a value past 100 is the point, not a bug. Returns the raw
+     * util_7d reading unprojected when the latest snapshot has no
+     * `reset_7d_at` — real probed data can carry this (e.g. a snapshot with
+     * no rate-limit window reported yet), and there is no reset time to
+     * project toward in that case.
      *
      * @param  Account  $account  the account to project
      * @return int the projected util_7d at this account's own reset time (may exceed 100 or be negative)
@@ -57,6 +61,9 @@ final class AccountCapacityEstimator
         $snapshot = $this->latestSnapshot($account);
         if ($snapshot === null) {
             return 0;
+        }
+        if ($snapshot->reset_7d_at === null) {
+            return $snapshot->util_7d ?? 0;
         }
 
         return QuotaProjection::projectedAtResetFromDailyRate(

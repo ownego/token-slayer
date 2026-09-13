@@ -28,6 +28,17 @@ it('returns 0 tokensPerPercent when the account has no usage snapshot yet', func
     expect(app(AccountCapacityEstimator::class)->tokensPerPercent($account))->toBe(0.0);
 });
 
+it('returns the raw util_7d unprojected when the latest snapshot has no reset_7d_at', function () {
+    // Real staging data: a probed account can carry a snapshot with
+    // util_7d/reset_7d_at both unset (e.g. a probe that returned no rate
+    // limit window yet). There is no reset time to project toward, so the
+    // safest answer is the raw reading, not a crash.
+    $account = Account::factory()->create();
+    AccountUsageSnapshot::factory()->for($account)->create(['util_7d' => 0, 'reset_7d_at' => null, 'created_at' => now()]);
+
+    expect(app(AccountCapacityEstimator::class)->projectedUtilAtReset($account))->toBe(0);
+});
+
 it('projects util at reset using the peak single-day token rate, not the trailing average', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
     $account = Account::factory()->create();

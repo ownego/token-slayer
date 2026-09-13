@@ -79,7 +79,7 @@ class AccountRebalance extends Page
     /**
      * The most recently computed moves, kept in Livewire state so the table
      * survives re-renders between the recommend action and any row action
-     * on it (added in a later task). Empty until "Tính lại phân bổ" runs.
+     * on it (added in a later task). Empty until "Recalculate" runs.
      * Stored as plain arrays (Livewire has no built-in synthesizer for an
      * arbitrary readonly class), each shaped like
      * `RebalanceRecommendation`'s own public properties.
@@ -99,15 +99,15 @@ class AccountRebalance extends Page
     public float $unresolvedOverflowTokens = 0.0;
 
     /**
-     * The on-demand "Tính lại phân bổ" header action: runs the recommender
-     * and stores its output on the page for the Blade view to render.
+     * The on-demand "Recalculate" header action: runs the recommender and
+     * stores its output on the page for the Blade view to render.
      *
      * @return Action
      */
     public function recommendAction(): Action
     {
         return Action::make('recommend')
-            ->label('Tính lại phân bổ')
+            ->label('Recalculate')
             ->icon(Heroicon::OutlinedCalculator)
             ->action(function (): void {
                 $result = app(AccountRebalanceRecommender::class)->recommend();
