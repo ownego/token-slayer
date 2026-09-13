@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
 use App\Models\Account;
 use App\Models\User;
@@ -7,6 +8,7 @@ use App\Services\Accounts\RebalanceWindow;
 use App\Services\Accounts\StaleMembershipQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -66,6 +68,57 @@ it('keeps a single-account member even when they have gone quiet', function () {
     // Silence is a holiday, not a migration: they have nowhere else to be,
     // so taking their only account away would just break them.
     expect(app(StaleMembershipQuery::class)->get(collect([$account]), RebalanceWindow::days(30)))->toBe([]);
+
+    Carbon::setTestNow();
+});
+
+it('does not offer to release a seat that was only just granted', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $home = Account::factory()->connected()->create();
+    $justGranted = Account::factory()->connected()->create();
+    $user = User::factory()->create();
+
+    livesOn($home, $user, '2026-08-16 09:00:00', 10, 1_000_000);
+
+    // Exactly what a Switch leaves behind moments after it succeeds: tracked
+    // on the destination, a grant issued, and no usage yet because the
+    // machine has not picked it up. Offering to release this undoes the very
+    // move the admin just made.
+    $justGranted->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Tracked->value]]);
+    $device = $user->devices()->create(['device_id' => 'fingerprint-abc', 'name' => 'laptop']);
+    $justGranted->provisionedGrants()->create([
+        'device_id' => $device->id,
+        'status' => GrantStatus::Pending,
+        'provisioned_at' => now(),
+    ]);
+
+    expect(app(StaleMembershipQuery::class)->get(collect([$home, $justGranted]), RebalanceWindow::days(30)))
+        ->toBe([]);
+
+    Carbon::setTestNow();
+});
+
+it('does offer a seat granted long ago and never touched', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $home = Account::factory()->connected()->create();
+    $abandoned = Account::factory()->connected()->create();
+    $user = User::factory()->create();
+
+    livesOn($home, $user, '2026-08-16 09:00:00', 10, 1_000_000);
+
+    // Same shape, but the grant is a month old. Nobody is coming for it.
+    $abandoned->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Tracked->value]]);
+    $device = $user->devices()->create(['device_id' => 'fingerprint-xyz', 'name' => 'old laptop']);
+    $abandoned->provisionedGrants()->create([
+        'device_id' => $device->id,
+        'status' => GrantStatus::Pending,
+        'provisioned_at' => Carbon::parse('2026-08-10 09:00:00'),
+    ]);
+    DB::table('account_user')->where('user_id', $user->id)->where('account_id', $abandoned->id)
+        ->update(['created_at' => Carbon::parse('2026-08-10 09:00:00')]);
+
+    expect(app(StaleMembershipQuery::class)->get(collect([$home, $abandoned]), RebalanceWindow::days(30)))
+        ->toHaveCount(1);
 
     Carbon::setTestNow();
 });

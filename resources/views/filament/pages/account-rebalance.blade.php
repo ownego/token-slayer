@@ -379,10 +379,13 @@
     @if (! empty($stale))
         <x-filament::section heading="Seats nobody is using" style="margin-top:1.5rem;">
             <p style="font-size:.85rem; opacity:.75;">
-                These members moved to another account and never came back, but still hold a tracked seat here — it
-                counts against the account's roster and holds a provisioning slot. Releasing one costs nobody a
-                re-authentication, which makes it the cheapest capacity on this page. Worth clearing before applying
-                any move above.
+                These members work somewhere else now but still hold a tracked seat here — either they moved on, or
+                they were given the seat and never started. It counts against the account's roster and holds a
+                provisioning slot either way. Releasing one costs nobody a re-authentication, which makes it the
+                cheapest capacity on this page.
+                <br>
+                A seat is only listed once it has had a week to be used, so a switch you have just made will never
+                appear here.
             </p>
 
             <div style="overflow-x:auto; margin-top:.75rem;">

@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -103,6 +104,14 @@ function fakeAnthropic(array $overrides = []): void
 function livesOn(Account $account, User $user, string $firstDay, int $days, int $tokensPerDay): void
 {
     $account->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    // Backdated with the usage: a seat comes into being when somebody is put
+    // on it, and a fixture that stamps every membership "now" makes every
+    // seat look freshly granted.
+    DB::table('account_user')
+        ->where('user_id', $user->id)
+        ->where('account_id', $account->id)
+        ->update(['created_at' => Carbon::parse($firstDay)]);
 
     foreach (range(0, $days - 1) as $offset) {
         Event::factory()->for($account)->for($user)->create([
