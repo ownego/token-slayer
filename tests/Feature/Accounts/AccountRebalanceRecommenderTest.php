@@ -339,3 +339,42 @@ it('leaves the fleet as it is when no extra account is being simulated', functio
 
     Carbon::setTestNow();
 });
+
+it('counts a switched member on their new account the moment the seat moves', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+
+    $from = accountPeaking(70);
+    $to = accountPeaking(35);
+    $mover = User::factory()->create();
+    $other = User::factory()->create();
+
+    // All of the mover's usage is on the account they are leaving — they
+    // have not touched the new one yet, which is the state a Switch leaves
+    // behind the instant it succeeds.
+    dailyUsage($from, $mover, 150_000);
+    dailyUsage($to, $other, 70_000);
+    ancientUsage($from, $mover);
+    ancientUsage($to, $other);
+    tracks($to, $other);
+
+    tracks($from, $mover);
+    $stillOnFrom = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14));
+
+    // Exactly what switchUserAction writes: tracked on the destination,
+    // demoted on the source.
+    tracks($to, $mover);
+    $from->trackedUsers()->updateExistingPivot($mover->id, ['status' => MembershipStatus::Untracked->value]);
+
+    $after = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14));
+
+    $fill = fn (array $result, int $id): float => collect($result['accounts'])->firstWhere('id', $id)['fill_before_percent'];
+
+    // Their whole appetite moves with them, even though every token of it
+    // was spent on the account they left: demand follows the person, and the
+    // seat says where that person now is.
+    expect($fill($stillOnFrom, $from->id))->toBeGreaterThan(0.0)
+        ->and($fill($after, $from->id))->toBe(0.0)
+        ->and($fill($after, $to->id))->toBeGreaterThan($fill($stillOnFrom, $to->id));
+
+    Carbon::setTestNow();
+});
