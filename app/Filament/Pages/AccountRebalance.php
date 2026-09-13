@@ -13,6 +13,7 @@ use App\Services\Accounts\FleetCapacityForecast;
 use App\Services\Accounts\FleetSnapshot;
 use App\Services\Accounts\RebalanceRecommendation;
 use App\Services\Accounts\RebalanceWindow;
+use App\Services\Accounts\StaleMembershipQuery;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -285,6 +286,54 @@ class AccountRebalance extends Page
             ->get()
             ->mapWithKeys(fn ($account) => [$account->id => $query->get($account)])
             ->all();
+    }
+
+    /**
+     * Seats held on accounts their holder has already migrated away from,
+     * for the Blade view. Recomputed per render rather than stored: it is a
+     * cheap query and it must reflect any seat released a moment ago.
+     *
+     * @return array<int, array{user_id: int, user_label: string, account_id: int, account_label: string, last_used_at: string|null}>
+     */
+    public function staleMemberships(): array
+    {
+        $accounts = Account::query()
+            ->whereHas('claudeCredential', fn ($q) => $q->whereNotNull('organization_uuid'))
+            ->get();
+
+        return app(StaleMembershipQuery::class)->get($accounts, RebalanceWindow::fromFilter($this->range));
+    }
+
+    /**
+     * Release a seat its holder no longer uses. Unlike a move this costs
+     * nobody a re-authentication — they are already working elsewhere — so
+     * it is the one action on this page with no cost to anybody.
+     *
+     * Demotes rather than detaches, which is what the client's declarative
+     * reconciliation reads to drop the local credential on its next sync.
+     *
+     * @return Action
+     */
+    public function releaseSeatAction(): Action
+    {
+        return Action::make('releaseSeat')
+            ->label('Release seat')
+            ->link()
+            ->requiresConfirmation()
+            ->modalHeading('Stop tracking this member')
+            ->modalDescription('They keep working on the account they moved to. The device drops this account\'s local credential on its next sync; the Anthropic token itself is not revoked, as there is no API for that.')
+            ->action(function (array $arguments): void {
+                $account = Account::query()->findOrFail($arguments['accountId']);
+                $account->trackedUsers()->updateExistingPivot($arguments['userId'], [
+                    'status' => MembershipStatus::Untracked->value,
+                ]);
+
+                Notification::make()
+                    ->success()
+                    ->title('Seat released')
+                    ->body("Stopped tracking this member on {$account->email}.")
+                    ->send();
+            });
     }
 
     /**

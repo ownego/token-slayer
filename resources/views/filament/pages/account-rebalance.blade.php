@@ -288,6 +288,45 @@
         </x-filament::section>
     @endif
 
+    @php($stale = $this->staleMemberships())
+    @if (! empty($stale))
+        <x-filament::section heading="Seats nobody is using" style="margin-top:1.5rem;">
+            <p style="font-size:.85rem; opacity:.75;">
+                These members moved to another account and never came back, but still hold a tracked seat here — it
+                counts against the account's roster and holds a provisioning slot. Releasing one costs nobody a
+                re-authentication, which makes it the cheapest capacity on this page. Worth clearing before applying
+                any move above.
+            </p>
+
+            <div style="overflow-x:auto; margin-top:.75rem;">
+                <table style="width:100%; border-collapse:collapse; font-size:.85rem;">
+                    <thead>
+                        <tr style="text-align:left; opacity:.6;">
+                            <th style="padding:.4rem .6rem;">Member</th>
+                            <th style="padding:.4rem .6rem;">Still holds a seat on</th>
+                            <th style="padding:.4rem .6rem;">Last used it</th>
+                            <th style="padding:.4rem .6rem;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($stale as $seat)
+                            <tr style="border-top:1px solid rgba(120,120,140,.15);">
+                                <td style="padding:.4rem .6rem;">{{ $seat['user_label'] }}</td>
+                                <td style="padding:.4rem .6rem; font-family:monospace;">{{ $seat['account_label'] }}</td>
+                                <td style="padding:.4rem .6rem; opacity:.7;">
+                                    {{ $seat['last_used_at'] === null ? 'never' : \Illuminate\Support\Carbon::parse($seat['last_used_at'])->diffForHumans() }}
+                                </td>
+                                <td style="padding:.4rem .6rem;">
+                                    {{ ($this->releaseSeatAction)(['userId' => $seat['user_id'], 'accountId' => $seat['account_id']]) }}
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </x-filament::section>
+    @endif
+
     <x-filament::section heading="Members" style="margin-top:1.5rem;">
         <div style="display:flex; gap:1rem; align-items:center; font-size:.75rem; opacity:.7;">
             <span style="display:flex; align-items:center; gap:.35rem;">

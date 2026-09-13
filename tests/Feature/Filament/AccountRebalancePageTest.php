@@ -144,6 +144,31 @@ it('sizes the fleet both ways, so a capacity decision is not made on the worst c
     Carbon::setTestNow();
 });
 
+it('offers to reclaim a seat whose holder has moved on, without moving anybody', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $admin = User::factory()->admin()->create();
+    ['tight' => $tight, 'roomy' => $roomy] = lopsidedFleet();
+
+    // A migrant: weeks on the tight account, then a clean handover to the
+    // roomy one, with the old seat never given up.
+    $migrant = User::factory()->create();
+    livesOn($tight, $migrant, '2026-08-16 09:00:00', 10, 1_000_000);
+    livesOn($roomy, $migrant, '2026-09-08 09:00:00', 4, 400_000);
+
+    $component = Livewire::actingAs($admin)->test(AccountRebalance::class);
+
+    expect(collect($component->instance()->staleMemberships())->firstWhere('user_id', $migrant->id))
+        ->not->toBeNull();
+
+    $component->callAction('releaseSeat', arguments: ['userId' => $migrant->id, 'accountId' => $tight->id]);
+
+    expect($tight->users()->wherePivot('user_id', $migrant->id)->first()->pivot->status)
+        ->toBe(MembershipStatus::Untracked)
+        ->and($component->instance()->staleMemberships())->toBe([]);
+
+    Carbon::setTestNow();
+});
+
 it('explains a move with the figures behind it', function () {
     Carbon::setTestNow('2026-09-12 06:00:00');
     $admin = User::factory()->admin()->create();
