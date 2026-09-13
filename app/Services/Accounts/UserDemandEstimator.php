@@ -7,60 +7,85 @@ use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Analytics\Concerns\ScopesEventsByFilters;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
- * Per-user demand numbers for the rebalance recommender, scoped to one
- * account's usage history. Corrects for two real patterns a plain average
- * misses: a user who throttled their own usage after a burst (their true
- * demand is the burst, not the average that includes the quiet days after
- * it), and per-token quota cost that varies by user (see
- * {@see cleanWindowQuotaWeight()}).
+ * What each person actually needs, in tokens, and how expensive their tokens
+ * are against a quota.
+ *
+ * Demand is measured per PERSON rather than per membership: moving someone
+ * to another account moves their whole appetite with them, so the figure a
+ * plan has to carry is their footprint across every account they touch.
  */
 final class UserDemandEstimator
 {
     use ScopesEventsByFilters;
 
     /**
-     * The user's estimated daily token demand on this account: the larger
-     * of their trailing-7d average and their peak consecutive-day average
-     * within the trend window. Using the larger of the two, rather than a
-     * blended average, is the fix for self-throttling — once a user has
-     * demonstrated a burn rate, averaging in days they deliberately pulled
-     * back afterward would understate what they actually need.
+     * Lower and upper bound on a quota weight. A weight comes from however
+     * many solo windows happened to exist, which can be very few; clamping
+     * keeps one freak measurement from doubling or erasing a person's
+     * apparent demand in the plan.
      *
-     * @param  User  $user  the user to estimate demand for
-     * @param  Account  $account  the account their usage is scoped to
-     * @return float estimated tokens per day
+     * @var float
      */
-    public function baselineTokensPerDay(User $user, Account $account): float
-    {
-        $trailingAverage = $this->averageTokensPerDay($user, $account, 7);
-        $peakAverage = $this->peakConsecutiveDaysAverage($user, $account);
+    private const float MIN_WEIGHT = 0.5;
 
-        return max($trailingAverage, $peakAverage);
+    /**
+     * @var float
+     */
+    private const float MAX_WEIGHT = 2.0;
+
+    /**
+     * This person's demand, with the workings behind it so a recommendation
+     * can show why it is sized the way it is. `per_day` takes the LARGER of
+     * the trailing average and the peak consecutive-day run: once someone
+     * has demonstrated a rate, the quiet days they spent throttling
+     * themselves afterwards are evidence of a ceiling they hit, not of a
+     * smaller appetite.
+     *
+     * @param  User  $user  the person to size
+     * @param  RebalanceWindow  $window  how far back to read
+     * @return array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_avg_per_day: float, basis: string, days_of_history: int}
+     */
+    public function demandFor(User $user, RebalanceWindow $window): array
+    {
+        $daily = $this->dailyTotals($user, $window);
+
+        $spanDays = max(1, $window->daysOr(max(1, count($daily))));
+        $trailingAverage = (float) (array_sum($daily) / $spanDays);
+        $peakAverage = $this->peakConsecutiveAverage(array_values($daily));
+
+        $perDay = max($trailingAverage, $peakAverage);
+
+        return [
+            'weekly' => $perDay * 7,
+            'per_day' => $perDay,
+            'trailing_avg_per_day' => $trailingAverage,
+            'peak_avg_per_day' => $peakAverage,
+            'basis' => $peakAverage > $trailingAverage ? 'peak_rate' : 'trailing_average',
+            'days_of_history' => $this->daysOfHistory($user, $window),
+        ];
     }
 
     /**
-     * How clustered this user's usage is within a day: peak-hour tokens
-     * divided by average-hour tokens over the trend window. A user whose
-     * usage clusters into short bursts poses more util_5h risk than one who
-     * spreads the same weekly total evenly, even though their daily/weekly
-     * totals could look identical. Returns 1.0 (no burst signal) when the
-     * user has no events in the window.
+     * How clustered this person's usage is inside a day: the busiest hour
+     * over the mean hour. Two people with identical weekly totals are not
+     * equally risky — the one who spends it all in a single afternoon is
+     * the one who trips a 5-hour window.
      *
-     * @param  User  $user  the user to measure
-     * @param  Account  $account  the account their usage is scoped to
-     * @return float peak-hour-to-average-hour ratio, 1.0 or more
+     * @param  User  $user  the person to measure
+     * @param  RebalanceWindow  $window  how far back to read
+     * @return float ratio of 1.0 or more; 1.0 when there is nothing to measure
      */
-    public function burstFactor(User $user, Account $account): float
+    public function burstFactor(User $user, RebalanceWindow $window): float
     {
-        $trendDays = (int) config('token_slayer.rebalance.trend_window_days');
         $hourExpr = $this->bucketExpression('hour', 'events.created_at');
 
-        $hourlyTotals = Event::query()
-            ->where('events.account_id', $account->id)
+        $hourly = Event::query()
             ->where('events.user_id', $user->id)
-            ->where('events.created_at', '>=', now()->subDays($trendDays))
+            ->when($window->since() !== null, fn ($query) => $query->where('events.created_at', '>=', $window->since()))
             ->selectRaw("{$hourExpr} as hour")
             ->selectRaw('SUM(events.tokens) as tokens')
             ->groupByRaw($hourExpr)
@@ -68,151 +93,229 @@ final class UserDemandEstimator
             ->map(fn ($tokens): int => (int) $tokens)
             ->all();
 
-        if ($hourlyTotals === []) {
+        if ($hourly === []) {
             return 1.0;
         }
 
-        $average = array_sum($hourlyTotals) / count($hourlyTotals);
-        if ($average <= 0.0) {
-            return 1.0;
+        $average = array_sum($hourly) / count($hourly);
+
+        return $average > 0.0 ? max($hourly) / $average : 1.0;
+    }
+
+    /**
+     * Relative quota weight per user: how expensive their tokens are against
+     * a quota compared with the typical member of the same account. 1.0 is
+     * typical, 2.0 burns quota twice as fast per token.
+     *
+     * Measured only from 5-hour windows in which ONE person used the
+     * account — those are the only windows where the utilisation moved for
+     * a single, attributable reason. Each account's own median normalises
+     * away how big that account is, so the weights compare people rather
+     * than plans. A user with no solo window anywhere is simply absent from
+     * the result, and the caller treats them as typical.
+     *
+     * @param  Collection<int, Account>  $accounts  the accounts to read windows from
+     * @param  RebalanceWindow  $window  how far back to read
+     * @return array<int, float> user id => weight, clamped
+     */
+    public function quotaWeights(Collection $accounts, RebalanceWindow $window): array
+    {
+        $relative = [];
+
+        foreach ($accounts as $account) {
+            $costs = $this->soloQuotaCosts($account, $window);
+            if (count($costs) < 2) {
+                continue; // with nobody to compare against, "heavier" has no meaning
+            }
+
+            $median = $this->median(array_values($costs));
+            if ($median === null || $median <= 0.0) {
+                continue;
+            }
+
+            foreach ($costs as $userId => $cost) {
+                if ($cost > 0.0) {
+                    $relative[$userId][] = $median / $cost;
+                }
+            }
         }
 
-        return max($hourlyTotals) / $average;
+        $weights = [];
+        foreach ($relative as $userId => $ratios) {
+            $mean = array_sum($ratios) / count($ratios);
+            $weights[$userId] = max(self::MIN_WEIGHT, min(self::MAX_WEIGHT, $mean));
+        }
+
+        return $weights;
     }
 
     /**
-     * Plain average tokens/day over the trailing `$days` for this user on
-     * this account.
+     * Tokens each solo user needed to move this account's util_5h by one
+     * point, keyed by user id. A smaller number means heavier tokens.
      *
-     * @param  User  $user  the user to measure
-     * @param  Account  $account  the account their usage is scoped to
-     * @param  int  $days  the trailing window length, in days
-     * @return float average tokens per day
+     * @param  Account  $account  the account whose windows to read
+     * @param  RebalanceWindow  $window  how far back to read
+     * @return array<int, float> user id => tokens per utilisation point
      */
-    private function averageTokensPerDay(User $user, Account $account, int $days): float
+    private function soloQuotaCosts(Account $account, RebalanceWindow $window): array
     {
-        $total = (int) Event::query()
+        $snapshots = AccountUsageSnapshot::query()
             ->where('account_id', $account->id)
-            ->where('user_id', $user->id)
-            ->where('created_at', '>=', now()->subDays($days))
-            ->sum('tokens');
+            ->whereNotNull('reset_5h_at')
+            ->whereNotNull('util_5h')
+            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
+            ->orderBy('created_at')
+            ->get(['util_5h', 'reset_5h_at', 'created_at']);
 
-        return $total / $days;
+        $events = Event::query()
+            ->where('account_id', $account->id)
+            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
+            ->orderBy('created_at')
+            ->get(['user_id', 'tokens', 'created_at']);
+
+        $costs = [];
+
+        foreach ($this->groupByResetHour($snapshots) as $group) {
+            if (count($group) < 2) {
+                continue;
+            }
+
+            $first = $group[0];
+            $last = $group[count($group) - 1];
+            $utilDelta = (int) $last->util_5h - (int) $first->util_5h;
+            if ($utilDelta <= 0) {
+                continue;
+            }
+
+            $contributors = [];
+            foreach ($events as $event) {
+                $at = Carbon::parse($event->created_at);
+                if ($at->betweenIncluded(Carbon::parse($first->created_at), Carbon::parse($last->created_at))) {
+                    $contributors[(int) $event->user_id] = ($contributors[(int) $event->user_id] ?? 0) + (int) $event->tokens;
+                }
+            }
+
+            if (count($contributors) !== 1) {
+                continue; // shared window: the movement cannot be attributed
+            }
+
+            $userId = array_key_first($contributors);
+            $tokens = $contributors[$userId];
+            if ($tokens <= 0) {
+                continue;
+            }
+
+            $costs[$userId][] = $tokens / $utilDelta;
+        }
+
+        return array_map(fn (array $samples): float => array_sum($samples) / count($samples), $costs);
     }
 
     /**
-     * The highest average tokens/day across any run of
-     * `rebalance.peak_window_days` consecutive days within the trend
-     * window, for this user on this account. 0 when there is no usage in
-     * the window at all.
+     * Group snapshots into quota windows, normalising the reset timestamp to
+     * the hour — the prober records the same boundary a second either side
+     * of it, and an unnormalised grouping would split one window in two.
      *
-     * @param  User  $user  the user to measure
-     * @param  Account  $account  the account their usage is scoped to
-     * @return float peak consecutive-day average tokens per day
+     * @param  Collection<int, AccountUsageSnapshot>  $snapshots  snapshots ordered by time
+     * @return array<string, array<int, AccountUsageSnapshot>>
      */
-    private function peakConsecutiveDaysAverage(User $user, Account $account): float
+    private function groupByResetHour(Collection $snapshots): array
     {
-        $lookbackDays = (int) config('token_slayer.rebalance.trend_window_days');
-        $windowDays = (int) config('token_slayer.rebalance.peak_window_days');
+        $grouped = [];
+        foreach ($snapshots as $snapshot) {
+            $key = Carbon::parse($snapshot->reset_5h_at)->startOfHour()->toDateTimeString();
+            $grouped[$key][] = $snapshot;
+        }
 
-        $dailyTotals = Event::query()
-            ->where('account_id', $account->id)
+        return $grouped;
+    }
+
+    /**
+     * This person's tokens per calendar day, oldest first, days with no
+     * usage omitted.
+     *
+     * @param  User  $user  the person to read
+     * @param  RebalanceWindow  $window  how far back to read
+     * @return array<string, int> day => tokens
+     */
+    private function dailyTotals(User $user, RebalanceWindow $window): array
+    {
+        return Event::query()
             ->where('user_id', $user->id)
-            ->where('created_at', '>=', now()->subDays($lookbackDays))
+            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
             ->selectRaw('DATE(created_at) as day')
             ->selectRaw('SUM(tokens) as tokens')
             ->groupBy('day')
             ->orderBy('day')
-            ->pluck('tokens')
+            ->pluck('tokens', 'day')
             ->map(fn ($tokens): int => (int) $tokens)
-            ->values()
             ->all();
+    }
+
+    /**
+     * The highest average across any run of `rebalance.peak_window_days`
+     * consecutive recorded days. Someone with fewer recorded days than that
+     * is averaged over the days they do have rather than scored zero —
+     * one 14,000-token day is evidence of a 14,000-token/day appetite, not
+     * of no appetite at all.
+     *
+     * @param  array<int, int>  $dailyTotals  tokens per day, oldest first
+     * @return float
+     */
+    private function peakConsecutiveAverage(array $dailyTotals): float
+    {
+        if ($dailyTotals === []) {
+            return 0.0;
+        }
+
+        $windowDays = max(1, (int) config('token_slayer.rebalance.peak_window_days'));
+        $windowDays = min($windowDays, count($dailyTotals));
 
         $best = 0.0;
         for ($start = 0; $start <= count($dailyTotals) - $windowDays; $start++) {
             $slice = array_slice($dailyTotals, $start, $windowDays);
-            $best = max($best, array_sum($slice) / $windowDays);
+            $best = max($best, (float) (array_sum($slice) / $windowDays));
         }
 
         return $best;
     }
 
     /**
-     * This user's own observed quota-cost-per-token on this account,
-     * measured only from 5h windows (`account_usage_snapshots.reset_5h_at`
-     * groups) where they were the account's ONLY contributor —
-     * unconfounded, no regression, no guess at how to split credit between
-     * simultaneous users. Expressed in the same units as
-     * {@see AccountCapacityEstimator::tokensPerPercent()} (tokens per 1% of
-     * util_5h) so a caller can use whichever is available interchangeably.
-     * Returns null when the user never had a qualifying clean window in the
-     * trend window — the caller falls back to the account's own uniform
-     * `tokensPerPercent()`.
+     * Days between this person's earliest recorded usage in the window and
+     * now — how much evidence the demand figure rests on.
      *
-     * @param  User  $user  the user to measure
-     * @param  Account  $account  the account to measure their usage against
-     * @return float|null tokens per 1% of util_5h, or null with no qualifying window
+     * @param  User  $user  the person to read
+     * @param  RebalanceWindow  $window  how far back to read
+     * @return int
      */
-    public function cleanWindowQuotaWeight(User $user, Account $account): ?float
+    private function daysOfHistory(User $user, RebalanceWindow $window): int
     {
-        $trendDays = (int) config('token_slayer.rebalance.trend_window_days');
+        $earliest = Event::query()
+            ->where('user_id', $user->id)
+            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
+            ->min('created_at');
 
-        $resetTimes = AccountUsageSnapshot::query()
-            ->where('account_id', $account->id)
-            ->where('created_at', '>=', now()->subDays($trendDays))
-            ->distinct()
-            ->pluck('reset_5h_at');
+        return $earliest === null ? 0 : (int) now()->diffInDays(Carbon::parse($earliest), absolute: true);
+    }
 
-        $percentPerTokenRatios = [];
-
-        foreach ($resetTimes as $resetAt) {
-            $windowSnapshots = AccountUsageSnapshot::query()
-                ->where('account_id', $account->id)
-                ->where('reset_5h_at', $resetAt)
-                ->orderBy('created_at')
-                ->get(['util_5h', 'created_at']);
-
-            if ($windowSnapshots->count() < 2) {
-                continue;
-            }
-
-            $utilDelta = $windowSnapshots->last()->util_5h - $windowSnapshots->first()->util_5h;
-            if ($utilDelta <= 0) {
-                continue;
-            }
-
-            $windowStart = $windowSnapshots->first()->created_at;
-            $windowEnd = $windowSnapshots->last()->created_at;
-
-            $contributorIds = Event::query()
-                ->where('account_id', $account->id)
-                ->whereBetween('created_at', [$windowStart, $windowEnd])
-                ->distinct()
-                ->pluck('user_id');
-
-            if ($contributorIds->count() !== 1 || ! $contributorIds->contains($user->id)) {
-                continue;
-            }
-
-            $userTokens = (int) Event::query()
-                ->where('account_id', $account->id)
-                ->where('user_id', $user->id)
-                ->whereBetween('created_at', [$windowStart, $windowEnd])
-                ->sum('tokens');
-
-            if ($userTokens <= 0) {
-                continue;
-            }
-
-            $percentPerTokenRatios[] = $utilDelta / $userTokens;
-        }
-
-        if ($percentPerTokenRatios === []) {
+    /**
+     * Median of the given values, or null when there are none.
+     *
+     * @param  array<int, float>  $values  the values to reduce
+     * @return float|null
+     */
+    private function median(array $values): ?float
+    {
+        if ($values === []) {
             return null;
         }
 
-        $averagePercentPerToken = array_sum($percentPerTokenRatios) / count($percentPerTokenRatios);
+        sort($values);
+        $count = count($values);
+        $middle = intdiv($count, 2);
 
-        return $averagePercentPerToken > 0.0 ? 1 / $averagePercentPerToken : null;
+        return $count % 2 === 1
+            ? $values[$middle]
+            : ($values[$middle - 1] + $values[$middle]) / 2;
     }
 }

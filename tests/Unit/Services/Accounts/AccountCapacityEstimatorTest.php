@@ -1,98 +1,161 @@
 <?php
 
+use App\Enums\AccountPlan;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Accounts\AccountCapacityEstimator;
+use App\Services\Accounts\RebalanceWindow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
 
-it('derives tokensPerPercent from the account\'s own trailing-7d tokens and current util_7d', function () {
-    Carbon::setTestNow('2026-09-12 12:00:00');
-    $account = Account::factory()->create();
-    AccountUsageSnapshot::factory()->for($account)->create(['util_7d' => 50, 'created_at' => now()]);
-    Event::factory()->for($account)->for(User::factory())->create(['tokens' => 100_000, 'created_at' => now()->subDays(2)]);
-    Event::factory()->for($account)->for(User::factory())->create(['tokens' => 50_000, 'created_at' => now()->subDays(10)]); // outside the 7d window
+/**
+ * Record one completed 7-day quota window: snapshots carrying its reset time
+ * and the peak utilization reached, plus the usage that produced it.
+ *
+ * @param  Account  $account  the account the window belongs to
+ * @param  Carbon  $resetAt  when the window closed (must be in the past)
+ * @param  int  $peakUtil  the highest util_7d observed during the window
+ * @param  int  $tokens  tokens consumed inside the window
+ * @return void
+ */
+function recordCompletedWindow(Account $account, Carbon $resetAt, int $peakUtil, int $tokens): void
+{
+    // Two snapshots: one early/low, one at the peak -- the estimator must
+    // take the peak, not the latest or the first.
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_7d' => (int) round($peakUtil / 2),
+        'reset_7d_at' => $resetAt,
+        'created_at' => $resetAt->copy()->subDays(5),
+    ]);
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_7d' => $peakUtil,
+        'reset_7d_at' => $resetAt,
+        'created_at' => $resetAt->copy()->subHours(2),
+    ]);
 
-    expect(app(AccountCapacityEstimator::class)->tokensPerPercent($account))->toBe(2_000.0);
+    Event::factory()->for($account)->for(User::factory())->create([
+        'tokens' => $tokens,
+        'created_at' => $resetAt->copy()->subDays(3),
+    ]);
+}
+
+it('derives weekly capacity from a completed window: tokens consumed scaled up by the peak utilization', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $account = Account::factory()->connected()->create();
+
+    // Window closed 2 days ago having reached 50% on 500,000 tokens, so a
+    // full 100% would have taken 1,000,000.
+    recordCompletedWindow($account, now()->subDays(2), peakUtil: 50, tokens: 500_000);
+
+    expect(app(AccountCapacityEstimator::class)->weeklyCapacityTokens($account, RebalanceWindow::days(30)))
+        ->toBe(1_000_000.0);
 
     Carbon::setTestNow();
 });
 
-it('returns 0 tokensPerPercent when the account has no usage snapshot yet', function () {
-    $account = Account::factory()->create();
-
-    expect(app(AccountCapacityEstimator::class)->tokensPerPercent($account))->toBe(0.0);
-});
-
-it('returns the raw util_7d unprojected when the latest snapshot has no reset_7d_at', function () {
-    // Real staging data: a probed account can carry a snapshot with
-    // util_7d/reset_7d_at both unset (e.g. a probe that returned no rate
-    // limit window yet). There is no reset time to project toward, so the
-    // safest answer is the raw reading, not a crash.
-    $account = Account::factory()->create();
-    AccountUsageSnapshot::factory()->for($account)->create(['util_7d' => 0, 'reset_7d_at' => null, 'created_at' => now()]);
-
-    expect(app(AccountCapacityEstimator::class)->projectedUtilAtReset($account))->toBe(0);
-});
-
-it('projects util at reset using the peak single-day token rate, not the trailing average', function () {
+it('ignores a window whose peak utilization is too low to scale up safely', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
-    $account = Account::factory()->create();
-    $resetAt = now()->addDays(4);
-    AccountUsageSnapshot::factory()->for($account)->create([
-        'util_7d' => 25, 'reset_7d_at' => $resetAt, 'created_at' => now(),
-    ]);
-    // trailing-7d tokens = 80,000 + 20,000 = 100,000, so tokensPerPercent =
-    // 100,000 / 25 = 4,000. The peak SINGLE day is 80,000 tokens (not the
-    // 100,000 trailing total), a rate of 80,000 / 4,000 = 20%/day.
-    // projected = 25 + 20*4 = 105 -- a plain trailing-average rate
-    // (100,000 tokens spread over 7 days) would give a much lower, and
-    // wrong, "still safe" projection.
-    Event::factory()->for($account)->for(User::factory())->create(['tokens' => 80_000, 'created_at' => now()->subDay()]);
-    Event::factory()->for($account)->for(User::factory())->create(['tokens' => 20_000, 'created_at' => now()->subDays(3)]);
+    $account = Account::factory()->connected()->create();
 
-    expect(app(AccountCapacityEstimator::class)->projectedUtilAtReset($account))->toBe(105);
+    // 4% peak: a 1-point probe error would swing the extrapolation by a
+    // quarter, so this window carries no usable signal at all.
+    recordCompletedWindow($account, now()->subDays(2), peakUtil: 4, tokens: 40_000);
+
+    expect(app(AccountCapacityEstimator::class)->weeklyCapacityTokens($account, RebalanceWindow::days(30)))
+        ->toBeNull();
 
     Carbon::setTestNow();
 });
 
-it('computes overflowTokens as the token cost of the projection past 100, and 0 when under', function () {
+it('takes the median across completed windows so one freak week cannot set the capacity', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
-    $account = Account::factory()->create();
-    AccountUsageSnapshot::factory()->for($account)->create([
-        'util_7d' => 40, 'reset_7d_at' => now()->addDays(4), 'created_at' => now(),
-    ]);
-    Event::factory()->for($account)->for(User::factory())->create(['tokens' => 80_000, 'created_at' => now()->subDay()]);
+    $account = Account::factory()->connected()->create();
 
-    $estimator = app(AccountCapacityEstimator::class);
-    // Single event, so peak-day tokens equal the trailing-7d total:
-    // tokensPerPercent = 80,000 / 40 = 2,000; rate = 80,000 / 2,000 = 40
-    // (always equals util_7d when all trailing tokens land on one day).
-    // projected = 40 + 40*4 = 200. overflow = (200 - 100) * 2,000 = 200,000.
-    expect($estimator->overflowTokens($account))->toBe(200_000.0)
-        ->and($estimator->headroomTokens($account))->toBe(0.0);
+    recordCompletedWindow($account, now()->subDays(2), peakUtil: 50, tokens: 500_000);   // 1,000,000
+    recordCompletedWindow($account, now()->subDays(9), peakUtil: 50, tokens: 1_000_000); // 2,000,000
+    recordCompletedWindow($account, now()->subDays(16), peakUtil: 50, tokens: 4_500_000); // 9,000,000
+
+    expect(app(AccountCapacityEstimator::class)->weeklyCapacityTokens($account, RebalanceWindow::days(30)))
+        ->toBe(2_000_000.0);
 
     Carbon::setTestNow();
 });
 
-it('computes headroomTokens as the token room left before 100 when projection stays under', function () {
+it('ignores the still-open window, which has only partial usage recorded against it', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
-    $account = Account::factory()->create();
-    AccountUsageSnapshot::factory()->for($account)->create([
-        'util_7d' => 10, 'reset_7d_at' => now()->addDays(4), 'created_at' => now(),
-    ]);
-    Event::factory()->for($account)->for(User::factory())->create(['tokens' => 5_000, 'created_at' => now()->subDay()]);
+    $account = Account::factory()->connected()->create();
 
-    $estimator = app(AccountCapacityEstimator::class);
-    // Single event: tokensPerPercent = 5,000 / 10 = 500; rate = 5,000 / 500
-    // = 10 (= util_7d, per the single-event identity above).
-    // projected = 10 + 10*4 = 50. headroom = (100 - 50) * 500 = 25,000.
-    expect($estimator->headroomTokens($account))->toBe(25_000.0)
-        ->and($estimator->overflowTokens($account))->toBe(0.0);
+    // Open window: resets in 5 days, already at 60% -- but only the usage so
+    // far is on record, so scaling it up would badly understate capacity.
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_7d' => 60, 'reset_7d_at' => now()->addDays(5), 'created_at' => now(),
+    ]);
+    Event::factory()->for($account)->for(User::factory())->create([
+        'tokens' => 600_000, 'created_at' => now()->subDay(),
+    ]);
+
+    expect(app(AccountCapacityEstimator::class)->weeklyCapacityTokens($account, RebalanceWindow::days(30)))
+        ->toBeNull();
+
+    Carbon::setTestNow();
+});
+
+it('merges snapshots whose reset time differs only by probe jitter into one window', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $account = Account::factory()->connected()->create();
+    $resetAt = now()->subDays(2);
+
+    // The prober records the same reset boundary a second either side of the
+    // hour; treating those as two windows would halve the usage attributed
+    // to each and read as two unrelated (and wrong) capacities.
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_7d' => 20, 'reset_7d_at' => $resetAt->copy()->subSecond(), 'created_at' => $resetAt->copy()->subDays(4),
+    ]);
+    AccountUsageSnapshot::factory()->for($account)->create([
+        'util_7d' => 50, 'reset_7d_at' => $resetAt, 'created_at' => $resetAt->copy()->subHours(2),
+    ]);
+    Event::factory()->for($account)->for(User::factory())->create([
+        'tokens' => 500_000, 'created_at' => $resetAt->copy()->subDays(3),
+    ]);
+
+    expect(app(AccountCapacityEstimator::class)->weeklyCapacityTokens($account, RebalanceWindow::days(30)))
+        ->toBe(1_000_000.0);
+
+    Carbon::setTestNow();
+});
+
+it('falls back to the median capacity of same-plan accounts when one has no usable history', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+
+    $measured = Account::factory()->connected()->create(['plan' => AccountPlan::Max20x]);
+    recordCompletedWindow($measured, now()->subDays(2), peakUtil: 50, tokens: 500_000); // 1,000,000
+
+    $newcomer = Account::factory()->connected()->create(['plan' => AccountPlan::Max20x]);
+
+    $capacities = app(AccountCapacityEstimator::class)
+        ->capacitiesFor(collect([$measured, $newcomer]), RebalanceWindow::days(30));
+
+    expect($capacities[$measured->id])->toBe(1_000_000.0)
+        ->and($capacities[$newcomer->id])->toBe(1_000_000.0);
+
+    Carbon::setTestNow();
+});
+
+it('leaves capacity unknown when nothing in the fleet has usable history', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+
+    $a = Account::factory()->connected()->create();
+    $b = Account::factory()->connected()->create();
+
+    $capacities = app(AccountCapacityEstimator::class)
+        ->capacitiesFor(collect([$a, $b]), RebalanceWindow::days(30));
+
+    expect($capacities[$a->id])->toBeNull()
+        ->and($capacities[$b->id])->toBeNull();
 
     Carbon::setTestNow();
 });

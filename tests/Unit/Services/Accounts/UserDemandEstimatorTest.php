@@ -4,94 +4,151 @@ use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
 use App\Models\User;
+use App\Services\Accounts\RebalanceWindow;
 use App\Services\Accounts\UserDemandEstimator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
 
-it('uses the peak 2-day average over the trailing average when a user self-throttled after a burst', function () {
+it('takes the peak consecutive-day rate when a user throttled themselves after a burst', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
-    $account = Account::factory()->create();
+    $account = Account::factory()->connected()->create();
     $user = User::factory()->create();
 
-    // Days 1-2 (10 days ago): 40,000 tokens/day burst. Days after: silent
-    // (self-throttled). Trailing-7d average = 0 (nothing in the last 7
-    // days); peak 2-day average = 40,000. baseline must pick the peak.
+    // Two 40,000-token days ten days ago, silence since: the trailing
+    // average has decayed to almost nothing, but this person demonstrably
+    // wants 40,000/day when they are not holding back.
     Event::factory()->for($account)->for($user)->create(['tokens' => 40_000, 'created_at' => now()->subDays(10)]);
     Event::factory()->for($account)->for($user)->create(['tokens' => 40_000, 'created_at' => now()->subDays(9)]);
 
-    expect(app(UserDemandEstimator::class)->baselineTokensPerDay($user, $account))->toBe(40_000.0);
+    $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(30));
+
+    expect($demand['per_day'])->toBe(40_000.0)
+        ->and($demand['basis'])->toBe('peak_rate')
+        ->and($demand['weekly'])->toBe(280_000.0)
+        ->and($demand['peak_avg_per_day'])->toBe(40_000.0);
 
     Carbon::setTestNow();
 });
 
-it('uses the trailing-7d average when it exceeds the peak window (steady, not bursty, usage)', function () {
+it('takes the trailing average when steady usage outruns any short burst', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
-    $account = Account::factory()->create();
+    $account = Account::factory()->connected()->create();
     $user = User::factory()->create();
 
-    foreach (range(1, 7) as $daysAgo) {
+    foreach (range(1, 10) as $daysAgo) {
         Event::factory()->for($account)->for($user)->create(['tokens' => 10_000, 'created_at' => now()->subDays($daysAgo)]);
     }
 
-    expect(app(UserDemandEstimator::class)->baselineTokensPerDay($user, $account))->toBe(10_000.0);
+    $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(10));
+
+    // Ten steady days: trailing average and the peak 2-day run agree, and
+    // the label must say which one actually decided it.
+    expect($demand['per_day'])->toBe(10_000.0)
+        ->and($demand['basis'])->toBe('trailing_average')
+        ->and($demand['trailing_avg_per_day'])->toBe(10_000.0);
 
     Carbon::setTestNow();
 });
 
-it('returns a burst factor of peak-hour over average-hour tokens', function () {
-    Carbon::setTestNow('2026-09-12 12:00:00');
-    $account = Account::factory()->create();
+it('counts a user\'s usage across every account, since demand travels with the person', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $accountA = Account::factory()->connected()->create();
+    $accountB = Account::factory()->connected()->create();
     $user = User::factory()->create();
 
-    // One heavy hour (8,000) and one quiet hour (2,000) => avg 5,000, peak 8,000, factor 1.6.
+    Event::factory()->for($accountA)->for($user)->create(['tokens' => 7_000, 'created_at' => now()->subDays(2)]);
+    Event::factory()->for($accountB)->for($user)->create(['tokens' => 7_000, 'created_at' => now()->subDays(2)]);
+
+    $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(7));
+
+    // 14,000 on one day; the peak single run is what a move has to carry.
+    expect($demand['peak_avg_per_day'])->toBe(14_000.0);
+
+    Carbon::setTestNow();
+});
+
+it('reports how many days of history back the demand figure', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $account = Account::factory()->connected()->create();
+    $user = User::factory()->create();
+    Event::factory()->for($account)->for($user)->create(['tokens' => 100, 'created_at' => now()->subDays(9)]);
+    Event::factory()->for($account)->for($user)->create(['tokens' => 100, 'created_at' => now()->subDay()]);
+
+    $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(30));
+
+    expect($demand['days_of_history'])->toBe(9);
+
+    Carbon::setTestNow();
+});
+
+it('measures how clustered a user\'s day is, for the 5h-window risk it implies', function () {
+    Carbon::setTestNow('2026-09-12 12:00:00');
+    $account = Account::factory()->connected()->create();
+    $user = User::factory()->create();
+
+    // One 8,000-token hour and one 2,000-token hour: peak is 1.6x the mean.
     Event::factory()->for($account)->for($user)->create(['tokens' => 8_000, 'created_at' => now()->subHours(2)]);
     Event::factory()->for($account)->for($user)->create(['tokens' => 2_000, 'created_at' => now()->subHours(26)]);
 
-    expect(app(UserDemandEstimator::class)->burstFactor($user, $account))->toBe(1.6);
+    expect(app(UserDemandEstimator::class)->burstFactor($user, RebalanceWindow::days(14)))->toBe(1.6);
 
     Carbon::setTestNow();
 });
 
-it('returns a burst factor of 1.0 when the user has no events in the trend window', function () {
-    $account = Account::factory()->create();
+it('reports a flat burst factor for a user with no usage at all', function () {
     $user = User::factory()->create();
 
-    expect(app(UserDemandEstimator::class)->burstFactor($user, $account))->toBe(1.0);
+    expect(app(UserDemandEstimator::class)->burstFactor($user, RebalanceWindow::days(14)))->toBe(1.0);
 });
 
-it('measures a user\'s own quota-cost-per-token from a 5h window where they were the only contributor', function () {
+it('weighs a user who burns quota faster per token heavier than their account peers', function () {
     Carbon::setTestNow('2026-09-12 12:00:00');
-    $account = Account::factory()->create();
-    $user = User::factory()->create();
-    $resetAt = now()->addHours(3);
+    $account = Account::factory()->connected()->create();
+    $heavyMix = User::factory()->create();
+    $lightMix = User::factory()->create();
 
-    // A clean window: util_5h climbs 10 -> 40 (delta 30) while only $user
-    // has events in it. They contributed 3,000 tokens, so their measured
-    // ratio is 30/3000 = 0.01 percent-per-token, i.e. tokensPerPercent = 100.
-    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetAt, 'created_at' => now()->subMinutes(10)]);
-    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetAt, 'created_at' => now()]);
-    Event::factory()->for($account)->for($user)->create(['tokens' => 3_000, 'created_at' => now()->subMinutes(5)]);
+    // Window 1: heavyMix alone moves util_5h 10 -> 40 (30 points) on 3,000
+    // tokens -> 100 tokens per point.
+    $resetOne = now()->addHours(3);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetOne, 'created_at' => now()->subMinutes(40)]);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetOne, 'created_at' => now()->subMinutes(30)]);
+    Event::factory()->for($account)->for($heavyMix)->create(['tokens' => 3_000, 'created_at' => now()->subMinutes(35)]);
 
-    expect(app(UserDemandEstimator::class)->cleanWindowQuotaWeight($user, $account))->toBe(100.0);
+    // Window 2: lightMix alone moves util_5h 10 -> 40 but needs 9,000
+    // tokens -> 300 tokens per point, i.e. three times cheaper per token.
+    $resetTwo = now()->addHours(9);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetTwo, 'created_at' => now()->subMinutes(20)]);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetTwo, 'created_at' => now()->subMinutes(10)]);
+    Event::factory()->for($account)->for($lightMix)->create(['tokens' => 9_000, 'created_at' => now()->subMinutes(15)]);
+
+    $weights = app(UserDemandEstimator::class)->quotaWeights(collect([$account]), RebalanceWindow::days(7));
+
+    // Account median is 200 tokens/point. heavyMix needs only 100 -> each of
+    // their tokens costs twice the typical quota -> weight 2. lightMix needs
+    // 300 -> weight 0.67.
+    expect(round($weights[$heavyMix->id], 2))->toBe(2.0)
+        ->and(round($weights[$lightMix->id], 2))->toBe(0.67);
 
     Carbon::setTestNow();
 });
 
-it('returns null when the user never had a clean (single-contributor) window', function () {
+it('leaves a user unweighted when no window had them using an account alone', function () {
     Carbon::setTestNow('2026-09-12 12:00:00');
-    $account = Account::factory()->create();
+    $account = Account::factory()->connected()->create();
     $user = User::factory()->create();
     $other = User::factory()->create();
     $resetAt = now()->addHours(3);
 
-    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetAt, 'created_at' => now()->subMinutes(10)]);
+    AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 10, 'reset_5h_at' => $resetAt, 'created_at' => now()->subMinutes(30)]);
     AccountUsageSnapshot::factory()->for($account)->create(['util_5h' => 40, 'reset_5h_at' => $resetAt, 'created_at' => now()]);
-    Event::factory()->for($account)->for($user)->create(['tokens' => 3_000, 'created_at' => now()->subMinutes(5)]);
-    Event::factory()->for($account)->for($other)->create(['tokens' => 1_000, 'created_at' => now()->subMinutes(4)]);
+    Event::factory()->for($account)->for($user)->create(['tokens' => 3_000, 'created_at' => now()->subMinutes(20)]);
+    Event::factory()->for($account)->for($other)->create(['tokens' => 1_000, 'created_at' => now()->subMinutes(15)]);
 
-    expect(app(UserDemandEstimator::class)->cleanWindowQuotaWeight($user, $account))->toBeNull();
+    $weights = app(UserDemandEstimator::class)->quotaWeights(collect([$account]), RebalanceWindow::days(7));
+
+    expect($weights)->toBe([]);
 
     Carbon::setTestNow();
 });

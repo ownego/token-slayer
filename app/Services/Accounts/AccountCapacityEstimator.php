@@ -5,145 +5,186 @@ namespace App\Services\Accounts;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
-use App\Services\QuotaProjection;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
- * Per-account capacity numbers for the rebalance recommender, derived from
- * the account's own trailing usage history rather than a hardcoded per-plan
- * token table — Anthropic doesn't publish one, and a higher-tier account
- * naturally shows a larger {@see tokensPerPercent()} without this class ever
- * needing to know which plan it is.
+ * How many tokens an account's weekly quota is actually worth, measured from
+ * quota windows that have already closed.
+ *
+ * The obvious shortcut — trailing tokens divided by the current util_7d —
+ * is wrong and was the original defect here: util_7d is a percentage of
+ * ANTHROPIC's rolling window, which resets at its own per-account time,
+ * while the token sum covers OUR window. An account probed hours after its
+ * reset reads ~1% against a full week of recorded tokens, and the ratio
+ * explodes (measured live at 235x the real figure), making a freshly-reset
+ * account look like it had billions of spare tokens. Only a CLOSED window
+ * has a matching numerator and denominator: everything consumed inside it,
+ * against the highest percentage that consumption reached.
  */
 final class AccountCapacityEstimator
 {
     /**
-     * Empirical tokens-per-1%-of-util_7d ratio for this account: its own
-     * trailing 7-day token sum divided by its own current util_7d reading.
-     * Returns 0 when the account has no usage snapshot yet (nothing to
-     * divide by) — callers must treat 0 as "unknown," not "free."
+     * Lowest peak utilization a closed window may have and still be trusted
+     * for extrapolation. At 25% a one-point probe error moves the estimate
+     * by 4%; below that the arithmetic amplifies noise faster than it
+     * reveals capacity.
      *
-     * @param  Account  $account  the account to estimate capacity for
-     * @return float tokens consumed per 1 percentage point of util_7d
+     * @var int
      */
-    public function tokensPerPercent(Account $account): float
-    {
-        $util7d = $this->latestSnapshot($account)?->util_7d ?? 0;
-        if ($util7d <= 0) {
-            return 0.0;
-        }
-
-        $tokens = (int) Event::query()
-            ->where('account_id', $account->id)
-            ->where('created_at', '>=', now()->subDays(7))
-            ->sum('tokens');
-
-        return $tokens / $util7d;
-    }
+    private const int MIN_PEAK_UTIL = 25;
 
     /**
-     * The account's util_7d projected forward to its own reset time, using
-     * the peak single-day token rate observed in the trailing rebalance
-     * trend window rather than the average rate since the window opened —
-     * the average is blind to a burn rate that spiked early and was then
-     * throttled down (self- or ceiling-imposed), which is exactly the "runs
-     * dry with days still left" pattern this estimator exists to catch.
-     * Unclamped: a value past 100 is the point, not a bug. Returns the raw
-     * util_7d reading unprojected when the latest snapshot has no
-     * `reset_7d_at` — real probed data can carry this (e.g. a snapshot with
-     * no rate-limit window reported yet), and there is no reset time to
-     * project toward in that case.
+     * The quota window length Anthropic reports util_7d against.
      *
-     * @param  Account  $account  the account to project
-     * @return int the projected util_7d at this account's own reset time (may exceed 100 or be negative)
+     * @var int
      */
-    public function projectedUtilAtReset(Account $account): int
-    {
-        $snapshot = $this->latestSnapshot($account);
-        if ($snapshot === null) {
-            return 0;
-        }
-        if ($snapshot->reset_7d_at === null) {
-            return $snapshot->util_7d ?? 0;
-        }
-
-        return QuotaProjection::projectedAtResetFromDailyRate(
-            $snapshot->util_7d,
-            $this->peakDailyRatePercent($account),
-            $snapshot->reset_7d_at,
-            now(),
-        );
-    }
+    private const int WINDOW_DAYS = 7;
 
     /**
-     * Tokens' worth of usage that must leave this account before its reset
-     * to avoid exhausting before then — 0 when the projection stays at or
-     * under 100.
-     *
-     * @param  Account  $account  the account to evaluate
-     * @return float overflow tokens, 0 or more
-     */
-    public function overflowTokens(Account $account): float
-    {
-        $over = max(0, $this->projectedUtilAtReset($account) - 100);
-
-        return $over * $this->tokensPerPercent($account);
-    }
-
-    /**
-     * Genuine spare token capacity through to reset, safe to hand to
-     * another user — 0 when the projection is already at or over 100.
-     *
-     * @param  Account  $account  the account to evaluate
-     * @return float headroom tokens, 0 or more
-     */
-    public function headroomTokens(Account $account): float
-    {
-        $under = max(0, 100 - $this->projectedUtilAtReset($account));
-
-        return $under * $this->tokensPerPercent($account);
-    }
-
-    /**
-     * The largest single day's token total for this account within the
-     * configured trend window, expressed as a percentage-points-per-day
-     * rate via {@see tokensPerPercent()}. 0 when there is no history or no
-     * measurable capacity yet.
+     * Median weekly capacity in tokens for one account, or null when no
+     * closed window in `$window` carries a usable signal.
      *
      * @param  Account  $account  the account to measure
-     * @return float peak daily burn rate, in util_7d percentage points per day
+     * @param  RebalanceWindow  $window  how far back to look
+     * @return float|null weekly capacity in tokens, or null when unmeasurable
      */
-    private function peakDailyRatePercent(Account $account): float
+    public function weeklyCapacityTokens(Account $account, RebalanceWindow $window): ?float
     {
-        $tokensPerPercent = $this->tokensPerPercent($account);
-        if ($tokensPerPercent <= 0.0) {
-            return 0.0;
+        $estimates = [];
+
+        foreach ($this->closedWindows($account, $window) as $closed) {
+            if ($closed['peak_util'] < self::MIN_PEAK_UTIL) {
+                continue;
+            }
+
+            $tokens = $this->tokensConsumedIn($account, $closed['reset_at']);
+            if ($tokens <= 0) {
+                continue;
+            }
+
+            $estimates[] = $tokens * 100 / $closed['peak_util'];
         }
 
-        $trendDays = (int) config('token_slayer.rebalance.trend_window_days');
-
-        $peakDailyTokens = (int) Event::query()
-            ->where('account_id', $account->id)
-            ->where('created_at', '>=', now()->subDays($trendDays))
-            ->selectRaw('DATE(created_at) as day')
-            ->selectRaw('SUM(tokens) as tokens')
-            ->groupBy('day')
-            ->get()
-            ->max('tokens');
-
-        return $peakDailyTokens / $tokensPerPercent;
+        return $this->median($estimates);
     }
 
     /**
-     * The account's most recent quota-utilization reading.
+     * Weekly capacity for every given account, keyed by account id. An
+     * account with no usable history of its own inherits the median of the
+     * accounts sharing its plan, and failing that the fleet median — a new
+     * or quiet account is far more likely to resemble its siblings than to
+     * genuinely have no capacity, and treating it as zero would hide the
+     * one account with room to spare.
      *
-     * @param  Account  $account  the account to look up
-     * @return AccountUsageSnapshot|null the latest snapshot, or null when none exist
+     * @param  Collection<int, Account>  $accounts  the accounts to resolve
+     * @param  RebalanceWindow  $window  how far back to look
+     * @return array<int, float|null> account id => weekly capacity tokens
      */
-    private function latestSnapshot(Account $account): ?AccountUsageSnapshot
+    public function capacitiesFor(Collection $accounts, RebalanceWindow $window): array
     {
-        return AccountUsageSnapshot::query()
+        $measured = [];
+        foreach ($accounts as $account) {
+            $measured[$account->id] = $this->weeklyCapacityTokens($account, $window);
+        }
+
+        $byPlan = [];
+        foreach ($accounts as $account) {
+            if ($measured[$account->id] !== null) {
+                $byPlan[$account->plan->value][] = $measured[$account->id];
+            }
+        }
+
+        $fleetMedian = $this->median(array_values(array_filter($measured, fn (?float $c): bool => $c !== null)));
+
+        foreach ($accounts as $account) {
+            if ($measured[$account->id] !== null) {
+                continue;
+            }
+
+            $measured[$account->id] = $this->median($byPlan[$account->plan->value] ?? []) ?? $fleetMedian;
+        }
+
+        return $measured;
+    }
+
+    /**
+     * The closed quota windows visible in `$window`, as reset time plus the
+     * highest utilization reached. Reset timestamps are normalised to the
+     * hour first: the prober records the same boundary a second either side
+     * of it, and treating those as separate windows would split one week's
+     * usage across two bogus half-windows.
+     *
+     * @param  Account  $account  the account to read snapshots for
+     * @param  RebalanceWindow  $window  how far back to look
+     * @return array<int, array{reset_at: Carbon, peak_util: int}>
+     */
+    private function closedWindows(Account $account, RebalanceWindow $window): array
+    {
+        $rows = AccountUsageSnapshot::query()
             ->where('account_id', $account->id)
-            ->latest('created_at')
-            ->first();
+            ->whereNotNull('reset_7d_at')
+            ->whereNotNull('util_7d')
+            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
+            ->selectRaw('reset_7d_at')
+            ->selectRaw('MAX(util_7d) as peak_util')
+            ->groupBy('reset_7d_at')
+            ->get();
+
+        $byHour = [];
+        foreach ($rows as $row) {
+            $resetAt = Carbon::parse($row->reset_7d_at)->startOfHour();
+            if ($resetAt->isFuture()) {
+                continue; // still open: only part of its usage is on record
+            }
+
+            $key = $resetAt->toDateTimeString();
+            $byHour[$key] = [
+                'reset_at' => $resetAt,
+                'peak_util' => max((int) $row->peak_util, $byHour[$key]['peak_util'] ?? 0),
+            ];
+        }
+
+        return array_values($byHour);
+    }
+
+    /**
+     * Tokens recorded against this account inside the 7-day span that ended
+     * at `$resetAt`.
+     *
+     * @param  Account  $account  the account to sum usage for
+     * @param  Carbon  $resetAt  when the window closed
+     * @return int
+     */
+    private function tokensConsumedIn(Account $account, Carbon $resetAt): int
+    {
+        return (int) Event::query()
+            ->where('account_id', $account->id)
+            ->where('created_at', '>=', $resetAt->copy()->subDays(self::WINDOW_DAYS))
+            ->where('created_at', '<', $resetAt)
+            ->sum('tokens');
+    }
+
+    /**
+     * Median of the given values, or null when there are none. Median over
+     * mean throughout: one runaway week (or one account probed mid-reset)
+     * should not drag the figure every other decision is measured against.
+     *
+     * @param  array<int, float>  $values  the values to reduce
+     * @return float|null
+     */
+    private function median(array $values): ?float
+    {
+        if ($values === []) {
+            return null;
+        }
+
+        sort($values);
+        $count = count($values);
+        $middle = intdiv($count, 2);
+
+        return $count % 2 === 1
+            ? $values[$middle]
+            : ($values[$middle - 1] + $values[$middle]) / 2;
     }
 }
