@@ -16,8 +16,8 @@ uses(RefreshDatabase::class);
  * A one-account fleet whose closed week peaked at 90% util on 700,000
  * tokens, shared by a heavy and a light member. Capacity therefore measures
  * 777,778/week, 622,222 of it plannable after the safety margin — so the
- * pair's heaviest week (700,000) overflows it while their average week
- * (163,333 across the 30-day range) sits comfortably inside.
+ * pair's heaviest week (700,000) busts the planning target while their
+ * average week (163,333 across the 30-day range) sits far inside it.
  *
  * @return array{account: Account, heavy: User, light: User}
  */
@@ -58,9 +58,13 @@ it('separates a fleet that fits on an average week from one that fits at its pea
     // worst case means buying for a week in which every single person
     // simultaneously has their heaviest week, which is not the week the
     // fleet actually lives in.
-    expect(round($forecast['typical']['percent'], 1))->toBe(26.3)
+    // Percentages are of full capacity, the same denominator as every other
+    // fill on the page. The account count is what it takes to get back under
+    // the 80% planning target, which is why the worst case needs one more
+    // even at 90%.
+    expect(round($forecast['typical']['percent'], 1))->toBe(21.0)
         ->and($forecast['typical']['accounts_needed'])->toBe(0)
-        ->and(round($forecast['worst_case']['percent'], 1))->toBe(112.5)
+        ->and(round($forecast['worst_case']['percent'], 1))->toBe(90.0)
         ->and($forecast['worst_case']['accounts_needed'])->toBe(1);
 
     Carbon::setTestNow();

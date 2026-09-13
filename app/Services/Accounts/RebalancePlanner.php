@@ -90,7 +90,7 @@ final class RebalancePlanner
             'fill_before' => $this->fills($capacities, $demands, $current),
             'fill_after' => $this->fills($capacities, $demands, $assignment),
             'effective_demands' => $effective,
-            'overflow' => $this->overflow($this->fills($capacities, $effective, $assignment), $usable),
+            'overflow' => $this->overflow($this->fills($capacities, $effective, $assignment), $capacities),
         ];
     }
 
@@ -399,16 +399,23 @@ final class RebalancePlanner
      * are the ones that do not fit, and an overflowing account is the thing
      * an admin has to act on anyway.
      *
+     * Measured against FULL capacity, not the plannable share. The safety
+     * margin biases where people are placed; it is not a shortfall. Reporting
+     * against it would both claim tokens do not fit when they demonstrably
+     * would, and put an account's reported fill and its reported overflow on
+     * different denominators, which reads as a contradiction: 95% full and
+     * over capacity at the same time.
+     *
      * @param  array<int, float>  $load  account id => padded demand planned onto it
-     * @param  array<int, float>  $usable  account id => plannable capacity
+     * @param  array<int, float>  $capacities  account id => weekly capacity in tokens
      * @return array<int, float>
      */
-    private function overflow(array $load, array $usable): array
+    private function overflow(array $load, array $capacities): array
     {
         $over = [];
 
         foreach ($load as $accountId => $tokens) {
-            $excess = $tokens - ($usable[$accountId] ?? 0.0);
+            $excess = $tokens - ($capacities[$accountId] ?? 0.0);
             if ($excess > 0.0) {
                 $over[$accountId] = $excess;
             }

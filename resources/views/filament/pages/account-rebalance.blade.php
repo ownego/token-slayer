@@ -102,13 +102,13 @@
                             {{ number_format($figures['percent'], 0) }}%
                         </div>
                         <div style="font-size:.8rem; opacity:.7;">
-                            {{ number_format($figures['tokens']) }} tokens/week of {{ number_format($capacity['usable_tokens']) }} usable
+                            {{ number_format($figures['tokens']) }} tokens/week of {{ number_format($capacity['capacity_tokens']) }} capacity
                         </div>
                         <div style="font-size:.85rem; margin-top:.5rem;">
                             @if ($figures['accounts_needed'] === 0)
                                 <x-filament::badge color="success">Fits — no new account needed</x-filament::badge>
                             @else
-                                <x-filament::badge color="warning">Needs {{ $figures['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $figures['accounts_needed']) }}</x-filament::badge>
+                                <x-filament::badge color="warning">{{ $figures['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $figures['accounts_needed']) }} to stay under {{ 100 - $capacity['safety_margin_percent'] }}%</x-filament::badge>
                             @endif
                         </div>
                         <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">{{ $blurb }}</div>

@@ -38,19 +38,19 @@ final class FleetCapacityForecast
     {
         $reading = $this->snapshot->take($window ?? RebalanceWindow::fromFilter(null));
 
-        $usable = $reading->usableTokens();
+        $capacity = (float) array_sum($reading->capacities);
         $median = $reading->medianCapacity();
         $worstCase = array_sum($reading->demands);
         $typical = array_sum($reading->typicalDemands);
 
         return [
             'assumed_capacity_tokens' => $median,
-            'capacity_tokens' => array_sum($reading->capacities),
-            'usable_tokens' => $usable,
+            'capacity_tokens' => $capacity,
+            'usable_tokens' => $reading->usableTokens(),
             'safety_margin_percent' => (int) config('token_slayer.rebalance.safety_margin_percent'),
             'window_label' => $reading->window->label(),
-            'typical' => $this->sizing($typical, $usable, $median, $reading->safetyMargin()),
-            'worst_case' => $this->sizing($worstCase, $usable, $median, $reading->safetyMargin()),
+            'typical' => $this->sizing($typical, $capacity, $median, $reading->safetyMargin()),
+            'worst_case' => $this->sizing($worstCase, $capacity, $median, $reading->safetyMargin()),
             'projection' => $extraAccounts > 0 ? $this->project($reading, $extraAccounts) : null,
         ];
     }
@@ -59,20 +59,25 @@ final class FleetCapacityForecast
      * How one demand figure sits against the fleet, and how many typical
      * accounts would close the gap.
      *
+     * The percentage is of full capacity — the same denominator as every
+     * other fill figure on the page — while the account count is what it
+     * takes to get back under the planning target, since buying up to the
+     * brim is what left the fleet with no slack in the first place.
+     *
      * @param  float  $demand  weekly tokens the fleet is being sized for
-     * @param  float  $usable  weekly tokens the fleet can be planned to
+     * @param  float  $capacity  the fleet's full weekly capacity in tokens
      * @param  float  $medianCapacity  what a bought account is assumed to be worth
      * @param  float  $safetyMargin  fraction of a capacity left unplanned
      * @return array{tokens: float, percent: float, accounts_needed: int}
      */
-    private function sizing(float $demand, float $usable, float $medianCapacity, float $safetyMargin): array
+    private function sizing(float $demand, float $capacity, float $medianCapacity, float $safetyMargin): array
     {
         $perAccount = $medianCapacity * (1 - $safetyMargin);
-        $shortfall = max(0.0, $demand - $usable);
+        $shortfall = max(0.0, $demand - $capacity * (1 - $safetyMargin));
 
         return [
             'tokens' => $demand,
-            'percent' => $usable > 0.0 ? $demand * 100 / $usable : 0.0,
+            'percent' => $capacity > 0.0 ? $demand * 100 / $capacity : 0.0,
             'accounts_needed' => $perAccount > 0.0 ? (int) ceil($shortfall / $perAccount) : 0,
         ];
     }

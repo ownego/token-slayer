@@ -257,18 +257,33 @@ it('marks a move as unconfident when the accounts have barely any history behind
 it('reports the tokens that fit nowhere instead of quietly overfilling an account', function () {
     Carbon::setTestNow('2026-09-12 06:00:00');
 
-    // One account, one person wanting far more than a week of it.
+    // Two people on one account whose heavy weeks fell in DIFFERENT weeks.
+    // That is the only way a fleet can be genuinely too small: capacity is
+    // measured from a week that actually happened, so a single week's usage
+    // can never exceed it. Planning has to assume both could go heavy at
+    // once, and here that is nearly twice what the account can serve.
     $account = accountPeaking(90);
     $whale = User::factory()->create();
+    $straggler = User::factory()->create();
+
     dailyUsage($account, $whale, 150_000);
+    foreach (range(1, 7) as $offset) {
+        Event::factory()->for($account)->for($straggler)->create([
+            'tokens' => 150_000,
+            'created_at' => Carbon::parse('2026-08-21 12:00:00')->addDays($offset),
+        ]);
+    }
+
     ancientUsage($account, $whale);
     tracks($account, $whale);
+    tracks($account, $straggler);
 
-    $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14));
+    $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(30));
 
-    // Capacity 1,166,666; usable after the 20% safety margin 933,333; the
-    // whale wants 1,050,000 a week.
+    // Capacity 1,166,666/week, measured from the week only the whale was
+    // active; the pair want 2,100,000 between them.
     expect($result['unplaced_tokens'])->toBeGreaterThan(0.0)
+        // Nowhere to move anyone to — a second account is the only fix.
         ->and($result['moves'])->toBe([]);
 
     Carbon::setTestNow();
