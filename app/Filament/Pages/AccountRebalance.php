@@ -16,6 +16,7 @@ use App\Services\Accounts\RebalanceRecommendation;
 use App\Services\Accounts\RebalanceWindow;
 use App\Services\Accounts\StaleMembershipQuery;
 use App\Services\Provisioning\DeviceClaimResolver;
+use App\Support\CacheKeys;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
@@ -493,6 +494,7 @@ class AccountRebalance extends Page
                 $account->trackedUsers()->updateExistingPivot($arguments['userId'], [
                     'status' => MembershipStatus::Untracked->value,
                 ]);
+                CacheKeys::forgetAccountMembership($account->id);
 
                 Notification::make()
                     ->success()
@@ -579,15 +581,33 @@ class AccountRebalance extends Page
                 $fromAccount = Account::query()->findOrFail($arguments['fromAccountId']);
                 $toAccount = Account::query()->findOrFail($arguments['toAccountId']);
                 $service = app(AccountProvisioningService::class);
+                $priorStatus = $toAccount->users()->wherePivot('user_id', $user->id)->first()?->pivot->status;
 
                 DB::transaction(function () use ($service, $user, $toAccount, $data): void {
                     $device = $service->resolveProvisionTarget($user, $data['device_pk'] ?? null);
                     $service->provisionForDevice($user, $toAccount, $device, $data['state'], $data['code']);
                 });
 
+                // provisionForDevice() upserts Tracked, which is right for
+                // somebody already settled on the account and wrong for
+                // everybody else: the grant has been issued and the machine
+                // has yet to claim it. Saying Tracked there claims setup
+                // finished when it has not — and is why nobody switched here
+                // ever showed the pending marker.
+                if ($priorStatus !== MembershipStatus::Tracked) {
+                    $toAccount->users()->syncWithoutDetaching([
+                        $user->id => ['status' => MembershipStatus::Pending->value],
+                    ]);
+                }
+
                 $fromAccount->trackedUsers()->updateExistingPivot($user->id, [
                     'status' => MembershipStatus::Untracked->value,
                 ]);
+
+                // Both rosters changed, and the dashboard reads them through
+                // a cache that nothing else here invalidates.
+                CacheKeys::forgetAccountMembership($toAccount->id);
+                CacheKeys::forgetAccountMembership($fromAccount->id);
 
                 // Ticked off, not recomputed: the rest of this plan still
                 // leads to the same arrangement, and re-planning now would

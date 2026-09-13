@@ -345,3 +345,38 @@ it('leaves the applied plan alone when a newer recalculation is not applied', fu
 
     Carbon::setTestNow();
 });
+
+it('marks a switched member pending until their machine claims the grant', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    fakeAnthropic();
+    $admin = User::factory()->admin()->create();
+    ['whale' => $whale] = lopsidedFleet();
+    $whale->devices()->create(['device_id' => 'fingerprint-abc', 'name' => 'laptop']);
+
+    $component = Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('recommend')
+        ->callMountedAction()
+        ->callAction('adoptPlan');
+
+    $planned = $component->get('moves');
+    $destination = Account::query()->find($planned[0]['toAccountId']);
+    $destination->email = 'ongtung2212002@gmail.com';
+    $destination->save();
+    $destination->users()->detach($planned[0]['userId']);
+
+    $component->callAction('switchUser', data: ['code' => 'code#state'], arguments: [
+        'userId' => $planned[0]['userId'],
+        'fromAccountId' => $planned[0]['fromAccountId'],
+        'toAccountId' => $destination->id,
+        'index' => 0,
+    ]);
+
+    // The grant is issued but unclaimed: the machine has yet to pick it up.
+    // Calling that Tracked says setup finished when it has not, and is why
+    // the blue "pending" dot never appeared for anybody switched here.
+    expect($destination->users()->wherePivot('user_id', $planned[0]['userId'])->first()->pivot->status)
+        ->toBe(MembershipStatus::Pending);
+
+    Carbon::setTestNow();
+});
