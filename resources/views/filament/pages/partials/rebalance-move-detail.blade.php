@@ -1,11 +1,11 @@
 @php
     $rows = [
-        ['Weekly demand', number_format($move['demandWeeklyTokens']) . ' tokens', 'What this move is sized against: the daily rate below, times seven, times their quota weight.'],
-        ['Daily rate used', number_format($move['demandPerDayTokens']) . ' tokens/day', $move['demandBasis'] === 'peak_rate'
-            ? 'Their best sustained run, not their average — quiet days after a heavy one usually mean they hit a ceiling, not that they wanted less.'
-            : 'Their plain average, which here is the higher of the two measures.'],
-        ['Trailing average', number_format($move['trailingAvgPerDayTokens']) . ' tokens/day', 'Everything they spent over the range, spread across every day in it.'],
-        ['Peak sustained run', number_format($move['peakAvgPerDayTokens']) . ' tokens/day', 'The heaviest consecutive-day stretch on record in the range.'],
+        ['Weekly demand', number_format($move['demandWeeklyTokens']) . ' tokens', $move['demandBasis'] === 'peak_week'
+            ? 'Their heaviest week on record, weighted by how fast their tokens burn quota. The heaviest rather than the usual: quiet weeks after a heavy one usually mean they hit a ceiling, not that they wanted less.'
+            : 'Their average week, weighted by how fast their tokens burn quota — which here is the larger of the two measures.'],
+        ['Heaviest week', number_format($move['peakWeekTokens']) . ' tokens', 'The most they got through in any seven consecutive days in the range, idle days counted as zero.'],
+        ['Average day', number_format($move['trailingAvgPerDayTokens']) . ' tokens/day', 'Everything they spent over the range, spread across every day in it.'],
+        ['Planned as', number_format($move['demandPerDayTokens']) . ' tokens/day', 'The weekly figure above, spread evenly — the rate an account has to sustain for them.'],
         ['Burstiness', number_format($move['burstFactor'], 2) . '×', 'Busiest hour over the mean hour. Above 1, extra room is reserved around them, because a concentrated day is what trips a 5-hour window.'],
         ['Quota weight', number_format($move['quotaWeight'], 2) . '×', 'How fast their tokens burn quota compared with a typical member, measured only from windows where they used an account alone. 1.00 is typical.'],
         ['History', $move['daysOfHistory'] . ' days', 'How much recorded usage in the range sits behind these figures.'],

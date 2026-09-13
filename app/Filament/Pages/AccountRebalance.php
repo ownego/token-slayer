@@ -205,7 +205,7 @@ class AccountRebalance extends Page
             'demandPerDayTokens' => $move->demandPerDayTokens,
             'demandBasis' => $move->demandBasis,
             'trailingAvgPerDayTokens' => $move->trailingAvgPerDayTokens,
-            'peakAvgPerDayTokens' => $move->peakAvgPerDayTokens,
+            'peakWeekTokens' => $move->peakWeekTokens,
             'burstFactor' => $move->burstFactor,
             'quotaWeight' => $move->quotaWeight,
             'daysOfHistory' => $move->daysOfHistory,

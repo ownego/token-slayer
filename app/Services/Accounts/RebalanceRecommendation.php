@@ -19,9 +19,9 @@ final readonly class RebalanceRecommendation
      * @param  int|null  $swapWithUserId  the person crossing the other way between the same two accounts, when this move is half of a swap
      * @param  float  $demandWeeklyTokens  the weekly appetite this move was sized against, after quota weighting
      * @param  float  $demandPerDayTokens  the daily rate behind that weekly figure
-     * @param  string  $demandBasis  which measure produced the rate: `'peak_rate'` or `'trailing_average'`
+     * @param  string  $demandBasis  which measure produced the figure: `'peak_week'` or `'trailing_average'`
      * @param  float  $trailingAvgPerDayTokens  their plain average across the whole window, shown for contrast
-     * @param  float  $peakAvgPerDayTokens  their best sustained run, shown for contrast
+     * @param  float  $peakWeekTokens  the most they got through in any seven consecutive days, shown for contrast
      * @param  float  $burstFactor  busiest hour over mean hour: how concentrated their day is
      * @param  float  $quotaWeight  how fast their tokens burn quota relative to a typical member; 1.0 is typical
      * @param  int  $daysOfHistory  days of their recorded usage inside the window
@@ -40,7 +40,7 @@ final readonly class RebalanceRecommendation
         public float $demandPerDayTokens,
         public string $demandBasis,
         public float $trailingAvgPerDayTokens,
-        public float $peakAvgPerDayTokens,
+        public float $peakWeekTokens,
         public float $burstFactor,
         public float $quotaWeight,
         public int $daysOfHistory,

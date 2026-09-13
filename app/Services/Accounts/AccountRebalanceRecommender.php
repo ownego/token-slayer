@@ -179,7 +179,7 @@ final class AccountRebalanceRecommender
      * Dress each planned move up with the measurements behind it.
      *
      * @param  array<int, array{user: array-key, from: int, to: int, swap_with: array-key|null}>  $moves  the planner's raw diff
-     * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_avg_per_day: float, basis: string, days_of_history: int, quota_weight: float}>  $details  per-user demand workings
+     * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_week_tokens: float, basis: string, days_of_history: int, quota_weight: float}>  $details  per-user demand workings
      * @param  array<int, float>  $burstFactors  per-user burstiness
      * @param  array<int, float>  $fillBefore  account id => percentage of capacity, before
      * @param  array<int, float>  $fillAfter  account id => percentage of capacity, after
@@ -221,7 +221,7 @@ final class AccountRebalanceRecommender
                 demandPerDayTokens: $detail['per_day'],
                 demandBasis: $detail['basis'],
                 trailingAvgPerDayTokens: $detail['trailing_avg_per_day'],
-                peakAvgPerDayTokens: $detail['peak_avg_per_day'],
+                peakWeekTokens: $detail['peak_week_tokens'],
                 burstFactor: $burstFactors[$userId] ?? 1.0,
                 quotaWeight: $detail['quota_weight'],
                 daysOfHistory: $detail['days_of_history'],

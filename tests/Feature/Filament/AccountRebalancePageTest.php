@@ -121,7 +121,7 @@ it('explains a move with the figures behind it', function () {
     ])->render();
 
     expect($detail)
-        ->toContain('Peak sustained run')
+        ->toContain('Heaviest week')
         ->toContain('Quota weight')
         ->toContain('Burstiness')
         ->toContain('of its weekly capacity');

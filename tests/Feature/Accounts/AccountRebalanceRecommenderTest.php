@@ -197,13 +197,14 @@ it('carries the figures behind a move so an admin can see why it was proposed', 
     $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14));
     $move = collect($result['moves'])->firstWhere('userId', $whale->id);
 
-    // 150,000/day for seven days, read off the peak run rather than the
-    // 14-day trailing average (which has been halved by the quiet week).
+    // 1,050,000 in their heaviest week, which is the figure a weekly quota
+    // can be compared against -- not the 14-day trailing average, halved by
+    // the quiet week on either side of it.
     expect($move->demandPerDayTokens)->toBe(150_000.0)
         ->and($move->demandWeeklyTokens)->toBe(1_050_000.0)
-        ->and($move->demandBasis)->toBe('peak_rate')
+        ->and($move->demandBasis)->toBe('peak_week')
         ->and($move->trailingAvgPerDayTokens)->toBe(75_000.0)
-        ->and($move->peakAvgPerDayTokens)->toBe(150_000.0)
+        ->and($move->peakWeekTokens)->toBe(1_050_000.0)
         ->and($move->burstFactor)->toBe(1.0)
         ->and($move->quotaWeight)->toBe(1.0)
         ->and($move->daysOfHistory)->toBe(6)

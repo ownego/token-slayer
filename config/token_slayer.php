@@ -101,19 +101,19 @@ return [
     |--------------------------------------------------------------------------
     |
     | Tunables for AccountCapacityEstimator/UserDemandEstimator/
-    | AccountRebalanceRecommender. trend_window_days is the lookback for
-    | "recent" token history; peak_window_days is the consecutive-day window
-    | used to detect a user's peak (rather than averaged) burn rate;
-    | safety_margin_percent is how much headroom a target account must keep
-    | after absorbing a move; min_history_days is the minimum days of data
-    | an account/user needs before a recommendation involving it is marked
-    | confident.
+    | AccountRebalanceRecommender. trend_window_days is the default lookback
+    | when the admin has not picked a range on the Rebalance page;
+    | safety_margin_percent is how much of every account's capacity is left
+    | unplanned; min_history_days is the minimum days of data an account/user
+    | needs before a recommendation involving it is marked confident.
+    |
+    | The peak-demand window is deliberately NOT tunable: a demand figure is
+    | only comparable with a weekly quota if it is measured over a week.
     |
     */
 
     'rebalance' => [
         'trend_window_days' => (int) env('TOKEN_SLAYER_REBALANCE_TREND_DAYS', 14),
-        'peak_window_days' => (int) env('TOKEN_SLAYER_REBALANCE_PEAK_DAYS', 2),
         'safety_margin_percent' => (int) env('TOKEN_SLAYER_REBALANCE_SAFETY_MARGIN', 20),
         'min_history_days' => (int) env('TOKEN_SLAYER_REBALANCE_MIN_HISTORY_DAYS', 7),
     ],

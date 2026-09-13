@@ -11,28 +11,32 @@ use Illuminate\Support\Carbon;
 
 uses(RefreshDatabase::class);
 
-it('takes the peak consecutive-day rate when a user throttled themselves after a burst', function () {
+it('takes the heaviest week on record when a user throttled themselves afterwards', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
     $account = Account::factory()->connected()->create();
     $user = User::factory()->create();
 
-    // Two 40,000-token days ten days ago, silence since: the trailing
-    // average has decayed to almost nothing, but this person demonstrably
-    // wants 40,000/day when they are not holding back.
+    // Two 40,000-token days ten days ago, silence since: spread across the
+    // whole 30-day range that averages out to almost nothing, but this
+    // person demonstrably wants 80,000 in a week they are not holding back.
     Event::factory()->for($account)->for($user)->create(['tokens' => 40_000, 'created_at' => now()->subDays(10)]);
     Event::factory()->for($account)->for($user)->create(['tokens' => 40_000, 'created_at' => now()->subDays(9)]);
 
     $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(30));
 
-    expect($demand['per_day'])->toBe(40_000.0)
-        ->and($demand['basis'])->toBe('peak_rate')
-        ->and($demand['weekly'])->toBe(280_000.0)
-        ->and($demand['peak_avg_per_day'])->toBe(40_000.0);
+    // The figure is a WEEK's worth, measured over a week -- never a peak
+    // day scaled up by seven, which assumes a person sustains their worst
+    // day for a full week and inflates a real fleet by an order of
+    // magnitude against a weekly quota measured the honest way.
+    expect($demand['weekly'])->toBe(80_000.0)
+        ->and($demand['basis'])->toBe('peak_week')
+        ->and($demand['peak_week_tokens'])->toBe(80_000.0)
+        ->and($demand['per_day'])->toBe(80_000.0 / 7);
 
     Carbon::setTestNow();
 });
 
-it('takes the trailing average when steady usage outruns any short burst', function () {
+it('reads the same figure either way when usage never varies', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
     $account = Account::factory()->connected()->create();
     $user = User::factory()->create();
@@ -43,11 +47,30 @@ it('takes the trailing average when steady usage outruns any short burst', funct
 
     $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(10));
 
-    // Ten steady days: trailing average and the peak 2-day run agree, and
-    // the label must say which one actually decided it.
-    expect($demand['per_day'])->toBe(10_000.0)
+    // Ten steady days: the heaviest week and the average week agree, and
+    // the label must say the average is what decided it rather than
+    // implying a burst that never happened.
+    expect($demand['weekly'])->toBe(70_000.0)
         ->and($demand['basis'])->toBe('trailing_average')
         ->and($demand['trailing_avg_per_day'])->toBe(10_000.0);
+
+    Carbon::setTestNow();
+});
+
+it('counts a gap day as a zero rather than closing the gap up', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $account = Account::factory()->connected()->create();
+    $user = User::factory()->create();
+
+    // 50,000 today and 50,000 twenty days ago. Treating the two recorded
+    // days as adjacent would read as a 100,000-token week; they are three
+    // weeks apart, and no week ever held more than 50,000.
+    Event::factory()->for($account)->for($user)->create(['tokens' => 50_000, 'created_at' => now()->subDays(20)]);
+    Event::factory()->for($account)->for($user)->create(['tokens' => 50_000, 'created_at' => now()->subDay()]);
+
+    $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(30));
+
+    expect($demand['peak_week_tokens'])->toBe(50_000.0);
 
     Carbon::setTestNow();
 });
@@ -63,8 +86,8 @@ it('counts a user\'s usage across every account, since demand travels with the p
 
     $demand = app(UserDemandEstimator::class)->demandFor($user, RebalanceWindow::days(7));
 
-    // 14,000 on one day; the peak single run is what a move has to carry.
-    expect($demand['peak_avg_per_day'])->toBe(14_000.0);
+    // 14,000 in the one week they were active is what a move has to carry.
+    expect($demand['peak_week_tokens'])->toBe(14_000.0);
 
     Carbon::setTestNow();
 });

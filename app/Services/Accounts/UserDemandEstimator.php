@@ -38,33 +38,52 @@ final class UserDemandEstimator
     private const float MAX_WEIGHT = 2.0;
 
     /**
-     * This person's demand, with the workings behind it so a recommendation
-     * can show why it is sized the way it is. `per_day` takes the LARGER of
-     * the trailing average and the peak consecutive-day run: once someone
-     * has demonstrated a rate, the quiet days they spent throttling
-     * themselves afterwards are evidence of a ceiling they hit, not of a
-     * smaller appetite.
+     * The quota window a demand figure has to be comparable with. Anthropic
+     * meters a rolling week, so a week is the only span on which a person's
+     * appetite and an account's capacity can be put side by side.
+     *
+     * @var int
+     */
+    private const int WINDOW_DAYS = 7;
+
+    /**
+     * This person's weekly demand, with the workings behind it so a
+     * recommendation can show why it is sized the way it is.
+     *
+     * The figure is the LARGER of their heaviest recorded week and their
+     * average week. Taking the heaviest is what corrects for suppressed
+     * demand: once someone has shown what they want, the quiet days they
+     * spent throttling themselves afterwards are evidence of a ceiling they
+     * hit, not of a smaller appetite.
+     *
+     * It is measured over a whole week rather than extrapolated from a peak
+     * day. An earlier version took the best two-day rate and multiplied by
+     * seven, which assumes a person sustains their worst day for a full
+     * week: on the real fleet that read every account at 1,500-3,700% of a
+     * capacity measured the honest way, and no arrangement of people can fix
+     * a demand figure that is forty times reality.
      *
      * @param  User  $user  the person to size
      * @param  RebalanceWindow  $window  how far back to read
-     * @return array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_avg_per_day: float, basis: string, days_of_history: int}
+     * @return array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_week_tokens: float, basis: string, days_of_history: int}
      */
     public function demandFor(User $user, RebalanceWindow $window): array
     {
-        $daily = $this->dailyTotals($user, $window);
+        $series = $this->zeroFilledDailyTotals($user, $window);
 
-        $spanDays = max(1, $window->daysOr(max(1, count($daily))));
-        $trailingAverage = (float) (array_sum($daily) / $spanDays);
-        $peakAverage = $this->peakConsecutiveAverage(array_values($daily));
+        $spanDays = max(1, $window->daysOr(max(1, count($series))));
+        $trailingAveragePerDay = (float) (array_sum($series) / $spanDays);
+        $averageWeek = $trailingAveragePerDay * self::WINDOW_DAYS;
+        $peakWeek = $this->peakWeeklyTotal($series);
 
-        $perDay = max($trailingAverage, $peakAverage);
+        $weekly = max($averageWeek, $peakWeek);
 
         return [
-            'weekly' => $perDay * 7,
-            'per_day' => $perDay,
-            'trailing_avg_per_day' => $trailingAverage,
-            'peak_avg_per_day' => $peakAverage,
-            'basis' => $peakAverage > $trailingAverage ? 'peak_rate' : 'trailing_average',
+            'weekly' => $weekly,
+            'per_day' => $weekly / self::WINDOW_DAYS,
+            'trailing_avg_per_day' => $trailingAveragePerDay,
+            'peak_week_tokens' => $peakWeek,
+            'basis' => $peakWeek > $averageWeek ? 'peak_week' : 'trailing_average',
             'days_of_history' => $this->daysOfHistory($user, $window),
         ];
     }
@@ -231,6 +250,68 @@ final class UserDemandEstimator
     }
 
     /**
+     * This person's tokens per calendar day, oldest first, with every idle
+     * day between their first and last active one present as a zero. The
+     * gaps matter: two heavy days three weeks apart are not one heavy week,
+     * and a series that quietly closes the gap up would read them as one.
+     *
+     * @param  User  $user  the person to read
+     * @param  RebalanceWindow  $window  how far back to read
+     * @return array<int, int> tokens per day, oldest first
+     */
+    private function zeroFilledDailyTotals(User $user, RebalanceWindow $window): array
+    {
+        $byDay = $this->dailyTotals($user, $window);
+        if ($byDay === []) {
+            return [];
+        }
+
+        $days = array_keys($byDay);
+        $cursor = Carbon::parse((string) $days[0])->startOfDay();
+        $last = Carbon::parse((string) $days[count($days) - 1])->startOfDay();
+
+        $series = [];
+        while ($cursor->lessThanOrEqualTo($last)) {
+            $series[] = $byDay[$cursor->toDateString()] ?? 0;
+            $cursor->addDay();
+        }
+
+        return $series;
+    }
+
+    /**
+     * The most tokens this person got through in any seven consecutive days
+     * on record. Someone with less than a week of history is credited with
+     * everything they have, rather than scored against days that had not
+     * happened yet.
+     *
+     * @param  array<int, int>  $series  tokens per day, oldest first, gaps zero-filled
+     * @return float
+     */
+    private function peakWeeklyTotal(array $series): float
+    {
+        if ($series === []) {
+            return 0.0;
+        }
+
+        $windowDays = min(self::WINDOW_DAYS, count($series));
+        $running = 0;
+        $best = 0.0;
+
+        foreach ($series as $index => $tokens) {
+            $running += $tokens;
+            if ($index >= $windowDays) {
+                $running -= $series[$index - $windowDays];
+            }
+            if ($index >= $windowDays - 1) {
+                $best = max($best, (float) $running);
+            }
+        }
+
+        return $best;
+    }
+
+    /**
      * This person's tokens per calendar day, oldest first, days with no
      * usage omitted.
      *
@@ -250,34 +331,6 @@ final class UserDemandEstimator
             ->pluck('tokens', 'day')
             ->map(fn ($tokens): int => (int) $tokens)
             ->all();
-    }
-
-    /**
-     * The highest average across any run of `rebalance.peak_window_days`
-     * consecutive recorded days. Someone with fewer recorded days than that
-     * is averaged over the days they do have rather than scored zero —
-     * one 14,000-token day is evidence of a 14,000-token/day appetite, not
-     * of no appetite at all.
-     *
-     * @param  array<int, int>  $dailyTotals  tokens per day, oldest first
-     * @return float
-     */
-    private function peakConsecutiveAverage(array $dailyTotals): float
-    {
-        if ($dailyTotals === []) {
-            return 0.0;
-        }
-
-        $windowDays = max(1, (int) config('token_slayer.rebalance.peak_window_days'));
-        $windowDays = min($windowDays, count($dailyTotals));
-
-        $best = 0.0;
-        for ($start = 0; $start <= count($dailyTotals) - $windowDays; $start++) {
-            $slice = array_slice($dailyTotals, $start, $windowDays);
-            $best = max($best, (float) (array_sum($slice) / $windowDays));
-        }
-
-        return $best;
     }
 
     /**
