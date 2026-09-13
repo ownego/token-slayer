@@ -17,14 +17,31 @@ it('drops the header global search and the welcome widget from the panel', funct
         ->and($panel->getWidgets())->not->toContain(AccountWidget::class);
 });
 
-it('renders the dashboard with the time filter and total-across-accounts toggle', function () {
+it('renders the dashboard with the time filter and a display-options action for the rarely-used toggles', function () {
     $admin = User::factory()->admin()->create();
 
     $this->actingAs($admin)
         ->get(Dashboard::getUrl(panel: 'admin'))
         ->assertOk()
         ->assertSee('This week')
-        ->assertSee('Total usage across accounts');
+        ->assertSee('Display options')
+        // The toggle labels themselves are not in the always-visible filter
+        // row -- they only exist inside the (unopened) Display options
+        // action's modal.
+        ->assertDontSee('Total usage across accounts');
+});
+
+it('the display options action updates the same $filters state widgets read', function () {
+    $admin = User::factory()->admin()->create();
+
+    Livewire::actingAs($admin)
+        ->test(Dashboard::class)
+        ->mountAction('displayOptions')
+        ->setActionData(['total_across_accounts' => true, 'show_untracked' => true])
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertSet('filters.total_across_accounts', true)
+        ->assertSet('filters.show_untracked', true);
 });
 
 it('keeps the token mode select showing Output tokens against a stale pre-feature session', function () {
@@ -81,7 +98,7 @@ it('says nothing to an admin whose hook is current, or will self-update on its o
         ->assertDontSee('Hook out of date');
 });
 
-it('shows the total active users count in the filters form, on the same row as the range/toggle', function () {
+it('shows the total active users count in the filters form, on the same row as the range', function () {
     $account = Account::factory()->create();
     $tracked = User::factory()->create();
     $account->users()->attach($tracked->id, ['status' => MembershipStatus::Tracked->value]);
@@ -90,7 +107,7 @@ it('shows the total active users count in the filters form, on the same row as t
     $this->actingAs($admin)
         ->get(Dashboard::getUrl(panel: 'admin'))
         ->assertOk()
-        ->assertSeeInOrder(['Total active users', '1', 'This week', 'Total usage across accounts']);
+        ->assertSeeInOrder(['Total active users', '1', 'This week']);
 });
 
 it('counts distinct tracked users across claude and codex accounts, without double-counting', function () {
@@ -140,15 +157,21 @@ it('scopes the tracked-membership existence check by the qualified account_user.
     }
 });
 
-it('explains the toggle on a separate line per case instead of one run-on block', function () {
-    $this->actingAs(User::factory()->admin()->create());
+it('pre-fills the display options action from the current filter state, not always off', function () {
+    // The verbose multi-line <span style="display:block"> explanation this
+    // file used to test for was itself the clutter an admin asked to have
+    // trimmed -- a single concise helperText line inside the (now
+    // hidden-by-default) Display options action is the deliberate
+    // replacement, not a regression back to a run-on block. What still
+    // matters functionally is that reopening the action reflects whatever
+    // was set last, rather than resetting to Off every time.
+    $admin = User::factory()->admin()->create();
 
-    $this->get(Dashboard::getUrl(panel: 'admin'))
-        ->assertOk()
-        // Inline style, not a `block` utility class: the panel's Tailwind build
-        // omits utilities Filament doesn't use, so `class="block"` is inert and
-        // the two cases run together on one line.
-        ->assertSee('<span style="display:block"><strong>Off:</strong>', escape: false)
-        ->assertSee('<span style="display:block"><strong>On:</strong>', escape: false)
-        ->assertDontSee('&lt;span', escape: false);
+    Livewire::actingAs($admin)
+        ->test(Dashboard::class, ['filters' => ['total_across_accounts' => true, 'show_untracked' => true]])
+        ->mountAction('displayOptions')
+        ->assertActionDataSet([
+            'total_across_accounts' => true,
+            'show_untracked' => true,
+        ]);
 });
