@@ -29,6 +29,10 @@ test('it builds a gauge row per account with a near-cap flag and projections', f
 
     $cool = Account::factory()->create(['email' => 'cool@example.com']);
     AccountUsageSnapshot::factory()->for($cool)->create([
+        // Pinned, not left to the factory's random 0-100: near_cap reads the
+        // FULLEST window an account reports, so an unpinned 5-hour reading
+        // flips this account's flag roughly one run in six.
+        'util_5h' => 10,
         'util_7d' => 10,
         'reset_7d_at' => now()->addDays(3),
         'created_at' => now(),
