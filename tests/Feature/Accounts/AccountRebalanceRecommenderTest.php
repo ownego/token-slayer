@@ -378,3 +378,42 @@ it('counts a switched member on their new account the moment the seat moves', fu
 
     Carbon::setTestNow();
 });
+
+it('names what is short of history rather than leaving the doubt on the person', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+
+    // An overloaded account of long standing, and a roomy one opened three
+    // days ago.
+    $established = accountPeaking(100);
+    $brandNew = accountPeaking(35);
+
+    foreach ([User::factory()->create(), User::factory()->create()] as $veteran) {
+        dailyUsage($established, $veteran, 150_000);
+        ancientUsage($established, $veteran);
+        tracks($established, $veteran);
+    }
+
+    $newcomer = User::factory()->create();
+    foreach (range(1, 3) as $offset) {
+        Event::factory()->for($brandNew)->for($newcomer)->create([
+            'tokens' => 300_000,
+            'created_at' => Carbon::parse('2026-09-08 12:00:00')->addDays($offset),
+        ]);
+    }
+    tracks($brandNew, $newcomer);
+
+    $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14));
+    $move = collect($result['moves'])->firstWhere('toAccountId', $brandNew->id);
+
+    // Everything about the person moving is well established; the account
+    // they are moving to is not. Saying only "not enough data" puts the doubt
+    // on them, and an admin reads it beside their own long history and
+    // concludes the page is wrong.
+    expect($move)->not->toBeNull()
+        ->and($move->daysOfHistory)->toBeGreaterThanOrEqual(6)
+        ->and($move->confident)->toBeFalse()
+        ->and($move->confidenceReason)->toContain($brandNew->email)
+        ->and($move->confidenceReason)->toContain('under the 7 needed');
+
+    Carbon::setTestNow();
+});

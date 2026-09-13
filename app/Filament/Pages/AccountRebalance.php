@@ -399,6 +399,7 @@ class AccountRebalance extends Page
             'toFillBeforePercent' => $move->toFillBeforePercent,
             'toFillAfterPercent' => $move->toFillAfterPercent,
             'confident' => $move->confident,
+            'confidenceReason' => $move->confidenceReason,
         ];
     }
 

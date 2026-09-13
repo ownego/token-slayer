@@ -108,9 +108,7 @@ final class AccountRebalanceRecommender
             $userId = (int) $move['user'];
             $detail = $details[$userId];
 
-            $confident = ($userDays[$userId] ?? 0) >= $minDays
-                && ($accountDays[$move['from']] ?? 0) >= $minDays
-                && ($accountDays[$move['to']] ?? 0) >= $minDays;
+            $short = $this->shortOfHistory($userId, $move, $userDays, $accountDays, $minDays, $accounts);
 
             $recommendations[] = new RebalanceRecommendation(
                 userId: $userId,
@@ -130,11 +128,49 @@ final class AccountRebalanceRecommender
                 fromFillAfterPercent: $fillAfter[$move['from']] ?? 0.0,
                 toFillBeforePercent: $fillBefore[$move['to']] ?? 0.0,
                 toFillAfterPercent: $fillAfter[$move['to']] ?? 0.0,
-                confident: $confident,
+                confident: $short === null,
+                confidenceReason: $short,
             );
         }
 
         return $recommendations;
+    }
+
+    /**
+     * Which of the three subjects a move rests on has too little recorded
+     * history, said plainly, or null when all of them are established.
+     *
+     * Reporting only "not enough data" put the doubt on whoever the row
+     * named, and an admin would read it beside that person's own perfectly
+     * long history and conclude the page was wrong. Usually it is the
+     * destination account — a newly bought one has days of history while
+     * everybody involved has months.
+     *
+     * @param  int  $userId  the person moving
+     * @param  array{user: array-key, from: int, to: int, swap_with: array-key|null}  $move  the planned move
+     * @param  array<int, int>  $userDays  user id => days of recorded history
+     * @param  array<int, int>  $accountDays  account id => days of recorded history
+     * @param  int  $minDays  the minimum to be trusted
+     * @param  Collection<int, Account>  $accounts  the accounts in scope, for their labels
+     * @return string|null
+     */
+    private function shortOfHistory(int $userId, array $move, array $userDays, array $accountDays, int $minDays, Collection $accounts): ?string
+    {
+        $labels = $accounts->pluck('email', 'id')->all();
+
+        foreach ([$move['to'], $move['from']] as $accountId) {
+            $days = $accountDays[$accountId] ?? 0;
+            if ($days < $minDays) {
+                return sprintf('%s has only %d %s of recorded history, under the %d needed.',
+                    $labels[$accountId] ?? "#{$accountId}", $days, $days === 1 ? 'day' : 'days', $minDays);
+            }
+        }
+
+        $days = $userDays[$userId] ?? 0;
+
+        return $days < $minDays
+            ? sprintf('This member has only %d %s of recorded history, under the %d needed.', $days, $days === 1 ? 'day' : 'days', $minDays)
+            : null;
     }
 
     /**

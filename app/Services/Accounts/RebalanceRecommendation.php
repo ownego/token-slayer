@@ -31,6 +31,7 @@ final readonly class RebalanceRecommendation
      * @param  float  $toFillBeforePercent  the destination account's planned load as a percentage of its capacity, before
      * @param  float  $toFillAfterPercent  the same, after every recommended move lands
      * @param  bool  $confident  false when either account or the person has less than the configured minimum history
+     * @param  string|null  $confidenceReason  which subject is short of history and by how much, or null when all three are established
      */
     public function __construct(
         public int $userId,
@@ -51,5 +52,6 @@ final readonly class RebalanceRecommendation
         public float $toFillBeforePercent,
         public float $toFillAfterPercent,
         public bool $confident,
+        public ?string $confidenceReason,
     ) {}
 }

@@ -184,7 +184,10 @@
                                     @if ($move['confident'])
                                         <x-filament::badge color="success">Confident</x-filament::badge>
                                     @else
-                                        <x-filament::badge color="warning">Not enough data</x-filament::badge>
+                                        <span title="{{ $move['confidenceReason'] }}">
+                                            <x-filament::badge color="warning">Not enough data</x-filament::badge>
+                                        </span>
+                                        <div style="font-size:.7rem; opacity:.6; max-width:18rem;">{{ $move['confidenceReason'] }}</div>
                                     @endif
                                 </td>
                                 <td style="padding:.4rem .6rem; white-space:nowrap;">
