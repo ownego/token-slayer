@@ -130,16 +130,15 @@ it('sizes the fleet both ways, so a capacity decision is not made on the worst c
 
     expect($component->get('capacity'))
         ->toHaveKeys(['observed', 'unconstrained', 'worst_case', 'assumed_capacity_tokens'])
-        ->and($component->get('capacity')['projection'])->toBeNull();
+        ->and($component->get('summary')['simulated_accounts'])->toBe(0);
 
-    // Asking for one more account produces a projection of where people
-    // would sit, without touching anything.
+    // Asking for one more account re-plans the fleet around it, rather than
+    // leaving the table describing a fleet that is about to change.
     $component->set('extraAccounts', 1);
-    $projection = $component->get('capacity')['projection'];
 
-    expect($projection['extra_accounts'])->toBe(1)
-        ->and($projection['accounts'])->toHaveCount(3)
-        ->and(collect($projection['accounts'])->where('is_new', true))->toHaveCount(1);
+    expect($component->get('summary')['simulated_accounts'])->toBe(1)
+        ->and(collect($component->get('accounts'))->where('is_new', true))->toHaveCount(1)
+        ->and(collect($component->get('moves'))->where('toAccountIsNew', true))->not->toBeEmpty();
 
     Carbon::setTestNow();
 });

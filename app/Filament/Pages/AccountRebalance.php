@@ -204,8 +204,9 @@ class AccountRebalance extends Page
         $window = RebalanceWindow::fromFilter($this->range);
         $reading = app(FleetSnapshot::class)->take($window);
 
-        $result = app(AccountRebalanceRecommender::class)->recommend($window, $reading);
-        $this->capacity = app(FleetCapacityForecast::class)->forecast($window, max(0, $this->extraAccounts), $reading);
+        $extra = max(0, $this->extraAccounts);
+        $result = app(AccountRebalanceRecommender::class)->recommend($window, $reading, $extra);
+        $this->capacity = app(FleetCapacityForecast::class)->forecast($window, $reading);
 
         $this->accounts = $result['accounts'];
         $this->moves = array_map(
@@ -218,6 +219,8 @@ class AccountRebalance extends Page
             'unplaced_tokens' => $result['unplaced_tokens'],
             'safety_margin_percent' => $result['safety_margin_percent'],
             'window_label' => $result['window_label'],
+            'simulated_accounts' => $result['simulated_accounts'],
+            'capacity_tokens' => $result['capacity_tokens'],
         ];
         $this->computed = true;
     }
@@ -239,6 +242,7 @@ class AccountRebalance extends Page
             'fromAccountLabel' => $accounts[$move->fromAccountId]['email'] ?? "#{$move->fromAccountId}",
             'toAccountId' => $move->toAccountId,
             'toAccountLabel' => $accounts[$move->toAccountId]['email'] ?? "#{$move->toAccountId}",
+            'toAccountIsNew' => $move->toAccountId < 0,
             'swapWithUserId' => $move->swapWithUserId,
             'swapWithLabel' => $move->swapWithUserId === null
                 ? null

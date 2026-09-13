@@ -9,6 +9,15 @@
             </select>
         </div>
 
+        <div style="display:flex; align-items:center; gap:.75rem; font-size:.85rem; flex-wrap:wrap; margin-top:.5rem;">
+            <span style="opacity:.6;">Plan as if we had bought</span>
+            <select wire:model.live="extraAccounts" style="padding:.3rem .5rem; border-radius:.375rem; border:1px solid rgba(120,120,140,.3); background:transparent;">
+                @foreach (range(0, 6) as $count)
+                    <option value="{{ $count }}">{{ $count === 0 ? 'no new accounts' : $count.' more '.\Illuminate\Support\Str::plural('account', $count) }}</option>
+                @endforeach
+            </select>
+        </div>
+
         @if ($computed)
             <p style="margin-top:.5rem; font-size:.8rem; opacity:.6;">
                 Every percentage here is <strong>worst case</strong>: what an account would carry if all of its
@@ -42,6 +51,29 @@
                 if every move below is applied. Accounts converge rather than all drop: the load has to go
                 somewhere, and levelling it is what stops one account burning out days before the others.
             </p>
+
+            @if (($summary['simulated_accounts'] ?? 0) > 0 && ! empty($capacity))
+                @php($need = $capacity['unconstrained']['tokens'])
+                @php($grown = $summary['capacity_tokens'])
+                @php($short = max(0, $need - $grown))
+                <p style="margin-top:.5rem; font-size:.85rem; border-left:3px solid rgba(120,120,140,.35); padding-left:.75rem;">
+                    <strong>Planning with {{ $summary['simulated_accounts'] }} more
+                    {{ \Illuminate\Support\Str::plural('account', $summary['simulated_accounts']) }}.</strong>
+                    Capacity would be {{ number_format($grown) }} tokens/week against the
+                    {{ number_format($need) }} the fleet actually needed unthrottled —
+                    @if ($short > 0)
+                        still <strong>{{ number_format($short) }} short</strong>, so some people would keep hitting a
+                        ceiling. {{ $capacity['unconstrained']['accounts_to_fit'] }} would cover it,
+                        {{ $capacity['unconstrained']['accounts_needed'] }} would cover it with the
+                        {{ $capacity['safety_margin_percent'] }}% slack intact.
+                    @else
+                        <strong>enough to stop anyone being throttled.</strong>
+                        {{ $capacity['unconstrained']['accounts_needed'] }} in total would also keep the
+                        {{ $capacity['safety_margin_percent'] }}% slack intact.
+                    @endif
+                    The rows below include the moves onto it; those cannot be run until the account is connected.
+                </p>
+            @endif
 
             <div style="overflow-x:auto; margin-top:.75rem;">
                 <table style="width:100%; border-collapse:collapse; font-size:.85rem;">
@@ -89,7 +121,11 @@
                                 </td>
                                 <td style="padding:.4rem .6rem; white-space:nowrap;">
                                     {{ ($this->explainMoveAction)(['index' => $index]) }}
-                                    {{ ($this->switchUserAction)(['userId' => $move['userId'], 'fromAccountId' => $move['fromAccountId'], 'toAccountId' => $move['toAccountId']]) }}
+                                    @if ($move['toAccountIsNew'])
+                                        <span style="opacity:.6; font-size:.8rem;">connect the account first</span>
+                                    @else
+                                        {{ ($this->switchUserAction)(['userId' => $move['userId'], 'fromAccountId' => $move['fromAccountId'], 'toAccountId' => $move['toAccountId']]) }}
+                                    @endif
                                 </td>
                             </tr>
                         @endforeach
@@ -205,82 +241,7 @@
                 </div>
             </div>
 
-            <div style="display:flex; align-items:center; gap:.75rem; font-size:.85rem; flex-wrap:wrap; margin-top:1.25rem;">
-                <span>What if we added</span>
-                <select wire:model.live="extraAccounts" style="padding:.3rem .5rem; border-radius:.375rem; border:1px solid rgba(120,120,140,.3); background:transparent;">
-                    @foreach (range(0, 6) as $count)
-                        <option value="{{ $count }}">{{ $count === 0 ? 'no' : $count }} {{ \Illuminate\Support\Str::plural('account', max(1, $count)) }}</option>
-                    @endforeach
-                </select>
-                <span style="opacity:.6;">
-                    assuming each is worth {{ number_format($capacity['assumed_capacity_tokens']) }} tokens/week, like a middling account here today.
-                    This is the figure to trust over the badges above: they divide totals, which cannot account for a
-                    person being indivisible, so they read low.
-                </span>
-            </div>
 
-            @if ($capacity['projection'] !== null)
-                <div style="margin-top:1rem;">
-                    @php($target = 100 - $capacity['safety_margin_percent'])
-                    @php($peak = $capacity['projection']['peak_fill_percent'])
-                    <p style="font-size:.85rem;">
-                        With {{ $capacity['projection']['extra_accounts'] }} more, the worst case puts the fullest
-                        account at <strong>{{ number_format($peak, 0) }}%</strong>
-                        @if ($capacity['projection']['overflow_tokens'] > 0)
-                            and <strong style="color:var(--danger-500, #dc2626);">{{ number_format($capacity['projection']['overflow_tokens']) }}</strong>
-                            tokens/week still exceed the fleet outright.
-                        @elseif ($peak > $target)
-                            — nothing is turned away any more, but it is above the {{ $target }}% planning target,
-                            which is the difference between "never blocked" and "comfortable". That gap is why the
-                            badge above asks for more accounts than it takes to merely fit.
-                        @else
-                            — everything fits with the {{ $target }}% slack intact.
-                        @endif
-                    </p>
-
-                    <div style="overflow-x:auto; margin-top:.5rem;">
-                        <table style="width:100%; border-collapse:collapse; font-size:.85rem;">
-                            <thead>
-                                <tr style="text-align:left; opacity:.6;">
-                                    <th style="padding:.4rem .6rem;">Account</th>
-                                    <th style="padding:.4rem .6rem;">Capacity / week</th>
-                                    <th style="padding:.4rem .6rem;">Worst-case load</th>
-                                    <th style="padding:.4rem .6rem;">Members</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($capacity['projection']['accounts'] as $row)
-                                    <tr style="border-top:1px solid rgba(120,120,140,.15);">
-                                        <td style="padding:.4rem .6rem; font-family:monospace;">
-                                            {{ $row['label'] }}
-                                            @if ($row['is_new'])
-                                                <x-filament::badge color="info">new</x-filament::badge>
-                                            @endif
-                                        </td>
-                                        <td style="padding:.4rem .6rem;">{{ number_format($row['capacity_tokens']) }}</td>
-                                        <td style="padding:.4rem .6rem;">{{ number_format($row['fill_percent'], 0) }}%</td>
-                                        <td style="padding:.4rem .6rem;">{{ $row['members'] }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-
-                    @if (! empty($capacity['projection']['arrivals']))
-                        <p style="font-size:.85rem; margin-top:.75rem;">Who would move onto the new {{ \Illuminate\Support\Str::plural('account', $capacity['projection']['extra_accounts']) }}:</p>
-                        <ul style="font-size:.85rem; margin-top:.25rem; padding-left:1.25rem;">
-                            @foreach ($capacity['projection']['arrivals'] as $arrival)
-                                <li>{{ $arrival['user_label'] }} → {{ $arrival['account_label'] }} ({{ number_format($arrival['weekly_tokens']) }} tokens/week)</li>
-                            @endforeach
-                        </ul>
-                    @endif
-
-                    <p style="font-size:.75rem; opacity:.55; margin-top:.75rem;">
-                        A projection, not a plan you can execute: connect the account first, then Recalculate to get
-                        real moves with Switch buttons.
-                    </p>
-                </div>
-            @endif
         </x-filament::section>
     @endif
 
@@ -301,7 +262,12 @@
                         @foreach ($accounts as $account)
                             @php($peak = $capacity['observed']['per_account'][$account['id']]['peak_percent'] ?? null)
                             <tr style="border-top:1px solid rgba(120,120,140,.15);">
-                                <td style="padding:.4rem .6rem; font-family:monospace;">{{ $account['email'] }}</td>
+                                <td style="padding:.4rem .6rem; font-family:monospace;">
+                                    {{ $account['email'] }}
+                                    @if ($account['is_new'] ?? false)
+                                        <x-filament::badge color="info">not bought yet</x-filament::badge>
+                                    @endif
+                                </td>
                                 <td style="padding:.4rem .6rem;">{{ number_format($account['capacity_tokens']) }} tokens</td>
                                 <td style="padding:.4rem .6rem; {{ $peak !== null && $peak > 100 ? 'color:var(--danger-500, #dc2626); font-weight:600;' : '' }}">
                                     {{ $peak === null ? '—' : number_format($peak, 0) . '%' }}

@@ -104,36 +104,6 @@ it('assumes a newly bought account is worth what a middling existing one is', fu
     Carbon::setTestNow();
 });
 
-it('shows who would move onto a new account and what that leaves behind', function () {
-    Carbon::setTestNow('2026-09-12 06:00:00');
-    ['light' => $light] = strainedFleet();
-
-    $forecast = app(FleetCapacityForecast::class)->forecast(RebalanceWindow::days(30), extraAccounts: 1);
-
-    expect($forecast['projection'])->not->toBeNull()
-        ->and($forecast['projection']['accounts'])->toHaveCount(2)
-        // The lighter member moves: both arrangements relieve the account
-        // equally, so the one disturbing fewer people wins.
-        ->and($forecast['projection']['arrivals'])->toHaveCount(1)
-        ->and($forecast['projection']['arrivals'][0]['user_id'])->toBe($light->id)
-        // 700,000 over two accounts of 622,222 usable: nothing left over.
-        ->and($forecast['projection']['overflow_tokens'])->toBe(0.0)
-        ->and($forecast['projection']['peak_fill_percent'])->toBeLessThan(90.0);
-
-    Carbon::setTestNow();
-});
-
-it('reports no projection at all when asked about adding nothing', function () {
-    Carbon::setTestNow('2026-09-12 06:00:00');
-    strainedFleet();
-
-    $forecast = app(FleetCapacityForecast::class)->forecast(RebalanceWindow::days(30));
-
-    expect($forecast['projection'])->toBeNull();
-
-    Carbon::setTestNow();
-});
-
 it('says a fleet with nothing measurable needs nothing rather than dividing by zero', function () {
     Carbon::setTestNow('2026-09-12 06:00:00');
     Account::factory()->connected()->create();

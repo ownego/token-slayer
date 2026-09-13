@@ -288,3 +288,54 @@ it('reports the tokens that fit nowhere instead of quietly overfilling an accoun
 
     Carbon::setTestNow();
 });
+
+it('plans people onto an account that has not been bought yet, and marks it as such', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+
+    $tight = accountPeaking(70);
+    $roomy = accountPeaking(35);
+    $whale = User::factory()->create();
+    $mediumA = User::factory()->create();
+    $mediumB = User::factory()->create();
+
+    dailyUsage($tight, $whale, 150_000);
+    dailyUsage($roomy, $mediumA, 70_000);
+    dailyUsage($roomy, $mediumB, 70_000);
+    foreach ([[$tight, $whale], [$roomy, $mediumA], [$roomy, $mediumB]] as [$account, $user]) {
+        ancientUsage($account, $user);
+        tracks($account, $user);
+    }
+
+    $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14), extraAccounts: 1);
+
+    // Asking "what if we bought one" has to change the plan itself, not just
+    // produce a side panel: an arrangement that ignores an account about to
+    // exist is an arrangement for the wrong fleet.
+    $onto = collect($result['moves'])->filter(fn ($move): bool => $move->toAccountId < 0);
+    expect($onto)->not->toBeEmpty()
+        ->and($result['simulated_accounts'])->toBe(1);
+
+    $new = collect($result['accounts'])->firstWhere('is_new', true);
+    expect($new['email'])->toBe('New account 1')
+        ->and($new['members_before'])->toBe(0)
+        ->and($new['members_after'])->toBeGreaterThan(0)
+        ->and($result['capacity_tokens'])->toBeGreaterThan(array_sum(collect($result['accounts'])->where('is_new', false)->pluck('capacity_tokens')->all()));
+
+    Carbon::setTestNow();
+});
+
+it('leaves the fleet as it is when no extra account is being simulated', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $account = accountPeaking(70);
+    $user = User::factory()->create();
+    dailyUsage($account, $user, 150_000);
+    ancientUsage($account, $user);
+    tracks($account, $user);
+
+    $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14));
+
+    expect($result['simulated_accounts'])->toBe(0)
+        ->and(collect($result['accounts'])->where('is_new', true))->toBeEmpty();
+
+    Carbon::setTestNow();
+});

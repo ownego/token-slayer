@@ -33,12 +33,20 @@ final class AccountRebalanceRecommender
      *
      * @param  RebalanceWindow|null  $window  how far back to read, defaulting to the configured trend window
      * @param  FleetReading|null  $reading  a reading already taken over that window; measuring the fleet is by far the most expensive part of this, and a caller that also asks for a capacity forecast should not pay for it twice
-     * @return array{moves: array<int, RebalanceRecommendation>, accounts: array<int, array{id: int, email: string, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>, peak_fill_before_percent: float, peak_fill_after_percent: float, unplaced_tokens: float, safety_margin_percent: int, window_label: string}
+     * @param  int  $extraAccounts  how many accounts to plan as though they had been bought; the moves onto them cannot be executed yet, but a plan that ignores an account about to exist is planning the wrong fleet
+     * @return array{moves: array<int, RebalanceRecommendation>, accounts: array<int, array{id: int, email: string, is_new: bool, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>, peak_fill_before_percent: float, peak_fill_after_percent: float, unplaced_tokens: float, safety_margin_percent: int, window_label: string, simulated_accounts: int, capacity_tokens: float}
      */
-    public function recommend(?RebalanceWindow $window = null, ?FleetReading $reading = null): array
+    public function recommend(?RebalanceWindow $window = null, ?FleetReading $reading = null, int $extraAccounts = 0): array
     {
         $reading ??= $this->snapshot->take($window ?? RebalanceWindow::fromFilter(null));
+
+        // Hypothetical accounts take negative ids: nothing real can collide
+        // with them, and anything that leaks one into a lookup for a real
+        // account fails loudly instead of quietly hitting the wrong one.
         $capacities = $reading->capacities;
+        for ($index = 1; $index <= $extraAccounts; $index++) {
+            $capacities[-$index] = $reading->medianCapacity();
+        }
 
         $plan = $this->planner->plan(
             capacities: $capacities,
@@ -46,6 +54,9 @@ final class AccountRebalanceRecommender
             current: $reading->current,
             burstFactors: $reading->burstFactors,
             safetyMargin: $reading->safetyMargin(),
+            // A simulated fleet has no admin to tire out: cutting it off at
+            // ten would understate what the new account is worth.
+            maxMoves: $extraAccounts > 0 ? max(1, count($reading->demands)) : null,
         );
 
         $fillBefore = $this->fillPercentages($plan['fill_before'], $capacities);
@@ -59,6 +70,8 @@ final class AccountRebalanceRecommender
             'unplaced_tokens' => (float) array_sum($plan['overflow']),
             'safety_margin_percent' => (int) config('token_slayer.rebalance.safety_margin_percent'),
             'window_label' => $reading->window->label(),
+            'simulated_accounts' => max(0, $extraAccounts),
+            'capacity_tokens' => (float) array_sum($capacities),
         ];
     }
 
@@ -134,7 +147,7 @@ final class AccountRebalanceRecommender
      * @param  array<int, float>  $fillAfter  account id => percentage of capacity, after
      * @param  array<int, int>  $current  user id => account id today
      * @param  array<int, int>  $assignment  user id => account id under the plan
-     * @return array<int, array{id: int, email: string, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>
+     * @return array<int, array{id: int, email: string, is_new: bool, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>
      */
     private function accountSummaries(
         Collection $accounts,
@@ -149,6 +162,23 @@ final class AccountRebalanceRecommender
 
         $summaries = [];
 
+        foreach ($capacities as $accountId => $capacity) {
+            if ($accountId >= 0) {
+                continue;
+            }
+
+            $summaries[$accountId] = [
+                'id' => $accountId,
+                'email' => 'New account '.abs($accountId),
+                'is_new' => true,
+                'capacity_tokens' => $capacity,
+                'fill_before_percent' => 0.0,
+                'fill_after_percent' => $fillAfter[$accountId] ?? 0.0,
+                'members_before' => 0,
+                'members_after' => $after[$accountId] ?? 0,
+            ];
+        }
+
         foreach ($accounts as $account) {
             if (! array_key_exists($account->id, $capacities)) {
                 continue; // nothing measurable to report about it yet
@@ -156,6 +186,7 @@ final class AccountRebalanceRecommender
 
             $summaries[$account->id] = [
                 'id' => $account->id,
+                'is_new' => false,
                 'email' => (string) $account->email,
                 'capacity_tokens' => $capacities[$account->id],
                 'fill_before_percent' => $fillBefore[$account->id] ?? 0.0,
