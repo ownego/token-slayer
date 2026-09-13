@@ -120,7 +120,7 @@
                             @if ($figures['accounts_needed'] === 0)
                                 <x-filament::badge color="success">Fits — no new account needed</x-filament::badge>
                             @else
-                                <x-filament::badge color="warning">{{ $figures['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $figures['accounts_needed']) }} to stay under {{ 100 - $capacity['safety_margin_percent'] }}%</x-filament::badge>
+                                <x-filament::badge color="warning">At least {{ $figures['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $figures['accounts_needed']) }} to stay under {{ 100 - $capacity['safety_margin_percent'] }}%</x-filament::badge>
                             @endif
                         </div>
                         <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">{{ $blurb }}</div>
@@ -136,7 +136,9 @@
                     @endforeach
                 </select>
                 <span style="opacity:.6;">
-                    assuming each is worth {{ number_format($capacity['assumed_capacity_tokens']) }} tokens/week, like a middling account here today
+                    assuming each is worth {{ number_format($capacity['assumed_capacity_tokens']) }} tokens/week, like a middling account here today.
+                    This is the figure to trust over the badges above: they divide totals, which cannot account for a
+                    person being indivisible, so they read low.
                 </span>
             </div>
 
