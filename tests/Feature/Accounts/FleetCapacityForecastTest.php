@@ -54,18 +54,39 @@ it('separates a fleet that fits on an average week from one that fits at its pea
 
     $forecast = app(FleetCapacityForecast::class)->forecast(RebalanceWindow::days(30));
 
-    // The distinction the whole feature turns on: buying capacity for the
-    // worst case means buying for a week in which every single person
-    // simultaneously has their heaviest week, which is not the week the
-    // fleet actually lives in.
-    // Percentages are of full capacity, the same denominator as every other
-    // fill on the page. The account count is what it takes to get back under
-    // the 80% planning target, which is why the worst case needs one more
-    // even at 90%.
-    expect(round($forecast['typical']['percent'], 1))->toBe(21.0)
-        ->and($forecast['typical']['accounts_needed'])->toBe(0)
-        ->and(round($forecast['worst_case']['percent'], 1))->toBe(90.0)
-        ->and($forecast['worst_case']['accounts_needed'])->toBe(1);
+    // Both members really did peak in the same week here, so the model and
+    // the observation agree at 90% of a 777,778 capacity. What the test
+    // pins is which one the verdict is taken FROM: on a real fleet the model
+    // reads far heavier than anything that has ever happened, and sizing off
+    // it buys accounts to fix a distribution problem.
+    expect(round($forecast['observed']['fleet_peak_percent'], 1))->toBe(90.0)
+        ->and($forecast['observed']['accounts_over_capacity'])->toBe(0)
+        ->and($forecast['observed']['accounts_needed'])->toBe(1)
+        ->and(round($forecast['worst_case']['percent'], 1))->toBe(90.0);
+
+    Carbon::setTestNow();
+});
+
+it('sizes off the fleet\'s own busiest week even when the model reads far heavier', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    ['account' => $account] = strainedFleet();
+
+    // A third member whose heavy week was a fortnight earlier. The model adds
+    // their peak to the other two as though all three coincided; the fleet's
+    // own busiest week never held more than two of them.
+    $earlier = User::factory()->create();
+    foreach (range(1, 7) as $offset) {
+        Event::factory()->for($account)->for($earlier)->create([
+            'tokens' => 60_000,
+            'created_at' => Carbon::parse('2026-08-21 12:00:00')->addDays($offset),
+        ]);
+    }
+    $account->users()->syncWithoutDetaching([$earlier->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    $forecast = app(FleetCapacityForecast::class)->forecast(RebalanceWindow::days(30));
+
+    expect($forecast['observed']['fleet_peak_tokens'])->toBe(700_000.0)
+        ->and($forecast['worst_case']['percent'])->toBeGreaterThan($forecast['observed']['fleet_peak_percent']);
 
     Carbon::setTestNow();
 });

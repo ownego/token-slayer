@@ -15,8 +15,9 @@
                 members hit their heaviest week at once. That is what an arrangement has to survive, so it is
                 normally well above 100%
                 @if (! empty($capacity))
-                    — on a typical week this fleet runs at {{ number_format($capacity['typical']['percent'], 0) }}%.
-                    See <strong>Fleet sizing</strong> below.
+                    and above what any account has really carried — the heaviest week this fleet actually had put it
+                    at {{ number_format($capacity['observed']['fleet_peak_percent'], 0) }}%. See
+                    <strong>Fleet sizing</strong> below for the difference.
                 @endif
                 People are placed to {{ 100 - ($summary['safety_margin_percent'] ?? 0) }}% of each account's capacity,
                 leaving the rest as slack.
@@ -101,31 +102,67 @@
 
     @if ($computed && ! empty($capacity))
         <x-filament::section heading="Fleet sizing" style="margin-top:1.5rem;">
-            <p style="font-size:.85rem; opacity:.7;">
-                Two different questions, two different answers. Sizing for the worst case buys enough for a week in
-                which every person's heaviest week lands at once — which is not the week the fleet usually lives in.
+            @php($seen = $capacity['observed'])
+            @php($crowded = $seen['accounts_over_capacity'] > 0 && $seen['fleet_peak_percent'] <= 100)
+
+            <p style="font-size:.85rem;">
+                @if ($crowded)
+                    <strong>The fleet is not short of tokens — they are in the wrong accounts.</strong>
+                    At its busiest the whole fleet reached
+                    <strong>{{ number_format($seen['fleet_peak_percent'], 0) }}%</strong> of its capacity, yet
+                    <strong>{{ $seen['accounts_over_capacity'] }} of {{ $seen['accounts_measured'] }}</strong>
+                    accounts individually blew past 100% — that is what makes an account die mid-week while another
+                    idles. Rebalancing is the fix for that; buying accounts is not.
+                @elseif ($seen['fleet_peak_percent'] > 100)
+                    <strong>The fleet really is short of tokens.</strong> At its busiest it needed
+                    <strong>{{ number_format($seen['fleet_peak_percent'], 0) }}%</strong> of everything it has, so no
+                    arrangement of people can cover that week.
+                @else
+                    The fleet peaked at <strong>{{ number_format($seen['fleet_peak_percent'], 0) }}%</strong> of its
+                    capacity and no account exceeded its own. Nothing here needs buying.
+                @endif
             </p>
 
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:1rem; margin-top:1rem;">
-                @foreach ([['A typical week', $capacity['typical'], 'What the fleet normally gets through.'], ['The worst case', $capacity['worst_case'], "Everyone's heaviest week, all in the same week."]] as [$label, $figures, $blurb])
-                    <div style="border:1px solid rgba(120,120,140,.2); border-radius:.5rem; padding:.75rem 1rem;">
-                        <div style="opacity:.6; font-size:.75rem;">{{ $label }}</div>
-                        <div style="font-size:1.75rem; font-weight:600; line-height:1.2; color:{{ $figures['percent'] > 100 ? 'var(--danger-500, #dc2626)' : 'inherit' }};">
-                            {{ number_format($figures['percent'], 0) }}%
-                        </div>
-                        <div style="font-size:.8rem; opacity:.7;">
-                            {{ number_format($figures['tokens']) }} tokens/week of {{ number_format($capacity['capacity_tokens']) }} capacity
-                        </div>
-                        <div style="font-size:.85rem; margin-top:.5rem;">
-                            @if ($figures['accounts_needed'] === 0)
-                                <x-filament::badge color="success">Fits — no new account needed</x-filament::badge>
-                            @else
-                                <x-filament::badge color="warning">At least {{ $figures['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $figures['accounts_needed']) }} to stay under {{ 100 - $capacity['safety_margin_percent'] }}%</x-filament::badge>
-                            @endif
-                        </div>
-                        <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">{{ $blurb }}</div>
+                <div style="border:1px solid rgba(120,120,140,.2); border-radius:.5rem; padding:.75rem 1rem;">
+                    <div style="opacity:.6; font-size:.75rem;">Busiest week that actually happened</div>
+                    <div style="font-size:1.75rem; font-weight:600; line-height:1.2; color:{{ $seen['fleet_peak_percent'] > 100 ? 'var(--danger-500, #dc2626)' : 'inherit' }};">
+                        {{ number_format($seen['fleet_peak_percent'], 0) }}%
                     </div>
-                @endforeach
+                    <div style="font-size:.8rem; opacity:.7;">
+                        {{ number_format($seen['fleet_peak_tokens']) }} tokens/week of {{ number_format($capacity['capacity_tokens']) }} capacity
+                        · median week {{ number_format($seen['fleet_median_percent'], 0) }}%
+                    </div>
+                    <div style="font-size:.85rem; margin-top:.5rem;">
+                        @if ($seen['accounts_needed'] === 0)
+                            <x-filament::badge color="success">Enough capacity — no new account needed</x-filament::badge>
+                        @else
+                            <x-filament::badge color="warning">At least {{ $seen['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $seen['accounts_needed']) }} to stay under {{ 100 - $capacity['safety_margin_percent'] }}%</x-filament::badge>
+                        @endif
+                    </div>
+                    <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">
+                        Read off the event ledger over {{ $capacity['window_label'] }}. No model — this is the week
+                        the team lived through.
+                    </div>
+                </div>
+
+                <div style="border:1px solid rgba(120,120,140,.2); border-radius:.5rem; padding:.75rem 1rem;">
+                    <div style="opacity:.6; font-size:.75rem;">If every person peaked in the same week</div>
+                    <div style="font-size:1.75rem; font-weight:600; line-height:1.2; opacity:.75;">
+                        {{ number_format($capacity['worst_case']['percent'], 0) }}%
+                    </div>
+                    <div style="font-size:.8rem; opacity:.7;">
+                        {{ number_format($capacity['worst_case']['tokens']) }} tokens/week
+                    </div>
+                    <div style="font-size:.85rem; margin-top:.5rem;">
+                        <x-filament::badge color="gray">Upper bound, not a forecast</x-filament::badge>
+                    </div>
+                    <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">
+                        Everyone's own heaviest week added together. Those peaks have never all landed at once — the
+                        busiest real week was {{ number_format($seen['fleet_peak_percent'], 0) }}% — so this over-reads
+                        the fleet. It is what the arrangement above is planned against, deliberately.
+                    </div>
+                </div>
             </div>
 
             <div style="display:flex; align-items:center; gap:.75rem; font-size:.85rem; flex-wrap:wrap; margin-top:1.25rem;">
@@ -215,16 +252,21 @@
                         <tr style="text-align:left; opacity:.6;">
                             <th style="padding:.4rem .6rem;">Account</th>
                             <th style="padding:.4rem .6rem;">Measured capacity / week</th>
+                            <th style="padding:.4rem .6rem;">Actually peaked at</th>
                             <th style="padding:.4rem .6rem;">Worst-case load</th>
                             <th style="padding:.4rem .6rem;">Members</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($accounts as $account)
+                            @php($peak = $capacity['observed']['per_account'][$account['id']]['peak_percent'] ?? null)
                             <tr style="border-top:1px solid rgba(120,120,140,.15);">
                                 <td style="padding:.4rem .6rem; font-family:monospace;">{{ $account['email'] }}</td>
                                 <td style="padding:.4rem .6rem;">{{ number_format($account['capacity_tokens']) }} tokens</td>
-                                <td style="padding:.4rem .6rem;">
+                                <td style="padding:.4rem .6rem; {{ $peak !== null && $peak > 100 ? 'color:var(--danger-500, #dc2626); font-weight:600;' : '' }}">
+                                    {{ $peak === null ? '—' : number_format($peak, 0) . '%' }}
+                                </td>
+                                <td style="padding:.4rem .6rem; opacity:.75;">
                                     {{ number_format($account['fill_before_percent'], 0) }}% → {{ number_format($account['fill_after_percent'], 0) }}%
                                 </td>
                                 <td style="padding:.4rem .6rem;">
@@ -238,6 +280,10 @@
             <p style="opacity:.6; font-size:.75rem; margin-top:.5rem;">
                 Capacity is measured from closed quota windows over {{ $summary['window_label'] ?? '' }}: the tokens an
                 account consumed in a window, scaled up by the highest utilisation that consumption reached.
+                <br>
+                "Actually peaked at" is the heaviest seven days this account really carried. It runs lower than the
+                worst case beside it because the heavy users already spill onto a second account once the first runs
+                dry — so their whole week never lands on one account, even though a plan has to assume it could.
             </p>
         </x-filament::section>
     @endif

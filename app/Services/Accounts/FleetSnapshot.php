@@ -52,7 +52,6 @@ final class FleetSnapshot
         $weights = $this->demand->quotaWeights($accounts, $window);
 
         $demands = [];
-        $typicalDemands = [];
         $burstFactors = [];
         $details = [];
 
@@ -70,7 +69,6 @@ final class FleetSnapshot
             }
 
             $demands[$userId] = $weekly;
-            $typicalDemands[$userId] = $measured['trailing_avg_per_day'] * 7 * $weight;
             $burstFactors[$userId] = $this->demand->burstFactor($user, $window);
             $details[$userId] = $measured + ['quota_weight' => $weight];
         }
@@ -80,7 +78,6 @@ final class FleetSnapshot
             capacities: $capacities,
             current: array_intersect_key($current, $demands),
             demands: $demands,
-            typicalDemands: $typicalDemands,
             burstFactors: $burstFactors,
             details: $details,
             window: $window,

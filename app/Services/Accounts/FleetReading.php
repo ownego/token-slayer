@@ -20,7 +20,6 @@ final readonly class FleetReading
      * @param  array<int, float>  $capacities  account id => weekly capacity in tokens, measurable accounts only
      * @param  array<int, int>  $current  user id => the account they sit on today
      * @param  array<int, float>  $demands  user id => quota-weighted heaviest week in tokens
-     * @param  array<int, float>  $typicalDemands  user id => quota-weighted average week in tokens
      * @param  array<int, float>  $burstFactors  user id => busiest hour over mean hour
      * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_week_tokens: float, basis: string, days_of_history: int, quota_weight: float}>  $details  user id => the workings behind their demand
      * @param  RebalanceWindow  $window  the range every figure above was read over
@@ -30,7 +29,6 @@ final readonly class FleetReading
         public array $capacities,
         public array $current,
         public array $demands,
-        public array $typicalDemands,
         public array $burstFactors,
         public array $details,
         public RebalanceWindow $window,

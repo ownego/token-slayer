@@ -8,23 +8,28 @@ use App\Models\User;
  * Answers the question rebalancing cannot: is there simply not enough fleet,
  * and if we bought another account, who would end up on it?
  *
- * It reports two demands rather than one, because they lead to very
- * different purchases. The worst case — every person's heaviest week landing
- * in the same week — is what an account has to survive to never throttle
- * anyone; the typical case is the week the fleet actually lives in. On the
- * real fleet those differ by a factor of nearly two, and quoting only the
- * worst case would have recommended buying five accounts the team does not
- * need.
+ * The sizing verdict is taken from what the fleet ACTUALLY got through in
+ * its heaviest week, not from the demand model. The model sums each person's
+ * own heaviest week as though those peaks all landed together; on the real
+ * fleet that reads 131% of capacity while the heaviest week that has ever
+ * happened was 97%. Sizing off the model would have recommended buying five
+ * accounts to fix a fleet that has never once run out of tokens in
+ * aggregate — its problem is that they sit in the wrong accounts, which is
+ * what rebalancing is for.
+ *
+ * The model's figure is still reported, as the upper bound it is.
  */
 final class FleetCapacityForecast
 {
     /**
      * @param  FleetSnapshot  $snapshot  reads the fleet's capacities, memberships and demands
      * @param  RebalancePlanner  $planner  works out where people would sit given a set of accounts
+     * @param  ObservedFleetLoad  $observed  reads what the fleet actually did, so the model can be checked against it
      */
     public function __construct(
         private readonly FleetSnapshot $snapshot,
         private readonly RebalancePlanner $planner,
+        private readonly ObservedFleetLoad $observed,
     ) {}
 
     /**
@@ -33,7 +38,7 @@ final class FleetCapacityForecast
      * @param  RebalanceWindow|null  $window  how far back to read, defaulting to the configured trend window
      * @param  int  $extraAccounts  how many hypothetical accounts to add
      * @param  FleetReading|null  $reading  a reading already taken over that window, so a page showing both this and the rebalance table measures the fleet once
-     * @return array{assumed_capacity_tokens: float, capacity_tokens: float, usable_tokens: float, safety_margin_percent: int, window_label: string, typical: array{tokens: float, percent: float, accounts_needed: int}, worst_case: array{tokens: float, percent: float, accounts_needed: int}, projection: array{extra_accounts: int, peak_fill_percent: float, overflow_tokens: float, accounts: array<int, array{label: string, is_new: bool, capacity_tokens: float, fill_percent: float, members: int}>, arrivals: array<int, array{user_id: int, user_label: string, account_label: string, weekly_tokens: float}>}|null}
+     * @return array{assumed_capacity_tokens: float, capacity_tokens: float, usable_tokens: float, safety_margin_percent: int, window_label: string, observed: array<string, mixed>, worst_case: array{tokens: float, percent: float, accounts_needed: int}, projection: array{extra_accounts: int, peak_fill_percent: float, overflow_tokens: float, accounts: array<int, array{label: string, is_new: bool, capacity_tokens: float, fill_percent: float, members: int}>, arrivals: array<int, array{user_id: int, user_label: string, account_label: string, weekly_tokens: float}>}|null}
      */
     public function forecast(?RebalanceWindow $window = null, int $extraAccounts = 0, ?FleetReading $reading = null): array
     {
@@ -41,8 +46,10 @@ final class FleetCapacityForecast
 
         $capacity = (float) array_sum($reading->capacities);
         $median = $reading->medianCapacity();
-        $worstCase = array_sum($reading->demands);
-        $typical = array_sum($reading->typicalDemands);
+        $margin = $reading->safetyMargin();
+
+        $observed = $this->observed->measure($reading->accounts, $reading->capacities, $reading->window);
+        $observed['accounts_needed'] = $this->sizing($observed['fleet_peak_tokens'], $capacity, $median, $margin)['accounts_needed'];
 
         return [
             'assumed_capacity_tokens' => $median,
@@ -50,8 +57,8 @@ final class FleetCapacityForecast
             'usable_tokens' => $reading->usableTokens(),
             'safety_margin_percent' => (int) config('token_slayer.rebalance.safety_margin_percent'),
             'window_label' => $reading->window->label(),
-            'typical' => $this->sizing($typical, $capacity, $median, $reading->safetyMargin()),
-            'worst_case' => $this->sizing($worstCase, $capacity, $median, $reading->safetyMargin()),
+            'observed' => $observed,
+            'worst_case' => $this->sizing(array_sum($reading->demands), $capacity, $median, $margin),
             'projection' => $extraAccounts > 0 ? $this->project($reading, $extraAccounts) : null,
         ];
     }

@@ -113,7 +113,7 @@ it('says on the rebalance table itself that its percentages are the worst case',
         ->mountAction('recommend')
         ->callMountedAction()
         ->assertSee('worst case')
-        ->assertSee('on a typical week this fleet runs at');
+        ->assertSee('the heaviest week this fleet actually had');
 
     Carbon::setTestNow();
 });
@@ -129,7 +129,7 @@ it('sizes the fleet both ways, so a capacity decision is not made on the worst c
         ->callMountedAction();
 
     expect($component->get('capacity'))
-        ->toHaveKeys(['typical', 'worst_case', 'assumed_capacity_tokens'])
+        ->toHaveKeys(['observed', 'worst_case', 'assumed_capacity_tokens'])
         ->and($component->get('capacity')['projection'])->toBeNull();
 
     // Asking for one more account produces a projection of where people
