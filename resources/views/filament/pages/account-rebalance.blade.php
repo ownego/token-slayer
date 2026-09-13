@@ -19,20 +19,25 @@
         </div>
 
         @if ($computed)
-            <p style="margin-top:.5rem; font-size:.8rem; opacity:.6;">
-                Every percentage here is <strong>worst case</strong>: what an account would carry if all of its
-                members hit their heaviest week at once. That is what an arrangement has to survive, so it is
-                normally well above 100%
-                @if (! empty($capacity))
-                    and above what any account has really carried — the heaviest week this fleet actually had put it
-                    at {{ number_format($capacity['observed']['fleet_peak_percent'], 0) }}%. See
-                    <strong>Fleet sizing</strong> below for the difference.
-                @endif
-                People are placed to {{ 100 - ($summary['safety_margin_percent'] ?? 0) }}% of each account's capacity,
-                leaving the rest as slack, and no account is planned above
-                {{ config('token_slayer.rebalance.members_per_account') }} members — a crowded account can have
-                everyone working the same hour, which is what trips a 5-hour window regardless of the weekly total.
-            </p>
+            <ul style="margin-top:.75rem; font-size:.8rem; opacity:.7; list-style:none; padding-left:0; display:flex; flex-direction:column; gap:.35rem;">
+                <li>
+                    <strong>Every percentage is worst case</strong> — what an account would carry if all of its members
+                    hit their heaviest week at once.
+                    @if (! empty($capacity))
+                        Normally well above 100%; the heaviest week this fleet really had was
+                        {{ number_format($capacity['observed']['fleet_peak_percent'], 0) }}%.
+                    @endif
+                </li>
+                <li>
+                    <strong>Planned to {{ 100 - ($summary['safety_margin_percent'] ?? 0) }}% of capacity</strong> —
+                    the rest is left as slack.
+                </li>
+                <li>
+                    <strong>No more than {{ config('token_slayer.rebalance.members_per_account') }} members per
+                    account</strong> — a crowded account can have everyone working the same hour, which is what trips a
+                    5-hour window whatever the weekly total says.
+                </li>
+            </ul>
         @endif
 
         @if (! $computed)
@@ -43,36 +48,71 @@
                 reassignment can make it (fullest account: {{ number_format($summary['peak_fill_before_percent'], 1) }}% worst case).
             </p>
         @else
+            @php($before = $summary['peak_fill_before_percent'])
+            @php($after = $summary['peak_fill_after_percent'])
             <p style="margin-top:.75rem; font-size:.85rem;">
-                Fullest account goes from
-                <strong>{{ number_format($summary['peak_fill_before_percent'], 1) }}%</strong>
-                to
-                <strong>{{ number_format($summary['peak_fill_after_percent'], 1) }}%</strong>
-                if every move below is applied. Accounts converge rather than all drop: the load has to go
-                somewhere, and levelling it is what stops one account burning out days before the others.
+                Apply every move below and the fullest account goes from
+                <strong>{{ number_format($before, 1) }}%</strong> to
+                <strong>{{ number_format($after, 1) }}%</strong>
+                @if ($before > 100)
+                    — from running out after <strong>{{ number_format(700 / $before, 1) }} days</strong>
+                    @if ($after > 100)
+                        to running out after <strong>{{ number_format(700 / $after, 1) }} days</strong>.
+                    @else
+                        to lasting the whole week.
+                    @endif
+                @endif
+            </p>
+            <p style="margin-top:.35rem; font-size:.8rem; opacity:.6;">
+                Accounts converge rather than all drop: the load has to go somewhere, and levelling it is what stops
+                one account burning out days before the others.
             </p>
 
             @if (($summary['simulated_accounts'] ?? 0) > 0 && ! empty($capacity))
+                @php($extra = $summary['simulated_accounts'])
                 @php($need = $capacity['unconstrained']['tokens'])
                 @php($grown = $summary['capacity_tokens'])
                 @php($short = max(0, $need - $grown))
-                <p style="margin-top:.5rem; font-size:.85rem; border-left:3px solid rgba(120,120,140,.35); padding-left:.75rem;">
-                    <strong>Planning with {{ $summary['simulated_accounts'] }} more
-                    {{ \Illuminate\Support\Str::plural('account', $summary['simulated_accounts']) }}.</strong>
-                    Capacity would be {{ number_format($grown) }} tokens/week against the
-                    {{ number_format($need) }} the fleet actually needed unthrottled —
-                    @if ($short > 0)
-                        still <strong>{{ number_format($short) }} short</strong>, so some people would keep hitting a
-                        ceiling. {{ $capacity['unconstrained']['accounts_to_fit'] }} would cover it,
-                        {{ $capacity['unconstrained']['accounts_needed'] }} would cover it with the
-                        {{ $capacity['safety_margin_percent'] }}% slack intact.
-                    @else
-                        <strong>enough to stop anyone being throttled.</strong>
-                        {{ $capacity['unconstrained']['accounts_needed'] }} in total would also keep the
-                        {{ $capacity['safety_margin_percent'] }}% slack intact.
-                    @endif
-                    The rows below include the moves onto it; those cannot be run until the account is connected.
-                </p>
+                @php($without = $summary['peak_without_extra_percent'])
+
+                <div style="margin-top:.75rem; font-size:.85rem; border-left:3px solid rgba(120,120,140,.35); padding-left:.85rem;">
+                    <div style="font-weight:600; margin-bottom:.4rem;">
+                        What buying {{ $extra }} more {{ \Illuminate\Support\Str::plural('account', $extra) }} would change
+                    </div>
+                    <ul style="list-style:none; padding-left:0; display:flex; flex-direction:column; gap:.3rem;">
+                        <li>
+                            <strong>Fullest account {{ number_format($after, 0) }}%</strong>, against
+                            {{ number_format($without, 0) }}% from rebalancing alone
+                            @if ($without > 100 && $after > 100)
+                                — {{ number_format(700 / $after, 1) }} days before it runs out instead of
+                                {{ number_format(700 / $without, 1) }}.
+                            @elseif ($after <= 100)
+                                — it would last the whole week.
+                            @endif
+                        </li>
+                        <li>
+                            <strong>{{ $summary['arrivals'] }}
+                            {{ \Illuminate\Support\Str::plural('person', $summary['arrivals']) }}</strong> would move
+                            onto {{ $extra === 1 ? 'it' : 'them' }}, marked below.
+                        </li>
+                        <li>
+                            <strong>Capacity {{ number_format($capacity['capacity_tokens']) }} →
+                            {{ number_format($grown) }}</strong> tokens/week, against the
+                            {{ number_format($need) }} the fleet actually needed unthrottled —
+                            @if ($short > 0)
+                                <strong style="color:var(--danger-500, #dc2626);">still {{ number_format($short) }} short</strong>,
+                                so some people would keep hitting a ceiling.
+                            @else
+                                <strong>enough that nobody would be throttled.</strong>
+                            @endif
+                        </li>
+                        <li style="opacity:.7;">
+                            {{ $capacity['unconstrained']['accounts_to_fit'] }} in total covers the need;
+                            {{ $capacity['unconstrained']['accounts_needed'] }} covers it with the
+                            {{ $capacity['safety_margin_percent'] }}% slack intact.
+                        </li>
+                    </ul>
+                </div>
             @endif
 
             <div style="overflow-x:auto; margin-top:.75rem;">
@@ -152,14 +192,16 @@
                 @if ($free['accounts_saturated'] > 0)
                     <strong>{{ $free['accounts_saturated'] }} of {{ $seen['accounts_measured'] }} accounts ran out
                     mid-week and rationed their own users.</strong>
-                    What the fleet spent therefore understates what it needed: it got through
-                    {{ number_format($seen['fleet_peak_percent'], 0) }}% of its capacity, but the rate those accounts
-                    were burning at before they hit the ceiling was heading for
+                    <br>
+                    The fleet got through {{ number_format($seen['fleet_peak_percent'], 0) }}% of its capacity — but
+                    that is what people were <em>allowed</em> to spend, not what they wanted. Before those accounts hit
+                    the ceiling they were burning at a rate heading for
                     <strong>{{ number_format($free['percent'], 0) }}%</strong>.
+                    <br>
                     @if ($free['accounts_needed'] > 0)
-                        Covering that needs about {{ $free['accounts_needed'] }} more
-                        {{ \Illuminate\Support\Str::plural('account', $free['accounts_needed']) }} — rebalancing
-                        alone will not create tokens that were never there.
+                        Covering that needs about <strong>{{ $free['accounts_needed'] }} more
+                        {{ \Illuminate\Support\Str::plural('account', $free['accounts_needed']) }}</strong> —
+                        rebalancing alone will not create tokens that were never there.
                     @else
                         The fleet can still cover that once the load is spread properly, so rebalancing is the fix.
                     @endif
@@ -283,15 +325,21 @@
                     </tbody>
                 </table>
             </div>
-            <p style="opacity:.6; font-size:.75rem; margin-top:.5rem;">
-                Capacity is measured from closed quota windows over {{ $summary['window_label'] ?? '' }}: the tokens an
-                account consumed in a window, scaled up by the highest utilisation that consumption reached.
-                <br>
-                "Actually peaked at" is the heaviest seven days this account really carried. It runs lower than the
-                worst case beside it because its members' own heaviest weeks fell in different weeks — adding them up
-                describes a week that has not happened. A plan still has to assume it could, which is why the moves are
-                decided on the higher figure.
-            </p>
+            <ul style="opacity:.6; font-size:.75rem; margin-top:.75rem; list-style:none; padding-left:0; display:flex; flex-direction:column; gap:.35rem;">
+                <li>
+                    <strong>Measured capacity</strong> — from closed quota windows over
+                    {{ $summary['window_label'] ?? '' }}: the tokens an account consumed in a window, scaled up by the
+                    highest utilisation that consumption reached.
+                </li>
+                <li>
+                    <strong>Actually peaked at</strong> — the heaviest seven days this account really carried.
+                </li>
+                <li>
+                    <strong>Why the worst case is higher</strong> — its members' own heaviest weeks fell in different
+                    weeks, so adding them up describes a week that has not happened. A plan still has to assume it
+                    could, which is why the moves are decided on the higher figure.
+                </li>
+            </ul>
         </x-filament::section>
     @endif
 

@@ -113,7 +113,7 @@ it('says on the rebalance table itself that its percentages are the worst case',
         ->mountAction('recommend')
         ->callMountedAction()
         ->assertSee('worst case')
-        ->assertSee('the heaviest week this fleet actually had');
+        ->assertSee('the heaviest week this fleet really had was');
 
     Carbon::setTestNow();
 });

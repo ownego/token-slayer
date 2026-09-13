@@ -205,8 +205,17 @@ class AccountRebalance extends Page
         $reading = app(FleetSnapshot::class)->take($window);
 
         $extra = max(0, $this->extraAccounts);
-        $result = app(AccountRebalanceRecommender::class)->recommend($window, $reading, $extra);
+        $recommender = app(AccountRebalanceRecommender::class);
+        $result = $recommender->recommend($window, $reading, $extra);
         $this->capacity = app(FleetCapacityForecast::class)->forecast($window, $reading);
+
+        // What the same fleet reaches WITHOUT the extra account. Planning is
+        // cheap once the reading is taken, and without this the simulation
+        // cannot say what buying anything actually buys — only where it
+        // lands, which is the half of the answer nobody is asking for.
+        $withoutExtra = $extra > 0
+            ? $recommender->recommend($window, $reading)['peak_fill_after_percent']
+            : null;
 
         $this->accounts = $result['accounts'];
         $this->moves = array_map(
@@ -221,6 +230,8 @@ class AccountRebalance extends Page
             'window_label' => $result['window_label'],
             'simulated_accounts' => $result['simulated_accounts'],
             'capacity_tokens' => $result['capacity_tokens'],
+            'peak_without_extra_percent' => $withoutExtra,
+            'arrivals' => count(array_filter($this->moves, fn (array $move): bool => $move['toAccountIsNew'])),
         ];
         $this->computed = true;
     }
