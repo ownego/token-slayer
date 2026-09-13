@@ -44,6 +44,58 @@ it('recommends moving the heaviest contributor off an overflowing account onto o
     Carbon::setTestNow();
 });
 
+it('accumulates the target account\'s projected util across multiple moves onto it, not the stale original', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $resetAt = now()->addDays(4);
+
+    // target: single event, so tokensPerPercent = 100,000 / 5 = 20,000;
+    // rate = 5 (= util_7d). projected = 5 + 5*4 = 25. headroom =
+    // (100 - 25) * 20,000 = 1,500,000 -- big enough to absorb both moves
+    // below without running out itself.
+    $target = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($target)->create(['util_7d' => 5, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
+    Event::factory()->for($target)->for(User::factory())->create(['tokens' => 100_000, 'created_at' => now()->subDay()]);
+
+    // accountA: tokensPerPercent = 40,000 / 25 = 1,600; rate = 25.
+    // projected = 25 + 25*4 = 125. overflow = (125 - 100) * 1,600 = 40,000.
+    $accountA = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($accountA)->create(['util_7d' => 25, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
+    $userA = User::factory()->create();
+    Event::factory()->for($accountA)->for($userA)->create(['tokens' => 40_000, 'created_at' => now()->subDay()]);
+    $accountA->users()->syncWithoutDetaching([$userA->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    // accountB: tokensPerPercent = 22,000 / 22 = 1,000; rate = 22.
+    // projected = 22 + 22*4 = 110. overflow = (110 - 100) * 1,000 = 10,000.
+    // Smaller overflow than accountA, so accountA is processed first.
+    $accountB = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($accountB)->create(['util_7d' => 22, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
+    $userB = User::factory()->create();
+    Event::factory()->for($accountB)->for($userB)->create(['tokens' => 22_000, 'created_at' => now()->subDay()]);
+    $accountB->users()->syncWithoutDetaching([$userB->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    $result = app(AccountRebalanceRecommender::class)->recommend();
+
+    expect($result['moves'])->toHaveCount(2);
+    [$moveA, $moveB] = $result['moves'];
+
+    // accountA's move: target starts at its true baseline, 25%.
+    expect($moveA->fromAccountId)->toBe($accountA->id)
+        ->and($moveA->toAccountId)->toBe($target->id)
+        ->and($moveA->toProjectedBefore)->toBe(25)
+        // +round(40,000 / 20,000) = +2
+        ->and($moveA->toProjectedAfter)->toBe(27);
+
+    // accountB's move onto the SAME target: before must reflect accountA's
+    // move having already landed (27), not the stale original (25).
+    expect($moveB->fromAccountId)->toBe($accountB->id)
+        ->and($moveB->toAccountId)->toBe($target->id)
+        ->and($moveB->toProjectedBefore)->toBe(27)
+        // +round(22,000 / 20,000) = +1
+        ->and($moveB->toProjectedAfter)->toBe(28);
+
+    Carbon::setTestNow();
+});
+
 it('reports unresolved overflow when no account has enough headroom to absorb it', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
 

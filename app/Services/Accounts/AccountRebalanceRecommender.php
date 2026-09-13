@@ -67,18 +67,28 @@ final class AccountRebalanceRecommender
             }
             $targetAccount = $accounts->firstWhere('id', $targetId);
 
+            $fromProjectedAfter = max(0, $projected[$fromAccountId] - $this->percentEquivalent($demandTokens, $fromAccount));
+            $toProjectedAfter = $projected[$targetId] + $this->percentEquivalent($demandTokens, $targetAccount);
+
             $moves[] = new RebalanceRecommendation(
                 userId: $heaviestUser->id,
                 fromAccountId: $fromAccountId,
                 toAccountId: $targetId,
                 fromProjectedBefore: $projected[$fromAccountId],
-                fromProjectedAfter: max(0, $projected[$fromAccountId] - $this->percentEquivalent($demandTokens, $fromAccount)),
+                fromProjectedAfter: $fromProjectedAfter,
                 toProjectedBefore: $projected[$targetId],
-                toProjectedAfter: $projected[$targetId] + $this->percentEquivalent($demandTokens, $targetAccount),
+                toProjectedAfter: $toProjectedAfter,
                 demandTokensPerDay: $userDemand['tokensPerDay'],
                 demandBasis: $userDemand['basis'],
                 confident: $this->isConfident($fromAccount) && $this->isConfident($targetAccount),
             );
+
+            // Carry the after-move projections forward: a later iteration
+            // targeting the same account (or, in principle, re-reading a
+            // source already visited) must see this move's effect, not the
+            // stale pre-move snapshot taken before the loop started.
+            $projected[$fromAccountId] = $fromProjectedAfter;
+            $projected[$targetId] = $toProjectedAfter;
 
             $headroom[$targetId] = max(0.0, $headroom[$targetId] - $demandTokens);
             $overflow[$fromAccountId] = max(0.0, $overflow[$fromAccountId] - $demandTokens);
