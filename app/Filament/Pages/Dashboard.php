@@ -15,9 +15,10 @@ use Illuminate\Support\HtmlString;
 
 /**
  * The admin panel home dashboard, extended with a shared filter form: a time
- * range (today/this week/this month/all/custom, defaulting to this week) and a
- * "total across accounts" toggle. Filter-aware widgets — chiefly the Fleet
- * Quota member breakdown — read these via `InteractsWithPageFilters`.
+ * range (today/this week/this month/all/custom, defaulting to this week), a
+ * "total across accounts" toggle, and a "show untracked contributors"
+ * toggle. Filter-aware widgets — chiefly the Fleet Quota member breakdown —
+ * read these via `InteractsWithPageFilters`.
  */
 class Dashboard extends BaseDashboard
 {
@@ -56,6 +57,9 @@ class Dashboard extends BaseDashboard
                         '<span style="display:block"><strong>Off:</strong> usage attributed to this account only.</span>'
                         .'<span style="display:block"><strong>On:</strong> each member\'s full usage, including other accounts and private.</span>'
                     )),
+                Toggle::make('show_untracked')
+                    ->label('Show untracked contributors')
+                    ->helperText('Off by default -- an untracked contributor is noise for most views; turn this on to see them.'),
                 Select::make('token_mode')
                     ->label('Tokens')
                     ->options([

@@ -25,14 +25,45 @@ it('returns all-time contributors per account with status and tokens, sorted by 
 
     expect($byAccount)->toHaveKey($account->id);
 
+    // Untracked hidden by default -- only the tracked contributor shows.
     $members = $byAccount[$account->id];
+    expect($members)->toHaveCount(1)
+        ->and($members[0]['tokens'])->toBe(300)
+        ->and($members[0]['status'])->toBe(MembershipStatus::Tracked->value)
+        ->and($members[0]['handle'])->toBe('alpha');
+});
+
+it('reveals untracked contributors when includeUntracked is true', function () {
+    $account = Account::factory()->create();
+    $tracked = User::factory()->create(['slack_handle' => 'alpha']);
+    $untracked = User::factory()->create(['slack_handle' => 'beta']);
+
+    $account->users()->attach($tracked->id, ['status' => MembershipStatus::Tracked->value]);
+    $account->users()->attach($untracked->id, ['status' => MembershipStatus::Untracked->value]);
+
+    Event::factory()->for($tracked)->create(['account_id' => $account->id, 'tokens' => 300, 'created_at' => now()]);
+    Event::factory()->for($untracked)->create(['account_id' => $account->id, 'tokens' => 700, 'created_at' => now()->subMonths(6)]);
+
+    $members = app(AccountContributorsQuery::class)->get(includeUntracked: true)[$account->id];
 
     expect($members)->toHaveCount(2)
         ->and($members[0]['tokens'])->toBe(700)
         ->and($members[0]['status'])->toBe(MembershipStatus::Untracked->value)
         ->and($members[1]['tokens'])->toBe(300)
-        ->and($members[1]['status'])->toBe(MembershipStatus::Tracked->value)
-        ->and($members[1]['handle'])->toBe('alpha');
+        ->and($members[1]['status'])->toBe(MembershipStatus::Tracked->value);
+});
+
+it('lists a pending member with no attributed events yet, same as a tracked one', function () {
+    $account = Account::factory()->create();
+    $pending = User::factory()->create(['slack_handle' => 'newcomer']);
+    $account->users()->attach($pending->id, ['status' => MembershipStatus::Pending->value]);
+
+    $members = app(AccountContributorsQuery::class)->get()[$account->id];
+
+    expect($members)->toHaveCount(1)
+        ->and($members[0]['user_id'])->toBe($pending->id)
+        ->and($members[0]['status'])->toBe(MembershipStatus::Pending->value)
+        ->and($members[0]['tokens'])->toBe(0);
 });
 
 it('excludes events with no account and sums all-time regardless of when they occurred', function () {
