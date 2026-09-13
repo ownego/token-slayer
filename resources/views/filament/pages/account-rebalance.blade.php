@@ -71,6 +71,9 @@
             @if (count($applied) > 0)
                 <p style="margin-top:.5rem; font-size:.85rem;">
                     <strong>{{ count($applied) }} of {{ count($moves) }} done.</strong>
+                    @if ($computedAt)
+                        <span style="opacity:.6;">Planned {{ \Illuminate\Support\Carbon::parse($computedAt)->diffForHumans() }}.</span>
+                    @endif
                     @if (count($applied) >= count($moves))
                         This plan is finished — Recalculate to see whether anything further is worth doing.
                     @else

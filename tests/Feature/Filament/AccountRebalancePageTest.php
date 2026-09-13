@@ -263,3 +263,38 @@ it('ticks a completed move off without re-planning the rest', function () {
 
     Carbon::setTestNow();
 });
+
+it('keeps the plan and the ticks across a reload', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $admin = User::factory()->admin()->create();
+    lopsidedFleet();
+
+    fakeAnthropic();
+    $component = Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('recommend')
+        ->callMountedAction();
+    $planned = $component->get('moves');
+
+    $destination = Account::query()->find($planned[0]['toAccountId']);
+    $destination->email = 'ongtung2212002@gmail.com';
+    $destination->save();
+    $component->callAction('switchUser', data: ['code' => 'code#state'], arguments: [
+        'userId' => $planned[0]['userId'],
+        'fromAccountId' => $planned[0]['fromAccountId'],
+        'toAccountId' => $destination->id,
+        'index' => 0,
+    ]);
+
+    // Executing a plan is a browser round trip to Anthropic per move, so a
+    // reload part-way through is ordinary. Losing the plan to one costs the
+    // admin their place and hands back a differently shaped list.
+    $reloaded = Livewire::actingAs($admin)->test(AccountRebalance::class);
+
+    expect($reloaded->get('computed'))->toBeTrue()
+        ->and($reloaded->get('applied'))->toBe([0])
+        ->and(collect($reloaded->get('moves'))->pluck('userId')->all())
+        ->toBe(collect($planned)->pluck('userId')->all());
+
+    Carbon::setTestNow();
+});

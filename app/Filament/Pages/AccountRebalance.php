@@ -83,6 +83,26 @@ class AccountRebalance extends Page
     protected string $view = 'filament.pages.account-rebalance';
 
     /**
+     * Session key the working plan is kept under.
+     *
+     * Executing a plan means a browser round trip to Anthropic per move, so
+     * a reload part-way through is ordinary rather than careless — and
+     * without this it cost the admin their place and their ticks, and handed
+     * back a differently-shaped plan on the next Recalculate.
+     *
+     * @var string
+     */
+    private const string SESSION_KEY = 'account-rebalance.plan';
+
+    /**
+     * When the plan on screen was computed, so a stale one can say so.
+     *
+     * @var string|null
+     */
+    #[Locked]
+    public ?string $computedAt = null;
+
+    /**
      * How far back the analysis reads: `'week'`, `'month'`, or `'all'`.
      * Admin-chosen rather than fixed, because the right answer differs by
      * question — a week says who is heavy right now, all-time says who is
@@ -173,6 +193,48 @@ class AccountRebalance extends Page
     public int $extraAccounts = 0;
 
     /**
+     * Restore the plan this admin was working through, if they have one.
+     *
+     * @return void
+     */
+    public function mount(): void
+    {
+        $stored = session(self::SESSION_KEY);
+        if (! is_array($stored)) {
+            return;
+        }
+
+        $this->moves = $stored['moves'];
+        $this->accounts = $stored['accounts'];
+        $this->summary = $stored['summary'];
+        $this->capacity = $stored['capacity'];
+        $this->applied = $stored['applied'];
+        $this->range = $stored['range'];
+        $this->extraAccounts = $stored['extra_accounts'];
+        $this->computedAt = $stored['computed_at'];
+        $this->computed = true;
+    }
+
+    /**
+     * Keep the working plan where a reload can find it again.
+     *
+     * @return void
+     */
+    private function rememberPlan(): void
+    {
+        session([self::SESSION_KEY => [
+            'moves' => $this->moves,
+            'accounts' => $this->accounts,
+            'summary' => $this->summary,
+            'capacity' => $this->capacity,
+            'applied' => $this->applied,
+            'range' => $this->range,
+            'extra_accounts' => $this->extraAccounts,
+            'computed_at' => $this->computedAt,
+        ]]);
+    }
+
+    /**
      * Re-run the what-if when the admin changes how many accounts to
      * simulate.
      *
@@ -256,6 +318,8 @@ class AccountRebalance extends Page
             'arrivals' => count(array_filter($this->moves, fn (array $move): bool => $move['toAccountIsNew'])),
         ];
         $this->computed = true;
+        $this->computedAt = now()->toIso8601String();
+        $this->rememberPlan();
     }
 
     /**
@@ -490,6 +554,7 @@ class AccountRebalance extends Page
                 // abandon it mid-swap.
                 if (isset($arguments['index'])) {
                     $this->applied[] = (int) $arguments['index'];
+                    $this->rememberPlan();
                 }
 
                 Notification::make()
