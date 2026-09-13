@@ -282,8 +282,9 @@
                 account consumed in a window, scaled up by the highest utilisation that consumption reached.
                 <br>
                 "Actually peaked at" is the heaviest seven days this account really carried. It runs lower than the
-                worst case beside it because the heavy users already spill onto a second account once the first runs
-                dry — so their whole week never lands on one account, even though a plan has to assume it could.
+                worst case beside it because its members' own heaviest weeks fell in different weeks — adding them up
+                describes a week that has not happened. A plan still has to assume it could, which is why the moves are
+                decided on the higher figure.
             </p>
         </x-filament::section>
     @endif
