@@ -101,6 +101,32 @@ it('recomputes when the admin changes the range instead of leaving a stale table
     Carbon::setTestNow();
 });
 
+it('sizes the fleet both ways, so a capacity decision is not made on the worst case alone', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $admin = User::factory()->admin()->create();
+    lopsidedFleet();
+
+    $component = Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('recommend')
+        ->callMountedAction();
+
+    expect($component->get('capacity'))
+        ->toHaveKeys(['typical', 'worst_case', 'assumed_capacity_tokens'])
+        ->and($component->get('capacity')['projection'])->toBeNull();
+
+    // Asking for one more account produces a projection of where people
+    // would sit, without touching anything.
+    $component->set('extraAccounts', 1);
+    $projection = $component->get('capacity')['projection'];
+
+    expect($projection['extra_accounts'])->toBe(1)
+        ->and($projection['accounts'])->toHaveCount(3)
+        ->and(collect($projection['accounts'])->where('is_new', true))->toHaveCount(1);
+
+    Carbon::setTestNow();
+});
+
 it('explains a move with the figures behind it', function () {
     Carbon::setTestNow('2026-09-12 06:00:00');
     $admin = User::factory()->admin()->create();

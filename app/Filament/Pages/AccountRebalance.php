@@ -9,6 +9,7 @@ use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMemberStatusQuery;
 use App\Services\Accounts\AccountRebalanceRecommender;
+use App\Services\Accounts\FleetCapacityForecast;
 use App\Services\Accounts\RebalanceRecommendation;
 use App\Services\Accounts\RebalanceWindow;
 use BackedEnum;
@@ -130,6 +131,38 @@ class AccountRebalance extends Page
     public bool $computed = false;
 
     /**
+     * Fleet sizing from the last computation: what a typical week and the
+     * worst case each demand of the fleet, and how many accounts each would
+     * need. Rearranging people cannot help a fleet that is simply too small,
+     * and the two figures point at very different purchases.
+     *
+     * @var array<string, mixed>
+     */
+    #[Locked]
+    public array $capacity = [];
+
+    /**
+     * How many hypothetical accounts the what-if is simulating. Zero means
+     * no simulation — the sizing figures above stand on their own.
+     *
+     * @var int
+     */
+    public int $extraAccounts = 0;
+
+    /**
+     * Re-run the what-if when the admin changes how many accounts to
+     * simulate.
+     *
+     * @return void
+     */
+    public function updatedExtraAccounts(): void
+    {
+        if ($this->computed) {
+            $this->compute();
+        }
+    }
+
+    /**
      * Re-run the analysis when the range changes, so the table on screen
      * always matches the range selected above it.
      *
@@ -163,7 +196,9 @@ class AccountRebalance extends Page
      */
     public function compute(): void
     {
-        $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::fromFilter($this->range));
+        $window = RebalanceWindow::fromFilter($this->range);
+        $result = app(AccountRebalanceRecommender::class)->recommend($window);
+        $this->capacity = app(FleetCapacityForecast::class)->forecast($window, max(0, $this->extraAccounts));
 
         $this->accounts = $result['accounts'];
         $this->moves = array_map(

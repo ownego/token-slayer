@@ -64,6 +64,7 @@ final class RebalancePlanner
      * @param  array<array-key, int>  $current  user id => the account they sit on today
      * @param  array<array-key, float>  $burstFactors  user id => peak-hour-over-mean-hour ratio
      * @param  float  $safetyMargin  fraction of every account's capacity to leave unplanned
+     * @param  int|null  $maxMoves  how many moves to allow, or null for the standard attention limit; a what-if asking where people COULD go has no admin to tire out and should not be cut off at ten
      * @return array{assignment: array<array-key, int>, moves: array<int, array{user: array-key, from: int, to: int, swap_with: array-key|null}>, fill_before: array<int, float>, fill_after: array<int, float>, effective_demands: array<array-key, float>, overflow: array<int, float>}
      */
     public function plan(
@@ -72,6 +73,7 @@ final class RebalancePlanner
         array $current,
         array $burstFactors,
         float $safetyMargin,
+        ?int $maxMoves = null,
     ): array {
         $effective = [];
         foreach ($demands as $userId => $demand) {
@@ -80,7 +82,7 @@ final class RebalancePlanner
 
         $usable = array_map(fn (float $capacity): float => $capacity * (1 - $safetyMargin), $capacities);
         $assignment = $this->seedAssignment($effective, $current, $usable);
-        $assignment = $this->improve($assignment, $effective, $usable);
+        $assignment = $this->improve($assignment, $effective, $usable, $maxMoves ?? self::MAX_MOVES);
 
         return [
             'assignment' => $assignment,
@@ -130,14 +132,15 @@ final class RebalancePlanner
      * @param  array<array-key, int>  $assignment  user id => account id
      * @param  array<array-key, float>  $effective  user id => padded demand
      * @param  array<int, float>  $usable  account id => plannable capacity
+     * @param  int  $maxMoves  how many moves to stop after
      * @return array<array-key, int>
      */
-    private function improve(array $assignment, array $effective, array $usable): array
+    private function improve(array $assignment, array $effective, array $usable, int $maxMoves): array
     {
         $load = $this->loads($assignment, $effective, $usable);
         $moves = 0;
 
-        while ($moves < self::MAX_MOVES) {
+        while ($moves < $maxMoves) {
             $best = $this->bestChange($assignment, $effective, $usable, $load);
             if ($best === null) {
                 break;

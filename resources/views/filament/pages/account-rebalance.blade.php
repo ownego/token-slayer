@@ -82,10 +82,109 @@
 
         @if ($computed && ($summary['unplaced_tokens'] ?? 0) > 0)
             <p style="color:var(--danger-500, #dc2626); margin-top:.75rem; font-size:.85rem;">
-                {{ number_format($summary['unplaced_tokens']) }} tokens/week do not fit on any account even after rebalancing — the fleet needs more capacity, not a different arrangement.
+                {{ number_format($summary['unplaced_tokens']) }} tokens/week still do not fit after rebalancing. See <strong>Fleet sizing</strong> below for whether that actually means buying accounts.
             </p>
         @endif
     </x-filament::section>
+
+    @if ($computed && ! empty($capacity))
+        <x-filament::section heading="Fleet sizing" style="margin-top:1.5rem;">
+            <p style="font-size:.85rem; opacity:.7;">
+                Two different questions, two different answers. Sizing for the worst case buys enough for a week in
+                which every person's heaviest week lands at once — which is not the week the fleet usually lives in.
+            </p>
+
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:1rem; margin-top:1rem;">
+                @foreach ([['A typical week', $capacity['typical'], 'What the fleet normally gets through.'], ['The worst case', $capacity['worst_case'], "Everyone's heaviest week, all in the same week."]] as [$label, $figures, $blurb])
+                    <div style="border:1px solid rgba(120,120,140,.2); border-radius:.5rem; padding:.75rem 1rem;">
+                        <div style="opacity:.6; font-size:.75rem;">{{ $label }}</div>
+                        <div style="font-size:1.75rem; font-weight:600; line-height:1.2; color:{{ $figures['percent'] > 100 ? 'var(--danger-500, #dc2626)' : 'inherit' }};">
+                            {{ number_format($figures['percent'], 0) }}%
+                        </div>
+                        <div style="font-size:.8rem; opacity:.7;">
+                            {{ number_format($figures['tokens']) }} tokens/week of {{ number_format($capacity['usable_tokens']) }} usable
+                        </div>
+                        <div style="font-size:.85rem; margin-top:.5rem;">
+                            @if ($figures['accounts_needed'] === 0)
+                                <x-filament::badge color="success">Fits — no new account needed</x-filament::badge>
+                            @else
+                                <x-filament::badge color="warning">Needs {{ $figures['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $figures['accounts_needed']) }}</x-filament::badge>
+                            @endif
+                        </div>
+                        <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">{{ $blurb }}</div>
+                    </div>
+                @endforeach
+            </div>
+
+            <div style="display:flex; align-items:center; gap:.75rem; font-size:.85rem; flex-wrap:wrap; margin-top:1.25rem;">
+                <span>What if we added</span>
+                <select wire:model.live="extraAccounts" style="padding:.3rem .5rem; border-radius:.375rem; border:1px solid rgba(120,120,140,.3); background:transparent;">
+                    @foreach (range(0, 6) as $count)
+                        <option value="{{ $count }}">{{ $count === 0 ? 'no' : $count }} {{ \Illuminate\Support\Str::plural('account', max(1, $count)) }}</option>
+                    @endforeach
+                </select>
+                <span style="opacity:.6;">
+                    assuming each is worth {{ number_format($capacity['assumed_capacity_tokens']) }} tokens/week, like a middling account here today
+                </span>
+            </div>
+
+            @if ($capacity['projection'] !== null)
+                <div style="margin-top:1rem;">
+                    <p style="font-size:.85rem;">
+                        With {{ $capacity['projection']['extra_accounts'] }} more, the fullest account sits at
+                        <strong>{{ number_format($capacity['projection']['peak_fill_percent'], 0) }}%</strong>
+                        @if ($capacity['projection']['overflow_tokens'] > 0)
+                            and <strong style="color:var(--danger-500, #dc2626);">{{ number_format($capacity['projection']['overflow_tokens']) }}</strong> tokens/week still do not fit.
+                        @else
+                            and everything fits.
+                        @endif
+                    </p>
+
+                    <div style="overflow-x:auto; margin-top:.5rem;">
+                        <table style="width:100%; border-collapse:collapse; font-size:.85rem;">
+                            <thead>
+                                <tr style="text-align:left; opacity:.6;">
+                                    <th style="padding:.4rem .6rem;">Account</th>
+                                    <th style="padding:.4rem .6rem;">Capacity / week</th>
+                                    <th style="padding:.4rem .6rem;">Worst-case load</th>
+                                    <th style="padding:.4rem .6rem;">Members</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($capacity['projection']['accounts'] as $row)
+                                    <tr style="border-top:1px solid rgba(120,120,140,.15);">
+                                        <td style="padding:.4rem .6rem; font-family:monospace;">
+                                            {{ $row['label'] }}
+                                            @if ($row['is_new'])
+                                                <x-filament::badge color="info">new</x-filament::badge>
+                                            @endif
+                                        </td>
+                                        <td style="padding:.4rem .6rem;">{{ number_format($row['capacity_tokens']) }}</td>
+                                        <td style="padding:.4rem .6rem;">{{ number_format($row['fill_percent'], 0) }}%</td>
+                                        <td style="padding:.4rem .6rem;">{{ $row['members'] }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (! empty($capacity['projection']['arrivals']))
+                        <p style="font-size:.85rem; margin-top:.75rem;">Who would move onto the new {{ \Illuminate\Support\Str::plural('account', $capacity['projection']['extra_accounts']) }}:</p>
+                        <ul style="font-size:.85rem; margin-top:.25rem; padding-left:1.25rem;">
+                            @foreach ($capacity['projection']['arrivals'] as $arrival)
+                                <li>{{ $arrival['user_label'] }} → {{ $arrival['account_label'] }} ({{ number_format($arrival['weekly_tokens']) }} tokens/week)</li>
+                            @endforeach
+                        </ul>
+                    @endif
+
+                    <p style="font-size:.75rem; opacity:.55; margin-top:.75rem;">
+                        A projection, not a plan you can execute: connect the account first, then Recalculate to get
+                        real moves with Switch buttons.
+                    </p>
+                </div>
+            @endif
+        </x-filament::section>
+    @endif
 
     @if ($computed && ! empty($accounts))
         <x-filament::section heading="Fleet capacity" style="margin-top:1.5rem;">

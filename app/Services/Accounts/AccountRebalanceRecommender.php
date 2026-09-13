@@ -2,35 +2,29 @@
 
 namespace App\Services\Accounts;
 
-use App\Enums\MembershipStatus;
 use App\Models\Account;
 use App\Models\Event;
-use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Turns measured capacity and measured demand into a set of membership moves.
  *
- * The work is split three ways on purpose: {@see AccountCapacityEstimator}
- * answers how big each account is, {@see UserDemandEstimator} answers how big
- * each person is, and {@see RebalancePlanner} answers where everyone should
- * sit. This class only joins them up, decides whether the resulting plan is
- * worth acting on, and attaches the workings to each move.
+ * The work is split on purpose: {@see FleetSnapshot} measures the fleet,
+ * and {@see RebalancePlanner} decides where everyone should sit given those
+ * measurements. This class only joins them up and attaches the workings to
+ * each move.
  *
  * Read-only: it never touches membership. The admin decides whether to act.
  */
 final class AccountRebalanceRecommender
 {
     /**
-     * @param  AccountCapacityEstimator  $capacity  measures how many tokens each account's weekly quota is worth
-     * @param  UserDemandEstimator  $demand  measures each person's appetite and how heavily their tokens bite
-     * @param  RebalancePlanner  $planner  decides the arrangement these two measurements imply
+     * @param  FleetSnapshot  $snapshot  reads the fleet's capacities, memberships and demands
+     * @param  RebalancePlanner  $planner  decides the arrangement those measurements imply
      */
     public function __construct(
-        private readonly AccountCapacityEstimator $capacity,
-        private readonly UserDemandEstimator $demand,
+        private readonly FleetSnapshot $snapshot,
         private readonly RebalancePlanner $planner,
     ) {}
 
@@ -42,116 +36,29 @@ final class AccountRebalanceRecommender
      */
     public function recommend(?RebalanceWindow $window = null): array
     {
-        $window ??= RebalanceWindow::fromFilter(null);
-
-        $accounts = Account::query()
-            ->whereHas('claudeCredential', fn ($query) => $query->whereNotNull('organization_uuid'))
-            ->with('claudeCredential')
-            ->get();
-
-        $capacities = array_filter(
-            $this->capacity->capacitiesFor($accounts, $window),
-            fn (?float $tokens): bool => $tokens !== null && $tokens > 0.0,
-        );
-
-        $current = $this->currentMemberships($accounts, $window);
-        $users = User::query()->whereIn('id', array_keys($current))->get()->keyBy('id');
-        $weights = $this->demand->quotaWeights($accounts, $window);
-
-        $demands = [];
-        $burstFactors = [];
-        $details = [];
-
-        foreach ($current as $userId => $accountId) {
-            $user = $users->get($userId);
-            if ($user === null) {
-                continue;
-            }
-
-            $measured = $this->demand->demandFor($user, $window);
-            $weight = $weights[$userId] ?? 1.0;
-            $weekly = $measured['weekly'] * $weight;
-            if ($weekly <= 0.0) {
-                continue; // nobody to plan around; leave them where they are
-            }
-
-            $demands[$userId] = $weekly;
-            $burstFactors[$userId] = $this->demand->burstFactor($user, $window);
-            $details[$userId] = $measured + ['quota_weight' => $weight];
-        }
-
-        $margin = ((int) config('token_slayer.rebalance.safety_margin_percent')) / 100;
+        $reading = $this->snapshot->take($window ?? RebalanceWindow::fromFilter(null));
+        $capacities = $reading->capacities;
 
         $plan = $this->planner->plan(
             capacities: $capacities,
-            demands: $demands,
-            current: array_intersect_key($current, $demands),
-            burstFactors: $burstFactors,
-            safetyMargin: $margin,
+            demands: $reading->demands,
+            current: $reading->current,
+            burstFactors: $reading->burstFactors,
+            safetyMargin: $reading->safetyMargin(),
         );
 
         $fillBefore = $this->fillPercentages($plan['fill_before'], $capacities);
         $fillAfter = $this->fillPercentages($plan['fill_after'], $capacities);
 
         return [
-            'moves' => $this->recommendationsFor($plan['moves'], $details, $burstFactors, $fillBefore, $fillAfter, $accounts),
-            'accounts' => $this->accountSummaries($accounts, $capacities, $fillBefore, $fillAfter, $current, $plan['assignment']),
+            'moves' => $this->recommendationsFor($plan['moves'], $reading->details, $reading->burstFactors, $fillBefore, $fillAfter, $reading->accounts),
+            'accounts' => $this->accountSummaries($reading->accounts, $capacities, $fillBefore, $fillAfter, $reading->current, $plan['assignment']),
             'peak_fill_before_percent' => $fillBefore === [] ? 0.0 : max($fillBefore),
             'peak_fill_after_percent' => $fillAfter === [] ? 0.0 : max($fillAfter),
-            'unplaced_tokens' => array_sum($plan['overflow']),
+            'unplaced_tokens' => (float) array_sum($plan['overflow']),
             'safety_margin_percent' => (int) config('token_slayer.rebalance.safety_margin_percent'),
-            'window_label' => $window->label(),
+            'window_label' => $reading->window->label(),
         ];
-    }
-
-    /**
-     * Where each person sits today: user id => account id. Someone tracked
-     * on several accounts is credited to the one they actually spend on,
-     * since that is the membership a move would be taking them off; ties go
-     * to the lowest account id so a run is reproducible.
-     *
-     * Pending members count alongside tracked ones — they have been granted
-     * a slot and will start spending on it, so planning as though they were
-     * not there is planning for a fleet that is about to change.
-     *
-     * @param  Collection<int, Account>  $accounts  the accounts in scope
-     * @param  RebalanceWindow  $window  how far back to read usage for the tie-break
-     * @return array<int, int> user id => account id
-     */
-    private function currentMemberships(Collection $accounts, RebalanceWindow $window): array
-    {
-        $accountIds = $accounts->pluck('id')->all();
-
-        $tokens = Event::query()
-            ->whereIn('account_id', $accountIds)
-            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
-            ->selectRaw('user_id')
-            ->selectRaw('account_id')
-            ->selectRaw('SUM(tokens) as tokens')
-            ->groupBy('user_id', 'account_id')
-            ->get()
-            ->mapWithKeys(fn ($row): array => ["{$row->user_id}:{$row->account_id}" => (int) $row->tokens])
-            ->all();
-
-        $memberships = [];
-
-        $rows = DB::table('account_user')
-            ->whereIn('account_id', $accountIds)
-            ->whereIn('status', [MembershipStatus::Tracked->value, MembershipStatus::Pending->value])
-            ->orderBy('account_id')
-            ->get(['user_id', 'account_id']);
-
-        foreach ($rows as $row) {
-            $userId = (int) $row->user_id;
-            $accountId = (int) $row->account_id;
-            $spend = $tokens["{$userId}:{$accountId}"] ?? 0;
-
-            if (! isset($memberships[$userId]) || $spend > $memberships[$userId]['tokens']) {
-                $memberships[$userId] = ['account_id' => $accountId, 'tokens' => $spend];
-            }
-        }
-
-        return array_map(fn (array $held): int => $held['account_id'], $memberships);
     }
 
     /**
