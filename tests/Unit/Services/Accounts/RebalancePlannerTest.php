@@ -140,3 +140,107 @@ it('reports what an account is carrying beyond its usable capacity', function ()
         ->and($plan['overflow'][1])->toBe(400.0)
         ->and($plan['overflow'])->not->toHaveKey(2);
 });
+
+it('brings an account carrying too many people back down to the target', function () {
+    // Seven on one account and one on the other, with the weekly load
+    // already level so nothing about tokens alone would move anybody. A
+    // crowded account is its own risk: those seven can all be working at
+    // once, and a 5-hour window is tripped by simultaneity, not by a weekly
+    // total.
+    $demands = [];
+    $current = [];
+    foreach (range(1, 7) as $index) {
+        $demands["crowd{$index}"] = 50.0;
+        $current["crowd{$index}"] = 1;
+    }
+    $demands['alone'] = 350.0;
+    $current['alone'] = 2;
+
+    $plan = app(RebalancePlanner::class)->plan(
+        capacities: [1 => 1000.0, 2 => 1000.0],
+        demands: $demands,
+        current: $current,
+        burstFactors: [],
+        safetyMargin: 0.0,
+        maxMembers: 5,
+    );
+
+    $members = array_count_values($plan['assignment']);
+    expect(max($members))->toBeLessThanOrEqual(5);
+});
+
+it('never adds anyone to an account already holding the target', function () {
+    // Account 1 is full at five people and account 2 has room, so the only
+    // direction anybody may travel is away from 1 — even though piling more
+    // onto it would level the tokens nicely.
+    $demands = [];
+    $current = [];
+    foreach (range(1, 5) as $index) {
+        $demands["full{$index}"] = 10.0;
+        $current["full{$index}"] = 1;
+    }
+    $demands['heavy'] = 900.0;
+    $current['heavy'] = 2;
+
+    $plan = app(RebalancePlanner::class)->plan(
+        capacities: [1 => 1000.0, 2 => 1000.0],
+        demands: $demands,
+        current: $current,
+        burstFactors: [],
+        safetyMargin: 0.0,
+        maxMembers: 5,
+    );
+
+    $members = array_count_values($plan['assignment']);
+    expect($members[1] ?? 0)->toBeLessThanOrEqual(5);
+});
+
+it('raises the target rather than refusing to place people it cannot fit', function () {
+    // Twelve people, two accounts, a target of five: five apiece leaves two
+    // with nowhere to go. The target gives way, because a plan that seats
+    // nobody is worse than a crowded one.
+    $demands = [];
+    $current = [];
+    foreach (range(1, 12) as $index) {
+        $demands["u{$index}"] = 50.0;
+        $current["u{$index}"] = 1;
+    }
+
+    $plan = app(RebalancePlanner::class)->plan(
+        capacities: [1 => 1000.0, 2 => 1000.0],
+        demands: $demands,
+        current: $current,
+        burstFactors: [],
+        safetyMargin: 0.0,
+        maxMembers: 5,
+    );
+
+    expect($plan['assignment'])->toHaveCount(12)
+        ->and(max(array_count_values($plan['assignment'])))->toBeLessThanOrEqual(6);
+});
+
+it('keeps balancing load by swapping once every account is at the target', function () {
+    // Both accounts full at five, so nobody may simply move — but a swap
+    // changes no headcount at all, which is what keeps the tokens balanceable
+    // after the seats are settled.
+    $demands = ['a1' => 200.0, 'a2' => 100.0, 'a3' => 100.0, 'a4' => 100.0, 'a5' => 100.0];
+    $current = ['a1' => 1, 'a2' => 1, 'a3' => 1, 'a4' => 1, 'a5' => 1];
+    foreach (range(1, 5) as $index) {
+        $demands["b{$index}"] = 60.0;
+        $current["b{$index}"] = 2;
+    }
+
+    $plan = app(RebalancePlanner::class)->plan(
+        capacities: [1 => 1000.0, 2 => 1000.0],
+        demands: $demands,
+        current: $current,
+        burstFactors: [],
+        safetyMargin: 0.0,
+        maxMembers: 5,
+    );
+
+    $members = array_count_values($plan['assignment']);
+    expect($members[1])->toBe(5)
+        ->and($members[2])->toBe(5)
+        ->and($plan['moves'])->not->toBe([]);
+});

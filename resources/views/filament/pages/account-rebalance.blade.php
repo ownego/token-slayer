@@ -20,7 +20,9 @@
                     <strong>Fleet sizing</strong> below for the difference.
                 @endif
                 People are placed to {{ 100 - ($summary['safety_margin_percent'] ?? 0) }}% of each account's capacity,
-                leaving the rest as slack.
+                leaving the rest as slack, and no account is planned above
+                {{ config('token_slayer.rebalance.members_per_account') }} members — a crowded account can have
+                everyone working the same hour, which is what trips a 5-hour window regardless of the weekly total.
             </p>
         @endif
 

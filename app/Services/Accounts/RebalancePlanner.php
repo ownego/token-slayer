@@ -65,6 +65,7 @@ final class RebalancePlanner
      * @param  array<array-key, float>  $burstFactors  user id => peak-hour-over-mean-hour ratio
      * @param  float  $safetyMargin  fraction of every account's capacity to leave unplanned
      * @param  int|null  $maxMoves  how many moves to allow, or null for the standard attention limit; a what-if asking where people COULD go has no admin to tire out and should not be cut off at ten
+     * @param  int|null  $maxMembers  how many people an account should carry, or null for the configured target
      * @return array{assignment: array<array-key, int>, moves: array<int, array{user: array-key, from: int, to: int, swap_with: array-key|null}>, fill_before: array<int, float>, fill_after: array<int, float>, effective_demands: array<array-key, float>, overflow: array<int, float>}
      */
     public function plan(
@@ -74,6 +75,7 @@ final class RebalancePlanner
         array $burstFactors,
         float $safetyMargin,
         ?int $maxMoves = null,
+        ?int $maxMembers = null,
     ): array {
         $effective = [];
         foreach ($demands as $userId => $demand) {
@@ -81,8 +83,9 @@ final class RebalancePlanner
         }
 
         $usable = array_map(fn (float $capacity): float => $capacity * (1 - $safetyMargin), $capacities);
+        $cap = $this->seatCap($maxMembers, count($effective), count($usable));
         $assignment = $this->seedAssignment($effective, $current, $usable);
-        $assignment = $this->improve($assignment, $effective, $usable, $maxMoves ?? self::MAX_MOVES);
+        $assignment = $this->improve($assignment, $effective, $usable, $maxMoves ?? self::MAX_MOVES, $cap);
 
         return [
             'assignment' => $assignment,
@@ -133,15 +136,17 @@ final class RebalancePlanner
      * @param  array<array-key, float>  $effective  user id => padded demand
      * @param  array<int, float>  $usable  account id => plannable capacity
      * @param  int  $maxMoves  how many moves to stop after
+     * @param  int  $cap  how many people an account may carry
      * @return array<array-key, int>
      */
-    private function improve(array $assignment, array $effective, array $usable, int $maxMoves): array
+    private function improve(array $assignment, array $effective, array $usable, int $maxMoves, int $cap): array
     {
         $load = $this->loads($assignment, $effective, $usable);
+        $members = $this->memberCounts($assignment, $usable);
         $moves = 0;
 
         while ($moves < $maxMoves) {
-            $best = $this->bestChange($assignment, $effective, $usable, $load);
+            $best = $this->bestChange($assignment, $effective, $usable, $load, $members, $cap);
             if ($best === null) {
                 break;
             }
@@ -149,6 +154,8 @@ final class RebalancePlanner
             foreach ($best['changes'] as $userId => $accountId) {
                 $load[$assignment[$userId]] -= $effective[$userId];
                 $load[$accountId] += $effective[$userId];
+                $members[$assignment[$userId]]--;
+                $members[$accountId]++;
                 $assignment[$userId] = $accountId;
                 $moves++;
             }
@@ -170,26 +177,32 @@ final class RebalancePlanner
      * @param  array<array-key, float>  $effective  user id => padded demand
      * @param  array<int, float>  $usable  account id => plannable capacity
      * @param  array<int, float>  $load  account id => padded demand currently on it
-     * @return array{changes: array<array-key, int>, score: array{0: float, 1: float, 2: float}}|null
+     * @param  array<int, int>  $members  account id => how many people it carries
+     * @param  int  $cap  how many people an account may carry
+     * @return array{changes: array<array-key, int>, score: array{0: int, 1: float, 2: float, 3: float}}|null
      */
-    private function bestChange(array $assignment, array $effective, array $usable, array $load): ?array
+    private function bestChange(array $assignment, array $effective, array $usable, array $load, array $members, int $cap): ?array
     {
-        $baseline = $this->score($load, $usable);
+        $baseline = $this->score($load, $usable, $members, $cap);
         $best = null;
 
         foreach ($assignment as $userId => $fromAccountId) {
             foreach ($usable as $toAccountId => $capacity) {
-                if ($toAccountId === $fromAccountId) {
-                    continue;
+                if ($toAccountId === $fromAccountId || $members[$toAccountId] >= $cap) {
+                    continue; // full: the only way out of a crowded account is onto one with room
                 }
 
                 $candidate = $load;
                 $candidate[$fromAccountId] -= $effective[$userId];
                 $candidate[$toAccountId] += $effective[$userId];
 
+                $moved = $members;
+                $moved[$fromAccountId]--;
+                $moved[$toAccountId]++;
+
                 $best = $this->betterOf($best, [
                     'changes' => [$userId => $toAccountId],
-                    'score' => [...$this->score($candidate, $usable), $effective[$userId]],
+                    'score' => [...$this->score($candidate, $usable, $moved, $cap), $effective[$userId]],
                 ]);
             }
         }
@@ -209,14 +222,26 @@ final class RebalancePlanner
                 $candidate[$fromAccountId] -= $delta;
                 $candidate[$otherAccountId] += $delta;
 
+                // A swap leaves every headcount exactly where it was, which
+                // is what keeps load balanceable once the seats are settled.
                 $best = $this->betterOf($best, [
                     'changes' => [$userId => $otherAccountId, $otherUserId => $fromAccountId],
-                    'score' => [...$this->score($candidate, $usable), $effective[$userId] + $effective[$otherUserId]],
+                    'score' => [...$this->score($candidate, $usable, $members, $cap), $effective[$userId] + $effective[$otherUserId]],
                 ]);
             }
         }
 
-        if ($best === null || $best['score'][0] > $baseline[0] - self::MIN_GAIN) {
+        if ($best === null) {
+            return null;
+        }
+
+        // Seats first: an account over the target is a risk no token figure
+        // sees, so relieving one is worth doing even when the load is level.
+        if ($best['score'][0] < $baseline[0]) {
+            return $best;
+        }
+
+        if ($best['score'][0] > $baseline[0] || $best['score'][1] > $baseline[1] - self::MIN_GAIN) {
             return null;
         }
 
@@ -241,10 +266,16 @@ final class RebalancePlanner
     }
 
     /**
-     * How bad an arrangement is: the fullest account's share of its usable
-     * capacity, then the sum of every account's squared share.
+     * How bad an arrangement is: people seated beyond the target first, then
+     * the fullest account's share of its usable capacity, then the sum of
+     * every account's squared share.
      *
-     * The first term is the thing being fixed — an account running out
+     * Headcount leads because weekly tokens cannot see it. Five people on an
+     * account can all be working at the same hour; the 5-hour window is
+     * tripped by that simultaneity, not by the weekly total, so a crowded
+     * account is a risk even when its tokens look fine.
+     *
+     * The load term is the thing being fixed — an account running out
      * before its reset. The second only separates arrangements that tie on
      * it, favouring the one that spreads the remaining load rather than
      * leaving a second account nearly as full as the first. The caller adds
@@ -256,12 +287,19 @@ final class RebalancePlanner
      *
      * @param  array<int, float>  $load  account id => padded demand on it
      * @param  array<int, float>  $usable  account id => plannable capacity
-     * @return array{0: float, 1: float}
+     * @param  array<int, int>  $members  account id => how many people it carries
+     * @param  int  $cap  how many people an account may carry
+     * @return array{0: int, 1: float, 2: float}
      */
-    private function score(array $load, array $usable): array
+    private function score(array $load, array $usable, array $members, int $cap): array
     {
         $peak = 0.0;
         $spread = 0.0;
+        $overCap = 0;
+
+        foreach ($members as $count) {
+            $overCap += max(0, $count - $cap);
+        }
 
         foreach ($load as $accountId => $tokens) {
             $capacity = $usable[$accountId] ?? 0.0;
@@ -270,7 +308,45 @@ final class RebalancePlanner
             $spread += $ratio ** 2;
         }
 
-        return [$peak, $spread];
+        return [$overCap, $peak, $spread];
+    }
+
+    /**
+     * How many people an account may carry: the configured target, unless
+     * there are more people than that seats, in which case it rises to the
+     * smallest number that fits everyone. A plan that seats nobody is worse
+     * than a crowded one.
+     *
+     * @param  int|null  $requested  the caller's target, or null for the configured one
+     * @param  int  $people  how many people must be seated
+     * @param  int  $accounts  how many accounts are available
+     * @return int
+     */
+    private function seatCap(?int $requested, int $people, int $accounts): int
+    {
+        $target = max(1, $requested ?? (int) config('token_slayer.rebalance.members_per_account'));
+
+        return $accounts > 0 ? max($target, (int) ceil($people / $accounts)) : $target;
+    }
+
+    /**
+     * How many people each account carries under the given arrangement.
+     *
+     * @param  array<array-key, int>  $assignment  user id => account id
+     * @param  array<int, float>  $usable  account id => plannable capacity, for the key set
+     * @return array<int, int>
+     */
+    private function memberCounts(array $assignment, array $usable): array
+    {
+        $counts = array_fill_keys(array_keys($usable), 0);
+
+        foreach ($assignment as $accountId) {
+            if (array_key_exists($accountId, $counts)) {
+                $counts[$accountId]++;
+            }
+        }
+
+        return $counts;
     }
 
     /**

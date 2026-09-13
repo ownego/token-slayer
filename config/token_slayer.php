@@ -110,10 +110,18 @@ return [
     | The peak-demand window is deliberately NOT tunable: a demand figure is
     | only comparable with a weekly quota if it is measured over a week.
     |
+    | members_per_account is how many people an account should carry. Weekly
+    | load alone does not capture the risk of a crowded account: more people
+    | means more of them working at the same time, and a 5-hour window is
+    | tripped by simultaneity rather than by a weekly total. It is a target
+    | rather than a hard limit -- when there are more people than it allows,
+    | it rises to the smallest number that fits everyone.
+    |
     */
 
     'rebalance' => [
         'trend_window_days' => (int) env('TOKEN_SLAYER_REBALANCE_TREND_DAYS', 14),
+        'members_per_account' => (int) env('TOKEN_SLAYER_REBALANCE_MEMBERS_PER_ACCOUNT', 5),
         'safety_margin_percent' => (int) env('TOKEN_SLAYER_REBALANCE_SAFETY_MARGIN', 20),
         'min_history_days' => (int) env('TOKEN_SLAYER_REBALANCE_MIN_HISTORY_DAYS', 7),
     ],
