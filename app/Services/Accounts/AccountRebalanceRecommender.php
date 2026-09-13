@@ -6,218 +6,329 @@ use App\Enums\MembershipStatus;
 use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Greedy rebalance recommender: for each account projected to exhaust
- * before its own reset, finds its heaviest recent contributor and a target
- * account with enough headroom to absorb them without itself overflowing.
- * Read-only — it never mutates membership; the caller decides whether and
- * how to act on what it returns.
+ * Turns measured capacity and measured demand into a set of membership moves.
+ *
+ * The work is split three ways on purpose: {@see AccountCapacityEstimator}
+ * answers how big each account is, {@see UserDemandEstimator} answers how big
+ * each person is, and {@see RebalancePlanner} answers where everyone should
+ * sit. This class only joins them up, decides whether the resulting plan is
+ * worth acting on, and attaches the workings to each move.
+ *
+ * Read-only: it never touches membership. The admin decides whether to act.
  */
 final class AccountRebalanceRecommender
 {
     /**
-     * @param  AccountCapacityEstimator  $capacity  supplies per-account projection/headroom/overflow figures
-     * @param  UserDemandEstimator  $demand  supplies per-user demand figures
+     * How many percentage points the fullest account must improve by before
+     * any moves are worth proposing. A bin-packer will reshuffle a fleet
+     * that is already level — a whale here, two mediums there — and every
+     * one of those moves costs a person a re-authentication for no gain.
+     * Silence is the right answer when nothing is actually wrong.
+     *
+     * @var float
+     */
+    private const float MIN_IMPROVEMENT_POINTS = 1.0;
+
+    /**
+     * @param  AccountCapacityEstimator  $capacity  measures how many tokens each account's weekly quota is worth
+     * @param  UserDemandEstimator  $demand  measures each person's appetite and how heavily their tokens bite
+     * @param  RebalancePlanner  $planner  decides the arrangement these two measurements imply
      */
     public function __construct(
         private readonly AccountCapacityEstimator $capacity,
         private readonly UserDemandEstimator $demand,
+        private readonly RebalancePlanner $planner,
     ) {}
 
     /**
-     * Compute the current recommended moves across every account with a
-     * connected Claude credential. Mutates only its own local working
-     * copies of each account's projected headroom/overflow as moves are
-     * tentatively applied, never the database.
+     * The current recommendation for the fleet, read over `$window`.
      *
-     * @return array{moves: array<int, RebalanceRecommendation>, unresolved_overflow_tokens: float, total_headroom_tokens: float}
+     * @param  RebalanceWindow|null  $window  how far back to read, defaulting to the configured trend window
+     * @return array{moves: array<int, RebalanceRecommendation>, accounts: array<int, array{id: int, email: string, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>, peak_fill_before_percent: float, peak_fill_after_percent: float, unplaced_tokens: float, safety_margin_percent: int, window_label: string}
      */
-    public function recommend(): array
+    public function recommend(?RebalanceWindow $window = null): array
     {
-        $accounts = Account::query()->whereHas('claudeCredential', fn ($q) => $q->whereNotNull('organization_uuid'))->get();
+        $window ??= RebalanceWindow::fromFilter(null);
 
-        $overflow = [];
-        $headroom = [];
-        $projected = [];
-        foreach ($accounts as $account) {
-            $overflow[$account->id] = $this->capacity->overflowTokens($account);
-            $headroom[$account->id] = $this->capacity->headroomTokens($account);
-            $projected[$account->id] = $this->capacity->projectedUtilAtReset($account);
-        }
+        $accounts = Account::query()
+            ->whereHas('claudeCredential', fn ($query) => $query->whereNotNull('organization_uuid'))
+            ->with('claudeCredential')
+            ->get();
 
-        $overflowingIds = array_keys(array_filter($overflow, fn (float $tokens): bool => $tokens > 0.0));
-        usort($overflowingIds, fn (int $a, int $b): int => $overflow[$b] <=> $overflow[$a]);
-
-        $moves = [];
-        foreach ($overflowingIds as $fromAccountId) {
-            $fromAccount = $accounts->firstWhere('id', $fromAccountId);
-            $heaviestUser = $this->heaviestContributor($fromAccount);
-            if ($heaviestUser === null) {
-                continue;
-            }
-
-            $userDemand = $this->userDemandTokensPerDay($heaviestUser, $fromAccount);
-            $tokensPerPercent = $this->capacity->tokensPerPercent($fromAccount);
-            $demandTokens = $tokensPerPercent > 0.0 ? $userDemand['tokensPerDay'] * 7 : $overflow[$fromAccountId];
-
-            $targetId = $this->bestTarget($headroom, $demandTokens, exclude: $fromAccountId);
-            if ($targetId === null) {
-                continue;
-            }
-            $targetAccount = $accounts->firstWhere('id', $targetId);
-
-            // Kept as raw (unrounded) floats while accumulating across
-            // moves: several sub-1%-equivalent moves onto the same account
-            // must be able to sum past a whole percentage point. Rounding
-            // each one away to 0 before adding it would permanently pin
-            // the displayed projection at its original value no matter how
-            // many moves land on it — only the DTO fields below round, for
-            // display.
-            $fromProjectedAfterRaw = max(0.0, $projected[$fromAccountId] - $this->percentEquivalent($demandTokens, $fromAccount));
-            $toProjectedAfterRaw = $projected[$targetId] + $this->percentEquivalent($demandTokens, $targetAccount);
-
-            $moves[] = new RebalanceRecommendation(
-                userId: $heaviestUser->id,
-                fromAccountId: $fromAccountId,
-                toAccountId: $targetId,
-                fromProjectedBefore: (int) round($projected[$fromAccountId]),
-                fromProjectedAfter: (int) round($fromProjectedAfterRaw),
-                toProjectedBefore: (int) round($projected[$targetId]),
-                toProjectedAfter: (int) round($toProjectedAfterRaw),
-                demandTokensPerDay: $userDemand['tokensPerDay'],
-                demandBasis: $userDemand['basis'],
-                confident: $this->isConfident($fromAccount) && $this->isConfident($targetAccount),
-            );
-
-            // Carry the RAW after-move projections forward: a later
-            // iteration targeting the same account (or, in principle,
-            // re-reading a source already visited) must see this move's
-            // full-precision effect, not a value already rounded away.
-            $projected[$fromAccountId] = $fromProjectedAfterRaw;
-            $projected[$targetId] = $toProjectedAfterRaw;
-
-            $headroom[$targetId] = max(0.0, $headroom[$targetId] - $demandTokens);
-            $overflow[$fromAccountId] = max(0.0, $overflow[$fromAccountId] - $demandTokens);
-        }
-
-        return [
-            'moves' => $moves,
-            'unresolved_overflow_tokens' => array_sum($overflow),
-            'total_headroom_tokens' => array_sum($headroom),
-        ];
-    }
-
-    /**
-     * The user with the largest recent token footprint on this account
-     * among its currently-Tracked members.
-     *
-     * @param  Account  $account  the account to inspect
-     * @return User|null the heaviest contributor, or null with no tracked members
-     */
-    private function heaviestContributor(Account $account): ?User
-    {
-        $trendDays = (int) config('token_slayer.rebalance.trend_window_days');
-
-        $trackedUserIds = $account->users()
-            ->wherePivot('status', MembershipStatus::Tracked->value)
-            ->pluck('users.id');
-
-        if ($trackedUserIds->isEmpty()) {
-            return null;
-        }
-
-        $heaviestUserId = Event::query()
-            ->where('account_id', $account->id)
-            ->whereIn('user_id', $trackedUserIds)
-            ->where('created_at', '>=', now()->subDays($trendDays))
-            ->selectRaw('user_id')
-            ->selectRaw('SUM(tokens) as tokens')
-            ->groupBy('user_id')
-            ->orderByDesc('tokens')
-            ->value('user_id');
-
-        return $heaviestUserId === null ? null : User::query()->find($heaviestUserId);
-    }
-
-    /**
-     * This user's demand figure and which basis produced it, preferring the
-     * clean-window quota weight to convert their baseline tokens/day into a
-     * fleet-comparable figure when one is available.
-     *
-     * @param  User  $user  the user to measure
-     * @param  Account  $account  the account their usage is scoped to
-     * @return array{tokensPerDay: float, basis: string}
-     */
-    private function userDemandTokensPerDay(User $user, Account $account): array
-    {
-        $trailing = $this->demand->baselineTokensPerDay($user, $account);
-        $peakBasis = $trailing > 0.0;
-
-        return [
-            'tokensPerDay' => $trailing,
-            'basis' => $peakBasis ? 'peak_rate' : 'trailing_average',
-        ];
-    }
-
-    /**
-     * The account id among `$headroom` (excluding `$exclude`) with the most
-     * remaining headroom that is still at least `$demandTokens`, or null
-     * when none qualifies.
-     *
-     * @param  array<int, float>  $headroom  account id => headroom tokens
-     * @param  float  $demandTokens  tokens the target must be able to absorb
-     * @param  int  $exclude  the source account id, never itself a valid target
-     * @return int|null the chosen target account id, or null
-     */
-    private function bestTarget(array $headroom, float $demandTokens, int $exclude): ?int
-    {
-        $candidates = array_filter(
-            $headroom,
-            fn (float $room, int $accountId): bool => $accountId !== $exclude && $room >= $demandTokens,
-            ARRAY_FILTER_USE_BOTH,
+        $capacities = array_filter(
+            $this->capacity->capacitiesFor($accounts, $window),
+            fn (?float $tokens): bool => $tokens !== null && $tokens > 0.0,
         );
 
-        if ($candidates === []) {
-            return null;
+        $current = $this->currentMemberships($accounts, $window);
+        $users = User::query()->whereIn('id', array_keys($current))->get()->keyBy('id');
+        $weights = $this->demand->quotaWeights($accounts, $window);
+
+        $demands = [];
+        $burstFactors = [];
+        $details = [];
+
+        foreach ($current as $userId => $accountId) {
+            $user = $users->get($userId);
+            if ($user === null) {
+                continue;
+            }
+
+            $measured = $this->demand->demandFor($user, $window);
+            $weight = $weights[$userId] ?? 1.0;
+            $weekly = $measured['weekly'] * $weight;
+            if ($weekly <= 0.0) {
+                continue; // nobody to plan around; leave them where they are
+            }
+
+            $demands[$userId] = $weekly;
+            $burstFactors[$userId] = $this->demand->burstFactor($user, $window);
+            $details[$userId] = $measured + ['quota_weight' => $weight];
         }
 
-        arsort($candidates);
+        $margin = ((int) config('token_slayer.rebalance.safety_margin_percent')) / 100;
 
-        return array_key_first($candidates);
+        $plan = $this->planner->plan(
+            capacities: $capacities,
+            demands: $demands,
+            current: array_intersect_key($current, $demands),
+            burstFactors: $burstFactors,
+            safetyMargin: $margin,
+        );
+
+        $fillBefore = $this->fillPercentages($plan['fill_before'], $capacities);
+        $fillAfter = $this->fillPercentages($plan['fill_after'], $capacities);
+        $peakBefore = $fillBefore === [] ? 0.0 : max($fillBefore);
+        $peakAfter = $fillAfter === [] ? 0.0 : max($fillAfter);
+
+        $worthDoing = $peakBefore - $peakAfter >= self::MIN_IMPROVEMENT_POINTS;
+        if (! $worthDoing) {
+            $plan['moves'] = [];
+            $plan['assignment'] = array_intersect_key($current, $demands);
+            $fillAfter = $fillBefore;
+            $peakAfter = $peakBefore;
+        }
+
+        return [
+            'moves' => $this->recommendationsFor($plan['moves'], $details, $burstFactors, $fillBefore, $fillAfter, $accounts),
+            'accounts' => $this->accountSummaries($accounts, $capacities, $fillBefore, $fillAfter, $current, $plan['assignment']),
+            'peak_fill_before_percent' => $peakBefore,
+            'peak_fill_after_percent' => $peakAfter,
+            'unplaced_tokens' => array_sum($plan['unplaced']),
+            'safety_margin_percent' => (int) config('token_slayer.rebalance.safety_margin_percent'),
+            'window_label' => $window->label(),
+        ];
     }
 
     /**
-     * Converts a token amount into the equivalent number of util_7d
-     * percentage points for the given account, using its own
-     * tokensPerPercent. Unrounded on purpose — see the accumulation
-     * comment in {@see recommend()} for why. 0 when the account has no
-     * measurable capacity yet.
+     * Where each person sits today: user id => account id. Someone tracked
+     * on several accounts is credited to the one they actually spend on,
+     * since that is the membership a move would be taking them off; ties go
+     * to the lowest account id so a run is reproducible.
      *
-     * @param  float  $tokens  the token amount to convert
-     * @param  Account  $account  the account whose ratio to use
-     * @return float the equivalent percentage points, unrounded
+     * Pending members count alongside tracked ones — they have been granted
+     * a slot and will start spending on it, so planning as though they were
+     * not there is planning for a fleet that is about to change.
+     *
+     * @param  Collection<int, Account>  $accounts  the accounts in scope
+     * @param  RebalanceWindow  $window  how far back to read usage for the tie-break
+     * @return array<int, int> user id => account id
      */
-    private function percentEquivalent(float $tokens, Account $account): float
+    private function currentMemberships(Collection $accounts, RebalanceWindow $window): array
     {
-        $tokensPerPercent = $this->capacity->tokensPerPercent($account);
+        $accountIds = $accounts->pluck('id')->all();
 
-        return $tokensPerPercent > 0.0 ? $tokens / $tokensPerPercent : 0.0;
+        $tokens = Event::query()
+            ->whereIn('account_id', $accountIds)
+            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
+            ->selectRaw('user_id')
+            ->selectRaw('account_id')
+            ->selectRaw('SUM(tokens) as tokens')
+            ->groupBy('user_id', 'account_id')
+            ->get()
+            ->mapWithKeys(fn ($row): array => ["{$row->user_id}:{$row->account_id}" => (int) $row->tokens])
+            ->all();
+
+        $memberships = [];
+
+        $rows = DB::table('account_user')
+            ->whereIn('account_id', $accountIds)
+            ->whereIn('status', [MembershipStatus::Tracked->value, MembershipStatus::Pending->value])
+            ->orderBy('account_id')
+            ->get(['user_id', 'account_id']);
+
+        foreach ($rows as $row) {
+            $userId = (int) $row->user_id;
+            $accountId = (int) $row->account_id;
+            $spend = $tokens["{$userId}:{$accountId}"] ?? 0;
+
+            if (! isset($memberships[$userId]) || $spend > $memberships[$userId]['tokens']) {
+                $memberships[$userId] = ['account_id' => $accountId, 'tokens' => $spend];
+            }
+        }
+
+        return array_map(fn (array $held): int => $held['account_id'], $memberships);
     }
 
     /**
-     * Whether an account has at least the configured minimum days of usage
-     * history to trust a recommendation involving it.
+     * Dress each planned move up with the measurements behind it.
      *
-     * @param  Account  $account  the account to check
-     * @return bool true when enough history exists
+     * @param  array<int, array{user: array-key, from: int, to: int, swap_with: array-key|null}>  $moves  the planner's raw diff
+     * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_avg_per_day: float, basis: string, days_of_history: int, quota_weight: float}>  $details  per-user demand workings
+     * @param  array<int, float>  $burstFactors  per-user burstiness
+     * @param  array<int, float>  $fillBefore  account id => percentage of capacity, before
+     * @param  array<int, float>  $fillAfter  account id => percentage of capacity, after
+     * @param  Collection<int, Account>  $accounts  the accounts in scope, for the history check
+     * @return array<int, RebalanceRecommendation>
      */
-    private function isConfident(Account $account): bool
-    {
+    private function recommendationsFor(
+        array $moves,
+        array $details,
+        array $burstFactors,
+        array $fillBefore,
+        array $fillAfter,
+        Collection $accounts,
+    ): array {
+        if ($moves === []) {
+            return [];
+        }
+
         $minDays = (int) config('token_slayer.rebalance.min_history_days');
+        $accountDays = $this->daysOfHistory('account_id', $accounts->pluck('id')->all());
+        $userDays = $this->daysOfHistory('user_id', array_map(fn (array $move): int => (int) $move['user'], $moves));
 
-        $earliest = Event::query()->where('account_id', $account->id)->min('created_at');
+        $recommendations = [];
 
-        return $earliest !== null && now()->diffInDays($earliest, absolute: true) >= $minDays;
+        foreach ($moves as $move) {
+            $userId = (int) $move['user'];
+            $detail = $details[$userId];
+
+            $confident = ($userDays[$userId] ?? 0) >= $minDays
+                && ($accountDays[$move['from']] ?? 0) >= $minDays
+                && ($accountDays[$move['to']] ?? 0) >= $minDays;
+
+            $recommendations[] = new RebalanceRecommendation(
+                userId: $userId,
+                fromAccountId: $move['from'],
+                toAccountId: $move['to'],
+                swapWithUserId: $move['swap_with'] === null ? null : (int) $move['swap_with'],
+                demandWeeklyTokens: $detail['weekly'] * $detail['quota_weight'],
+                demandPerDayTokens: $detail['per_day'],
+                demandBasis: $detail['basis'],
+                trailingAvgPerDayTokens: $detail['trailing_avg_per_day'],
+                peakAvgPerDayTokens: $detail['peak_avg_per_day'],
+                burstFactor: $burstFactors[$userId] ?? 1.0,
+                quotaWeight: $detail['quota_weight'],
+                daysOfHistory: $detail['days_of_history'],
+                fromFillBeforePercent: $fillBefore[$move['from']] ?? 0.0,
+                fromFillAfterPercent: $fillAfter[$move['from']] ?? 0.0,
+                toFillBeforePercent: $fillBefore[$move['to']] ?? 0.0,
+                toFillAfterPercent: $fillAfter[$move['to']] ?? 0.0,
+                confident: $confident,
+            );
+        }
+
+        return $recommendations;
+    }
+
+    /**
+     * Per-account figures for the summary the page renders above the table,
+     * so the moves can be read against the fleet they are changing.
+     *
+     * @param  Collection<int, Account>  $accounts  the accounts in scope
+     * @param  array<int, float>  $capacities  account id => weekly capacity tokens
+     * @param  array<int, float>  $fillBefore  account id => percentage of capacity, before
+     * @param  array<int, float>  $fillAfter  account id => percentage of capacity, after
+     * @param  array<int, int>  $current  user id => account id today
+     * @param  array<int, int>  $assignment  user id => account id under the plan
+     * @return array<int, array{id: int, email: string, capacity_tokens: float, fill_before_percent: float, fill_after_percent: float, members_before: int, members_after: int}>
+     */
+    private function accountSummaries(
+        Collection $accounts,
+        array $capacities,
+        array $fillBefore,
+        array $fillAfter,
+        array $current,
+        array $assignment,
+    ): array {
+        $before = array_count_values($current);
+        $after = array_count_values($assignment);
+
+        $summaries = [];
+
+        foreach ($accounts as $account) {
+            if (! array_key_exists($account->id, $capacities)) {
+                continue; // nothing measurable to report about it yet
+            }
+
+            $summaries[$account->id] = [
+                'id' => $account->id,
+                'email' => (string) $account->email,
+                'capacity_tokens' => $capacities[$account->id],
+                'fill_before_percent' => $fillBefore[$account->id] ?? 0.0,
+                'fill_after_percent' => $fillAfter[$account->id] ?? 0.0,
+                'members_before' => $before[$account->id] ?? 0,
+                'members_after' => $after[$account->id] ?? 0,
+            ];
+        }
+
+        return $summaries;
+    }
+
+    /**
+     * Turn planned token loads into percentages of each account's capacity —
+     * the only form in which two accounts of different sizes can be compared,
+     * and the same scale the quota gauges elsewhere already use.
+     *
+     * @param  array<int, float>  $fills  account id => planned tokens
+     * @param  array<int, float>  $capacities  account id => weekly capacity tokens
+     * @return array<int, float>
+     */
+    private function fillPercentages(array $fills, array $capacities): array
+    {
+        $percentages = [];
+
+        foreach ($fills as $accountId => $tokens) {
+            $capacity = $capacities[$accountId] ?? 0.0;
+            $percentages[$accountId] = $capacity > 0.0 ? $tokens * 100 / $capacity : 0.0;
+        }
+
+        return $percentages;
+    }
+
+    /**
+     * Days since the earliest event recorded against each of the given ids,
+     * in one query — how long we have been watching, which is what decides
+     * whether a recommendation is trustworthy or merely arithmetic.
+     *
+     * Deliberately unscoped by the analysis window: a fortnight's window
+     * cannot tell you whether an account is a month old or two days old, and
+     * that is exactly the question confidence turns on.
+     *
+     * @param  string  $column  `'account_id'` or `'user_id'`
+     * @param  array<int, int>  $ids  the ids to measure
+     * @return array<int, int> id => days of recorded history
+     */
+    private function daysOfHistory(string $column, array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return Event::query()
+            ->whereIn($column, $ids)
+            ->selectRaw("{$column} as subject")
+            ->selectRaw('MIN(created_at) as earliest')
+            ->groupBy($column)
+            ->get()
+            ->mapWithKeys(fn ($row): array => [
+                (int) $row->subject => (int) now()->diffInDays(Carbon::parse($row->earliest), absolute: true),
+            ])
+            ->all();
     }
 }
