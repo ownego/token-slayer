@@ -67,28 +67,35 @@ final class AccountRebalanceRecommender
             }
             $targetAccount = $accounts->firstWhere('id', $targetId);
 
-            $fromProjectedAfter = max(0, $projected[$fromAccountId] - $this->percentEquivalent($demandTokens, $fromAccount));
-            $toProjectedAfter = $projected[$targetId] + $this->percentEquivalent($demandTokens, $targetAccount);
+            // Kept as raw (unrounded) floats while accumulating across
+            // moves: several sub-1%-equivalent moves onto the same account
+            // must be able to sum past a whole percentage point. Rounding
+            // each one away to 0 before adding it would permanently pin
+            // the displayed projection at its original value no matter how
+            // many moves land on it — only the DTO fields below round, for
+            // display.
+            $fromProjectedAfterRaw = max(0.0, $projected[$fromAccountId] - $this->percentEquivalent($demandTokens, $fromAccount));
+            $toProjectedAfterRaw = $projected[$targetId] + $this->percentEquivalent($demandTokens, $targetAccount);
 
             $moves[] = new RebalanceRecommendation(
                 userId: $heaviestUser->id,
                 fromAccountId: $fromAccountId,
                 toAccountId: $targetId,
-                fromProjectedBefore: $projected[$fromAccountId],
-                fromProjectedAfter: $fromProjectedAfter,
-                toProjectedBefore: $projected[$targetId],
-                toProjectedAfter: $toProjectedAfter,
+                fromProjectedBefore: (int) round($projected[$fromAccountId]),
+                fromProjectedAfter: (int) round($fromProjectedAfterRaw),
+                toProjectedBefore: (int) round($projected[$targetId]),
+                toProjectedAfter: (int) round($toProjectedAfterRaw),
                 demandTokensPerDay: $userDemand['tokensPerDay'],
                 demandBasis: $userDemand['basis'],
                 confident: $this->isConfident($fromAccount) && $this->isConfident($targetAccount),
             );
 
-            // Carry the after-move projections forward: a later iteration
-            // targeting the same account (or, in principle, re-reading a
-            // source already visited) must see this move's effect, not the
-            // stale pre-move snapshot taken before the loop started.
-            $projected[$fromAccountId] = $fromProjectedAfter;
-            $projected[$targetId] = $toProjectedAfter;
+            // Carry the RAW after-move projections forward: a later
+            // iteration targeting the same account (or, in principle,
+            // re-reading a source already visited) must see this move's
+            // full-precision effect, not a value already rounded away.
+            $projected[$fromAccountId] = $fromProjectedAfterRaw;
+            $projected[$targetId] = $toProjectedAfterRaw;
 
             $headroom[$targetId] = max(0.0, $headroom[$targetId] - $demandTokens);
             $overflow[$fromAccountId] = max(0.0, $overflow[$fromAccountId] - $demandTokens);
@@ -183,17 +190,19 @@ final class AccountRebalanceRecommender
     /**
      * Converts a token amount into the equivalent number of util_7d
      * percentage points for the given account, using its own
-     * tokensPerPercent. 0 when the account has no measurable capacity yet.
+     * tokensPerPercent. Unrounded on purpose — see the accumulation
+     * comment in {@see recommend()} for why. 0 when the account has no
+     * measurable capacity yet.
      *
      * @param  float  $tokens  the token amount to convert
      * @param  Account  $account  the account whose ratio to use
-     * @return int the equivalent percentage points
+     * @return float the equivalent percentage points, unrounded
      */
-    private function percentEquivalent(float $tokens, Account $account): int
+    private function percentEquivalent(float $tokens, Account $account): float
     {
         $tokensPerPercent = $this->capacity->tokensPerPercent($account);
 
-        return $tokensPerPercent > 0.0 ? (int) round($tokens / $tokensPerPercent) : 0;
+        return $tokensPerPercent > 0.0 ? $tokens / $tokensPerPercent : 0.0;
     }
 
     /**

@@ -96,6 +96,62 @@ it('accumulates the target account\'s projected util across multiple moves onto 
     Carbon::setTestNow();
 });
 
+it('accumulates fractional sub-1% contributions across moves instead of rounding each one away to zero first', function () {
+    // A real-world case this exact shape reproduces: a target account so
+    // large that any single move's percent-equivalent rounds to 0% on its
+    // own. Rounding that 0 and *then* adding it, move after move, would
+    // permanently pin the displayed projection at its original value no
+    // matter how many moves land on it. Accumulating the raw (unrounded)
+    // percent internally, and rounding only for display, lets several
+    // sub-1% moves add up and eventually cross a whole percentage point.
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $resetAt = now()->addDays(4);
+
+    // target: tokensPerPercent = 1,000,000 / 1 = 1,000,000; rate = 1.
+    // projected = 1 + 1*4 = 5.
+    $target = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($target)->create(['util_7d' => 1, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
+    Event::factory()->for($target)->for(User::factory())->create(['tokens' => 1_000_000, 'created_at' => now()->subDay()]);
+
+    // accountA: tokensPerPercent = 400,000 / 30 ≈ 13,333; rate = 30.
+    // projected = 30 + 30*4 = 150. Weekly demand = 400,000 tokens ->
+    // percent-equivalent onto target = 400,000 / 1,000,000 = 0.4 (rounds
+    // to 0 alone).
+    $accountA = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($accountA)->create(['util_7d' => 30, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
+    $userA = User::factory()->create();
+    Event::factory()->for($accountA)->for($userA)->create(['tokens' => 400_000, 'created_at' => now()->subDay()]);
+    $accountA->users()->syncWithoutDetaching([$userA->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    // accountB: tokensPerPercent = 400,000 / 28 ≈ 14,286; rate = 28.
+    // projected = 28 + 28*4 = 140. Slightly less overflow than accountA
+    // (571,428 vs 666,666), so accountA is processed first. Same 400,000
+    // weekly demand -> another 0.4 onto the target.
+    $accountB = Account::factory()->connected()->create();
+    AccountUsageSnapshot::factory()->for($accountB)->create(['util_7d' => 28, 'reset_7d_at' => $resetAt, 'created_at' => now()]);
+    $userB = User::factory()->create();
+    Event::factory()->for($accountB)->for($userB)->create(['tokens' => 400_000, 'created_at' => now()->subDay()]);
+    $accountB->users()->syncWithoutDetaching([$userB->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    $result = app(AccountRebalanceRecommender::class)->recommend();
+
+    expect($result['moves'])->toHaveCount(2);
+    [$moveA, $moveB] = $result['moves'];
+
+    // Move 1 alone: 5 + 0.4 = 5.4, still displays as 5 -- correct, a single
+    // sub-1% move should not visibly move the needle by itself.
+    expect($moveA->toProjectedBefore)->toBe(5)
+        ->and($moveA->toProjectedAfter)->toBe(5);
+
+    // Move 2: the RAW accumulator is now 5.4 (not the stale 5), so adding
+    // its own 0.4 reaches 5.8, which rounds up to 6 -- proof the two 0.4s
+    // were summed before rounding, not rounded-then-summed.
+    expect($moveB->toProjectedBefore)->toBe(5)
+        ->and($moveB->toProjectedAfter)->toBe(6);
+
+    Carbon::setTestNow();
+});
+
 it('reports unresolved overflow when no account has enough headroom to absorb it', function () {
     Carbon::setTestNow('2026-09-12 00:00:00');
 
