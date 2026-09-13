@@ -14,12 +14,15 @@ use App\Services\Accounts\FleetSnapshot;
 use App\Services\Accounts\RebalanceRecommendation;
 use App\Services\Accounts\RebalanceWindow;
 use App\Services\Accounts\StaleMembershipQuery;
+use App\Services\Provisioning\DeviceClaimResolver;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Locked;
@@ -305,6 +308,30 @@ class AccountRebalance extends Page
     }
 
     /**
+     * This person's machines, newest bindings last, for the Switch modal.
+     * A machine that has connected shows its own name; one still waiting
+     * says so, since issuing a grant to it only makes sense for a machine
+     * that has not been set up yet.
+     *
+     * @param  int|string|null  $userId  the person whose machines to list
+     * @return array<int, string> device id => label
+     */
+    private function deviceOptionsFor(int|string|null $userId): array
+    {
+        if ($userId === null || $userId === '') {
+            return [];
+        }
+
+        return User::query()->find($userId)?->devices()
+            ->orderBy('id')
+            ->get()
+            ->mapWithKeys(fn ($device): array => [
+                $device->id => $device->name ?? $device->device_id ?? 'Awaiting a machine (#'.$device->id.')',
+            ])
+            ->all() ?? [];
+    }
+
+    /**
      * Seats held on accounts their holder has already migrated away from,
      * for the Blade view. Recomputed per render rather than stored: it is a
      * cheap query and it must reflect any seat released a moment ago.
@@ -382,6 +409,14 @@ class AccountRebalance extends Page
      * — required for the companion declarative-reconciliation change to
      * ever pick up the removal.
      *
+     * The machine is chosen, not invented. An earlier version always opened
+     * a fresh placeholder device, and {@see DeviceClaimResolver}
+     * matches a known fingerprint exactly before it ever looks at
+     * placeholders — so for anyone whose machine had already connected, the
+     * grant went to a slot nothing would ever claim while their old account
+     * was demoted out from under them. They lost an account and gained
+     * nothing.
+     *
      * @return Action
      */
     public function switchUserAction(): Action
@@ -391,18 +426,29 @@ class AccountRebalance extends Page
             ->modalHeading('Issue a token on the new account')
             ->modalDescription('Open the authorize URL, log in as the target account, approve, then paste the code back here. The old account will be demoted (not deleted) once this succeeds — the affected device will drop the old local credential on its next sync, but the underlying Anthropic token itself is not revoked (there is no API for that).')
             ->modalSubmitActionLabel('Switch')
-            ->fillForm(function (): array {
+            ->fillForm(function (array $arguments): array {
                 $started = app(AccountConnectService::class)->start();
+                $devices = $this->deviceOptionsFor($arguments['userId'] ?? null);
 
                 return [
                     'authorize_url' => $started['url'],
                     'state' => $started['state'],
+                    'user_id' => $arguments['userId'] ?? null,
+                    // Their existing machine, not a fresh slot: see the note
+                    // on this action for what happens when it is a fresh one.
+                    'device_pk' => array_key_first($devices),
                     'code' => '',
                 ];
             })
             ->schema([
                 TextInput::make('authorize_url')->label('Authorize URL')->readOnly()->copyable(),
                 Hidden::make('state'),
+                Hidden::make('user_id'),
+                Select::make('device_pk')
+                    ->label('Machine to move')
+                    ->options(fn (Get $get): array => $this->deviceOptionsFor($get('user_id')))
+                    ->helperText('The grant is issued to one machine. Leave blank only for a machine that has not connected yet — one already registered answers to its own fingerprint and will never pick up an empty slot.')
+                    ->placeholder('+ A machine that has not connected yet…'),
                 TextInput::make('code')->label('Paste the code here')->required(),
             ])
             ->action(function (array $data, array $arguments): void {
@@ -412,7 +458,7 @@ class AccountRebalance extends Page
                 $service = app(AccountProvisioningService::class);
 
                 DB::transaction(function () use ($service, $user, $toAccount, $data): void {
-                    $device = $service->resolveProvisionTarget($user, null);
+                    $device = $service->resolveProvisionTarget($user, $data['device_pk'] ?? null);
                     $service->provisionForDevice($user, $toAccount, $device, $data['state'], $data['code']);
                 });
 
@@ -425,6 +471,11 @@ class AccountRebalance extends Page
                     ->title('Switched')
                     ->body("Issued a token on {$toAccount->email} and stopped tracking {$fromAccount->email}.")
                     ->send();
+
+                // The plan was built for a fleet this move has just changed:
+                // leaving it on screen invites the same switch being applied
+                // twice.
+                $this->compute();
             });
     }
 }

@@ -195,3 +195,25 @@ it('explains a move with the figures behind it', function () {
 
     Carbon::setTestNow();
 });
+
+it('issues the switched grant to the machine the person already uses', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $admin = User::factory()->admin()->create();
+    ['tight' => $tight, 'whale' => $whale] = lopsidedFleet();
+
+    // Their laptop has already connected, so its fingerprint is bound.
+    $laptop = $whale->devices()->create(['device_id' => 'fingerprint-abc', 'name' => 'laptop']);
+
+    $mounted = Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('switchUser', ['userId' => $whale->id, 'fromAccountId' => $tight->id, 'toAccountId' => $tight->id]);
+
+    // A bound machine only ever answers to its own fingerprint: a grant put
+    // on a fresh placeholder would never reach it, while the old account was
+    // demoted anyway — losing them an account and giving nothing back. So
+    // the modal has to default to a machine that exists.
+    // Form state carries the option key as a string.
+    expect((int) $mounted->get('mountedActions.0.data.device_pk'))->toBe($laptop->id);
+
+    Carbon::setTestNow();
+});

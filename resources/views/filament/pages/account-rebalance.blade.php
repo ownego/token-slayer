@@ -383,33 +383,63 @@
     @endif
 
     <x-filament::section heading="Members" style="margin-top:1.5rem;">
-        <div style="display:flex; gap:1rem; align-items:center; font-size:.75rem; opacity:.7;">
+        <div style="display:flex; gap:1rem; align-items:center; font-size:.75rem; opacity:.65; margin-bottom:1rem;">
             <span style="display:flex; align-items:center; gap:.35rem;">
-                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#22c55e;"></span>
+                <span style="display:inline-block; width:.45rem; height:.45rem; border-radius:9999px; background:#22c55e;"></span>
                 Tracked
             </span>
             <span style="display:flex; align-items:center; gap:.35rem;">
-                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#3b82f6;"></span>
-                Pending
+                <span style="display:inline-block; width:.45rem; height:.45rem; border-radius:9999px; background:#3b82f6;"></span>
+                Pending — granted, not claimed yet
             </span>
+            @if ($computed)
+                <span style="margin-left:auto;">Bar shows worst-case load; the line marks {{ 100 - ($summary['safety_margin_percent'] ?? 20) }}%.</span>
+            @endif
         </div>
 
-        @foreach ($this->memberRowsByAccount() as $accountId => $rows)
-            <div style="margin-top:.75rem;">
-                <span style="font-family:monospace; font-size:.8rem;">{{ \App\Models\Account::find($accountId)?->email }}</span>
-                <ul style="list-style:none; padding-left:0; margin-top:.25rem;">
-                    @foreach ($rows as $row)
-                        <li style="display:flex; align-items:center; gap:.5rem; padding:.15rem 0;">
-                            @if ($row['status'] === 'tracked')
-                                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#22c55e;" title="Tracked"></span>
-                            @elseif ($row['status'] === 'pending')
-                                <span style="display:inline-block; width:.5rem; height:.5rem; border-radius:9999px; background:#3b82f6;" title="Pending"></span>
-                            @endif
-                            {{ $row['handle'] }}
-                        </li>
-                    @endforeach
-                </ul>
-            </div>
-        @endforeach
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:.85rem;">
+            @foreach ($this->memberRowsByAccount() as $accountId => $rows)
+                @php($card = collect($accounts)->firstWhere('id', $accountId))
+                @php($load = $card['fill_before_percent'] ?? null)
+                @php($target = 100 - ($summary['safety_margin_percent'] ?? 20))
+                <div style="border:1px solid rgba(120,120,140,.2); border-radius:.6rem; padding:.75rem .85rem;">
+                    <div style="display:flex; align-items:baseline; justify-content:space-between; gap:.5rem;">
+                        <span style="font-family:monospace; font-size:.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                            {{ \App\Models\Account::find($accountId)?->email }}
+                        </span>
+                        @if ($load !== null)
+                            <span style="font-size:1.1rem; font-weight:600; line-height:1; color:{{ $load > 100 ? 'var(--danger-500, #dc2626)' : 'inherit' }};">
+                                {{ number_format($load, 0) }}%
+                            </span>
+                        @endif
+                    </div>
+
+                    @if ($load !== null)
+                        <div style="position:relative; height:.4rem; border-radius:9999px; background:rgba(120,120,140,.18); margin-top:.5rem; overflow:hidden;">
+                            <div style="height:100%; width:{{ min(100, $load) }}%; background:{{ $load > 100 ? '#dc2626' : ($load > $target ? '#f59e0b' : '#22c55e') }};"></div>
+                        </div>
+                        <div style="position:relative; height:0;">
+                            <span style="position:absolute; left:{{ $target }}%; top:-.55rem; width:1px; height:.7rem; background:rgba(120,120,140,.75);"></span>
+                        </div>
+                    @endif
+
+                    <div style="display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.75rem;">
+                        @forelse ($rows as $row)
+                            <span style="display:inline-flex; align-items:center; gap:.3rem; font-size:.75rem; padding:.15rem .45rem; border-radius:9999px; background:rgba(120,120,140,.12);">
+                                <span style="display:inline-block; width:.4rem; height:.4rem; border-radius:9999px; background:{{ $row['status'] === 'pending' ? '#3b82f6' : '#22c55e' }};"
+                                      title="{{ ucfirst($row['status']) }}"></span>
+                                {{ $row['handle'] }}
+                            </span>
+                        @empty
+                            <span style="font-size:.75rem; opacity:.5;">no members</span>
+                        @endforelse
+                    </div>
+
+                    <div style="font-size:.7rem; opacity:.5; margin-top:.5rem;">
+                        {{ count($rows) }} of {{ config('token_slayer.rebalance.members_per_account') }} seats
+                    </div>
+                </div>
+            @endforeach
+        </div>
     </x-filament::section>
 </x-filament-panels::page>
