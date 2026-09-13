@@ -24,17 +24,6 @@ use Illuminate\Support\Facades\DB;
 final class AccountRebalanceRecommender
 {
     /**
-     * How many percentage points the fullest account must improve by before
-     * any moves are worth proposing. A bin-packer will reshuffle a fleet
-     * that is already level — a whale here, two mediums there — and every
-     * one of those moves costs a person a re-authentication for no gain.
-     * Silence is the right answer when nothing is actually wrong.
-     *
-     * @var float
-     */
-    private const float MIN_IMPROVEMENT_POINTS = 1.0;
-
-    /**
      * @param  AccountCapacityEstimator  $capacity  measures how many tokens each account's weekly quota is worth
      * @param  UserDemandEstimator  $demand  measures each person's appetite and how heavily their tokens bite
      * @param  RebalancePlanner  $planner  decides the arrangement these two measurements imply
@@ -103,23 +92,13 @@ final class AccountRebalanceRecommender
 
         $fillBefore = $this->fillPercentages($plan['fill_before'], $capacities);
         $fillAfter = $this->fillPercentages($plan['fill_after'], $capacities);
-        $peakBefore = $fillBefore === [] ? 0.0 : max($fillBefore);
-        $peakAfter = $fillAfter === [] ? 0.0 : max($fillAfter);
-
-        $worthDoing = $peakBefore - $peakAfter >= self::MIN_IMPROVEMENT_POINTS;
-        if (! $worthDoing) {
-            $plan['moves'] = [];
-            $plan['assignment'] = array_intersect_key($current, $demands);
-            $fillAfter = $fillBefore;
-            $peakAfter = $peakBefore;
-        }
 
         return [
             'moves' => $this->recommendationsFor($plan['moves'], $details, $burstFactors, $fillBefore, $fillAfter, $accounts),
             'accounts' => $this->accountSummaries($accounts, $capacities, $fillBefore, $fillAfter, $current, $plan['assignment']),
-            'peak_fill_before_percent' => $peakBefore,
-            'peak_fill_after_percent' => $peakAfter,
-            'unplaced_tokens' => array_sum($plan['unplaced']),
+            'peak_fill_before_percent' => $fillBefore === [] ? 0.0 : max($fillBefore),
+            'peak_fill_after_percent' => $fillAfter === [] ? 0.0 : max($fillAfter),
+            'unplaced_tokens' => array_sum($plan['overflow']),
             'safety_margin_percent' => (int) config('token_slayer.rebalance.safety_margin_percent'),
             'window_label' => $window->label(),
         ];
