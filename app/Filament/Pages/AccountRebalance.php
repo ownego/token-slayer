@@ -136,6 +136,24 @@ class AccountRebalance extends Page
     public bool $computed = false;
 
     /**
+     * Row indexes of {@see $moves} already carried out, so the plan can be
+     * worked through without changing underneath the person working through
+     * it.
+     *
+     * A plan is one target arrangement and its moves are the path to it;
+     * applying them in any order arrives there. Recomputing after each one
+     * throws that target away and searches again from a half-applied state —
+     * the worst state there is, since half a swap has been made and the
+     * other half is no longer being asked for. Doing that produced a fresh
+     * list of ten every time somebody completed a move, and no way to tell
+     * whether they were ever going to finish.
+     *
+     * @var array<int, int>
+     */
+    #[Locked]
+    public array $applied = [];
+
+    /**
      * Fleet sizing from the last computation: what a typical week and the
      * worst case each demand of the fleet, and how many accounts each would
      * need. Rearranging people cannot help a fleet that is simply too small,
@@ -225,6 +243,7 @@ class AccountRebalance extends Page
             fn (RebalanceRecommendation $move): array => $this->moveToArray($move, $result['accounts']),
             $result['moves'],
         );
+        $this->applied = [];
         $this->summary = [
             'peak_fill_before_percent' => $result['peak_fill_before_percent'],
             'peak_fill_after_percent' => $result['peak_fill_after_percent'],
@@ -466,16 +485,18 @@ class AccountRebalance extends Page
                     'status' => MembershipStatus::Untracked->value,
                 ]);
 
+                // Ticked off, not recomputed: the rest of this plan still
+                // leads to the same arrangement, and re-planning now would
+                // abandon it mid-swap.
+                if (isset($arguments['index'])) {
+                    $this->applied[] = (int) $arguments['index'];
+                }
+
                 Notification::make()
                     ->success()
                     ->title('Switched')
                     ->body("Issued a token on {$toAccount->email} and stopped tracking {$fromAccount->email}.")
                     ->send();
-
-                // The plan was built for a fleet this move has just changed:
-                // leaving it on screen invites the same switch being applied
-                // twice.
-                $this->compute();
             });
     }
 }

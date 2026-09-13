@@ -217,3 +217,49 @@ it('issues the switched grant to the machine the person already uses', function 
 
     Carbon::setTestNow();
 });
+
+it('ticks a completed move off without re-planning the rest', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    fakeAnthropic();
+    $admin = User::factory()->admin()->create();
+    ['whale' => $whale] = lopsidedFleet();
+    $whale->devices()->create(['device_id' => 'fingerprint-abc', 'name' => 'laptop']);
+
+    $component = Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('recommend')
+        ->callMountedAction();
+
+    $planned = $component->get('moves');
+    expect($planned)->not->toBeEmpty();
+
+    // The destination has to be the identity the fixture authorises, since
+    // the real exchange still verifies it.
+    $destination = Account::query()->find($planned[0]['toAccountId']);
+    $destination->email = 'ongtung2212002@gmail.com';
+    $destination->save();
+
+    $component->callAction('switchUser', data: ['code' => 'code#state'], arguments: [
+        'userId' => $planned[0]['userId'],
+        'fromAccountId' => $planned[0]['fromAccountId'],
+        'toAccountId' => $destination->id,
+        'index' => 0,
+    ]);
+
+    // A plan is one target arrangement and its moves are the path there.
+    // Re-planning after each step abandons that target mid-swap and hands
+    // back a fresh list every time, which is no way to finish anything.
+    // Compared on identity rather than whole rows: a Livewire round trip
+    // renders floats back differently, which says nothing about whether the
+    // plan held.
+    $stillPlanned = collect($component->get('moves'))->map(fn (array $m): string => $m['userId'].'>'.$m['toAccountId'])->all();
+    expect($component->get('applied'))->toBe([0])
+        ->and($stillPlanned)->toBe(collect($planned)->map(fn (array $m): string => $m['userId'].'>'.$m['toAccountId'])->all());
+
+    // Recalculating is the explicit way to start again, and it clears the
+    // ticks.
+    $component->mountAction('recommend')->callMountedAction();
+    expect($component->get('applied'))->toBe([]);
+
+    Carbon::setTestNow();
+});

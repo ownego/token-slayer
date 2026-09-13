@@ -68,6 +68,20 @@
                 one account burning out days before the others.
             </p>
 
+            @if (count($applied) > 0)
+                <p style="margin-top:.5rem; font-size:.85rem;">
+                    <strong>{{ count($applied) }} of {{ count($moves) }} done.</strong>
+                    @if (count($applied) >= count($moves))
+                        This plan is finished — Recalculate to see whether anything further is worth doing.
+                    @else
+                        The remaining {{ count($moves) - count($applied) }} still lead to the same arrangement, so the
+                        list stays put until you Recalculate. Finishing them is what reaches
+                        {{ number_format($after, 1) }}%; stopping half way through a swap leaves the fleet worse than
+                        before it started.
+                    @endif
+                </p>
+            @endif
+
             @if (($summary['simulated_accounts'] ?? 0) > 0 && ! empty($capacity))
                 @php($extra = $summary['simulated_accounts'])
                 @php($need = $capacity['unconstrained']['tokens'])
@@ -130,7 +144,7 @@
                     </thead>
                     <tbody>
                         @foreach ($moves as $index => $move)
-                            <tr style="border-top:1px solid rgba(120,120,140,.15);">
+                            <tr style="border-top:1px solid rgba(120,120,140,.15); {{ in_array($index, $applied, true) ? 'opacity:.45;' : '' }}">
                                 <td style="padding:.4rem .6rem;">{{ $move['userLabel'] }}</td>
                                 <td style="padding:.4rem .6rem;">
                                     {{ $move['fromAccountLabel'] }}
@@ -161,10 +175,12 @@
                                 </td>
                                 <td style="padding:.4rem .6rem; white-space:nowrap;">
                                     {{ ($this->explainMoveAction)(['index' => $index]) }}
-                                    @if ($move['toAccountIsNew'])
+                                    @if (in_array($index, $applied, true))
+                                        <x-filament::badge color="success">done</x-filament::badge>
+                                    @elseif ($move['toAccountIsNew'])
                                         <span style="opacity:.6; font-size:.8rem;">connect the account first</span>
                                     @else
-                                        {{ ($this->switchUserAction)(['userId' => $move['userId'], 'fromAccountId' => $move['fromAccountId'], 'toAccountId' => $move['toAccountId']]) }}
+                                        {{ ($this->switchUserAction)(['userId' => $move['userId'], 'fromAccountId' => $move['fromAccountId'], 'toAccountId' => $move['toAccountId'], 'index' => $index]) }}
                                     @endif
                                 </td>
                             </tr>
