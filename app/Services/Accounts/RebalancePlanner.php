@@ -90,7 +90,7 @@ final class RebalancePlanner
             'fill_before' => $this->fills($capacities, $demands, $current),
             'fill_after' => $this->fills($capacities, $demands, $assignment),
             'effective_demands' => $effective,
-            'overflow' => $this->overflow($this->fills($capacities, $effective, $assignment), $capacities),
+            'overflow' => $this->overflow($this->fills($capacities, $demands, $assignment), $capacities),
         ];
     }
 
@@ -399,14 +399,15 @@ final class RebalancePlanner
      * are the ones that do not fit, and an overflowing account is the thing
      * an admin has to act on anyway.
      *
-     * Measured against FULL capacity, not the plannable share. The safety
-     * margin biases where people are placed; it is not a shortfall. Reporting
-     * against it would both claim tokens do not fit when they demonstrably
-     * would, and put an account's reported fill and its reported overflow on
-     * different denominators, which reads as a contradiction: 95% full and
-     * over capacity at the same time.
+     * Measured on raw demand against FULL capacity — neither of the two
+     * planning biases belongs here. The safety margin and the burst pad both
+     * exist to steer placement, and neither is a token anyone will actually
+     * spend; counting either as a shortfall claims tokens do not fit when
+     * they demonstrably would, and puts an account's reported fill and its
+     * reported overflow on different bases, which reads as a contradiction:
+     * 95% full and over capacity at the same time.
      *
-     * @param  array<int, float>  $load  account id => padded demand planned onto it
+     * @param  array<int, float>  $load  account id => demand planned onto it
      * @param  array<int, float>  $capacities  account id => weekly capacity in tokens
      * @return array<int, float>
      */
