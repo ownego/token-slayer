@@ -108,23 +108,33 @@
     @if ($computed && ! empty($capacity))
         <x-filament::section heading="Fleet sizing" style="margin-top:1.5rem;">
             @php($seen = $capacity['observed'])
-            @php($crowded = $seen['accounts_over_capacity'] > 0 && $seen['fleet_peak_percent'] <= 100)
+            @php($free = $capacity['unconstrained'])
 
             <p style="font-size:.85rem;">
-                @if ($crowded)
+                @if ($free['accounts_saturated'] > 0)
+                    <strong>{{ $free['accounts_saturated'] }} of {{ $seen['accounts_measured'] }} accounts ran out
+                    mid-week and rationed their own users.</strong>
+                    What the fleet spent therefore understates what it needed: it got through
+                    {{ number_format($seen['fleet_peak_percent'], 0) }}% of its capacity, but the rate those accounts
+                    were burning at before they hit the ceiling was heading for
+                    <strong>{{ number_format($free['percent'], 0) }}%</strong>.
+                    @if ($free['accounts_needed'] > 0)
+                        Covering that needs about {{ $free['accounts_needed'] }} more
+                        {{ \Illuminate\Support\Str::plural('account', $free['accounts_needed']) }} — rebalancing
+                        alone will not create tokens that were never there.
+                    @else
+                        The fleet can still cover that once the load is spread properly, so rebalancing is the fix.
+                    @endif
+                @elseif ($seen['accounts_over_capacity'] > 0 && $seen['fleet_peak_percent'] <= 100)
                     <strong>The fleet is not short of tokens — they are in the wrong accounts.</strong>
                     At its busiest the whole fleet reached
                     <strong>{{ number_format($seen['fleet_peak_percent'], 0) }}%</strong> of its capacity, yet
                     <strong>{{ $seen['accounts_over_capacity'] }} of {{ $seen['accounts_measured'] }}</strong>
                     accounts individually blew past 100% — that is what makes an account die mid-week while another
                     idles. Rebalancing is the fix for that; buying accounts is not.
-                @elseif ($seen['fleet_peak_percent'] > 100)
-                    <strong>The fleet really is short of tokens.</strong> At its busiest it needed
-                    <strong>{{ number_format($seen['fleet_peak_percent'], 0) }}%</strong> of everything it has, so no
-                    arrangement of people can cover that week.
                 @else
                     The fleet peaked at <strong>{{ number_format($seen['fleet_peak_percent'], 0) }}%</strong> of its
-                    capacity and no account exceeded its own. Nothing here needs buying.
+                    capacity, no account ran out, and no account exceeded its own. Nothing here needs buying.
                 @endif
             </p>
 
@@ -148,6 +158,29 @@
                     <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">
                         Read off the event ledger over {{ $capacity['window_label'] }}. No model — this is the week
                         the team lived through.
+                    </div>
+                </div>
+
+                <div style="border:2px solid rgba(120,120,140,.35); border-radius:.5rem; padding:.75rem 1rem;">
+                    <div style="opacity:.6; font-size:.75rem;">What it would have needed unthrottled</div>
+                    <div style="font-size:1.75rem; font-weight:600; line-height:1.2; color:{{ $free['percent'] > 100 ? 'var(--danger-500, #dc2626)' : 'inherit' }};">
+                        {{ number_format($free['percent'], 0) }}%
+                    </div>
+                    <div style="font-size:.8rem; opacity:.7;">
+                        {{ number_format($free['tokens']) }} tokens/week
+                        · {{ $free['accounts_saturated'] }} {{ \Illuminate\Support\Str::plural('account', $free['accounts_saturated']) }} hit the ceiling
+                    </div>
+                    <div style="font-size:.85rem; margin-top:.5rem;">
+                        @if ($free['accounts_needed'] === 0)
+                            <x-filament::badge color="success">Enough capacity — no new account needed</x-filament::badge>
+                        @else
+                            <x-filament::badge color="warning">At least {{ $free['accounts_needed'] }} more {{ \Illuminate\Support\Str::plural('account', $free['accounts_needed']) }} to stay under {{ 100 - $capacity['safety_margin_percent'] }}%</x-filament::badge>
+                        @endif
+                    </div>
+                    <div style="font-size:.75rem; opacity:.55; margin-top:.4rem;">
+                        An account that burned 80% of its week in three days did not meet demand, it capped it. This
+                        projects the rate it was running at before the ceiling across the full week. <strong>Size the
+                        fleet on this one</strong> — the other two are a floor and a ceiling.
                     </div>
                 </div>
 

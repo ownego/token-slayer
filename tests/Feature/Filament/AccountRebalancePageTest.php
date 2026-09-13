@@ -129,7 +129,7 @@ it('sizes the fleet both ways, so a capacity decision is not made on the worst c
         ->callMountedAction();
 
     expect($component->get('capacity'))
-        ->toHaveKeys(['observed', 'worst_case', 'assumed_capacity_tokens'])
+        ->toHaveKeys(['observed', 'unconstrained', 'worst_case', 'assumed_capacity_tokens'])
         ->and($component->get('capacity')['projection'])->toBeNull();
 
     // Asking for one more account produces a projection of where people
