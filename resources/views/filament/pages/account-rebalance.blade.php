@@ -68,14 +68,25 @@
                 one account burning out days before the others.
             </p>
 
-            @if (count($applied) > 0)
+            @if ($planId === null)
+                <p style="margin-top:.5rem; font-size:.85rem; border-left:3px solid var(--warning-500, #f59e0b); padding-left:.75rem;">
+                    <strong>This is a draft.</strong> Nothing is recorded and no move can be carried out until you
+                    press <strong>Apply this plan</strong>. Recalculating as often as you like will not disturb a plan
+                    already being worked through.
+                </p>
+            @endif
+
+            @if ($planId !== null)
                 <p style="margin-top:.5rem; font-size:.85rem;">
                     <strong>{{ count($applied) }} of {{ count($moves) }} done.</strong>
-                    @if ($computedAt)
-                        <span style="opacity:.6;">Planned {{ \Illuminate\Support\Carbon::parse($computedAt)->diffForHumans() }}.</span>
+                    @if ($adoptedAt)
+                        <span style="opacity:.6;">Applied {{ \Illuminate\Support\Carbon::parse($adoptedAt)->diffForHumans() }}.</span>
                     @endif
                     @if (count($applied) >= count($moves))
                         This plan is finished — Recalculate to see whether anything further is worth doing.
+                    @elseif (count($applied) === 0)
+                        Work through them one at a time; the list stays exactly as it is until you Recalculate and
+                        apply a new one.
                     @else
                         The remaining {{ count($moves) - count($applied) }} still lead to the same arrangement, so the
                         list stays put until you Recalculate. Finishing them is what reaches
@@ -180,6 +191,8 @@
                                     {{ ($this->explainMoveAction)(['index' => $index]) }}
                                     @if (in_array($index, $applied, true))
                                         <x-filament::badge color="success">done</x-filament::badge>
+                                    @elseif ($planId === null)
+                                        <span style="opacity:.6; font-size:.8rem;">apply the plan first</span>
                                     @elseif ($move['toAccountIsNew'])
                                         <span style="opacity:.6; font-size:.8rem;">connect the account first</span>
                                     @else

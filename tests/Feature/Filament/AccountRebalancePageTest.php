@@ -5,6 +5,7 @@ use App\Filament\Pages\AccountRebalance;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
+use App\Models\RebalancePlan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -228,7 +229,8 @@ it('ticks a completed move off without re-planning the rest', function () {
     $component = Livewire::actingAs($admin)
         ->test(AccountRebalance::class)
         ->mountAction('recommend')
-        ->callMountedAction();
+        ->callMountedAction()
+        ->callAction('adoptPlan');
 
     $planned = $component->get('moves');
     expect($planned)->not->toBeEmpty();
@@ -264,21 +266,43 @@ it('ticks a completed move off without re-planning the rest', function () {
     Carbon::setTestNow();
 });
 
-it('keeps the plan and the ticks across a reload', function () {
+it('treats a recalculation as a draft until it is applied', function () {
     Carbon::setTestNow('2026-09-12 06:00:00');
     $admin = User::factory()->admin()->create();
     lopsidedFleet();
 
-    fakeAnthropic();
     $component = Livewire::actingAs($admin)
         ->test(AccountRebalance::class)
         ->mountAction('recommend')
         ->callMountedAction();
-    $planned = $component->get('moves');
 
+    // A search result is not a decision: nothing is written, and reopening
+    // the page finds nothing to come back to.
+    expect($component->get('planId'))->toBeNull()
+        ->and(RebalancePlan::query()->count())->toBe(0)
+        ->and(Livewire::actingAs($admin)->test(AccountRebalance::class)->get('computed'))->toBeFalse();
+
+    Carbon::setTestNow();
+});
+
+it('brings back the applied plan, and the ticks, after a reload', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    fakeAnthropic();
+    $admin = User::factory()->admin()->create();
+    ['whale' => $whale] = lopsidedFleet();
+    $whale->devices()->create(['device_id' => 'fingerprint-abc', 'name' => 'laptop']);
+
+    $component = Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('recommend')
+        ->callMountedAction()
+        ->callAction('adoptPlan');
+
+    $planned = $component->get('moves');
     $destination = Account::query()->find($planned[0]['toAccountId']);
     $destination->email = 'ongtung2212002@gmail.com';
     $destination->save();
+
     $component->callAction('switchUser', data: ['code' => 'code#state'], arguments: [
         'userId' => $planned[0]['userId'],
         'fromAccountId' => $planned[0]['fromAccountId'],
@@ -286,15 +310,38 @@ it('keeps the plan and the ticks across a reload', function () {
         'index' => 0,
     ]);
 
-    // Executing a plan is a browser round trip to Anthropic per move, so a
-    // reload part-way through is ordinary. Losing the plan to one costs the
-    // admin their place and hands back a differently shaped list.
+    // Executing a plan is a browser round trip to Anthropic per move, so it
+    // spans reloads as a matter of course.
     $reloaded = Livewire::actingAs($admin)->test(AccountRebalance::class);
 
-    expect($reloaded->get('computed'))->toBeTrue()
+    expect($reloaded->get('planId'))->toBe($component->get('planId'))
         ->and($reloaded->get('applied'))->toBe([0])
         ->and(collect($reloaded->get('moves'))->pluck('userId')->all())
         ->toBe(collect($planned)->pluck('userId')->all());
+
+    Carbon::setTestNow();
+});
+
+it('leaves the applied plan alone when a newer recalculation is not applied', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $admin = User::factory()->admin()->create();
+    lopsidedFleet();
+
+    $adopted = Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->mountAction('recommend')
+        ->callMountedAction()
+        ->callAction('adoptPlan')
+        ->get('planId');
+
+    // Somebody looks at a different range and walks away without applying it.
+    Livewire::actingAs($admin)
+        ->test(AccountRebalance::class)
+        ->set('range', 'week')
+        ->mountAction('recommend')
+        ->callMountedAction();
+
+    expect(Livewire::actingAs($admin)->test(AccountRebalance::class)->get('planId'))->toBe($adopted);
 
     Carbon::setTestNow();
 });

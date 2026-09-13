@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\MembershipStatus;
 use App\Models\Account;
+use App\Models\RebalancePlan;
 use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
@@ -83,24 +84,24 @@ class AccountRebalance extends Page
     protected string $view = 'filament.pages.account-rebalance';
 
     /**
-     * Session key the working plan is kept under.
+     * The adopted plan on screen, or null while this is only a draft.
      *
-     * Executing a plan means a browser round trip to Anthropic per move, so
-     * a reload part-way through is ordinary rather than careless — and
-     * without this it cost the admin their place and their ticks, and handed
-     * back a differently-shaped plan on the next Recalculate.
+     * A recalculation is a search result and nothing more; the next search
+     * may differ. Adopting one writes it down, and only then is it the thing
+     * being worked through.
      *
-     * @var string
+     * @var int|null
      */
-    private const string SESSION_KEY = 'account-rebalance.plan';
+    #[Locked]
+    public ?int $planId = null;
 
     /**
-     * When the plan on screen was computed, so a stale one can say so.
+     * When the plan on screen was adopted, so a stale one can say so.
      *
      * @var string|null
      */
     #[Locked]
-    public ?string $computedAt = null;
+    public ?string $adoptedAt = null;
 
     /**
      * How far back the analysis reads: `'week'`, `'month'`, or `'all'`.
@@ -199,39 +200,76 @@ class AccountRebalance extends Page
      */
     public function mount(): void
     {
-        $stored = session(self::SESSION_KEY);
-        if (! is_array($stored)) {
+        $plan = RebalancePlan::query()->latest('id')->first();
+        if ($plan === null) {
             return;
         }
 
-        $this->moves = $stored['moves'];
-        $this->accounts = $stored['accounts'];
-        $this->summary = $stored['summary'];
-        $this->capacity = $stored['capacity'];
-        $this->applied = $stored['applied'];
-        $this->range = $stored['range'];
-        $this->extraAccounts = $stored['extra_accounts'];
-        $this->computedAt = $stored['computed_at'];
+        $this->planId = $plan->id;
+        $this->moves = $plan->moves;
+        $this->accounts = $plan->accounts;
+        $this->summary = $plan->summary;
+        $this->capacity = $plan->capacity;
+        $this->applied = $plan->applied_indexes;
+        $this->range = $plan->range;
+        $this->extraAccounts = $plan->extra_accounts;
+        $this->adoptedAt = $plan->created_at?->toIso8601String();
         $this->computed = true;
     }
 
     /**
-     * Keep the working plan where a reload can find it again.
+     * Adopt the draft on screen: write it down and start working through it.
      *
+     * Kept separate from Recalculate on purpose. A search can be run as often
+     * as somebody likes without disturbing the plan a team is part-way
+     * through, and reopening the page brings back what was adopted rather
+     * than whatever the latest search happened to return.
+     *
+     * @return Action
+     */
+    public function adoptPlanAction(): Action
+    {
+        return Action::make('adoptPlan')
+            ->label('Apply this plan')
+            ->icon(Heroicon::OutlinedCheckCircle)
+            ->visible(fn (): bool => $this->computed && $this->planId === null && $this->moves !== [])
+            ->action(function (): void {
+                $plan = RebalancePlan::query()->create([
+                    'adopted_by' => auth()->id(),
+                    'range' => $this->range,
+                    'extra_accounts' => $this->extraAccounts,
+                    'moves' => $this->moves,
+                    'accounts' => $this->accounts,
+                    'summary' => $this->summary,
+                    'capacity' => $this->capacity,
+                    'applied_indexes' => [],
+                ]);
+
+                $this->planId = $plan->id;
+                $this->applied = [];
+                $this->adoptedAt = $plan->created_at?->toIso8601String();
+
+                Notification::make()
+                    ->success()
+                    ->title('Plan applied')
+                    ->body('It will be here when you come back, with whatever you have already done ticked off.')
+                    ->send();
+            });
+    }
+
+    /**
+     * Record a completed move against the adopted plan.
+     *
+     * @param  int  $index  the row that was carried out
      * @return void
      */
-    private function rememberPlan(): void
+    private function markApplied(int $index): void
     {
-        session([self::SESSION_KEY => [
-            'moves' => $this->moves,
-            'accounts' => $this->accounts,
-            'summary' => $this->summary,
-            'capacity' => $this->capacity,
-            'applied' => $this->applied,
-            'range' => $this->range,
-            'extra_accounts' => $this->extraAccounts,
-            'computed_at' => $this->computedAt,
-        ]]);
+        $this->applied[] = $index;
+
+        RebalancePlan::query()->whereKey($this->planId)->update([
+            'applied_indexes' => $this->applied,
+        ]);
     }
 
     /**
@@ -305,7 +343,6 @@ class AccountRebalance extends Page
             fn (RebalanceRecommendation $move): array => $this->moveToArray($move, $result['accounts']),
             $result['moves'],
         );
-        $this->applied = [];
         $this->summary = [
             'peak_fill_before_percent' => $result['peak_fill_before_percent'],
             'peak_fill_after_percent' => $result['peak_fill_after_percent'],
@@ -317,9 +354,12 @@ class AccountRebalance extends Page
             'peak_without_extra_percent' => $withoutExtra,
             'arrivals' => count(array_filter($this->moves, fn (array $move): bool => $move['toAccountIsNew'])),
         ];
+        // A recalculation is a draft: it replaces nothing until adopted, so
+        // a team part-way through a plan can look without losing their place.
         $this->computed = true;
-        $this->computedAt = now()->toIso8601String();
-        $this->rememberPlan();
+        $this->planId = null;
+        $this->adoptedAt = null;
+        $this->applied = [];
     }
 
     /**
@@ -368,7 +408,7 @@ class AccountRebalance extends Page
      */
     protected function getHeaderActions(): array
     {
-        return [$this->recommendAction()];
+        return [$this->adoptPlanAction(), $this->recommendAction()];
     }
 
     /**
@@ -552,9 +592,8 @@ class AccountRebalance extends Page
                 // Ticked off, not recomputed: the rest of this plan still
                 // leads to the same arrangement, and re-planning now would
                 // abandon it mid-swap.
-                if (isset($arguments['index'])) {
-                    $this->applied[] = (int) $arguments['index'];
-                    $this->rememberPlan();
+                if (isset($arguments['index']) && $this->planId !== null) {
+                    $this->markApplied((int) $arguments['index']);
                 }
 
                 Notification::make()
