@@ -34,7 +34,7 @@ class Dashboard extends BaseDashboard
     public function filtersForm(Schema $schema): Schema
     {
         return $schema
-            ->columns(['default' => 1, 'sm' => 2, 'lg' => 6])
+            ->columns(['default' => 1, 'sm' => 2, 'lg' => 7])
             ->components([
                 Placeholder::make('total_active_users')
                     ->label('Total active users')
