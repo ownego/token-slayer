@@ -346,6 +346,56 @@ it('leaves the applied plan alone when a newer recalculation is not applied', fu
     Carbon::setTestNow();
 });
 
+it('renders an adopted plan whose moves predate the confidenceReason field', function () {
+    // A plan adopted before confidenceReason was added to moveToArray() has
+    // that key missing from its persisted JSON entirely — not null, absent.
+    // mount() loads the latest plan unconditionally, so this reproduces the
+    // 500 ("Undefined array key") that hit every admin opening the page.
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $admin = User::factory()->admin()->create();
+    ['tight' => $tight, 'roomy' => $roomy] = lopsidedFleet();
+
+    $move = [
+        'userId' => 1, 'userLabel' => '#1',
+        'fromAccountId' => $tight->id, 'fromAccountLabel' => 'a',
+        'toAccountId' => $roomy->id, 'toAccountLabel' => 'b',
+        'toAccountIsNew' => false,
+        'swapWithUserId' => null, 'swapWithLabel' => null,
+        'demandWeeklyTokens' => 1, 'demandPerDayTokens' => 1, 'demandBasis' => 'observed',
+        'trailingAvgPerDayTokens' => 1, 'peakWeekTokens' => 1, 'burstFactor' => 1,
+        'quotaWeight' => 1, 'quotaWeightWindows' => 1, 'daysOfHistory' => 7,
+        'fromFillBeforePercent' => 70, 'fromFillAfterPercent' => 50,
+        'toFillBeforePercent' => 35, 'toFillAfterPercent' => 50,
+        'confident' => false,
+        // confidenceReason intentionally absent.
+    ];
+
+    RebalancePlan::query()->create([
+        'adopted_by' => $admin->id,
+        'range' => 'trailing30',
+        'extra_accounts' => 0,
+        'moves' => [$move],
+        'accounts' => [],
+        'summary' => [
+            'peak_fill_before_percent' => 70,
+            'peak_fill_after_percent' => 50,
+            'unplaced_tokens' => 0,
+            'safety_margin_percent' => 10,
+            'window_label' => 'Trailing 30 days',
+            'simulated_accounts' => 0,
+            'capacity_tokens' => 1,
+            'peak_without_extra_percent' => null,
+            'arrivals' => 0,
+        ],
+        'capacity' => [],
+        'applied_indexes' => [],
+    ]);
+
+    Livewire::actingAs($admin)->test(AccountRebalance::class)->assertOk();
+
+    Carbon::setTestNow();
+});
+
 it('marks a switched member pending until their machine claims the grant', function () {
     Carbon::setTestNow('2026-09-12 06:00:00');
     fakeAnthropic();

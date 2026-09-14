@@ -61,7 +61,7 @@
 
     @unless ($move['confident'])
         <p style="color:var(--warning-600, #ca8a04);">
-            {{ $move['confidenceReason'] }}
+            {{ $move['confidenceReason'] ?? '' }}
             Treat the numbers as a first guess rather than a measurement — and note this says nothing about the other
             two, which may be long established.
         </p>
