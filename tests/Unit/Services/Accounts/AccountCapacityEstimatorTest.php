@@ -75,9 +75,13 @@ it('takes the median across completed windows so one freak week cannot set the c
     Carbon::setTestNow('2026-09-12 00:00:00');
     $account = Account::factory()->connected()->create();
 
-    recordCompletedWindow($account, now()->subDays(2), peakUtil: 50, tokens: 500_000);   // 1,000,000
-    recordCompletedWindow($account, now()->subDays(9), peakUtil: 50, tokens: 1_000_000); // 2,000,000
-    recordCompletedWindow($account, now()->subDays(16), peakUtil: 50, tokens: 4_500_000); // 9,000,000
+    // The freak week is freak because it barely touched the quota, not
+    // because it carried a mountain: a week that really did put 4.5M through
+    // at half utilisation would prove the account is worth at least 4.5M, and
+    // no median may read it lower than a week of its own ledger.
+    recordCompletedWindow($account, now()->subDays(2), peakUtil: 25, tokens: 1_000_000);  // 4,000,000
+    recordCompletedWindow($account, now()->subDays(9), peakUtil: 50, tokens: 1_000_000);  // 2,000,000
+    recordCompletedWindow($account, now()->subDays(16), peakUtil: 80, tokens: 1_600_000); // 2,000,000
 
     expect(app(AccountCapacityEstimator::class)->weeklyCapacityTokens($account, RebalanceWindow::days(30)))
         ->toBe(2_000_000.0);
@@ -280,6 +284,27 @@ it('does not let one exhausted week overturn several consistent quieter ones', f
     $measured = app(AccountCapacityEstimator::class)->measure($account, RebalanceWindow::days(30));
 
     expect($measured['tokens'])->toBe(27_000_000.0)
+        ->and($measured['basis'])->toBe('contested');
+
+    Carbon::setTestNow();
+});
+
+it('never reads an account as smaller than a week it demonstrably carried', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $account = Account::factory()->connected()->create();
+
+    // A week that ran out on 20M, and a week that carried 30M without even
+    // filling. The second one does not need extrapolating to contradict the
+    // first: 30M went through this account inside one of its own quota
+    // weeks, so a week of its quota cannot be worth 20M. On prod this had
+    // oedevai4 published at 28.3M while a 77% week had carried 40.2M, and
+    // the page then showed it "peaking at 142% of capacity".
+    recordCompletedWindow($account, now()->subDays(2), peakUtil: 100, tokens: 20_000_000);
+    recordCompletedWindow($account, now()->subDays(9), peakUtil: 75, tokens: 30_000_000);
+
+    $measured = app(AccountCapacityEstimator::class)->measure($account, RebalanceWindow::days(30));
+
+    expect($measured['tokens'])->toBe(30_000_000.0)
         ->and($measured['basis'])->toBe('contested');
 
     Carbon::setTestNow();

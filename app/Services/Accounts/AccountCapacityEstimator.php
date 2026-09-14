@@ -110,6 +110,14 @@ final class AccountCapacityEstimator
      * to be read at a quarter of its size. Then every window counts equally
      * and the basis says so.
      *
+     * Whatever the arithmetic lands on, the answer can never be less than
+     * the most this account actually got through inside one of its own quota
+     * weeks without filling it. That is not an estimate to be weighed
+     * against the others — the tokens went through, the week did not end,
+     * so a week of this quota is worth at least that. Published below it,
+     * the page reported accounts "peaking at 142% of capacity" off their own
+     * ledger.
+     *
      * @param  Account  $account  the account to measure
      * @param  RebalanceWindow  $window  how far back to look
      * @return array{tokens: float|null, basis: string, windows: int}
@@ -118,6 +126,7 @@ final class AccountCapacityEstimator
     {
         $measured = [];
         $extrapolated = [];
+        $floor = 0.0;
 
         foreach ($this->windows->peaks($account, $window) as $closed) {
             if ($closed['peak_util'] < self::MIN_PEAK_UTIL) {
@@ -136,20 +145,21 @@ final class AccountCapacityEstimator
             }
 
             $extrapolated[] = $tokens * 100 / $closed['peak_util'];
+            $floor = max($floor, (float) $tokens);
         }
 
         if ($measured !== [] && $extrapolated !== [] && $this->contradict($this->median($measured), $this->median($extrapolated))) {
             $all = [...$measured, ...$extrapolated];
 
-            return ['tokens' => $this->median($all), 'basis' => 'contested', 'windows' => count($all)];
+            return $this->atLeast($this->median($all), 'contested', count($all), $floor);
         }
 
         if ($measured !== []) {
-            return ['tokens' => $this->median($measured), 'basis' => 'measured', 'windows' => count($measured)];
+            return $this->atLeast($this->median($measured), 'measured', count($measured), $floor);
         }
 
         if ($extrapolated !== []) {
-            return ['tokens' => $this->median($extrapolated), 'basis' => 'extrapolated', 'windows' => count($extrapolated)];
+            return $this->atLeast($this->median($extrapolated), 'extrapolated', count($extrapolated), $floor);
         }
 
         return ['tokens' => null, 'basis' => 'unknown', 'windows' => 0];
@@ -198,6 +208,31 @@ final class AccountCapacityEstimator
         }
 
         return $resolved;
+    }
+
+    /**
+     * The answer, raised to the most the account provably carried in a
+     * single unfilled quota week when the arithmetic came out below it.
+     *
+     * A figure a week of its own ledger already exceeded is not a capacity,
+     * and quietly publishing one turns the observed-load column into
+     * nonsense. Raising it is reported as a disagreement rather than as a
+     * reading, because it is: the account's weeks are not saying the same
+     * thing as each other.
+     *
+     * @param  float|null  $tokens  what the windows averaged out to
+     * @param  string  $basis  how that figure was arrived at
+     * @param  int  $windows  how many windows are behind it
+     * @param  float  $floor  the heaviest unfilled quota week on record, or 0 when there is none
+     * @return array{tokens: float|null, basis: string, windows: int}
+     */
+    private function atLeast(?float $tokens, string $basis, int $windows, float $floor): array
+    {
+        if ($tokens !== null && $floor > $tokens) {
+            return ['tokens' => $floor, 'basis' => 'contested', 'windows' => $windows];
+        }
+
+        return ['tokens' => $tokens, 'basis' => $basis, 'windows' => $windows];
     }
 
     /**
