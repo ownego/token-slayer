@@ -1,4 +1,32 @@
 <x-filament-panels::page>
+    @php($recomputeTargets = 'mountAction, callMountedAction, range, extraAccounts')
+
+    {{-- Reading every account's quota windows takes seconds, and the page
+         keeps the previous plan on screen throughout. Without this, a
+         finished recalculation and one that has not started look identical,
+         and the numbers on screen are the old ones either way. --}}
+    <style>
+        .rebalance-stale { transition: opacity .15s ease; }
+        .rebalance-stale.rebalance-waiting { opacity: .35; pointer-events: none; }
+        @keyframes rebalance-spin { to { transform: rotate(360deg); } }
+        .rebalance-spinner { animation: rebalance-spin .7s linear infinite; }
+    </style>
+
+    <div wire:loading.delay wire:target="{{ $recomputeTargets }}"
+         style="position:sticky; top:.5rem; z-index:20; display:flex; align-items:center; gap:.6rem;
+                padding:.6rem .9rem; margin-bottom:.75rem; border-radius:.5rem; font-size:.85rem;
+                border:1px solid rgba(120,120,140,.3); background:var(--gray-50, #f9fafb);">
+        <svg class="rebalance-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex:none;">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity=".2"/>
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <span><strong>Recalculating.</strong> Reading every account's closed quota windows and each member's heaviest
+        week over {{ $capacity['window_label'] ?? 'the selected range' }} — the figures below are the previous run
+        until this finishes.</span>
+    </div>
+
+    <div class="rebalance-stale" wire:loading.class="rebalance-waiting" wire:target="{{ $recomputeTargets }}">
+
     <x-filament::section heading="Rebalance recommendations">
         <div style="display:flex; align-items:center; gap:.75rem; font-size:.85rem; flex-wrap:wrap;">
             <span style="opacity:.6;">Based on</span>
@@ -520,4 +548,5 @@
             @endforeach
         </div>
     </x-filament::section>
+</div>
 </x-filament-panels::page>
