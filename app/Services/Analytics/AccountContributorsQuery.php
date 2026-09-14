@@ -18,10 +18,15 @@ final class AccountContributorsQuery
 {
     /**
      * Build the per-account contributor lists, keyed by account id. Each
-     * account's list is the union of its tracked members (so a member appears
-     * even with no usage attributed to this account) and any other user with
-     * events attributed to the account (reported as their pivot status, or
-     * untracked when they have no membership row). Sorted by displayed tokens
+     * account's list is the union of its Tracked and Pending members (so a
+     * member appears even with no usage attributed to this account yet —
+     * a Pending one hasn't necessarily claimed their grant) and any other
+     * user with events attributed to the account (reported as their pivot
+     * status, or untracked when they have no membership row). Untracked
+     * contributors are hidden unless `$includeUntracked` is true — they are
+     * noise for this widget's main purpose, not something to always
+     * confront the admin with, mirroring `MembersRelationManager`'s
+     * existing "Unverified members" toggle. Sorted by displayed tokens
      * descending.
      *
      * The tokens shown are windowed to `$filters` (all-time when null). With
@@ -36,9 +41,10 @@ final class AccountContributorsQuery
      *
      * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
      * @param  bool  $totalAcrossAccounts  show each user's whole-footprint total instead of the per-account amount
+     * @param  bool  $includeUntracked  whether to also include Untracked contributors (default: hidden)
      * @return array<int, array<int, array{user_id:int, handle:string, avatar_url:?string, status:string, tokens:int}>>
      */
-    public function get(?UsageFilters $filters = null, bool $totalAcrossAccounts = false): array
+    public function get(?UsageFilters $filters = null, bool $totalAcrossAccounts = false, bool $includeUntracked = false): array
     {
         $tokenExpr = $filters?->tokenColumnExpression() ?? 'events.tokens';
 
@@ -59,7 +65,7 @@ final class AccountContributorsQuery
 
         $memberRows = DB::table('account_user')
             ->join('users', 'users.id', '=', 'account_user.user_id')
-            ->where('account_user.status', MembershipStatus::Tracked->value)
+            ->whereIn('account_user.status', [MembershipStatus::Tracked->value, MembershipStatus::Pending->value])
             ->select('account_user.account_id', 'account_user.status', 'users.id as user_id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url')
             ->get();
 
@@ -69,7 +75,9 @@ final class AccountContributorsQuery
         // stashed under `_attributed` until the display value is finalized).
         $byAccount = [];
 
-        // Seed tracked members first so they list even with zero attributed usage.
+        // Seed tracked and pending members first so they list even with zero
+        // attributed usage -- a Pending member hasn't necessarily claimed
+        // their grant yet, so they'd otherwise never appear until they do.
         foreach ($memberRows as $row) {
             $accountId = (int) $row->account_id;
             $userId = (int) $row->user_id;
@@ -77,7 +85,7 @@ final class AccountContributorsQuery
                 'user_id' => $userId,
                 'handle' => $this->displayHandle($row, $userId),
                 'avatar_url' => $row->avatar_url,
-                'status' => MembershipStatus::Tracked->value,
+                'status' => $row->status,
                 '_attributed' => 0,
             ];
         }
@@ -115,6 +123,13 @@ final class AccountContributorsQuery
                     'tokens' => $totalAcrossAccounts ? ($userTotals[$member['user_id']] ?? 0) : $member['_attributed'],
                 ];
             }, array_values($members));
+
+            if (! $includeUntracked) {
+                $list = array_values(array_filter(
+                    $list,
+                    fn (array $member): bool => $member['status'] !== MembershipStatus::Untracked->value,
+                ));
+            }
 
             usort($list, fn (array $a, array $b): int => $b['tokens'] <=> $a['tokens']);
 

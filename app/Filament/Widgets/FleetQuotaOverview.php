@@ -14,8 +14,9 @@ use Filament\Widgets\Widget;
  * Blade widget showing a current quota gauge card per account: 5h and 7d
  * utilization bars, time-to-reset, projected utilization at reset, a near-cap
  * flag, and the account's contributors. The quota bars reflect live state; the
- * per-member token figures honor the dashboard's time filter and its
- * "total across accounts" toggle.
+ * per-member token figures honor the dashboard's time filter, its
+ * "total across accounts" toggle, and its "show untracked" toggle (Untracked
+ * contributors are hidden from the member list unless it's on).
  */
 class FleetQuotaOverview extends Widget
 {
@@ -78,13 +79,14 @@ class FleetQuotaOverview extends Widget
         $pageFilters = $this->pageFilters ?? [];
         $filters = UsageFilters::fromPageFilters($pageFilters);
         $totalAcrossAccounts = (bool) ($pageFilters['total_across_accounts'] ?? false);
+        $showUntracked = (bool) ($pageFilters['show_untracked'] ?? false);
 
         $contributors = app(AccountContributorsQuery::class);
         $accountTotals = $contributors->accountTotals($filters);
 
         return [
             'gauges' => app(QuotaGaugesQuery::class)->get(),
-            'contributors' => $contributors->get($filters, $totalAcrossAccounts),
+            'contributors' => $contributors->get($filters, $totalAcrossAccounts, $showUntracked),
             'accountTotals' => $accountTotals,
             'totalUsage' => array_sum($accountTotals),
         ];

@@ -165,7 +165,27 @@ it('never serves a grant for an org the user is untracked on, keeping it consist
     $service = app(AccountProvisioningService::class);
 
     expect($service->claim($user, null))->toBe([])
-        ->and($service->removable($user, $device))->toBe([['org_uuid' => 'org-untracked']]);
+        ->and($service->removable($user))->toBe([['org_uuid' => 'org-untracked']]);
+});
+
+it('removable() no longer accepts a device argument and keeps reporting an untracked org on every call', function () {
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['organization_uuid' => 'org-repeat']);
+    $user->accounts()->syncWithoutDetaching([
+        $account->id => ['status' => MembershipStatus::Untracked->value],
+    ]);
+
+    $service = app(AccountProvisioningService::class);
+
+    expect($service->removable($user))->toBe([['org_uuid' => 'org-repeat']])
+        ->and($service->removable($user))->toBe([['org_uuid' => 'org-repeat']]);
+});
+
+it('does not report an account the user has no membership row for at all', function () {
+    $user = User::factory()->create();
+    Account::factory()->create(['organization_uuid' => 'org-unrelated']);
+
+    expect(app(AccountProvisioningService::class)->removable($user))->toBe([]);
 });
 
 it('still serves grants for Tracked and Pending memberships', function (MembershipStatus $status) {
@@ -199,4 +219,23 @@ it('serves a legacy grant whose membership row is absent, without breaking backf
 
     // No account_user row at all for this (user, account) pair.
     expect(app(AccountProvisioningService::class)->claim($user, null))->toHaveCount(1);
+});
+
+it('guards set_up promotion on holding a live grant via any of the user devices', function () {
+    $user = User::factory()->create();
+    $granted = Account::factory()->create(['organization_uuid' => 'org-g']);
+    $ungranted = Account::factory()->create(['organization_uuid' => 'org-u']);
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($granted)->for($device)->claimed()->create();
+    $user->accounts()->syncWithoutDetaching([
+        $granted->id => ['status' => MembershipStatus::Pending->value],
+        $ungranted->id => ['status' => MembershipStatus::Pending->value],
+    ]);
+
+    $result = app(AccountProvisioningService::class)
+        ->confirmSetup($user, ['org-g', 'org-u'], [], $device);
+
+    expect($result['confirmed'])->toBe(1)
+        ->and($user->accounts()->find($granted->id)->pivot->status)->toBe(MembershipStatus::Tracked)
+        ->and($user->accounts()->find($ungranted->id)->pivot->status)->toBe(MembershipStatus::Pending);
 });

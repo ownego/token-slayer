@@ -114,8 +114,10 @@
                             <span style="width:18px; height:18px; border-radius:50%; flex:none; background:rgba(120,120,140,.25);"></span>
                         @endif
                         <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.74rem;">{{ $m['handle'] }}</span>
-                        @if ($m['status'] !== 'tracked')
-                            <span title="Unverified" style="flex:none; font-size:.55rem; color:#d97706;">●</span>
+                        @if ($m['status'] === 'pending')
+                            <span title="Pending" style="flex:none; font-size:.55rem; color:#3b82f6;">●</span>
+                        @elseif ($m['status'] === 'untracked')
+                            <span title="Untracked" style="flex:none; font-size:.55rem; color:#ef4444;">●</span>
                         @endif
                     </span>
                     <span style="flex:none; font-size:.68rem; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:.8;">{{ number_format($m['tokens']) }}</span>

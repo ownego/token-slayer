@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\MembershipStatus;
 use App\Models\User;
+use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
@@ -11,13 +12,17 @@ use Filament\Forms\Components\Toggle;
 use Filament\Pages\Dashboard as BaseDashboard;
 use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\HtmlString;
 
 /**
  * The admin panel home dashboard, extended with a shared filter form: a time
- * range (today/this week/this month/all/custom, defaulting to this week) and a
- * "total across accounts" toggle. Filter-aware widgets — chiefly the Fleet
- * Quota member breakdown — read these via `InteractsWithPageFilters`.
+ * range (today/this week/this month/all/custom, defaulting to this week) and
+ * a token mode. The "total across accounts" and "show untracked
+ * contributors" toggles live behind the "Display options" header action
+ * instead — few admins touch them, so they stay out of the always-visible
+ * row. Filter-aware widgets — chiefly the Fleet Quota member breakdown —
+ * read all of these via `InteractsWithPageFilters`.
  */
 class Dashboard extends BaseDashboard
 {
@@ -33,11 +38,12 @@ class Dashboard extends BaseDashboard
     public function filtersForm(Schema $schema): Schema
     {
         return $schema
-            ->columns(['default' => 1, 'sm' => 2, 'lg' => 6])
+            ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
             ->components([
                 Placeholder::make('total_active_users')
                     ->label('Total active users')
-                    ->content((string) $this->totalActiveUsersCount()),
+                    ->content(new HtmlString('<span style="font-size:1.75rem; font-weight:600; line-height:1;">'.$this->totalActiveUsersCount().'</span>'))
+                    ->columnSpan(1),
                 Select::make('range')
                     ->options([
                         'today' => 'Today',
@@ -47,15 +53,10 @@ class Dashboard extends BaseDashboard
                         'custom' => 'Custom range',
                     ])
                     ->default('week')
-                    ->live(),
+                    ->live()
+                    ->columnSpan(1),
                 DatePicker::make('from')->visible(fn (callable $get): bool => $get('range') === 'custom'),
                 DatePicker::make('to')->visible(fn (callable $get): bool => $get('range') === 'custom'),
-                Toggle::make('total_across_accounts')
-                    ->label('Total usage across accounts')
-                    ->helperText(new HtmlString(
-                        '<span style="display:block"><strong>Off:</strong> usage attributed to this account only.</span>'
-                        .'<span style="display:block"><strong>On:</strong> each member\'s full usage, including other accounts and private.</span>'
-                    )),
                 Select::make('token_mode')
                     ->label('Tokens')
                     ->options([
@@ -76,11 +77,55 @@ class Dashboard extends BaseDashboard
                         }
                     })
                     ->helperText(new HtmlString(
-                        '<span style="display:block"><strong>Output:</strong> what damage is dealt from (unchanged from before this filter existed).</span>'
-                        .'<span style="display:block"><strong>Total:</strong> output + input + cache tokens, for analytics only.</span>'
-                        .'<span style="display:block"><strong>Quota:</strong> total minus cache-read tokens -- what actually counts against a rate-limit window.</span>'
-                    )),
+                        '<span style="display:block">Total = + input/cache tokens.</span>'
+                        .'<span style="display:block">Quota = total minus cache-read (real rate-limit cost).</span>'
+                    ))
+                    ->columnSpan(2),
             ]);
+    }
+
+    /**
+     * The "Display options" header action: the two rarely-touched toggles
+     * (total-across-accounts, show-untracked) live here instead of the
+     * always-visible filter row. Reads/writes the same `$this->filters`
+     * array the filter form itself uses, so widgets reading `pageFilters`
+     * see no difference between the two sources.
+     *
+     * @return Action
+     */
+    public function displayOptionsAction(): Action
+    {
+        return Action::make('displayOptions')
+            ->label('Display options')
+            ->icon(Heroicon::OutlinedAdjustmentsHorizontal)
+            ->color('gray')
+            ->modalHeading('Display options')
+            ->fillForm(fn (): array => [
+                'total_across_accounts' => $this->filters['total_across_accounts'] ?? false,
+                'show_untracked' => $this->filters['show_untracked'] ?? false,
+            ])
+            ->schema([
+                Toggle::make('total_across_accounts')
+                    ->label('Total usage across accounts')
+                    ->helperText('Off: usage attributed to this account only. On: each member\'s full usage, including other accounts and private.'),
+                Toggle::make('show_untracked')
+                    ->label('Show untracked contributors')
+                    ->helperText('Off by default -- an untracked contributor is noise for most views.'),
+            ])
+            ->action(function (array $data): void {
+                $this->filters = array_merge($this->filters ?? [], $data);
+                $this->updatedFilters();
+            });
+    }
+
+    /**
+     * Header actions shown on this page.
+     *
+     * @return array<int, Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [$this->displayOptionsAction()];
     }
 
     /**

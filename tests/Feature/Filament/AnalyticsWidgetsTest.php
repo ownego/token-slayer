@@ -87,13 +87,50 @@ test('the fleet quota card shows the provider badge after the email, not before'
 test('the fleet quota overview lists each account contributor with all-time tokens', function () {
     $account = Account::factory()->create(['email' => 'team@example.com']);
     $user = User::factory()->create(['slack_handle' => 'devon']);
-    $account->users()->attach($user->id, ['status' => MembershipStatus::Untracked->value]);
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
     Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 4200, 'created_at' => now()]);
 
     Livewire::test(FleetQuotaOverview::class)
         ->assertOk()
         ->assertSee('devon')
         ->assertSee('4,200');
+});
+
+test('the fleet quota overview hides an untracked contributor by default', function () {
+    $account = Account::factory()->create(['email' => 'team@example.com']);
+    $user = User::factory()->create(['slack_handle' => 'devon']);
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Untracked->value]);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 4200, 'created_at' => now()]);
+
+    Livewire::test(FleetQuotaOverview::class)
+        ->assertOk()
+        ->assertDontSee('devon');
+});
+
+test('the fleet quota overview reveals an untracked contributor when show_untracked is on', function () {
+    $account = Account::factory()->create(['email' => 'team@example.com']);
+    $user = User::factory()->create(['slack_handle' => 'devon']);
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Untracked->value]);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 4200, 'created_at' => now()]);
+
+    Livewire::test(FleetQuotaOverview::class, ['pageFilters' => ['show_untracked' => true]])
+        ->assertOk()
+        ->assertSee('devon')
+        ->assertSee('4,200');
+});
+
+test('the fleet quota card marks a pending member with a distinct dot from an untracked one', function () {
+    $account = Account::factory()->create(['email' => 'team@example.com']);
+    $pending = User::factory()->create(['slack_handle' => 'awaiting']);
+    $untracked = User::factory()->create(['slack_handle' => 'departed']);
+    $account->users()->attach($pending->id, ['status' => MembershipStatus::Pending->value]);
+    $account->users()->attach($untracked->id, ['status' => MembershipStatus::Untracked->value]);
+    Event::factory()->for($untracked)->create(['account_id' => $account->id, 'tokens' => 100, 'created_at' => now()]);
+
+    Livewire::test(FleetQuotaOverview::class, ['pageFilters' => ['show_untracked' => true]])
+        ->assertOk()
+        ->assertSee('title="Pending"', false)
+        ->assertSee('title="Untracked"', false);
 });
 
 test('the fleet quota overview shows a fleet-wide total usage across accounts', function () {

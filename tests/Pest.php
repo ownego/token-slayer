@@ -1,7 +1,13 @@
 <?php
 
+use App\Enums\MembershipStatus;
+use App\Models\Account;
+use App\Models\Event;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -82,4 +88,35 @@ function fakeAnthropic(array $overrides = []): void
         config('token_slayer.anthropic.profile_endpoint') => $overrides['profile'] ?? Http::response($fixture('profile'), 200, ['Content-Type' => 'application/json']),
         config('token_slayer.anthropic.messages_endpoint') => $overrides['messages'] ?? Http::response(['id' => 'msg_fake', 'type' => 'message', 'role' => 'assistant', 'stop_reason' => 'max_tokens'], 200, ['Content-Type' => 'application/json']),
     ]);
+}
+
+/**
+ * Attach a person to an account as a tracked member and give them a run of
+ * daily usage on it.
+ *
+ * @param  Account  $account  the account to join and spend on
+ * @param  User  $user  the person
+ * @param  string  $firstDay  the first day of the run
+ * @param  int  $days  how many consecutive days
+ * @param  int  $tokensPerDay  tokens on each day
+ * @return void
+ */
+function livesOn(Account $account, User $user, string $firstDay, int $days, int $tokensPerDay): void
+{
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Tracked->value]]);
+
+    // Backdated with the usage: a seat comes into being when somebody is put
+    // on it, and a fixture that stamps every membership "now" makes every
+    // seat look freshly granted.
+    DB::table('account_user')
+        ->where('user_id', $user->id)
+        ->where('account_id', $account->id)
+        ->update(['created_at' => Carbon::parse($firstDay)]);
+
+    foreach (range(0, $days - 1) as $offset) {
+        Event::factory()->for($account)->for($user)->create([
+            'tokens' => $tokensPerDay,
+            'created_at' => Carbon::parse($firstDay)->addDays($offset),
+        ]);
+    }
 }
