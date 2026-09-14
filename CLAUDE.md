@@ -22,10 +22,18 @@ Internal gamified token-usage tracker: developers' Claude Code / Codex / claude.
 
 | `.ai/domain/` file | Covers |
 |---|---|
-| `battlefield.md` | Phaser scene, sprites, snapshot/teardown invariants |
+| `battlefield.md` | Phaser scene, sprites, snapshot/teardown invariants, companions (Necromancer/BatSwarm) |
 | `token-tracking.md` | hook → EventController → damage pipeline, providers, install scripts |
 | `broadcasting.md` | PHP↔JS broadcast contract rules |
-| `accounts.md` | org accounts, attribution chain, quota probing |
+| `accounts.md` | org accounts, attribution chain, quota probing, rebalance/reconciliation |
+
+Convention docs also live scattered next to the code they describe — these do NOT auto-load unless you're already working in that path, so check for one before touching a directory that has a `CLAUDE.md`/`CREDITS.md`:
+
+| File | Covers |
+|---|---|
+| `resources/js/battlefield/CLAUDE.md` | JS manager conventions, Key Files table (keep in sync when adding/removing a `resources/js/battlefield/**` module) |
+| `public/assets/battlefield/CLAUDE.md` + `CREDITS.md` | Sprite sheet formats, fighter/boss/companion roster, source/license |
+| `.claude/skills/battlefield/SKILL.md` | Deep battlefield operational guide |
 
 ## Watch out for
 
@@ -34,6 +42,7 @@ Internal gamified token-usage tracker: developers' Claude Code / Codex / claude.
 - `env()` only inside `config/*.php`.
 - The team verifies on staging, not locally — build + deploy before claiming a frontend change works.
 - Detailed rules live in `.ai/guidelines/` (inlined below by Laravel Boost — edit them there, never inside the boost block).
+- **Before finishing a branch, check whether the docs above cover what you just built.** These have drifted badly before (a 134-commit feature merged with zero `accounts.md` updates; ~130 battlefield commits with zero updates across 3 docs) because nothing enforces it — no CI, no hook. If you added a new manager/service/domain concept, add a line for it now, in the same PR.
 
 <laravel-boost-guidelines>
 === .ai/architecture rules ===
