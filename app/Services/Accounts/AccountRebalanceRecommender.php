@@ -79,7 +79,7 @@ final class AccountRebalanceRecommender
      * Dress each planned move up with the measurements behind it.
      *
      * @param  array<int, array{user: array-key, from: int, to: int, swap_with: array-key|null}>  $moves  the planner's raw diff
-     * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_week_tokens: float, basis: string, days_of_history: int, quota_weight: float, quota_weight_windows: int}>  $details  per-user demand workings
+     * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_week_tokens: float, basis: string, days_of_history: int, quota_weight: float, quota_weight_windows: int, quota_weight_clamped: bool}>  $details  per-user demand workings
      * @param  array<int, float>  $burstFactors  per-user burstiness
      * @param  array<int, float>  $fillBefore  account id => percentage of capacity, before
      * @param  array<int, float>  $fillAfter  account id => percentage of capacity, after
@@ -123,6 +123,7 @@ final class AccountRebalanceRecommender
                 burstFactor: $burstFactors[$userId] ?? 1.0,
                 quotaWeight: $detail['quota_weight'],
                 quotaWeightWindows: $detail['quota_weight_windows'],
+                quotaWeightClamped: $detail['quota_weight_clamped'] ?? false,
                 daysOfHistory: $detail['days_of_history'],
                 fromFillBeforePercent: $fillBefore[$move['from']] ?? 0.0,
                 fromFillAfterPercent: $fillAfter[$move['from']] ?? 0.0,
@@ -146,6 +147,12 @@ final class AccountRebalanceRecommender
      * destination account — a newly bought one has days of history while
      * everybody involved has months.
      *
+     * An account that has not been bought yet is not judged at all. It can
+     * never have history, so the warning fired on every row pointing at it,
+     * spending the page's one doubt signal on something that can never be
+     * otherwise — and leaking the negative id it is held under while doing
+     * it.
+     *
      * @param  int  $userId  the person moving
      * @param  array{user: array-key, from: int, to: int, swap_with: array-key|null}  $move  the planned move
      * @param  array<int, int>  $userDays  user id => days of recorded history
@@ -159,6 +166,10 @@ final class AccountRebalanceRecommender
         $labels = $accounts->pluck('email', 'id')->all();
 
         foreach ([$move['to'], $move['from']] as $accountId) {
+            if ($accountId < 0) {
+                continue; // hypothetical: it cannot have history, and saying so is not a finding
+            }
+
             $days = $accountDays[$accountId] ?? 0;
             if ($days < $minDays) {
                 return sprintf('%s has only %d %s of recorded history, under the %d needed.',

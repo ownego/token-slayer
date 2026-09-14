@@ -115,7 +115,7 @@ final class FleetCapacityForecast
      *
      * @param  FleetReading  $reading  the measured fleet
      * @param  array<string, mixed>  $observed  what the fleet actually got through
-     * @return array{tokens: float, percent: float, accounts_saturated: int}
+     * @return array{tokens: float, percent: float, accounts_saturated: int, accounts_ran_out: int}
      */
     private function unconstrained(FleetReading $reading, array $observed): array
     {
@@ -123,6 +123,7 @@ final class FleetCapacityForecast
 
         $tokens = 0.0;
         $saturated = 0;
+        $ranOut = 0;
 
         foreach ($reading->capacities as $accountId => $capacity) {
             $projected = $ceilings[$accountId]['projected_percent'] ?? null;
@@ -135,6 +136,9 @@ final class FleetCapacityForecast
             }
 
             $saturated++;
+            if ($ceilings[$accountId]['ran_out'] ?? false) {
+                $ranOut++;
+            }
             $tokens += max($actual, $capacity * $projected / 100);
         }
 
@@ -144,6 +148,11 @@ final class FleetCapacityForecast
             'tokens' => $tokens,
             'percent' => $capacityTotal > 0.0 ? $tokens * 100 / $capacityTotal : 0.0,
             'accounts_saturated' => $saturated,
+            // Crossing the ramp and running dry are different events, and
+            // only the second one rationed anybody. Counting them together
+            // told an admin six of seven accounts had run out when one of
+            // them had never been past 82% of its quota in a month.
+            'accounts_ran_out' => $ranOut,
         ];
     }
 }

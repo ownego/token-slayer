@@ -22,7 +22,7 @@ final readonly class FleetReading
      * @param  array<int, int>  $current  user id => the account they sit on today
      * @param  array<int, float>  $demands  user id => quota-weighted heaviest week in tokens
      * @param  array<int, float>  $burstFactors  user id => busiest hour over mean hour
-     * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_week_tokens: float, basis: string, days_of_history: int, quota_weight: float}>  $details  user id => the workings behind their demand
+     * @param  array<int, array{weekly: float, per_day: float, trailing_avg_per_day: float, peak_week_tokens: float, basis: string, days_of_history: int, quota_weight: float, quota_weight_windows: int, quota_weight_clamped: bool}>  $details  user id => the workings behind their demand
      * @param  RebalanceWindow  $window  the range every figure above was read over
      */
     public function __construct(

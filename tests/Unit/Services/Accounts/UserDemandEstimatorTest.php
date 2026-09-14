@@ -216,3 +216,29 @@ it('leaves a user unweighted when no window had them using an account alone', fu
 
     Carbon::setTestNow();
 });
+
+it('says when a weight is the most it is willing to credit rather than what it measured', function () {
+    Carbon::setTestNow('2026-09-12 12:00:00');
+    $account = Account::factory()->connected()->create();
+    $extreme = User::factory()->create();
+    $ordinary = User::factory()->create();
+
+    // 30 points on 1,000 tokens against 30 on 9,000: the fit says this
+    // person's tokens cost five times the typical quota, and the clamp cuts
+    // that to two. The page printed the 2.00 as though it had been measured,
+    // and on prod half of one member's planned demand was that clamp.
+    foreach ([0, 1, 2] as $slot) {
+        soloWindow($account, $extreme, $slot, 1_000);
+    }
+    foreach ([3, 4, 5] as $slot) {
+        soloWindow($account, $ordinary, $slot, 9_000);
+    }
+
+    $weights = app(UserDemandEstimator::class)->quotaWeights(collect([$account]), RebalanceWindow::days(7));
+
+    expect($weights[$extreme->id]['weight'])->toBe(2.0)
+        ->and($weights[$extreme->id]['clamped'])->toBeTrue()
+        ->and($weights[$ordinary->id]['clamped'])->toBeFalse();
+
+    Carbon::setTestNow();
+});

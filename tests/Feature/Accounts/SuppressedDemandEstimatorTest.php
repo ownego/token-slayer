@@ -92,3 +92,62 @@ it('ignores a window still open, whose curve has not finished', function () {
 
     Carbon::setTestNow();
 });
+
+it('separates an account that ran out from one that merely got close', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $ranOut = Account::factory()->connected()->create();
+    $nearMiss = Account::factory()->connected()->create();
+
+    // On prod these two were reported together as "ran out mid-week and
+    // rationed their own users", and one of them had never been past 82% of
+    // its quota in a month. The ramp is where the rate stops being honest;
+    // it is not where the account died, and a purchase argued from the wrong
+    // one of those counts accounts that were never short.
+    quotaWindow($ranOut, [[0, 0], [3.5, 80], [6.9, 100]]);
+    quotaWindow($nearMiss, [[0, 0], [5, 80], [6.9, 82]]);
+
+    $measured = app(SuppressedDemandEstimator::class)
+        ->measure(collect([$ranOut, $nearMiss]), RebalanceWindow::days(30));
+
+    expect($measured[$ranOut->id]['saturated'])->toBeTrue()
+        ->and($measured[$ranOut->id]['ran_out'])->toBeTrue()
+        ->and($measured[$nearMiss->id]['saturated'])->toBeTrue()
+        ->and($measured[$nearMiss->id]['ran_out'])->toBeFalse();
+
+    Carbon::setTestNow();
+});
+
+it('reads a boundary reported either side of the hour as one week, not two', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+    $account = Account::factory()->connected()->create();
+
+    $resetAt = Carbon::parse('2026-09-12 00:00:00');
+    $opens = $resetAt->copy()->subDays(7);
+
+    // One week whose reset the API reported a second early for part of the
+    // run. Split in two, each half finds its own ramp and the estimator
+    // medians two projections of a week that happened once -- here 196% and
+    // 111% averaged into 153%, when the week plainly ramped on day three.
+    foreach ([[1, 30], [3, 85]] as [$days, $util]) {
+        AccountUsageSnapshot::factory()->for($account)->create([
+            'util_7d' => $util,
+            'reset_7d_at' => $resetAt->copy()->subSecond(),
+            'created_at' => $opens->copy()->addMinutes((int) round($days * 1440)),
+        ]);
+    }
+    foreach ([[6, 95]] as [$days, $util]) {
+        AccountUsageSnapshot::factory()->for($account)->create([
+            'util_7d' => $util,
+            'reset_7d_at' => $resetAt,
+            'created_at' => $opens->copy()->addMinutes((int) round($days * 1440)),
+        ]);
+    }
+
+    $measured = app(SuppressedDemandEstimator::class)->measure(collect([$account]), RebalanceWindow::days(30));
+
+    // One week, ramped on day three: 85 / 3 * 7 = 198.3.
+    expect($measured[$account->id]['days_to_ramp'])->toBe(3.0)
+        ->and(round($measured[$account->id]['projected_percent']))->toBe(198.0);
+
+    Carbon::setTestNow();
+});

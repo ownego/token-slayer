@@ -3,7 +3,6 @@
 namespace App\Services\Accounts;
 
 use App\Models\Account;
-use App\Models\AccountUsageSnapshot;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -25,6 +24,12 @@ use Illuminate\Support\Collection;
 final class SuppressedDemandEstimator
 {
     /**
+     * @param  ClosedQuotaWindows  $windows  where one quota week ends and the next begins
+     * @return void
+     */
+    public function __construct(private readonly ClosedQuotaWindows $windows) {}
+
+    /**
      * Utilisation at which a week stops being free-running. Below this the
      * curve reflects what people wanted; at and above it, behaviour starts
      * bending around the ceiling, so the rate is measured up to here and no
@@ -33,6 +38,20 @@ final class SuppressedDemandEstimator
      * @var int
      */
     private const int RAMP_PERCENT = 80;
+
+    /**
+     * Utilisation at which the account stopped serving its users rather than
+     * merely worrying them.
+     *
+     * Crossing {@see RAMP_PERCENT} is where a week's rate stops being honest;
+     * it is not where the account died. Reporting the two as one number told
+     * an admin that six of seven accounts "ran out mid-week and rationed
+     * their own users" when one of them had never been past 82% of its quota
+     * in a month, and a purchase was being argued from that count.
+     *
+     * @var int
+     */
+    private const int RAN_OUT_PERCENT = 95;
 
     /**
      * The quota window length these percentages are against.
@@ -49,17 +68,23 @@ final class SuppressedDemandEstimator
      *
      * @param  Collection<int, Account>  $accounts  the accounts to read
      * @param  RebalanceWindow  $window  how far back to read snapshots
-     * @return array<int, array{saturated: bool, days_to_ramp: float|null, projected_percent: float|null}>
+     * @return array<int, array{saturated: bool, ran_out: bool, days_to_ramp: float|null, projected_percent: float|null}>
      */
     public function measure(Collection $accounts, RebalanceWindow $window): array
     {
         $measured = [];
 
         foreach ($accounts as $account) {
+            $curves = $this->windows->curves($account, $window);
             $projections = [];
             $ramps = [];
+            $ranOut = false;
 
-            foreach ($this->closedWindows($account, $window) as $curve) {
+            foreach ($curves as $curve) {
+                if (max(array_column($curve, 'util')) >= self::RAN_OUT_PERCENT) {
+                    $ranOut = true;
+                }
+
                 $ramp = $this->rampPoint($curve);
                 if ($ramp === null) {
                     continue; // never got near the ceiling; nothing was held back
@@ -70,8 +95,8 @@ final class SuppressedDemandEstimator
             }
 
             if ($projections === []) {
-                if ($this->closedWindows($account, $window) !== []) {
-                    $measured[$account->id] = ['saturated' => false, 'days_to_ramp' => null, 'projected_percent' => null];
+                if ($curves !== []) {
+                    $measured[$account->id] = ['saturated' => false, 'ran_out' => false, 'days_to_ramp' => null, 'projected_percent' => null];
                 }
 
                 continue;
@@ -79,6 +104,7 @@ final class SuppressedDemandEstimator
 
             $measured[$account->id] = [
                 'saturated' => true,
+                'ran_out' => $ranOut,
                 'days_to_ramp' => $this->median($ramps),
                 'projected_percent' => $this->median($projections),
             ];
@@ -92,7 +118,7 @@ final class SuppressedDemandEstimator
      * the window opened and the utilisation reached — or null if it never
      * got there.
      *
-     * @param  array<int, array{at: Carbon, util: int, opened: Carbon}>  $curve  the window's readings, oldest first
+     * @param  array<int, array{at: Carbon, util: int, reset_at: Carbon, opened_at: Carbon}>  $curve  the window's readings, oldest first
      * @return array{days: float, util: float}|null
      */
     private function rampPoint(array $curve): ?array
@@ -102,49 +128,12 @@ final class SuppressedDemandEstimator
                 continue;
             }
 
-            $days = $point['opened']->diffInSeconds($point['at'], absolute: true) / 86400;
+            $days = $point['opened_at']->diffInSeconds($point['at'], absolute: true) / 86400;
 
             return $days > 0.0 ? ['days' => $days, 'util' => (float) $point['util']] : null;
         }
 
         return null;
-    }
-
-    /**
-     * Every closed quota window's utilisation curve, oldest reading first.
-     * A window still open is skipped: its curve has not finished, and the
-     * rate so far says nothing about where it would have ended.
-     *
-     * @param  Account  $account  the account to read
-     * @param  RebalanceWindow  $window  how far back to read
-     * @return array<int, array<int, array{at: Carbon, util: int, opened: Carbon}>>
-     */
-    private function closedWindows(Account $account, RebalanceWindow $window): array
-    {
-        $rows = AccountUsageSnapshot::query()
-            ->where('account_id', $account->id)
-            ->whereNotNull('reset_7d_at')
-            ->whereNotNull('util_7d')
-            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
-            ->orderBy('created_at')
-            ->get(['util_7d', 'reset_7d_at', 'created_at']);
-
-        $curves = [];
-
-        foreach ($rows as $row) {
-            $resetAt = Carbon::parse($row->reset_7d_at)->startOfHour();
-            if ($resetAt->isFuture()) {
-                continue;
-            }
-
-            $curves[$resetAt->toDateTimeString()][] = [
-                'at' => Carbon::parse($row->created_at),
-                'util' => (int) $row->util_7d,
-                'opened' => $resetAt->copy()->subDays(self::WINDOW_DAYS),
-            ];
-        }
-
-        return array_values($curves);
     }
 
     /**

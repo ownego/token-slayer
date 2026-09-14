@@ -174,6 +174,9 @@
                                         <span style="opacity:.6;">
                                             × {{ number_format($move['quotaWeight'], 2) }} quota weight
                                             = {{ number_format($move['demandWeeklyTokens']) }}
+                                            @if ($move['quotaWeightClamped'] ?? false)
+                                                <span title="The fit read them further from typical than this; {{ number_format($move['quotaWeight'], 2) }} is the most this page will credit, so the figure beside it is a cap rather than a measurement." style="color:var(--warning-600, #ca8a04);">(capped)</span>
+                                            @endif
                                         </span>
                                     @endif
                                 </td>
@@ -225,8 +228,20 @@
 
             <p style="font-size:.85rem;">
                 @if ($free['accounts_saturated'] > 0)
-                    <strong>{{ $free['accounts_saturated'] }} of {{ $seen['accounts_measured'] }} accounts ran out
-                    mid-week and rationed their own users.</strong>
+                    @if ($free['accounts_ran_out'] > 0)
+                        <strong>{{ $free['accounts_ran_out'] }} of {{ $seen['accounts_measured'] }} accounts ran out
+                        mid-week and rationed their own users.</strong>
+                        @if ($free['accounts_saturated'] > $free['accounts_ran_out'])
+                            <span style="opacity:.7;">Another
+                            {{ $free['accounts_saturated'] - $free['accounts_ran_out'] }} got close enough that
+                            {{ $free['accounts_saturated'] - $free['accounts_ran_out'] === 1 ? 'its' : 'their' }}
+                            users were likely already pacing themselves.</span>
+                        @endif
+                    @else
+                        <strong>No account ran out, but {{ $free['accounts_saturated'] }} of
+                        {{ $seen['accounts_measured'] }} got close enough that their users were likely already pacing
+                        themselves.</strong>
+                    @endif
                     <br>
                     The fleet got through {{ number_format($seen['fleet_peak_percent'], 0) }}% of its capacity — but
                     that is what people were <em>allowed</em> to spend, not what they wanted. Before those accounts hit
@@ -283,7 +298,7 @@
                     </div>
                     <div style="font-size:.8rem; opacity:.7;">
                         {{ number_format($free['tokens']) }} tokens/week
-                        · {{ $free['accounts_saturated'] }} {{ \Illuminate\Support\Str::plural('account', $free['accounts_saturated']) }} hit the ceiling
+                        · {{ $free['accounts_ran_out'] }} {{ \Illuminate\Support\Str::plural('account', $free['accounts_ran_out']) }} ran dry@if ($free['accounts_saturated'] > $free['accounts_ran_out']), {{ $free['accounts_saturated'] - $free['accounts_ran_out'] }} came close@endif
                     </div>
                     <div style="font-size:.85rem; margin-top:.5rem;">
                         @if ($free['accounts_needed'] === 0)
@@ -380,7 +395,10 @@
                     trusted only when no saturated week exists.
                 </li>
                 <li>
-                    <strong>Actually peaked at</strong> — the heaviest seven days this account really carried.
+                    <strong>Actually peaked at</strong> — the most this account really carried inside one of its own
+                    quota weeks. Measured between its resets rather than over any seven days: a rolling week that
+                    straddles a reset holds the end of one allowance and the start of the next, so it can read past
+                    100% without the account ever having been short.
                 </li>
                 <li>
                     <strong>Why the worst case is higher</strong> — its members' own heaviest weeks fell in different

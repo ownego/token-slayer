@@ -25,6 +25,7 @@ final readonly class RebalanceRecommendation
      * @param  float  $burstFactor  busiest hour over mean hour: how concentrated their day is
      * @param  float  $quotaWeight  how fast their tokens burn quota relative to a typical member; 1.0 is typical
      * @param  int  $quotaWeightWindows  solo quota windows that weight rests on; 0 means it was never measured and they are being treated as typical
+     * @param  bool  $quotaWeightClamped  true when the weight is the most the model will credit rather than what the fit actually read
      * @param  int  $daysOfHistory  days of their recorded usage inside the window
      * @param  float  $fromFillBeforePercent  the source account's planned load as a percentage of its capacity, before
      * @param  float  $fromFillAfterPercent  the same, after every recommended move lands
@@ -46,6 +47,7 @@ final readonly class RebalanceRecommendation
         public float $burstFactor,
         public float $quotaWeight,
         public int $quotaWeightWindows,
+        public bool $quotaWeightClamped,
         public int $daysOfHistory,
         public float $fromFillBeforePercent,
         public float $fromFillAfterPercent,

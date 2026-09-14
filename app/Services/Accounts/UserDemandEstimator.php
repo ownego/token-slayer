@@ -157,7 +157,7 @@ final class UserDemandEstimator
      *
      * @param  Collection<int, Account>  $accounts  the accounts to read windows from
      * @param  RebalanceWindow  $window  how far back to read
-     * @return array<int, array{weight: float, windows: int}> user id => weight (clamped) and the windows behind it
+     * @return array<int, array{weight: float, windows: int, clamped: bool}> user id => the weight, the windows behind it, and whether the clamp is what set it rather than the measurement
      */
     public function quotaWeights(Collection $accounts, RebalanceWindow $window): array
     {
@@ -194,9 +194,16 @@ final class UserDemandEstimator
         $weights = [];
         foreach ($relative as $userId => $ratios) {
             $mean = array_sum($ratios) / count($ratios);
+            $clamped = max(self::MIN_WEIGHT, min(self::MAX_WEIGHT, $mean));
             $weights[$userId] = [
-                'weight' => max(self::MIN_WEIGHT, min(self::MAX_WEIGHT, $mean)),
+                'weight' => $clamped,
                 'windows' => $windowCounts[$userId],
+                // A weight sitting on the rail is the most this is willing to
+                // credit, not what it read. Printed bare, a clamped 2.00 says
+                // "measured at twice typical" when the fit said five times and
+                // was overruled -- and on prod that rail was carrying half of
+                // one member's planned demand.
+                'clamped' => abs($clamped - $mean) > 1e-9,
             ];
         }
 
