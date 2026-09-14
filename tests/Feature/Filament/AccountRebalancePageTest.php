@@ -442,7 +442,13 @@ it('says it is recalculating rather than leaving the last plan sitting there', f
     // same. The range and the extra-account selector recompute too, so both
     // have to be covered, not just the button.
     expect($html)->toContain('Recalculating')
-        ->and($html)->toContain('wire:loading.delay')
+        // Rendered hidden, and told which display to come back as. Livewire
+        // only hides a loading element once its JS has booted, so a banner
+        // that ships visible is on screen every time the page loads, before
+        // anything has been clicked -- and it reappears as `inline-block`
+        // unless the modifier says otherwise.
+        ->and($html)->toContain('wire:loading.delay.flex')
+        ->and($html)->toContain('display:none')
         ->and($html)->toContain('mountAction')
         ->and($html)->toContain('extraAccounts')
         ->and($html)->toContain('range')

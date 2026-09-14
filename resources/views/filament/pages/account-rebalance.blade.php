@@ -25,8 +25,13 @@
         .rebalance-spinner { animation: rebalance-spin .7s linear infinite; }
     </style>
 
-    <div wire:loading.delay wire:target="{{ $recomputeTargets }}" class="rebalance-loading"
-         style="position:sticky; top:.5rem; z-index:20; display:flex; align-items:center; gap:.6rem;
+    {{-- Ships hidden and names its own display. Livewire only hides a
+         loading element once its JS has booted, so one rendered visible sits
+         on screen on every page load before anything is clicked; and when it
+         does show it, it picks the display from the modifiers, defaulting to
+         inline-block. --}}
+    <div wire:loading.delay.flex wire:target="{{ $recomputeTargets }}" class="rebalance-loading"
+         style="display:none; position:sticky; top:.5rem; z-index:20; align-items:center; gap:.6rem;
                 padding:.6rem .9rem; margin-bottom:.75rem; border-radius:.5rem; font-size:.85rem;">
         <svg class="rebalance-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex:none;">
             <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity=".2"/>
