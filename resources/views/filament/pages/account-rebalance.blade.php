@@ -6,16 +6,28 @@
          finished recalculation and one that has not started look identical,
          and the numbers on screen are the old ones either way. --}}
     <style>
-        .rebalance-stale { transition: opacity .15s ease; }
-        .rebalance-stale.rebalance-waiting { opacity: .35; pointer-events: none; }
+        /* Paints its own background, so it paints its own text too: left to
+           inherit, the message was white type on a white panel in dark mode
+           and simply disappeared. Filament puts `dark` on <html>. */
+        .rebalance-loading {
+            background: #ffffff;
+            color: #111827;
+            border: 1px solid rgba(120, 120, 140, .3);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+        }
+        .dark .rebalance-loading {
+            background: #1f2937;
+            color: #f9fafb;
+            border-color: rgba(160, 160, 180, .25);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+        }
         @keyframes rebalance-spin { to { transform: rotate(360deg); } }
         .rebalance-spinner { animation: rebalance-spin .7s linear infinite; }
     </style>
 
-    <div wire:loading.delay wire:target="{{ $recomputeTargets }}"
+    <div wire:loading.delay wire:target="{{ $recomputeTargets }}" class="rebalance-loading"
          style="position:sticky; top:.5rem; z-index:20; display:flex; align-items:center; gap:.6rem;
-                padding:.6rem .9rem; margin-bottom:.75rem; border-radius:.5rem; font-size:.85rem;
-                border:1px solid rgba(120,120,140,.3); background:var(--gray-50, #f9fafb);">
+                padding:.6rem .9rem; margin-bottom:.75rem; border-radius:.5rem; font-size:.85rem;">
         <svg class="rebalance-spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" style="flex:none;">
             <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity=".2"/>
             <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
@@ -24,8 +36,6 @@
         week over {{ $capacity['window_label'] ?? 'the selected range' }} — the figures below are the previous run
         until this finishes.</span>
     </div>
-
-    <div class="rebalance-stale" wire:loading.class="rebalance-waiting" wire:target="{{ $recomputeTargets }}">
 
     <x-filament::section heading="Rebalance recommendations">
         <div style="display:flex; align-items:center; gap:.75rem; font-size:.85rem; flex-wrap:wrap;">
@@ -548,5 +558,4 @@
             @endforeach
         </div>
     </x-filament::section>
-</div>
 </x-filament-panels::page>
