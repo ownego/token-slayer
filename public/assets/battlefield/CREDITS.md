@@ -37,8 +37,33 @@ Each character has separate files per animation state. All frames are 100×100 p
 | werebear            |    6 |    8 |      9 |     4 |               3 |               3 |
 | orc-rider           |    6 |    8 |      8 |     4 |               3 |               3 |
 | greatsword-skeleton |    6 |    9 |      9 |     4 |               3 |               3 |
+| knight-templar      |    6 |    8 |      7 |     4 |               3 |               0 |
+| lancer              |    6 |    8 |      6 |     4 |               3 |               0 |
+| wizard              |    6 |    8 |      6 |     4 |               2 |               2 |
+| priest              |    6 |    8 |      9 |     4 |               1 |               1 |
+| skeleton-archer     |    6 |    8 |      9 |     4 |               1 |               0 |
 
 Naming convention: `{character}-{state}.png` for base animations, `{character}-attack{N}.png` and `{character}-effect{N}.png` for variants.
+
+**These 5 (added later, `d9c60d3`) went straight into `fighters-atlas.png`/`.json` — no standalone per-state PNGs are checked into `fighters/` for them,** unlike the original 15. `knight-templar` and `lancer` (melee `BLADE` attacks) have no effect-strip variants at all. `priest` also has a dedicated 4-frame `heal` animation (`rate: 5`) played on the Necromancer, not on Priest itself — see `.ai/domain/battlefield.md` Companions. `skeleton-archer` also has the skeleton-family's 5-frame `summon` animation, like `skeleton`/`armored-skeleton`/`greatsword-skeleton`.
+
+## Companion Spritesheets (`companions/`)
+
+**Source/license not recorded when these were added (`4d0a01a`) — TODO: confirm and fill in before relying on this section for attribution.** All frames 100×100 px, loaded as direct per-animation spritesheets (like a multi-anim boss), not the shared fighter atlas.
+
+| File | Frames | Notes |
+|---|---|---|
+| `bat/flying.png` | 6 | loops |
+| `bat/attack1.png` | 6 | |
+| `bat/attack2.png` | 7 | |
+| `bat/hurt.png` | 4 | |
+| `bat/death.png` | 4 | |
+| `necromancer/idle.png` | 6 | loops |
+| `necromancer/walk.png` | 6 | loops |
+| `necromancer/summon.png` | 10 | cast gesture starts ~frame 5 |
+| `necromancer/summon-circle.png` | 7 | played at the joining fighter's own spot, not on the Necromancer sprite |
+| `necromancer/death.png` | 9 | also reused, forward/reversed, as the vanish/reappear teleport transition |
+| `necromancer/appear-burst.png` | 6 | |
 
 ## Boss Spritesheets (`bosses/`)
 
