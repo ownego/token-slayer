@@ -430,3 +430,20 @@ it('marks a switched member pending until their machine claims the grant', funct
 
     Carbon::setTestNow();
 });
+
+it('says it is recalculating rather than leaving the last plan sitting there', function () {
+    $admin = User::factory()->admin()->create();
+
+    $html = Livewire::actingAs($admin)->test(AccountRebalance::class)->html();
+
+    // Reading every account's quota windows takes seconds, and the page keeps
+    // the previous plan on screen throughout -- so with nothing marking the
+    // wait, a finished recalculation and one that has not started look the
+    // same. The range and the extra-account selector recompute too, so both
+    // have to be covered, not just the button.
+    expect($html)->toContain('Recalculating')
+        ->and($html)->toContain('wire:loading.delay')
+        ->and($html)->toContain('mountAction')
+        ->and($html)->toContain('extraAccounts')
+        ->and($html)->toContain('range');
+});
