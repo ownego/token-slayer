@@ -445,5 +445,13 @@ it('says it is recalculating rather than leaving the last plan sitting there', f
         ->and($html)->toContain('wire:loading.delay')
         ->and($html)->toContain('mountAction')
         ->and($html)->toContain('extraAccounts')
-        ->and($html)->toContain('range');
+        ->and($html)->toContain('range')
+        // The banner paints its own background, so it has to paint its own
+        // text too: on the dark theme it inherited white type onto a white
+        // panel and the whole message vanished.
+        ->and($html)->toContain('.dark .rebalance-loading')
+        // Nothing is disabled while it recalculates. Dimming the page meant
+        // dimming the two selectors that start a recalculation, so choosing
+        // "1 more account" greyed out and blocked the control being used.
+        ->and($html)->not->toContain('pointer-events: none');
 });
