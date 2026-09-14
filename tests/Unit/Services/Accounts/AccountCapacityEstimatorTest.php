@@ -228,3 +228,59 @@ it('says whether a capacity was measured or merely extrapolated', function () {
 
     Carbon::setTestNow();
 });
+
+it('merges a reset recorded a second before the hour with the one recorded on it', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $account = Account::factory()->connected()->create();
+    $resetAt = Carbon::parse('2026-09-10 06:00:00');
+
+    // Prod records the same boundary as both 05:59:59 and 06:00:00. Flooring
+    // to the hour drops those into different buckets, so one week is measured
+    // twice -- once missing whatever landed in its final hour -- and the card
+    // claims two windows of evidence where the account has one.
+    foreach ([$resetAt->copy()->subSecond(), $resetAt] as $recorded) {
+        AccountUsageSnapshot::factory()->for($account)->create([
+            'util_7d' => 100,
+            'reset_7d_at' => $recorded,
+            'created_at' => $resetAt->copy()->subDay(),
+        ]);
+    }
+
+    Event::factory()->for($account)->for(User::factory())->create([
+        'tokens' => 10_000_000,
+        'created_at' => $resetAt->copy()->subDays(3),
+    ]);
+    Event::factory()->for($account)->for(User::factory())->create([
+        'tokens' => 2_000_000,
+        'created_at' => $resetAt->copy()->subMinutes(30),
+    ]);
+
+    $measured = app(AccountCapacityEstimator::class)->measure($account, RebalanceWindow::days(30));
+
+    expect($measured['windows'])->toBe(1)
+        ->and($measured['tokens'])->toBe(12_000_000.0);
+
+    Carbon::setTestNow();
+});
+
+it('does not let one exhausted week overturn several consistent quieter ones', function () {
+    Carbon::setTestNow('2026-09-12 00:00:00');
+    $account = Account::factory()->connected()->create();
+
+    // Measured on prod: three weeks agreeing the account is worth ~27M, then
+    // one week that ran out on 6M because that week's work was cache-heavy --
+    // a quota buys far fewer recorded tokens some weeks than others. Trusting
+    // the exhausted week alone read the account at a quarter of its size and
+    // reported it 581% full.
+    recordCompletedWindow($account, now()->subDays(2), peakUtil: 100, tokens: 6_000_000);
+    recordCompletedWindow($account, now()->subDays(9), peakUtil: 50, tokens: 13_000_000);
+    recordCompletedWindow($account, now()->subDays(16), peakUtil: 50, tokens: 14_000_000);
+    recordCompletedWindow($account, now()->subDays(23), peakUtil: 50, tokens: 15_000_000);
+
+    $measured = app(AccountCapacityEstimator::class)->measure($account, RebalanceWindow::days(30));
+
+    expect($measured['tokens'])->toBe(27_000_000.0)
+        ->and($measured['basis'])->toBe('contested');
+
+    Carbon::setTestNow();
+});

@@ -59,6 +59,26 @@ final class AccountCapacityEstimator
     private const int WINDOW_DAYS = 7;
 
     /**
+     * How far a week the account ran out of may sit from the weeks it did
+     * not, before the two are treated as telling different stories.
+     *
+     * How many tokens a week's quota is worth is not a constant: the quota is
+     * spent on everything a turn processes, while the ledger records what the
+     * turn produced, and the ratio between those moves with the work. Measured
+     * on prod, one account read 22x, another 50x, in the same week. So a
+     * saturated week can land a long way from the account's other weeks
+     * without either being wrong, and taking it alone then reads the account
+     * at a fraction of its size — 6.7M against three weeks agreeing on 27M,
+     * which is what put one account at 581% full.
+     *
+     * Beyond this factor the saturated week stops being the better evidence
+     * and becomes one week among several.
+     *
+     * @var float
+     */
+    private const float MAX_DISAGREEMENT = 2.0;
+
+    /**
      * Median weekly capacity in tokens for one account, or null when no
      * closed window in `$window` carries a usable signal.
      *
@@ -77,6 +97,13 @@ final class AccountCapacityEstimator
      * Weeks the account ran out of are used alone when there are any: each is
      * a direct reading, and mixing readings with extrapolations lets the
      * noisier evidence move an answer the quieter evidence already settled.
+     *
+     * Unless they disagree. A reading that lands more than
+     * {@see self::MAX_DISAGREEMENT} away from what the account's other weeks
+     * say is not a better answer than them, it is a different one, and
+     * letting it overrule three consistent weeks is how a full account came
+     * to be read at a quarter of its size. Then every window counts equally
+     * and the basis says so.
      *
      * @param  Account  $account  the account to measure
      * @param  RebalanceWindow  $window  how far back to look
@@ -104,6 +131,12 @@ final class AccountCapacityEstimator
             }
 
             $extrapolated[] = $tokens * 100 / $closed['peak_util'];
+        }
+
+        if ($measured !== [] && $extrapolated !== [] && $this->contradict($this->median($measured), $this->median($extrapolated))) {
+            $all = [...$measured, ...$extrapolated];
+
+            return ['tokens' => $this->median($all), 'basis' => 'contested', 'windows' => count($all)];
         }
 
         if ($measured !== []) {
@@ -164,10 +197,14 @@ final class AccountCapacityEstimator
 
     /**
      * The closed quota windows visible in `$window`, as reset time plus the
-     * highest utilization reached. Reset timestamps are normalised to the
-     * hour first: the prober records the same boundary a second either side
-     * of it, and treating those as separate windows would split one week's
-     * usage across two bogus half-windows.
+     * highest utilization reached. Reset timestamps are rounded to the
+     * NEAREST hour first: the API reports the same boundary as `05:59:59`,
+     * `06:00:00` and `06:00:01` across a week of probes, and treating those
+     * as separate windows splits one week into two — one of them missing
+     * whatever landed in its final hour — and then reports the pair as two
+     * windows of evidence. Flooring to the hour, which is what this did,
+     * separates `05:59:59` from `06:00:00` instead of joining them, so every
+     * account on prod was carrying each of its weeks twice.
      *
      * @param  Account  $account  the account to read snapshots for
      * @param  RebalanceWindow  $window  how far back to look
@@ -187,7 +224,7 @@ final class AccountCapacityEstimator
 
         $byHour = [];
         foreach ($rows as $row) {
-            $resetAt = Carbon::parse($row->reset_7d_at)->startOfHour();
+            $resetAt = Carbon::parse($row->reset_7d_at)->addMinutes(30)->startOfHour();
             if ($resetAt->isFuture()) {
                 continue; // still open: only part of its usage is on record
             }
@@ -200,6 +237,27 @@ final class AccountCapacityEstimator
         }
 
         return array_values($byHour);
+    }
+
+    /**
+     * Whether two readings of the same account's weekly capacity are too far
+     * apart to be treated as agreeing.
+     *
+     * Compared as a ratio rather than a difference: the question is whether
+     * one says the account is twice the size of what the other says, and that
+     * is the same question at 6M and at 60M.
+     *
+     * @param  float|null  $measured  the median of the weeks the account ran out of
+     * @param  float|null  $extrapolated  the median of the weeks it did not
+     * @return bool
+     */
+    private function contradict(?float $measured, ?float $extrapolated): bool
+    {
+        if ($measured === null || $extrapolated === null || $measured <= 0.0 || $extrapolated <= 0.0) {
+            return false;
+        }
+
+        return max($measured, $extrapolated) / min($measured, $extrapolated) > self::MAX_DISAGREEMENT;
     }
 
     /**
