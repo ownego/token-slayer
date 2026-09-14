@@ -33,9 +33,11 @@
                     the rest is left as slack.
                 </li>
                 <li>
-                    <strong>No more than {{ config('token_slayer.rebalance.members_per_account') }} members per
+                    <strong>No more than {{ config('token_slayer.rebalance.members_per_account') }} people homed on an
                     account</strong> — a crowded account can have everyone working the same hour, which is what trips a
-                    5-hour window whatever the weekly total says.
+                    5-hour window whatever the weekly total says. Counted by where each person actually works, not by
+                    seats held: somebody can keep a seat on an account they have left, so the Members cards below can
+                    show more than this and still be right.
                 </li>
             </ul>
         @endif
@@ -298,7 +300,7 @@
                     </div>
                     <div style="font-size:.8rem; opacity:.7;">
                         {{ number_format($free['tokens']) }} tokens/week
-                        · {{ $free['accounts_ran_out'] }} {{ \Illuminate\Support\Str::plural('account', $free['accounts_ran_out']) }} ran dry@if ($free['accounts_saturated'] > $free['accounts_ran_out']), {{ $free['accounts_saturated'] - $free['accounts_ran_out'] }} came close@endif
+                        · {{ $free['accounts_ran_out'] }} {{ \Illuminate\Support\Str::plural('account', $free['accounts_ran_out']) }} ran dry{{ $free['accounts_saturated'] > $free['accounts_ran_out'] ? ', '.($free['accounts_saturated'] - $free['accounts_ran_out']).' came close' : '' }}
                     </div>
                     <div style="font-size:.85rem; margin-top:.5rem;">
                         @if ($free['accounts_needed'] === 0)
@@ -347,7 +349,7 @@
                             <th style="padding:.4rem .6rem;">Measured capacity / week</th>
                             <th style="padding:.4rem .6rem;">Actually peaked at</th>
                             <th style="padding:.4rem .6rem;">Worst-case load</th>
-                            <th style="padding:.4rem .6rem;">Members</th>
+                            <th style="padding:.4rem .6rem;" title="People whose work actually lands here, before and after the plan. Not the same as seats held: the Members cards lower down count anyone holding a live seat, including people who have moved on but not been released.">Homed here</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -393,6 +395,13 @@
                     were cut off, so what they spent is exactly a week's worth. A week it never filled has to be scaled
                     up instead, which scales the probe's error up too, so those are marked <em>estimated</em> and
                     trusted only when no saturated week exists.
+                </li>
+                <li>
+                    <strong>disputed</strong> — this account's own weeks do not agree. Either a week it ran out of
+                    lands more than twice away from the weeks it did not, or a week it never filled carried more than
+                    the figure the others implied — which cannot be, so the larger is used. A quota is spent on
+                    everything a turn processes while this ledger records what it produced, and that ratio moves with
+                    the work, so an account really can be worth very different numbers of tokens week to week.
                 </li>
                 <li>
                     <strong>Actually peaked at</strong> — the most this account really carried inside one of its own
