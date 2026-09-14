@@ -351,6 +351,8 @@
                                         <span style="opacity:.55;" title="Read off a week this account ran its quota out — what its users managed to spend is exactly a week's worth.">measured</span>
                                     @elseif (($account['capacity_basis'] ?? '') === 'extrapolated')
                                         <span style="opacity:.55; color:var(--warning-600, #ca8a04);" title="It has never run out in this range, so this scales a quieter week up to a full one — and scales the probe's error up with it.">estimated</span>
+                                    @elseif (($account['capacity_basis'] ?? '') === 'contested')
+                                        <span style="opacity:.55; color:var(--warning-600, #ca8a04);" title="The week it ran out of says something very different from the weeks it did not — the quota buys far fewer recorded tokens in a context-heavy week. This is the middle of every week on record rather than the exhausted one alone.">disputed</span>
                                     @elseif (($account['capacity_basis'] ?? '') === 'inherited')
                                         <span style="opacity:.55; color:var(--warning-600, #ca8a04);" title="Nothing usable of its own; borrowed from the accounts on its plan.">borrowed</span>
                                     @endif
