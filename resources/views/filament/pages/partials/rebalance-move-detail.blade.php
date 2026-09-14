@@ -7,9 +7,11 @@
         ['Average day', number_format($move['trailingAvgPerDayTokens']) . ' tokens/day', 'Everything they spent over the range, spread across every day in it.'],
         ['Planned as', number_format($move['demandPerDayTokens']) . ' tokens/day', 'The weekly figure above, spread evenly — the rate an account has to sustain for them.'],
         ['Burstiness', number_format($move['burstFactor'], 2) . '×', 'Busiest hour over the mean hour. Above 1, extra room is reserved around them, because a concentrated day is what trips a 5-hour window.'],
-        ['Quota weight', number_format($move['quotaWeight'], 2) . '×', $move['quotaWeightWindows'] === 0
-            ? 'Never measured: nobody used an account alone often enough to compare against. They are being planned as a typical member, which is the right default when there is no evidence either way.'
-            : 'How fast their tokens burn quota compared with a typical member of the same account, from ' . $move['quotaWeightWindows'] . ' window(s) where they used it alone. 1.00 is typical; below 1.00 their tokens cost the quota less per token.'],
+        ['Quota weight', number_format($move['quotaWeight'], 2) . '×' . (($move['quotaWeightClamped'] ?? false) ? ' (capped)' : ''), match (true) {
+            $move['quotaWeightWindows'] === 0 => 'Never measured: nobody used an account alone often enough to compare against. They are being planned as a typical member, which is the right default when there is no evidence either way.',
+            ($move['quotaWeightClamped'] ?? false) => 'The fit put them further from typical than this, and ' . number_format($move['quotaWeight'], 2) . ' is the most this page will credit either way. So this is a cap, not a reading — the weighted figure above is bounded by the model, not measured, and the true one is further out.',
+            default => 'How fast their tokens burn quota compared with a typical member of the same account, from ' . $move['quotaWeightWindows'] . ' window(s) where they used it alone. 1.00 is typical; below 1.00 their tokens cost the quota less per token.',
+        }],
         ['History', $move['daysOfHistory'] . ' days', 'How much recorded usage in the range sits behind these figures.'],
     ];
 @endphp

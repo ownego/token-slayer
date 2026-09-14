@@ -73,6 +73,7 @@ final class FleetSnapshot
             $details[$userId] = $measured + [
                 'quota_weight' => $weight,
                 'quota_weight_windows' => $weights[$userId]['windows'] ?? 0,
+                'quota_weight_clamped' => $weights[$userId]['clamped'] ?? false,
             ];
         }
 

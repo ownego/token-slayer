@@ -3,7 +3,6 @@
 namespace App\Services\Accounts;
 
 use App\Models\Account;
-use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -24,6 +23,12 @@ use Illuminate\Support\Collection;
  */
 final class AccountCapacityEstimator
 {
+    /**
+     * @param  ClosedQuotaWindows  $windows  where one quota week ends and the next begins
+     * @return void
+     */
+    public function __construct(private readonly ClosedQuotaWindows $windows) {}
+
     /**
      * Lowest peak utilization a closed window may have and still be trusted
      * for extrapolation. At 25% a one-point probe error moves the estimate
@@ -114,7 +119,7 @@ final class AccountCapacityEstimator
         $measured = [];
         $extrapolated = [];
 
-        foreach ($this->closedWindows($account, $window) as $closed) {
+        foreach ($this->windows->peaks($account, $window) as $closed) {
             if ($closed['peak_util'] < self::MIN_PEAK_UTIL) {
                 continue;
             }
@@ -193,50 +198,6 @@ final class AccountCapacityEstimator
         }
 
         return $resolved;
-    }
-
-    /**
-     * The closed quota windows visible in `$window`, as reset time plus the
-     * highest utilization reached. Reset timestamps are rounded to the
-     * NEAREST hour first: the API reports the same boundary as `05:59:59`,
-     * `06:00:00` and `06:00:01` across a week of probes, and treating those
-     * as separate windows splits one week into two — one of them missing
-     * whatever landed in its final hour — and then reports the pair as two
-     * windows of evidence. Flooring to the hour, which is what this did,
-     * separates `05:59:59` from `06:00:00` instead of joining them, so every
-     * account on prod was carrying each of its weeks twice.
-     *
-     * @param  Account  $account  the account to read snapshots for
-     * @param  RebalanceWindow  $window  how far back to look
-     * @return array<int, array{reset_at: Carbon, peak_util: int}>
-     */
-    private function closedWindows(Account $account, RebalanceWindow $window): array
-    {
-        $rows = AccountUsageSnapshot::query()
-            ->where('account_id', $account->id)
-            ->whereNotNull('reset_7d_at')
-            ->whereNotNull('util_7d')
-            ->when($window->since() !== null, fn ($query) => $query->where('created_at', '>=', $window->since()))
-            ->selectRaw('reset_7d_at')
-            ->selectRaw('MAX(util_7d) as peak_util')
-            ->groupBy('reset_7d_at')
-            ->get();
-
-        $byHour = [];
-        foreach ($rows as $row) {
-            $resetAt = Carbon::parse($row->reset_7d_at)->addMinutes(30)->startOfHour();
-            if ($resetAt->isFuture()) {
-                continue; // still open: only part of its usage is on record
-            }
-
-            $key = $resetAt->toDateTimeString();
-            $byHour[$key] = [
-                'reset_at' => $resetAt,
-                'peak_util' => max((int) $row->peak_util, $byHour[$key]['peak_util'] ?? 0),
-            ];
-        }
-
-        return array_values($byHour);
     }
 
     /**

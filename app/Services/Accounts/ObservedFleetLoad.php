@@ -22,6 +22,12 @@ use Illuminate\Support\Collection;
 final class ObservedFleetLoad
 {
     /**
+     * @param  ClosedQuotaWindows  $windows  where one quota week ends and the next begins
+     * @return void
+     */
+    public function __construct(private readonly ClosedQuotaWindows $windows) {}
+
+    /**
      * The quota window everything here is measured over, matching the one
      * Anthropic meters.
      *
@@ -36,7 +42,7 @@ final class ObservedFleetLoad
      * @param  Collection<int, Account>  $accounts  the accounts in scope
      * @param  array<int, float>  $capacities  account id => weekly capacity in tokens
      * @param  RebalanceWindow  $window  how far back to read
-     * @return array{per_account: array<int, array{peak_tokens: float, peak_percent: float}>, accounts_over_capacity: int, accounts_measured: int, fleet_peak_tokens: float, fleet_peak_percent: float, fleet_median_tokens: float, fleet_median_percent: float}
+     * @return array{per_account: array<int, array{peak_tokens: float, peak_percent: float, peak_basis: string}>, accounts_over_capacity: int, accounts_measured: int, fleet_peak_tokens: float, fleet_peak_percent: float, fleet_median_tokens: float, fleet_median_percent: float}
      */
     public function measure(Collection $accounts, array $capacities, RebalanceWindow $window): array
     {
@@ -51,10 +57,15 @@ final class ObservedFleetLoad
                 continue; // nothing to measure it against
             }
 
-            $peak = $this->peakWindow($dailyByAccount[$account->id] ?? []);
+            $quotaWeek = $this->heaviestQuotaWindow($account, $window);
+            $peak = $quotaWeek ?? $this->peakWindow($dailyByAccount[$account->id] ?? []);
             $percent = $peak * 100 / $capacity;
 
-            $perAccount[$account->id] = ['peak_tokens' => $peak, 'peak_percent' => $percent];
+            $perAccount[$account->id] = [
+                'peak_tokens' => $peak,
+                'peak_percent' => $percent,
+                'peak_basis' => $quotaWeek === null ? 'rolling_days' : 'quota_week',
+            ];
             if ($percent > 100.0) {
                 $over++;
             }
@@ -121,6 +132,39 @@ final class ObservedFleetLoad
         }
 
         return $daily;
+    }
+
+    /**
+     * The most this account got through inside any one of its own closed
+     * quota windows, or null when none of them are on record.
+     *
+     * Measured against the boundaries Anthropic actually meters rather than
+     * over any seven consecutive days, because the two are not the same
+     * question. A rolling week that straddles a reset holds the tail of one
+     * allowance and the head of the next, so it can pass 100% of a week's
+     * capacity without the account ever having been short — which is exactly
+     * how two accounts came to be shown at 164% and 147% as evidence they
+     * were overloaded.
+     *
+     * @param  Account  $account  the account to measure
+     * @param  RebalanceWindow  $window  how far back to look
+     * @return float|null
+     */
+    private function heaviestQuotaWindow(Account $account, RebalanceWindow $window): ?float
+    {
+        $peak = null;
+
+        foreach ($this->windows->peaks($account, $window) as $closed) {
+            $tokens = (float) Event::query()
+                ->where('account_id', $account->id)
+                ->where('created_at', '>=', $closed['opened_at'])
+                ->where('created_at', '<', $closed['reset_at'])
+                ->sum('tokens');
+
+            $peak = $peak === null ? $tokens : max($peak, $tokens);
+        }
+
+        return $peak;
     }
 
     /**

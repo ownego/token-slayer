@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AccountUsageSnapshot;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Accounts\ObservedFleetLoad;
@@ -104,6 +105,46 @@ it('reports nothing rather than dividing by a capacity it does not have', functi
 
     expect($observed['accounts_measured'])->toBe(0)
         ->and($observed['fleet_peak_percent'])->toBe(0.0);
+
+    Carbon::setTestNow();
+});
+
+it('measures an account against its own quota weeks, not seven days that straddle two', function () {
+    // A rolling seven days can take the tail of one quota week and the head
+    // of the next, so it can hold nearly two weeks of allowance and exceed
+    // 100% without the account ever having run short. On prod this reported
+    // oeqaai1 at 164% and oedevai4 at 147%, and those figures were being
+    // shown as the proof that accounts were blowing past their capacity.
+    Carbon::setTestNow('2026-09-14 06:00:00');
+    $account = Account::factory()->connected()->create();
+    $user = User::factory()->create();
+
+    foreach (['2026-09-06 00:00:00', '2026-09-13 00:00:00'] as $resetAt) {
+        AccountUsageSnapshot::factory()->for($account)->create([
+            'util_7d' => 60,
+            'reset_7d_at' => Carbon::parse($resetAt),
+            'created_at' => Carbon::parse($resetAt)->subDay(),
+        ]);
+    }
+
+    // Three heavy days closing one week, four opening the next: seven
+    // consecutive days of 6M, split 18M / 24M across the boundary.
+    foreach (['2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08', '2026-09-09'] as $day) {
+        Event::factory()->for($account)->for($user)->create([
+            'tokens' => 6_000_000,
+            'created_at' => Carbon::parse("{$day} 12:00:00"),
+        ]);
+    }
+
+    $observed = app(ObservedFleetLoad::class)->measure(
+        collect([$account]),
+        [$account->id => 30_000_000.0],
+        RebalanceWindow::days(30),
+    );
+
+    expect($observed['per_account'][$account->id]['peak_tokens'])->toBe(24_000_000.0)
+        ->and($observed['per_account'][$account->id]['peak_percent'])->toBe(80.0)
+        ->and($observed['accounts_over_capacity'])->toBe(0);
 
     Carbon::setTestNow();
 });

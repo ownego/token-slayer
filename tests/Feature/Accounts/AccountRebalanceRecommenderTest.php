@@ -417,3 +417,38 @@ it('names what is short of history rather than leaving the doubt on the person',
 
     Carbon::setTestNow();
 });
+
+it('does not fault an account nobody has bought yet for having no history', function () {
+    Carbon::setTestNow('2026-09-12 06:00:00');
+
+    $tight = accountPeaking(70);
+    $roomy = accountPeaking(35);
+    $whale = User::factory()->create();
+    $mediumA = User::factory()->create();
+    $mediumB = User::factory()->create();
+
+    dailyUsage($tight, $whale, 150_000);
+    dailyUsage($roomy, $mediumA, 70_000);
+    dailyUsage($roomy, $mediumB, 70_000);
+    foreach ([[$tight, $whale], [$roomy, $mediumA], [$roomy, $mediumB]] as [$account, $user]) {
+        ancientUsage($account, $user);
+        tracks($account, $user);
+    }
+
+    $result = app(AccountRebalanceRecommender::class)->recommend(RebalanceWindow::days(14), extraAccounts: 1);
+
+    // An account that does not exist yet can never have history, so saying
+    // so is not a finding -- it fires on every row pointing at the new
+    // account and reads as doubt about the person named there. The internal
+    // id it was leaking ("#-1 has only 0 days") is not a thing an admin can
+    // look up either.
+    $onto = collect($result['moves'])->filter(fn ($move): bool => $move->toAccountId < 0);
+
+    expect($onto)->not->toBeEmpty();
+    foreach ($onto as $move) {
+        expect($move->confidenceReason ?? '')->not->toContain('#-')
+            ->and($move->confidenceReason ?? '')->not->toContain('days of recorded history');
+    }
+
+    Carbon::setTestNow();
+});

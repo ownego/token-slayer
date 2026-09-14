@@ -393,6 +393,7 @@ class AccountRebalance extends Page
             'burstFactor' => $move->burstFactor,
             'quotaWeight' => $move->quotaWeight,
             'quotaWeightWindows' => $move->quotaWeightWindows,
+            'quotaWeightClamped' => $move->quotaWeightClamped,
             'daysOfHistory' => $move->daysOfHistory,
             'fromFillBeforePercent' => $move->fromFillBeforePercent,
             'fromFillAfterPercent' => $move->fromFillAfterPercent,
