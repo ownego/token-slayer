@@ -391,3 +391,58 @@ it('rejects an expiring refresh_token_expires_at further than 45 days in the fut
 
     $res->assertUnprocessable();
 });
+
+it('persists the observed deadline onto the specific grant the calling device holds, not only the shared account field', function () {
+    // The shared field is a max-wins race across every device on the
+    // account, so a healthy sibling device can hide this one dying. Only a
+    // deadline stamped onto the grant itself can single it out.
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => 'b0b0b0b0-b0b0-4b0b-8b0b-b0b0b0b0b0b0']);
+    $device = Device::factory()->for($user)->create(['device_id' => 'fp-grant']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    $deadlineMs = now()->addDays(2)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => 'b0b0b0b0-b0b0-4b0b-8b0b-b0b0b0b0b0b0', 'refresh_token_expires_at' => $deadlineMs]],
+        'device_id' => 'fp-grant',
+    ]);
+
+    $res->assertOk();
+    $grant->refresh();
+    expect($grant->session_expires_at->timestamp)->toBe(intdiv($deadlineMs, 1000))
+        ->and($grant->session_expires_at_estimated)->toBeFalse();
+});
+
+it('does not regress a fresher already-stored per-grant deadline with a stale client report', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => 'c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0']);
+    $device = Device::factory()->for($user)->create(['device_id' => 'fp-grant2']);
+    $fresherDeadline = now()->addDays(20);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => $fresherDeadline,
+    ]);
+    $staleReportMs = now()->addHours(6)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => 'c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0', 'refresh_token_expires_at' => $staleReportMs]],
+        'device_id' => 'fp-grant2',
+    ]);
+
+    $res->assertOk();
+    expect($grant->fresh()->session_expires_at->timestamp)->toBe($fresherDeadline->timestamp);
+});
+
+it('leaves the per-grant deadline alone when the confirm resolves to no device', function () {
+    $user = User::factory()->create(['hook_token' => hash('sha256', 'HOOKTOK')]);
+    $account = Account::factory()->create(['organization_uuid' => 'd0d0d0d0-d0d0-4d0d-8d0d-d0d0d0d0d0d0']);
+    $device = Device::factory()->for($user)->create();
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create();
+    $deadlineMs = now()->addDays(2)->getTimestampMs();
+
+    $res = $this->withHeader('Authorization', 'Bearer HOOKTOK')->postJson('/api/provisioned/confirm', [
+        'expiring' => [['org_uuid' => 'd0d0d0d0-d0d0-4d0d-8d0d-d0d0d0d0d0d0', 'refresh_token_expires_at' => $deadlineMs]],
+    ]);
+
+    $res->assertOk();
+    expect($grant->fresh()->session_expires_at)->toBeNull();
+});

@@ -6,6 +6,9 @@ use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\ClaudeCredential;
 use App\Models\CodexCredential;
+use App\Models\Device;
+use App\Models\Event;
+use App\Models\User;
 use App\Services\Attribution\ExpiringAccountsQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -194,4 +197,90 @@ it('does not flag an expiring account whose only grant is revoked', function ():
 
     $row = collect($rows)->firstWhere('account_id', $account->id);
     expect($row['has_fresh_pending_grant'])->toBeFalse();
+});
+
+it('flags a claimed grant whose own session is about to expire even though the shared credential is healthy', function (): void {
+    // The shared credential is what the server's own probe refreshes, and
+    // one live device is enough to keep it looking healthy — that is the
+    // exact scenario that let a member's own session die with no warning.
+    $account = Account::create(['email' => 'shared@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create([
+        'account_id' => $account->id,
+        'oauth_refresh_expires_at' => now()->addDays(20),
+        'last_refreshed_at' => now()->subHour(),
+    ]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->addDay(),
+        'session_expires_at_estimated' => false,
+    ]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+    $grantRow = $rows->first(fn (array $row): bool => $row['account_id'] === $account->id && $row['kind'] === 'grant');
+
+    expect($grantRow)->not->toBeNull()
+        ->and($grantRow['deadline'])->not->toBeNull();
+});
+
+it('leaves a claimed grant alone while its own session is not expiring soon', function (): void {
+    $account = Account::create(['email' => 'shared2@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->addDays(20),
+    ]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+
+    expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeFalse();
+});
+
+it('never flags a revoked grant for its own session deadline', function (): void {
+    $account = Account::create(['email' => 'shared3@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->revoked()->create([
+        'session_expires_at' => now()->addDay(),
+    ]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+
+    expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeFalse();
+});
+
+it('does not trust an estimated session deadline once real activity outlived it', function (): void {
+    // A backfilled guess that the account's own later events already
+    // disproved is worse than no signal at all — it would cry wolf forever.
+    $account = Account::create(['email' => 'estimated1@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->subDay(),
+        'session_expires_at_estimated' => true,
+    ]);
+    Event::factory()->for($account)->for($user)->create(['created_at' => now()]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+
+    expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeFalse();
+});
+
+it('trusts an estimated session deadline when nothing contradicts it', function (): void {
+    $account = Account::create(['email' => 'estimated2@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->addDay(),
+        'session_expires_at_estimated' => true,
+    ]);
+    Event::factory()->for($account)->for($user)->create(['created_at' => now()->subDays(5)]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+
+    expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeTrue();
 });

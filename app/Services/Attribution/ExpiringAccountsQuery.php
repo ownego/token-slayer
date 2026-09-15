@@ -7,7 +7,9 @@ use App\Enums\GrantStatus;
 use App\Enums\Provider;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
+use App\Models\AccountProvisionedGrant;
 use App\Models\ClaudeCredential;
+use App\Models\Event;
 use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -33,6 +35,15 @@ use Illuminate\Support\Collection;
  * provisioning design — see the Phase 2 spec's 2026-09-02 correction)
  * `last_refreshed_at` is over 8 days old, mirroring the `codex` CLI's own
  * internal proactive-refresh heuristic.
+ *
+ * A third bucket, `kind: 'grant'`, exists beside the two account-level
+ * buckets above (`kind: 'account'`): a claimed grant whose OWN
+ * `session_expires_at` falls inside the same 3-day window. This exists
+ * because `oauth_refresh_expires_at` is one field shared by the whole
+ * account — the server's own probe refresher and every device's self-report
+ * all race to push it forward, so one healthy channel hides every other
+ * device quietly running out. A member's session died with zero warning
+ * this way once the account it shared still looked perfectly healthy.
  */
 final class ExpiringAccountsQuery
 {
@@ -83,15 +94,15 @@ final class ExpiringAccountsQuery
     private const int CODEX_STALENESS_DAYS = 8;
 
     /**
-     * @return array<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool}>
+     * @return array<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool, kind:string}>
      */
     public function get(): array
     {
-        return $this->claudeRows()->concat($this->codexRows())->values()->all();
+        return $this->claudeRows()->concat($this->codexRows())->concat($this->claudeGrantRows())->values()->all();
     }
 
     /**
-     * @return Collection<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool}>
+     * @return Collection<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool, kind:string}>
      */
     private function claudeRows(): Collection
     {
@@ -132,6 +143,7 @@ final class ExpiringAccountsQuery
                     ? null
                     : $account->claudeCredential->oauth_refresh_expires_at,
                 'has_fresh_pending_grant' => $this->hasFreshPendingGrant($account),
+                'kind' => 'account',
             ]);
     }
 
@@ -182,6 +194,79 @@ final class ExpiringAccountsQuery
                 'label' => "hasn't refreshed recently — may need attention",
                 'deadline' => null,
                 'has_fresh_pending_grant' => $this->hasFreshPendingGrant($account),
+                'kind' => 'account',
             ]);
+    }
+
+    /**
+     * Live Claude grants whose own `session_expires_at` falls inside the
+     * warning window, independent of the account's shared credential — see
+     * the class docblock. An estimated deadline (backfilled for a grant
+     * whose secret was cleared before this column existed) is dropped when
+     * the account has since recorded real activity past it: that is
+     * evidence the guess was wrong for this grant, and a guess already
+     * disproved by the account's own ledger is worse than no signal.
+     *
+     * @return Collection<int, array{account_id:int, email:?string, name:?string, provider:Provider, label:string, deadline:?Carbon, has_fresh_pending_grant:bool, kind:string}>
+     */
+    private function claudeGrantRows(): Collection
+    {
+        return AccountProvisionedGrant::query()
+            ->live()
+            ->whereHas('account', fn ($query) => $query->where('provider', Provider::Claude))
+            ->whereNotNull('session_expires_at')
+            ->where('session_expires_at', '<=', now()->addDays(self::CLAUDE_WARNING_DAYS))
+            ->with(['account', 'device.user'])
+            ->get()
+            ->reject(fn (AccountProvisionedGrant $grant): bool => $this->estimateOutlived($grant))
+            ->map(fn (AccountProvisionedGrant $grant): array => [
+                'account_id' => $grant->account_id,
+                'email' => $grant->account->email,
+                'name' => $grant->account->email.' · '.$grant->device->user->email,
+                'provider' => Provider::Claude,
+                'label' => self::grantLabel($grant),
+                'deadline' => $grant->session_expires_at,
+                'has_fresh_pending_grant' => $this->hasFreshPendingGrant($grant->account),
+                'kind' => 'grant',
+            ])
+            ->values();
+    }
+
+    /**
+     * What a grant row says is wrong with it: whose session it is and
+     * whether the deadline is a real reading or a backfilled guess.
+     *
+     * @param  AccountProvisionedGrant  $grant  the grant to describe
+     * @return string
+     */
+    private static function grantLabel(AccountProvisionedGrant $grant): string
+    {
+        $who = $grant->device->user->email;
+        $when = $grant->session_expires_at->diffForHumans();
+
+        return $grant->session_expires_at_estimated
+            ? "{$who}'s own session expires ~{$when} (estimated)"
+            : "{$who}'s own session expires {$when}";
+    }
+
+    /**
+     * Whether `$grant`'s deadline is an unverified guess that the account's
+     * own event history has already disproved — real usage recorded on this
+     * (account, user) pair after the guessed deadline.
+     *
+     * @param  AccountProvisionedGrant  $grant  the grant to check
+     * @return bool
+     */
+    private function estimateOutlived(AccountProvisionedGrant $grant): bool
+    {
+        if (! $grant->session_expires_at_estimated) {
+            return false;
+        }
+
+        return Event::query()
+            ->where('account_id', $grant->account_id)
+            ->where('user_id', $grant->device->user_id)
+            ->where('created_at', '>', $grant->session_expires_at)
+            ->exists();
     }
 }
