@@ -72,6 +72,40 @@ it('provisions a Pending grant on the device, writes its pending-secret fields, 
     expect($user->accounts()->first()->pivot->status)->toBe(MembershipStatus::Tracked);
 });
 
+it('captures the exchange response own refresh-token deadline as the grant own session expiry', function () {
+    $mock = Mockery::mock(AccountConnectService::class);
+    $mock->shouldReceive('exchangeVerifiedToken')->andReturn([
+        'access_token' => 'sk-ant-oat01-NEW',
+        'refresh_token' => 'sk-ant-ort01-NEW',
+        'expires_in' => 28800,
+        'refresh_token_expires_in' => 2546224,
+        'token_uuid' => 'tok-uuid-1',
+    ]);
+    app()->instance(AccountConnectService::class, $mock);
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['organization_uuid' => 'org-2']);
+    $device = Device::factory()->for($user)->create();
+
+    $grant = app(AccountProvisioningService::class)
+        ->provisionForDevice($user, $account, $device, 'state', 'code#state');
+
+    expect($grant->session_expires_at)->not->toBeNull()
+        ->and($grant->session_expires_at->timestamp)->toBe(now()->addSeconds(2546224)->timestamp)
+        ->and($grant->session_expires_at_estimated)->toBeFalse();
+});
+
+it('leaves the grant own session expiry null when the exchange response carries no refresh-token deadline', function () {
+    fakeExchange();
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['organization_uuid' => 'org-3']);
+    $device = Device::factory()->for($user)->create();
+
+    $grant = app(AccountProvisioningService::class)
+        ->provisionForDevice($user, $account, $device, 'state', 'code#state');
+
+    expect($grant->session_expires_at)->toBeNull();
+});
+
 it('revokes the previous live grant on the same (account, device) when re-provisioning', function () {
     fakeExchange();
     $user = User::factory()->create();

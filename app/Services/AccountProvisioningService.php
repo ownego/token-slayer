@@ -92,6 +92,14 @@ final class AccountProvisioningService implements GrantRevokerContract
             'pending_claude_access_token' => $token['access_token'],
             'pending_claude_refresh_token' => $token['refresh_token'],
             'pending_claude_expires_at' => Carbon::now()->addSeconds((int) $token['expires_in']),
+            // The refresh token's OWN deadline — distinct from the access
+            // token's ~8h life above. This is what lets a single device's
+            // session be flagged on its own, instead of only ever reading
+            // the whole account's shared, max-wins field.
+            'session_expires_at' => isset($token['refresh_token_expires_in'])
+                ? Carbon::now()->addSeconds((int) $token['refresh_token_expires_in'])
+                : null,
+            'session_expires_at_estimated' => false,
         ]);
 
         $user->accounts()->syncWithoutDetaching([
@@ -264,7 +272,7 @@ final class AccountProvisioningService implements GrantRevokerContract
      */
     public function confirmSetup(User $user, array $setUpOrgUuids, array $removedOrgUuids = [], ?Device $device = null, array $expiring = []): array
     {
-        $this->recordObservedDeadlines($user, $expiring);
+        $this->recordObservedDeadlines($user, $expiring, $device);
 
         $confirmed = 0;
         foreach (array_unique($setUpOrgUuids) as $orgUuid) {
@@ -376,11 +384,18 @@ final class AccountProvisioningService implements GrantRevokerContract
      * taking the older value would invent an expiry scare that is already
      * resolved.
      *
+     * Also stamped onto `$device`'s own grant for that org, under the same
+     * never-regress rule, so this ONE device's session can be flagged on its
+     * own later — see {@see AccountProvisionedGrant::session_expires_at} on
+     * the class docblock's reasoning. The account-level write above stays
+     * exactly as it was; this is additive, not a replacement.
+     *
      * @param  User  $user  the hook-authenticated user
      * @param  array<int, array{org_uuid: string, refresh_token_expires_at: Carbon}>  $expiring  what the client observed
+     * @param  Device|null  $device  the confirming device, or null when none resolved
      * @return void
      */
-    private function recordObservedDeadlines(User $user, array $expiring): void
+    private function recordObservedDeadlines(User $user, array $expiring, ?Device $device): void
     {
         foreach ($expiring as $row) {
             $account = $this->accountWithLiveGrantFor($user, $row['org_uuid']);
@@ -392,6 +407,15 @@ final class AccountProvisioningService implements GrantRevokerContract
             if ($account->oauth_refresh_expires_at === null
                 || $row['refresh_token_expires_at']->isAfter($account->oauth_refresh_expires_at)) {
                 $account->update(['oauth_refresh_expires_at' => $row['refresh_token_expires_at']]);
+            }
+
+            $grant = $device?->grants()->where('account_id', $account->id)->latest('id')->first();
+            if ($grant !== null
+                && ($grant->session_expires_at === null || $row['refresh_token_expires_at']->isAfter($grant->session_expires_at))) {
+                $grant->forceFill([
+                    'session_expires_at' => $row['refresh_token_expires_at'],
+                    'session_expires_at_estimated' => false,
+                ])->save();
             }
         }
     }

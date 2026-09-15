@@ -44,7 +44,16 @@
                                      no per-row connect to offer (its device-code flow binds to
                                      whoever approves), so it gets the re-probe instead. --}}
                                 <td style="padding:.4rem .6rem;">
-                                    @if ($row['provider'] === \App\Enums\Provider::Claude)
+                                    @if ($row['kind'] === 'grant')
+                                        {{-- This is one member's own claimed session, not the
+                                             account's shared credential — reconnecting the account
+                                             would not touch it. The fix is a per-grant Reissue on
+                                             the Provisions tab, which needs the specific record, so
+                                             this just gets the admin there. --}}
+                                        <a href="{{ \App\Filament\Resources\Accounts\AccountResource::getUrl('edit', ['record' => $row['account_id']], panel: 'admin') }}">
+                                            Open account →
+                                        </a>
+                                    @elseif ($row['provider'] === \App\Enums\Provider::Claude)
                                         {{ ($this->reconnectAccountAction)(['account' => $row['account_id']]) }}
                                     @else
                                         {{ ($this->refreshAccountUsageAction)(['account' => $row['account_id']]) }}

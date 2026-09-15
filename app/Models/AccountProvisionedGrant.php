@@ -39,6 +39,8 @@ class AccountProvisionedGrant extends Model
             'pending_claude_refresh_token' => 'encrypted',
             'pending_claude_expires_at' => 'datetime',
             'pending_codex_auth_json' => 'encrypted:array',
+            'session_expires_at' => 'datetime',
+            'session_expires_at_estimated' => 'boolean',
         ];
     }
 

@@ -1,10 +1,12 @@
 <?php
 
 use App\Filament\Pages\ExpiringAccounts;
+use App\Filament\Resources\Accounts\AccountResource;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\ClaudeCredential;
 use App\Models\CodexCredential;
+use App\Models\Device;
 use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\Connect\ConnectResolution;
@@ -142,4 +144,24 @@ it('shows a red unhandled badge on a row with no live grant', function (): void 
     Livewire::actingAs($admin)->test(ExpiringAccounts::class)
         ->assertOk()
         ->assertSee('🔴');
+});
+
+it('lists a member own expiring session even though the account credential is healthy, linking to the account instead of offering reconnect', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::create(['email' => 'shared@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create([
+        'account_id' => $account->id,
+        'oauth_refresh_expires_at' => now()->addDays(20),
+        'last_refreshed_at' => now()->subHour(),
+    ]);
+    $member = User::factory()->create(['email' => 'member@example.com']);
+    $device = Device::factory()->for($member)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->addDay(),
+    ]);
+
+    Livewire::actingAs($admin)->test(ExpiringAccounts::class)
+        ->assertOk()
+        ->assertSee('member@example.com')
+        ->assertSee(AccountResource::getUrl('edit', ['record' => $account->id], panel: 'admin'), escape: false);
 });
