@@ -4,10 +4,12 @@ namespace App\Services\Attribution;
 
 use App\Enums\AccountStatus;
 use App\Enums\GrantStatus;
+use App\Enums\MembershipStatus;
 use App\Enums\Provider;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
+use App\Models\AccountUser;
 use App\Models\ClaudeCredential;
 use App\Models\Event;
 use App\Support\CacheKeys;
@@ -218,7 +220,7 @@ final class ExpiringAccountsQuery
             ->where('session_expires_at', '<=', now()->addDays(self::CLAUDE_WARNING_DAYS))
             ->with(['account', 'device.user'])
             ->get()
-            ->reject(fn (AccountProvisionedGrant $grant): bool => $this->estimateOutlived($grant))
+            ->reject(fn (AccountProvisionedGrant $grant): bool => $this->estimateOutlived($grant) || $this->notAMember($grant))
             ->map(fn (AccountProvisionedGrant $grant): array => [
                 'account_id' => $grant->account_id,
                 'email' => $grant->account->email,
@@ -268,5 +270,28 @@ final class ExpiringAccountsQuery
             ->where('user_id', $grant->device->user_id)
             ->where('created_at', '>', $grant->session_expires_at)
             ->exists();
+    }
+
+    /**
+     * Whether `$grant`'s holder is no longer an active member of the
+     * account — Untracked, or no membership row at all. The grant itself
+     * can outlive a membership change (leaving the account does not revoke
+     * every device's grant on it), so grant status alone is not enough:
+     * nagging an admin to reissue a session for someone who has left the
+     * account entirely is worse than no signal.
+     *
+     * @param  AccountProvisionedGrant  $grant  the grant to check
+     * @return bool
+     */
+    private function notAMember(AccountProvisionedGrant $grant): bool
+    {
+        $status = AccountUser::query()
+            ->where('account_id', $grant->account_id)
+            ->where('user_id', $grant->device->user_id)
+            ->value('status');
+
+        // `value()` still hydrates through the model's cast, so this is a
+        // MembershipStatus enum (or null), never a raw string.
+        return ! in_array($status, [MembershipStatus::Tracked, MembershipStatus::Pending], true);
     }
 }

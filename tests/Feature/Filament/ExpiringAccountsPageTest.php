@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\MembershipStatus;
 use App\Filament\Pages\ExpiringAccounts;
 use App\Filament\Resources\Accounts\AccountResource;
 use App\Models\Account;
@@ -156,6 +157,7 @@ it('lists a member own expiring session even though the account credential is he
     ]);
     $member = User::factory()->create(['email' => 'member@example.com']);
     $device = Device::factory()->for($member)->create();
+    $account->users()->syncWithoutDetaching([$member->id => ['status' => MembershipStatus::Tracked->value]]);
     AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
         'session_expires_at' => now()->addDay(),
     ]);
