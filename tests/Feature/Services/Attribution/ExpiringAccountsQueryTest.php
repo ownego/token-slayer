@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AccountStatus;
+use App\Enums\MembershipStatus;
 use App\Enums\Provider;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
@@ -211,6 +212,7 @@ it('flags a claimed grant whose own session is about to expire even though the s
     ]);
     $user = User::factory()->create();
     $device = Device::factory()->for($user)->create();
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Tracked->value]]);
     AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
         'session_expires_at' => now()->addDay(),
         'session_expires_at_estimated' => false,
@@ -274,11 +276,60 @@ it('trusts an estimated session deadline when nothing contradicts it', function 
     ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
     $user = User::factory()->create();
     $device = Device::factory()->for($user)->create();
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Tracked->value]]);
     AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
         'session_expires_at' => now()->addDay(),
         'session_expires_at_estimated' => true,
     ]);
     Event::factory()->for($account)->for($user)->create(['created_at' => now()->subDays(5)]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+
+    expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeTrue();
+});
+
+it('does not flag a grant whose holder is untracked on the account', function (): void {
+    // The grant itself was never revoked when the member left the account,
+    // so it is still "live" by grant status alone — but nagging an admin to
+    // reissue a session for someone who is no longer on this account at all
+    // is worse than useless.
+    $account = Account::create(['email' => 'left@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Untracked->value]]);
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->addDay(),
+    ]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+
+    expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeFalse();
+});
+
+it('does not flag a grant whose holder has no membership row on the account at all', function (): void {
+    $account = Account::create(['email' => 'nomembership@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->addDay(),
+    ]);
+
+    $rows = collect(app(ExpiringAccountsQuery::class)->get());
+
+    expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeFalse();
+});
+
+it('still flags a grant whose holder is only Pending on the account', function (): void {
+    $account = Account::create(['email' => 'pendingmember@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $user = User::factory()->create();
+    $device = Device::factory()->for($user)->create();
+    $account->users()->syncWithoutDetaching([$user->id => ['status' => MembershipStatus::Pending->value]]);
+    AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create([
+        'session_expires_at' => now()->addDay(),
+    ]);
 
     $rows = collect(app(ExpiringAccountsQuery::class)->get());
 
