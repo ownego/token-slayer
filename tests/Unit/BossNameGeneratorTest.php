@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\BossCharacter;
 use App\Services\BossNameGenerator;
 
 test('returns a non-empty string from the pool', function () {
@@ -25,4 +26,20 @@ test('falls back to the full pool when every name has been used recently', funct
     $name = $generator->next($pool);
 
     expect($pool)->toContain($name);
+});
+
+test('nameFor hands a recognizable character its fixed name without touching the pool', function () {
+    expect((new BossNameGenerator)->nameFor(7))->toBe('ThaNode');
+});
+
+test('the shared pool never contains a fixed character name', function () {
+    $pool = (new ReflectionClass(BossNameGenerator::class))
+        ->getReflectionConstant('POOL')
+        ->getValue();
+
+    foreach (BossCharacter::cases() as $character) {
+        if ($fixed = $character->fixedName()) {
+            expect($pool)->not->toContain($fixed);
+        }
+    }
 });

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\BossCharacter;
 use App\Models\Boss;
 
 class BossNameGenerator
@@ -49,5 +50,17 @@ class BossNameGenerator
             ->all();
 
         return $this->next($recent);
+    }
+
+    /**
+     * Name for a boss about to spawn: a recognizable character keeps its own
+     * name, everything else draws from the shared pool.
+     *
+     * @param  int  $number
+     * @return string
+     */
+    public function nameFor(int $number): string
+    {
+        return BossCharacter::forNumber($number)->fixedName() ?? $this->nextForSpawn();
     }
 }

@@ -86,6 +86,15 @@ describe('BOSS_TYPES', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  test('matches the backend BossCharacter enum keys in cycle order', () => {
+    // BossCharacter::forNumber() on the server and Boss.bossTypeFor() here both index
+    // this list by number % length; a reorder on one side only renames the wrong boss.
+    expect(BOSS_TYPES.map((b) => b.key)).toEqual([
+      'boss-ghost', 'boss-skeleton', 'boss-abyssal-dreadknight', 'boss-slime',
+      'boss-flying-demon', 'boss-minotaur', 'boss-demon-slime', 'boss-thanos',
+    ]);
+  });
+
   test('every boss spritesheet exists on disk', () => {
     for (const b of BOSS_TYPES) {
       if (b.animFiles) {

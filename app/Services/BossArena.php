@@ -53,7 +53,7 @@ class BossArena
 
         return Boss::create([
             'number' => $number,
-            'name' => $this->names->nextForSpawn(),
+            'name' => $this->names->nameFor($number),
             'max_hp' => $hp,
             'current_hp' => $hp,
             'status' => 'alive',
