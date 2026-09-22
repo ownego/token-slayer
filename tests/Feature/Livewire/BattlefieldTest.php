@@ -267,7 +267,7 @@ test('battlefield boot payload carries the stone clock for a boss whose script h
 
     Livewire::actingAs(User::factory()->create())
         ->test(Battlefield::class)
-        ->assertSeeHtml('&quot;script&quot;:{&quot;stones&quot;:2,&quot;nextStoneAt&quot;:&quot;2026-09-24T02:30:00Z&quot;}');
+        ->assertSeeHtml('&quot;script&quot;:{&quot;stones&quot;:3,&quot;nextStoneAt&quot;:&quot;2026-09-24T02:30:00Z&quot;}');
 });
 
 test('battlefield boot payload has no script keys for a generic monster', function () {

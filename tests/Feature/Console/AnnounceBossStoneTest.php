@@ -36,12 +36,12 @@ test('announces the stone ThaNode just collected, with its name and running coun
 
     expect(slackText())
         ->toContain('ThaNode')
-        ->toContain('Space Stone')
-        ->toContain('2/6');
+        ->toContain('Reality Stone')
+        ->toContain('3/6');
 });
 
 test('announces the complete gauntlet on the sixth stone', function () {
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-16T03:00:00Z']);
+    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-17T03:00:00Z']);
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
@@ -57,13 +57,13 @@ test('does not announce the same stone twice', function () {
     Http::assertSentCount(1);
 });
 
-test('stays silent while no stone has been collected yet', function () {
+test('announces the opening stone if run before the first 09:30', function () {
     Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-23T03:00:00Z']); // after today's tick
     $this->travelTo('2026-09-23T05:00:00Z');
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
-    Http::assertNothingSent();
+    expect(slackText())->toContain('Power Stone')->toContain('1/6');
 });
 
 test('stays silent for a generic monster', function () {

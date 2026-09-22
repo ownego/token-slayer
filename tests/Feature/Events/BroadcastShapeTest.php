@@ -203,7 +203,7 @@ test('BossSpawned carries the stone clock for a boss whose script has one', func
     $boss = Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-21T03:00:00Z']);
 
     expect((new BossSpawned($boss))->broadcastWith())->toMatchArray([
-        'stones' => 2,
+        'stones' => 3,
         'next_stone_at' => '2026-09-24T02:30:00Z',
     ]);
 });

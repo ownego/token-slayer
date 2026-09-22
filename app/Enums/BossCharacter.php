@@ -65,4 +65,23 @@ enum BossCharacter: string
             default => [],
         };
     }
+
+    /**
+     * A short clause for the "new boss incoming" Slack line describing what
+     * a recognizable character spawns with — e.g. "holding the Power Stone".
+     * Null for a generic monster, which keeps the plain line.
+     *
+     * @param  Boss  $boss
+     * @return string|null
+     */
+    public function spawnFlavor(Boss $boss): ?string
+    {
+        $stones = (int) ($this->scriptState($boss)['stones'] ?? 0);
+
+        return match (true) {
+            $stones === 1 => sprintf('holding the %s', StoneClock::nameOf(1)),
+            $stones > 1 => sprintf('holding %d Infinity Stones', $stones),
+            default => null,
+        };
+    }
 }

@@ -6,9 +6,10 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
 /**
- * The Infinity Stone clock for a recognizable boss: one stone for every
- * configured wall-clock instant (09:30 Asia/Ho_Chi_Minh by default) that
- * has passed since the boss spawned, capped at a maximum.
+ * The Infinity Stone clock for a recognizable boss: it spawns holding a
+ * configured opening count, then gains one stone for every configured
+ * wall-clock instant (09:30 Asia/Ho_Chi_Minh by default) that passes,
+ * capped at a maximum.
  *
  * Pure: callers pass "now", so the arithmetic is testable and the client can
  * continue it on its own clock from the two values state() puts on the wire.
@@ -35,7 +36,8 @@ final class StoneClock
     }
 
     /**
-     * Stones earned by ticks strictly after $spawnedAt and up to $now.
+     * Stones held at $now: the opening count plus one per tick strictly
+     * after $spawnedAt and up to $now, capped.
      *
      * @param  CarbonInterface  $spawnedAt
      * @param  CarbonInterface  $now
@@ -43,7 +45,7 @@ final class StoneClock
      */
     public static function countAt(CarbonInterface $spawnedAt, CarbonInterface $now): int
     {
-        $count = 0;
+        $count = min((int) config('game.stones.initial'), self::max());
         $tick = self::firstTickAfter($spawnedAt);
 
         while ($count < self::max() && $tick->lessThanOrEqualTo($now)) {

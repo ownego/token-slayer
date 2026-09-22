@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\BossCharacter;
+use App\Models\Boss;
 
 test('boss characters match the battlefield JS config keys in cycle order', function () {
     // Values and order must match BOSS_TYPES in resources/js/battlefield/config/bosses.js;
@@ -35,3 +36,15 @@ test('generic monsters carry no fixed name', function (string $key) {
     'minotaur' => 'boss-minotaur',
     'demon slime' => 'boss-demon-slime',
 ]);
+
+test('a recognizable character announces what it spawns holding', function () {
+    $boss = Boss::factory()->make(['number' => 7, 'spawned_at' => now()]);
+
+    expect(BossCharacter::Thanos->spawnFlavor($boss))->toBe('holding the Power Stone');
+});
+
+test('generic monsters have no spawn flavor', function () {
+    $boss = Boss::factory()->make(['number' => 1, 'spawned_at' => now()]);
+
+    expect(BossCharacter::Skeleton->spawnFlavor($boss))->toBeNull();
+});

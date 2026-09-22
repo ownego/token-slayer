@@ -156,3 +156,34 @@ test('killer without slack_handle falls back to name', function () {
         return true;
     });
 });
+
+test('the incoming line says what a recognizable boss spawns holding', function () {
+    $killer = User::factory()->create(['slack_handle' => 'alice']);
+    $killed = Boss::factory()->defeated()->create(['number' => 6, 'killing_blow_user_id' => $killer->id]);
+    Boss::factory()->create(['number' => 7, 'spawned_at' => now()]);
+
+    event(new BossKilled($killed, $killer));
+
+    Http::assertSent(function ($request) {
+        expect($request['text'])->toContain('ThaNode')->toContain('holding the Power Stone');
+
+        $summaryFields = collect($request['blocks'][1]['fields'])->pluck('text')->implode("\n");
+        expect($summaryFields)->toContain('holding the Power Stone');
+
+        return true;
+    });
+});
+
+test('the incoming line stays plain for a generic boss', function () {
+    $killer = User::factory()->create(['slack_handle' => 'alice']);
+    $killed = Boss::factory()->defeated()->create(['number' => 7, 'killing_blow_user_id' => $killer->id]);
+    Boss::factory()->create(['number' => 8]);
+
+    event(new BossKilled($killed, $killer));
+
+    Http::assertSent(function ($request) {
+        expect($request['text'])->not->toContain('holding');
+
+        return true;
+    });
+});
