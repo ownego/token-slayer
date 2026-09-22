@@ -168,6 +168,7 @@ export class BattlefieldScene extends Phaser.Scene {
         bus.off(evt, fn);
       }
       this.leaderboard?.destroy?.();
+      this.boss?.destroy?.();
       this.tooltip = null;
       this.hoveredUserId = null;
     });

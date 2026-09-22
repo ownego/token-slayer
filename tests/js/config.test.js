@@ -239,4 +239,11 @@ describe('LAYOUTS companion zones', () => {
     expect(LAYOUTS[mode].necromancer.anchor.x).toBeGreaterThan(0);
     expect(LAYOUTS[mode].necromancer.anchor.y).toBeGreaterThan(0);
   });
+
+  test.each(['landscape', 'portrait'])('%s places the stone sockets below the HP text, above the fighter row', (mode) => {
+    const { hpBar, stones, fighters } = LAYOUTS[mode];
+    expect(stones.y).toBeGreaterThan(hpBar.y + 24 + 11); // HP text sits at hpBar.y + 24, 22px tall
+    expect(stones.y).toBeLessThan(fighters.rowY);
+    expect(stones.gap).toBeGreaterThan(stones.radius * 2);
+  });
 });

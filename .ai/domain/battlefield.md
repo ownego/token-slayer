@@ -13,6 +13,16 @@ The deep operational guide is the `battlefield` skill (`.claude/skills/battlefie
 7. **Fighter size depends on headcount, by design.** `fighterDisplayConfig(count, mode)` (`layout.js`) steps `displaySize` down as more fighters join (landscape: 45px ≤14, 36px ≤28, 27px beyond; portrait: 54px ≤8, 45px beyond) so a crowded roster doesn't overflow the canvas. On top of that, `damageScaleMultiplier(damage, maxHp)` adds up to another ×1.4 for a fighter whose cumulative damage share against the current boss's `maxHp` is high. A near-empty battlefield showing oversized fighters is this combination working as intended, not a bug.
 8. **Atlas cache-busting.** `ATLAS_VERSION` (`config/atlas-version.js`) must be bumped whenever the fighter atlas PNG/JSON changes — browsers otherwise keep serving the stale cached atlas after a deploy, since the file path itself doesn't change.
 
+## Boss scripts
+
+Per-boss behaviour lives in `resources/js/battlefield/boss/scripts/`, one module per boss, registered by `BOSS_TYPES` key in `scripts/index.js`. The engine (`boss/index.js`) never branches on a boss key: it resolves `scriptFor(key)` and calls the script's optional hooks — `readState(payload)` to turn the flat `BossSpawned` payload into the script's own state object, `create(scene, bossState) → handle` after the HP bar is built (boot and `BossSpawned`), `destroy(scene, handle)` on `BossKilled` and scene shutdown. A boss with no script runs the plain engine. Script state lives under one generic key, `bossState.script` — the boot payload sends it as `boss.script` (absent for a scriptless boss) and `snapshotState()` copies it as a block — so neither the engine nor the snapshot ever learns a script's key names. Anything a script creates is released in `destroy` — that is how invariant #2 holds for script-owned objects.
+
+Server twin: `App\Enums\BossCharacter::scriptState(Boss)` returns the extra wire state a script needs (snake_case, spread flat into `BossSpawned`; camelCased and nested as `boss.script` in the boot payload); empty for a scriptless boss so their payload shape is untouched.
+
+- **ThaNode (`boss-thanos`).** Six Infinity Stone sockets under the HP text (`LAYOUTS.*.stones`), one filled per 09:30 Asia/Ho_Chi_Minh the boss survives (`App\Support\StoneClock`, `config('game.stones')`), capped at 6. The server sends `{stones, next_stone_at}`; the client advances that pair on a one-minute ticker with the pure `advanceStones()` (`scripts/thanos-stones.js`) — no calendar logic in JS, just "has `nextStoneAt` passed, +24h" (no DST in Vietnam). The pair rides in `bossState.script`, and therefore in the snapshot, so a rotate mid-day keeps the right count. Purely cosmetic: no effect on HP or damage.
+
+Older per-boss behaviour predates this mechanism and still lives outside it: `dreadknight.js` is branched from `startBossPatrol()` and `BatSwarm` is wired by hand in create/spawn/kill. They are candidates to become scripts (a `patrol` hook, a default script for every boss) — a separate refactor.
+
 ## Companions
 
 Two ambient actors are neither a **fighter** (player-controlled, keyed by `user_id`) nor a **boss** (the thing being fought, cycled by `Boss.bossTypeFor`) — they exist purely to dress the fight and never affect real HP/damage math, which always lands on the boss regardless of which branch below fires:

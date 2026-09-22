@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use App\Enums\BossCharacter;
 use App\Events\FighterMoved;
 use App\Models\Boss;
 use App\Models\Event;
@@ -13,6 +14,7 @@ use App\Services\FighterPositionCache;
 use App\Support\HookVersionStatus;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Renderless;
 use Livewire\Component;
@@ -37,9 +39,22 @@ class Battlefield extends Component
      */
     protected ?array $leaderboardRows = null;
 
+    /**
+     * Boot-payload state for the boss's client-side script, landing under
+     * boss.script in data-battlefield-state (camelCase keys like the rest of
+     * the payload); empty for a generic monster, whose payload omits the key
+     * entirely.
+     *
+     * @var array<string, mixed>
+     */
+    public array $bossScript = [];
+
     public function mount(BossArena $arena, FighterChargingCache $chargingCache, FighterPositionCache $positionCache): void
     {
         $this->boss = $arena->current();
+        $this->bossScript = collect(BossCharacter::forNumber($this->boss->number)->scriptState($this->boss))
+            ->mapWithKeys(fn (mixed $value, string $key) => [Str::camel($key) => $value])
+            ->all();
         $this->fighters = User::where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
             ->get();
         $userIds = $this->fighters->pluck('id')->all();

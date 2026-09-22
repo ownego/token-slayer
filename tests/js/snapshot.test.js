@@ -85,3 +85,35 @@ test('fighter position is null when pos is not set', () => {
 
   expect(next.fighters[0].position).toBeNull();
 });
+
+test('carries a boss script state through the round-trip without knowing its keys', () => {
+  const scene = {
+    bossState: {
+      number: 7,
+      name: 'ThaNode',
+      currentHp: 500,
+      maxHp: 1000,
+      script: { stones: 2, nextStoneAt: 1_790_000_000_000 },
+    },
+    fighters: new Map(),
+    charges: new Map(),
+    layout: { logicalWidth: 960, logicalHeight: 540 },
+  };
+  expect(snapshotState({}, scene).boss).toEqual({
+    number: 7,
+    name: 'ThaNode',
+    currentHp: 500,
+    maxHp: 1000,
+    script: { stones: 2, nextStoneAt: 1_790_000_000_000 },
+  });
+});
+
+test('omits the script key for a boss that has none, keeping the boot payload shape', () => {
+  const scene = {
+    bossState: { number: 2, name: 'GRUMPUS', currentHp: 500, maxHp: 1000 },
+    fighters: new Map(),
+    charges: new Map(),
+    layout: { logicalWidth: 960, logicalHeight: 540 },
+  };
+  expect(snapshotState({}, scene).boss).toEqual({ number: 2, name: 'GRUMPUS', currentHp: 500, maxHp: 1000 });
+});

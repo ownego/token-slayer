@@ -33,6 +33,7 @@
                 'name' => $boss->name,
                 'currentHp' => $boss->current_hp,
                 'maxHp' => $boss->max_hp,
+                ...($bossScript !== [] ? ['script' => $bossScript] : []),
             ],
             'currentUserId' => auth()->id(),
             'fighters' => $fighters->map(fn ($f) => [

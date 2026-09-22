@@ -197,3 +197,21 @@ test('HitDealt sends only scalars, per the payload rule', function () {
         expect(is_scalar($value) || $value === null)->toBeTrue("payload key {$key} is not a scalar");
     }
 });
+
+test('BossSpawned carries the stone clock for a boss whose script has one', function () {
+    $this->travelTo('2026-09-23T10:00:00Z');
+    $boss = Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-21T03:00:00Z']);
+
+    expect((new BossSpawned($boss))->broadcastWith())->toMatchArray([
+        'stones' => 2,
+        'next_stone_at' => '2026-09-24T02:30:00Z',
+    ]);
+});
+
+test('BossSpawned leaves script keys out for a generic monster', function () {
+    $boss = Boss::factory()->create(['number' => 1]);
+
+    expect((new BossSpawned($boss))->broadcastWith())
+        ->not->toHaveKey('stones')
+        ->not->toHaveKey('next_stone_at');
+});

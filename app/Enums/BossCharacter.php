@@ -2,6 +2,9 @@
 
 namespace App\Enums;
 
+use App\Models\Boss;
+use App\Support\StoneClock;
+
 /**
  * Boss sprites, in cycle order. Values and order must match BOSS_TYPES in
  * resources/js/battlefield/config/bosses.js: the client picks the sprite as
@@ -44,6 +47,22 @@ enum BossCharacter: string
         return match ($this) {
             self::Thanos => 'ThaNode',
             default => null,
+        };
+    }
+
+    /**
+     * Extra wire state for this character's client-side script
+     * (resources/js/battlefield/boss/scripts/), snake_case for the broadcast;
+     * an empty array for a generic monster so its payload shape is unchanged.
+     *
+     * @param  Boss  $boss
+     * @return array<string, mixed>
+     */
+    public function scriptState(Boss $boss): array
+    {
+        return match ($this) {
+            self::Thanos => StoneClock::state($boss->spawned_at, now()),
+            default => [],
         };
     }
 }

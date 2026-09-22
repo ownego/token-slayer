@@ -6,6 +6,7 @@ import { Leaderboard } from '@battlefield/leaderboard.js';
 import { applyStunEffect } from './stun.js';
 import { isDreadknight, startDreadknightPatrol } from './dreadknight.js';
 import { BatSwarm } from './bats.js';
+import { scriptFor } from './scripts/index.js';
 
 /** Manages boss patrol cycle, attacks, HP bar updates, and spawn/kill events. */
 export class Boss {
@@ -67,6 +68,7 @@ export class Boss {
     const L = this.scene.layout;
     this.scene.bossState = { ...state.boss };
     this.scene.lastKnownBossHp = state.boss.currentHp;
+    this.script = null;
 
     const initialType = Boss.bossTypeFor(state.boss.number);
     const initialKey = initialType.key;
@@ -121,6 +123,43 @@ export class Boss {
       stroke: '#0f172a',
       strokeThickness: 6,
     }, 3);
+
+    this._startScript(initialKey);
+  }
+
+  /**
+   * Resolves and starts the per-boss script for a boss key, if it has one.
+   * The engine never branches on a boss key itself — see boss/scripts/index.js.
+   *
+   * @param {string} bossKey
+   * @return {void}
+   */
+  _startScript(bossKey) {
+    this._stopScript();
+    const def = scriptFor(bossKey);
+    if (!def) return;
+    this.script = { def, handle: def.create?.(this.scene, this.scene.bossState) ?? null };
+  }
+
+  /**
+   * Tears down the running per-boss script, if any.
+   *
+   * @return {void}
+   */
+  _stopScript() {
+    if (!this.script) return;
+    this.script.def.destroy?.(this.scene, this.script.handle);
+    this.script = null;
+  }
+
+  /**
+   * Releases everything the boss manager owns beyond the scene's own game
+   * objects — today that is the per-boss script. Called from scene shutdown.
+   *
+   * @return {void}
+   */
+  destroy() {
+    this._stopScript();
   }
 
   /**
@@ -404,7 +443,7 @@ export class Boss {
   /**
    * Handles a boss-spawned event: swaps the sprite, resets HP bar and leaderboard.
    *
-   * @param {{ boss_number: number, max_hp: number, boss_name?: string, fighters?: Array<{user_id: number|string, character: string}> }} payload
+   * @param {{ boss_number: number, max_hp: number, boss_name?: string, fighters?: Array<{user_id: number|string, character: string}> }} payload Flat snake_case; any per-boss script keys it carries are read by that script's readState(), never by the engine.
    * @return {void}
    */
   handleBossSpawned(payload) {
@@ -469,13 +508,19 @@ export class Boss {
       });
     }
 
+    // Script state (see BossCharacter::scriptState) rides in flat on the payload;
+    // only the boss's own script knows those keys, so it translates them. A boss
+    // with no script keeps bossState free of a script key entirely.
+    const def = scriptFor(typeKey);
     this.scene.bossState = {
       currentHp: payload.max_hp,
       maxHp: payload.max_hp,
       number: payload.boss_number,
       name: payload.boss_name,
+      ...(def?.readState ? { script: def.readState(payload) } : {}),
     };
     this.scene.lastKnownBossHp = payload.max_hp;
+    this._startScript(typeKey);
     this.scene.bossNameText.setText(Boss.bossLabel(this.scene.bossState));
     this.scene.hpBarFill.width = L.hpBar.width;
     this.scene.hpBarFill.setFillStyle(0x22c55e);
@@ -501,6 +546,7 @@ export class Boss {
   handleBossKilled(payload = {}) {
     this.scene.charge?.clearAllCharges?.();
     this.scene.batSwarm?.destroy();
+    this._stopScript();
     if (this.scene.bossSprite) {
       this.scene.tweens.killTweensOf(this.scene.bossSprite);
       const bt = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
