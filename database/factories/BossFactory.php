@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Boss;
+use App\Enums\BossCharacter;
 use App\Services\BossNameGenerator;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,7 +23,11 @@ class BossFactory extends Factory
 
         return [
             'number' => $number,
-            'name' => fn () => app(BossNameGenerator::class)->next(),
+            // Same rule as BossArena::spawn(): a recognizable character keeps its
+            // fixed name, anything else draws from the pool. Kept DB-free (next(),
+            // not nextForSpawn()) so make() works without a database.
+            'name' => fn (array $attributes) => BossCharacter::forNumber($attributes['number'])->fixedName()
+                ?? app(BossNameGenerator::class)->next(),
             'max_hp' => fn (array $attributes) => $attributes['number'] * config('game.base_hp'),
             'current_hp' => fn (array $attributes) => $attributes['max_hp'],
             'status' => 'alive',

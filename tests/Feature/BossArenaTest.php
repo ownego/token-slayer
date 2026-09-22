@@ -26,3 +26,8 @@ test('spawning into a generic slot draws a name from the shared pool', function 
     expect($boss->number)->toBe(1)
         ->and($boss->name)->toBeIn($pool);
 });
+
+test('the factory names a boss the way the arena would, so fixtures match production', function () {
+    expect(Boss::factory()->make(['number' => 7])->name)->toBe('ThaNode')
+        ->and(Boss::factory()->make(['number' => 15])->name)->toBe('ThaNode');
+});

@@ -32,6 +32,14 @@ Schedule::command('battlefield:recap yearly')
     ->yearlyOn(1, 1, '09:00')
     ->timezone('Asia/Ho_Chi_Minh');
 
+// Fires at the stone-clock instant (09:30 Asia/Ho_Chi_Minh by default) so the
+// Slack line lands the moment the gauntlet gains a stone; the time is read from
+// the same config StoneClock uses, so the two can never drift apart.
+Schedule::command('boss:announce-stone')
+    ->dailyAt(sprintf('%02d:%02d', config('game.stones.hour'), config('game.stones.minute')))
+    ->timezone(config('game.stones.timezone'))
+    ->withoutOverlapping();
+
 Schedule::command('accounts:probe')
     ->everyFiveMinutes()
     ->withoutOverlapping();
