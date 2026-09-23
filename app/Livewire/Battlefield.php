@@ -47,7 +47,7 @@ class Battlefield extends Component
      *
      * @var array<string, mixed>
      */
-    public array $bossScript = [];
+    protected array $bossScript = [];
 
     public function mount(BossArena $arena, FighterChargingCache $chargingCache, FighterPositionCache $positionCache): void
     {
@@ -178,6 +178,7 @@ class Battlefield extends Component
         return view('livewire.battlefield', [
             'hookOutdated' => HookVersionStatus::needsManualNudge($user, $latest),
             'latestHookVersion' => $latest,
+            'bossScript' => $this->bossScript,
         ]);
     }
 }

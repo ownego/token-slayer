@@ -2,8 +2,8 @@
 
 namespace Database\Factories;
 
-use App\Models\Boss;
 use App\Enums\BossCharacter;
+use App\Models\Boss;
 use App\Services\BossNameGenerator;
 use Illuminate\Database\Eloquent\Factories\Factory;
 

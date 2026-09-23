@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { advanceStones, STONE_MAX } from '@battlefield/boss/scripts/thanos-stones.js';
+import { advanceStones, STONE_COLORS, STONE_MAX } from '@battlefield/boss/scripts/thanos-stones.js';
 
 // The server hands the client {stones, nextStoneAt}; the client only has to notice
 // when nextStoneAt has passed and step forward in 24h increments (no DST in Vietnam).
@@ -38,4 +38,8 @@ describe('advanceStones', () => {
     advanceStones(state, T0);
     expect(state).toEqual({ stones: 0, nextStoneAt: T0 });
   });
+});
+
+test('paints exactly one colour per stone up to the cap', () => {
+  expect(STONE_COLORS).toHaveLength(STONE_MAX);
 });

@@ -6,12 +6,15 @@ return [
 
     // Infinity-stone clock for recognizable bosses (see App\Support\StoneClock):
     // the boss spawns holding `initial` stones, then gains one each time this
-    // wall-clock instant passes.
+    // wall-clock instant passes. `max` and `timezone` are deliberately not
+    // env-driven: the client mirrors the cap (STONE_MAX in
+    // resources/js/battlefield/boss/scripts/thanos-stones.js) and steps the
+    // clock in flat 24h days, which is only exact in a zone without DST.
     'stones' => [
         'initial' => (int) env('GAME_STONE_INITIAL', 1),
         'hour' => (int) env('GAME_STONE_HOUR', 9),
         'minute' => (int) env('GAME_STONE_MINUTE', 30),
-        'timezone' => env('GAME_STONE_TIMEZONE', 'Asia/Ho_Chi_Minh'),
-        'max' => (int) env('GAME_STONE_MAX', 6),
+        'timezone' => 'Asia/Ho_Chi_Minh',
+        'max' => 6,
     ],
 ];

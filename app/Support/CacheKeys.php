@@ -21,9 +21,10 @@ final class CacheKeys
 
     /**
      * Guard key marking that a boss's Nth Infinity Stone has been announced
-     * on Slack, so a scheduler retry inside the same day cannot post twice.
-     * TTL 25h (set by StoneAnnouncer) — outlives the daily tick, then expires
-     * on its own; the key is per stone, so the next morning's stone is fresh.
+     * on Slack, so a scheduler retry cannot post twice. Stored without TTL by
+     * StoneAnnouncer: the count freezes once the gauntlet is complete, so an
+     * expiring key would re-announce the last stone. Bounded at one key per
+     * stone per boss; forgotten only when the post itself fails.
      *
      * @param  int  $bossId
      * @param  int  $stones

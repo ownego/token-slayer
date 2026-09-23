@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Boss;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -41,11 +42,23 @@ test('announces the stone ThaNode just collected, with its name and running coun
 });
 
 test('announces the complete gauntlet on the sixth stone', function () {
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-17T03:00:00Z']);
+    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-18T03:00:00Z']); // 5 mornings survived
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
     expect(slackText())->toContain('Mind Stone')->toContain('6/6')->toContain('complete');
+});
+
+test('stays silent on every morning after the gauntlet is complete', function () {
+    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-18T03:00:00Z']);
+    $this->artisan('boss:announce-stone')->assertSuccessful(); // 6/6 today
+
+    foreach ([1, 2, 3] as $daysLater) {
+        $this->travelTo(CarbonImmutable::parse(TICK)->addDays($daysLater));
+        $this->artisan('boss:announce-stone')->assertSuccessful();
+    }
+
+    Http::assertSentCount(1);
 });
 
 test('does not announce the same stone twice', function () {

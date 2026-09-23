@@ -1,7 +1,7 @@
 // Registry of per-boss scripts, keyed by BOSS_TYPES key. The boss engine
 // (boss/index.js) never branches on a boss key itself: it resolves a script
-// here and calls its optional hooks — create / tick / onKilled / destroy —
-// at the matching points of the boss lifecycle. A boss with no entry runs
+// here and calls its optional hooks — readState / create / destroy — at the
+// matching points of the boss lifecycle (a script may run its own ticker). A boss with no entry runs
 // the plain engine behaviour. Adding a boss with its own behaviour is one
 // file in this directory plus one line below.
 import { thanosScript } from './thanos.js';

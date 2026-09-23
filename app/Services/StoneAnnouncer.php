@@ -46,11 +46,13 @@ class StoneAnnouncer
             return false;
         }
 
-        // One post per (boss, stone). 25h outlives the daily tick, so a retry
-        // later the same day is a no-op, and tomorrow's stone gets a fresh key.
+        // One post per (boss, stone), kept for the boss's whole life: the count
+        // stops moving once the gauntlet is complete, so an expiring guard
+        // would re-announce the last stone. At most `max` keys per boss.
+        // Invalidated only by the failure path below.
         $guard = CacheKeys::bossStoneAnnounced($boss->id, $stones);
 
-        if (! Cache::add($guard, true, now()->addHours(25))) {
+        if (! Cache::add($guard, true)) {
             return false;
         }
 

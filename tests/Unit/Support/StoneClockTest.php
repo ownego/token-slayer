@@ -31,6 +31,10 @@ test('a boss spawned exactly at 09:30 does not count that same instant', functio
         ->and(StoneClock::countAt($spawn, CarbonImmutable::parse('2026-09-23T02:30:00Z')))->toBe(2);
 });
 
+test('names exactly one stone per socket, so the cap is fixed by the roster of names', function () {
+    expect(StoneClock::NAMES)->toHaveCount(config('game.stones.max'));
+});
+
 test('the opening stone count comes from config', function () {
     config(['game.stones.initial' => 0]);
 
