@@ -19,6 +19,8 @@ const ECHO_EVENT_MAP = {
   FighterMoved:    BusEvent.FIGHTER_MOVED,
   FighterChargeCleared: BusEvent.FIGHTER_CHARGE_CLEARED,
   FighterCharacterChanged: BusEvent.CHARACTER_CHANGED,
+  FighterAgentCountChanged: BusEvent.FIGHTER_AGENT_COUNT_CHANGED,
+  FighterAgentToolUsed: BusEvent.FIGHTER_AGENT_TOOL_USED,
 };
 
 const ECHO_RETRY_INTERVAL_MS = 200;

@@ -85,3 +85,29 @@ test('fighter position is null when pos is not set', () => {
 
   expect(next.fighters[0].position).toBeNull();
 });
+
+test('captures each fighter\'s current live minion count, so an orientation-change reboot does not silently drop a live subagent swarm back to 0', () => {
+  const scene = fakeScene({
+    minions: { byUser: new Map([[7, [{}, {}, {}]]]) },
+  });
+
+  const next = snapshotState({}, scene);
+
+  expect(next.fighters[0].agentCount).toBe(3);
+});
+
+test('agentCount defaults to 0 for a fighter the minions manager has no entry for', () => {
+  const scene = fakeScene({
+    minions: { byUser: new Map() },
+  });
+
+  const next = snapshotState({}, scene);
+
+  expect(next.fighters[0].agentCount).toBe(0);
+});
+
+test('agentCount defaults to 0 when the scene has no minions manager at all', () => {
+  const next = snapshotState({}, fakeScene());
+
+  expect(next.fighters[0].agentCount).toBe(0);
+});

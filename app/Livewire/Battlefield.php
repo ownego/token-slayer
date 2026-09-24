@@ -10,6 +10,7 @@ use App\Services\BossArena;
 use App\Services\DamageTotals;
 use App\Services\FighterChargingCache;
 use App\Services\FighterPositionCache;
+use App\Services\SubagentCountCache;
 use App\Support\HookVersionStatus;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,9 @@ class Battlefield extends Component
     /** @var array<int, array{x: float, y: float}|null> */
     protected array $positionsByUser = [];
 
+    /** @var array<int, int> */
+    protected array $agentCountsByUser = [];
+
     /**
      * Memoized leaderboard rows, so the boot payload's leaderboard and damage
      * totals derive from a single query.
@@ -37,7 +41,7 @@ class Battlefield extends Component
      */
     protected ?array $leaderboardRows = null;
 
-    public function mount(BossArena $arena, FighterChargingCache $chargingCache, FighterPositionCache $positionCache): void
+    public function mount(BossArena $arena, FighterChargingCache $chargingCache, FighterPositionCache $positionCache, SubagentCountCache $subagentCounts): void
     {
         $this->boss = $arena->current();
         $this->fighters = User::where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
@@ -45,6 +49,7 @@ class Battlefield extends Component
         $userIds = $this->fighters->pluck('id')->all();
         $this->chargingByUser = $chargingCache->many($userIds);
         $this->positionsByUser = $positionCache->many($userIds);
+        $this->agentCountsByUser = $subagentCounts->many($userIds);
     }
 
     /**

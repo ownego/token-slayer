@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, NECROMANCER_CONFIG } from '@battlefield/config.js';
+import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, MINION_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
 
 const publicFile = (urlPath) => join(process.cwd(), 'public', urlPath.split('?')[0]);
 
@@ -177,6 +177,28 @@ describe('companion configs (Bat, Necromancer)', () => {
   test('NECROMANCER_CONFIG has looping idle and walk', () => {
     expect(NECROMANCER_CONFIG.animFiles.idle.loop).toBe(true);
     expect(NECROMANCER_CONFIG.animFiles.walk.loop).toBe(true);
+  });
+});
+
+describe('MINION_TYPES', () => {
+  test.each(MINION_TYPES.map((t) => [t.key, t]))('%s every animFiles strip exists on disk with a valid frame grid', (name, cfg) => {
+    for (const [anim, info] of Object.entries(cfg.animFiles)) {
+      const path = publicFile(info.file);
+      expect(existsSync(path), `${name}.${anim}: ${info.file}`).toBe(true);
+      const { width, height } = pngSize(path);
+      expect(width % info.frameWidth, `${name}.${anim} width`).toBe(0);
+      expect(height % info.frameHeight, `${name}.${anim} height`).toBe(0);
+      const total = (width / info.frameWidth) * (height / info.frameHeight);
+      expect(info.count, `${name}.${anim} count exceeds sheet total ${total}`).toBeLessThanOrEqual(total);
+    }
+  });
+
+  test('has exactly five candidates, each with a looping idle and walk', () => {
+    expect(MINION_TYPES).toHaveLength(5);
+    for (const type of MINION_TYPES) {
+      expect(type.animFiles.idle.loop).toBe(true);
+      expect(type.animFiles.walk.loop).toBe(true);
+    }
   });
 });
 

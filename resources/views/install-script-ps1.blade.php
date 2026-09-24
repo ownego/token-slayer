@@ -805,12 +805,17 @@ CUSTOM_SH="$HOME/.config/__TS_NAMESPACE__/custom.sh"
 # their own private accounts here (exit 0 before POST) so those events never
 # leave the machine. Not active yet -- default is track everything.
 
-# The server reads exactly these fourteen fields. Everything else the hook
-# receives on stdin -- the prompt, tool_input, tool_response, the last
-# assistant message, cwd, permission_mode, transcript_path -- would cross the
-# network and be discarded unread, so it is not sent at all. This is
-# unconditional, not opt-in: content leaving the machine should not depend on
-# a developer knowing to set an env var.
+# The server reads exactly these fields. Everything else the hook receives
+# on stdin -- the prompt, tool_input, tool_response, the last assistant
+# message, cwd, permission_mode, transcript_path -- would cross the network
+# and be discarded unread, so it is not sent at all. This is unconditional,
+# not opt-in: content leaving the machine should not depend on a developer
+# knowing to set an env var.
+#
+# agent_id (hook v7): Claude Code already attaches this to PreToolUse/
+# PostToolUse/SubagentStop when the event fires from INSIDE a subagent --
+# it identifies WHICH subagent, never anything about what it's doing, so it
+# carries the same "just an id" privacy shape as session_id above it.
 #
 # It runs AFTER custom.sh, which shares this shell and therefore still sees the
 # full body: the documented custom_activity recipes that read tool_input keep
@@ -819,7 +824,8 @@ if [ -x "$JQ" ]; then
   FILTERED=$(printf '%s' "$BODY" | "$JQ" -c '{
     hook_event_name, session_id, tokens, models, tool_name, custom_activity,
     client_version, hook_version, account_email, account_uuid, account_source,
-    account_org_id, input_tokens, cache_creation_input_tokens, cache_read_input_tokens
+    account_org_id, input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+    agent_id
   } | with_entries(select(.value != null))' 2>/dev/null)
   case "$FILTERED" in '{'*) BODY="$FILTERED" ;; esac
 fi
@@ -937,18 +943,23 @@ import json, os, sys
 
 path = sys.argv[1]
 cmd = os.environ["CLAUDE_CMD"]
-# Only the events EventController actually handles. PostToolUse, SessionEnd
-# and Notification fell through to a bare 201 -- and PostToolUse is both the
-# highest-frequency event (one per tool call) and the one carrying
-# tool_response, so not registering it stops that content at the source.
-# Liveness is unaffected: PreToolUse fires immediately before every PostToolUse,
-# with UserPromptSubmit and Stop bracketing the turn. SubagentStop fires once
-# per completed subagent with its OWN transcript_path (never the parent
+# Only the events EventController actually handles. SessionEnd and
+# Notification still fall through to a bare 201. SubagentStop fires once per
+# completed subagent with its OWN transcript_path (never the parent
 # session's file) -- without it, every Task-dispatched subagent's real token
 # usage is invisible: it never shares an assistant-type entry with the parent
 # transcript, so no amount of retrying or dedup on the parent's own Stop walk
 # can recover it.
-events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop", "SubagentStop"]
+#
+# hook v7: PostToolUse rejoined this list. It used to be excluded for being
+# both the highest-frequency event (one per tool call) and the one carrying
+# tool_response -- the FILTERED whitelist above still strips tool_response
+# unconditionally, so registering it now only ever sends the same small
+# field set every other event already does, plus agent_id. Needed to close
+# the "busy" half of a subagent's own tool call (PreToolUse opens it) and to
+# give subagents:sweep-idle a real per-tool-call heartbeat instead of only
+# whatever a SubagentStop happens to fire.
+events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStop"]
 
 try:
     with open(path) as f:
