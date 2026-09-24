@@ -10,6 +10,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('fighters:sweep-idle')->everyMinute();
+Schedule::command('subagents:sweep-idle')->everyMinute();
 
 // Keeps the install-script/wheel digests warm so POST /api/events never
 // resolves a GitHub release inline: that call has an 8s timeout while the
