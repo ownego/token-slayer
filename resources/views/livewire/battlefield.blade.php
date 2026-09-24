@@ -42,6 +42,7 @@
                 'character' => $f->characterForBoss($boss->id),
                 'charging' => $this->chargingByUser[$f->id] ?? null,
                 'position' => $this->positionsByUser[$f->id] ?? null,
+                'agentCount' => $this->agentCountsByUser[$f->id] ?? 0,
             ])->values(),
             'leaderboard' => $this->leaderboardForCurrentBoss(),
             'damageTotals' => $this->damageTotalsForCurrentBoss(),
