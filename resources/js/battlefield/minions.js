@@ -477,7 +477,7 @@ export class Minions {
               minion.sprite.setFlipX(dx < 0);
             }
             this._updateMinionAnim(minion, Math.hypot(dx, dy) / dtSeconds);
-            this._positionBadge(minion, { x: targetX, y: targetY }, scale, minionDepth);
+            this._positionBadge(minion, { x: targetX, y: targetY }, scale, minionDepth, entry);
             this._positionToolRing(minion, { x: targetX, y: targetY }, scale, minionDepth);
           }
           minion.sprite.setScale(scale);
@@ -930,17 +930,31 @@ export class Minions {
    * just above its head — tracks the minion's own current point/scale/
    * front-back depth rather than its fighter's, since a settled minion can
    * sit anywhere within its home slot or gather zone, not fixed relative to
-   * the fighter itself.
+   * the fighter itself. Also re-syncs the badge's own texture to the
+   * fighter's CURRENT avatar every frame: the badge is created once at
+   * spawn time from whatever `entry.head` shows then (real photo once
+   * loaded, or the fallback icon in the meantime — see _spawnOne), and
+   * Fighter's own async avatar load later calls `head.setTexture()` in
+   * place on that same long-lived Image, with nothing telling an
+   * already-spawned minion to look again — a minion that spawned in that
+   * brief loading window would otherwise show the fallback for its entire
+   * lifetime even once the real photo is ready. Comparing texture keys is
+   * a cheap no-op once they match, so this costs nothing once caught up.
    *
    * @param {object} minion
    * @param {{x: number, y: number}} point the minion's current world position
    * @param {number} scale the minion's current sprite scale
    * @param {number} minionDepth the depth the minion sprite was just set to (front or back)
+   * @param {object} entry the owning fighter entry from scene.fighters
    * @return {void}
    */
-  _positionBadge(minion, point, scale, minionDepth) {
+  _positionBadge(minion, point, scale, minionDepth, entry) {
     if (!minion.badge?.active) {
       return;
+    }
+    const headKey = entry.head?.texture?.key;
+    if (headKey && minion.badge.texture.key !== headKey && this.scene.textures.exists(headKey)) {
+      minion.badge.setTexture(headKey);
     }
     const visualHeight = scale * MINION_CHAR_HEIGHT;
     const badgePx = visualHeight * MINION_BADGE_SIZE_RATIO;
