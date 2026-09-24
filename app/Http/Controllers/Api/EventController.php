@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
+use App\Events\FighterAgentCountChanged;
+use App\Events\FighterAgentToolUsed;
 use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
 use App\Events\FighterJoined;
@@ -19,6 +21,7 @@ use App\Services\DamageService;
 use App\Services\Events\ModelUsageParser;
 use App\Services\Events\TurnUsage;
 use App\Services\FighterChargingCache;
+use App\Services\SubagentCountCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -54,6 +57,7 @@ class EventController extends Controller
         private FighterChargingCache $chargingCache,
         private AccountResolver $accounts,
         private AccountMembershipRecorder $membership,
+        private SubagentCountCache $subagentCounts,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -92,11 +96,91 @@ class EventController extends Controller
             $activity = $this->truncateActivity($customActivity ?? $this->summarizeToolUse($payload));
             $this->chargingCache->put($user->id, $activity);
             $this->dispatchSafely(new FighterCharging($user, $activity, $this->aliveBoss()));
+
+            // "Task" is Claude Code CLI's name for a subagent dispatch;
+            // "Agent" is what a Claude Agent SDK-based harness reports for
+            // the identical concept instead — verified live 2026-09-22
+            // against a real such harness, whose PreToolUse payload never
+            // carries "Task" at all, so accepting only that name meant the
+            // feature silently never fired there (SubagentStop still
+            // counted, since it is unconditional — only this increment
+            // depends on the tool name matching).
+            //
+            if (in_array($payload['tool_name'] ?? null, ['Task', 'Agent'], true)) {
+                $result = $this->subagentCounts->recordDispatch($user->id);
+                $this->dispatchSafely(new FighterAgentCountChanged($user, $result['count'], $result['seq']));
+            }
+
+            // Hook v7: a PreToolUse fired from INSIDE a subagent (not the
+            // parent dispatching it) carries agent_id — a tool starting is
+            // both a liveness signal, same as SubagentStop, and the "busy"
+            // edge the minion's ring visual turns on for. A hook older than
+            // v7 never sends this field, so $agentId is null and this is a
+            // no-op for it — no warning, no forced update, see FighterAgentToolUsed.
+            // recordActivity returns null on the (overwhelmingly common,
+            // now high-frequency) refresh/claim branches, so this only ever
+            // re-broadcasts FighterAgentCountChanged on the rare branch that
+            // actually changes the total — see that method's own docblock.
+            $agentId = $this->resolveAgentId($payload);
+            if ($agentId !== null) {
+                $result = $this->subagentCounts->recordActivity($user->id, $agentId);
+                if ($result !== null) {
+                    $this->dispatchSafely(new FighterAgentCountChanged($user, $result['count'], $result['seq']));
+                }
+                $this->dispatchSafely(new FighterAgentToolUsed($user, $agentId, true));
+            }
+        }
+
+        if ($eventType === 'post-tool-use') {
+            // The "busy" edge's other half: the same tool call's own
+            // completion. Also a liveness refresh, same reasoning as
+            // PreToolUse above — old hooks never send agent_id, so this
+            // stays a no-op for them.
+            $agentId = $this->resolveAgentId($payload);
+            if ($agentId !== null) {
+                $result = $this->subagentCounts->recordActivity($user->id, $agentId);
+                if ($result !== null) {
+                    $this->dispatchSafely(new FighterAgentCountChanged($user, $result['count'], $result['seq']));
+                }
+                $this->dispatchSafely(new FighterAgentToolUsed($user, $agentId, false));
+            }
         }
 
         if ($eventType === 'session-start') {
             $this->dispatchSafely(new FighterJoined($user, $this->aliveBoss()));
         }
+
+        if ($eventType === 'subagent-stop') {
+            // No longer a decrement: a single subagent can fire more than
+            // one SubagentStop-shaped event over its own lifetime (verified
+            // live 2026-09-23 — the harness backgrounding one of ITS tool
+            // calls ends that turn early, same as any other subagent turn
+            // boundary). This just refreshes/claims its presence row like
+            // any other activity signal; subagents:sweep-idle is what
+            // actually removes it, once nothing at all has arrived from it
+            // for game.subagent_idle_seconds. recordActivity returns null
+            // when this call didn't change the total (see its own docblock)
+            // — no point broadcasting a no-op count.
+            $agentId = $this->resolveAgentId($payload);
+            if ($agentId !== null) {
+                $result = $this->subagentCounts->recordActivity($user->id, $agentId);
+                if ($result !== null) {
+                    $this->dispatchSafely(new FighterAgentCountChanged($user, $result['count'], $result['seq']));
+                }
+            }
+        }
+
+        // A parent Stop deliberately does NOT touch the agent count. The
+        // original design reset a session's leftover here on the assumption
+        // that Task dispatch is synchronous with the parent turn — true for
+        // Claude Code CLI's own Task tool, false for a Claude Agent SDK-based
+        // harness, where a dispatched subagent can keep running across
+        // several of the parent's own turns, each still ending in its own
+        // Stop for the same session_id. Verified live 2026-09-22 on staging:
+        // that reset silently zeroed out genuinely-still-running subagents,
+        // vanishing the whole minion swarm mid-dispatch. SubagentStop's own
+        // decrement (still per-session, still floored at 0) plus the cache
+        // TTL are the only correction paths now — see SubagentCountCache.
 
         if ($eventType === 'stop' || $eventType === 'subagent-stop') {
             // Trackers that only emit Stop events (claude.ai, cowork) carry no
@@ -306,6 +390,39 @@ class EventController extends Controller
     private function dispatchSafely(object $event): void
     {
         rescue(fn () => event($event));
+    }
+
+    /**
+     * The specific subagent this event belongs to, or null for an event with
+     * no subagent context at all (a top-level PreToolUse, or a hook too old
+     * to report either shape below).
+     *
+     * Reads it two ways: a real top-level `agent_id` field, when present —
+     * hook v7 added it to the payload whitelist (install-script.blade.php),
+     * so PreToolUse/PostToolUse fired from *inside* a subagent's own
+     * execution now carry it directly, same as SubagentStop. Falls back to
+     * parsing it out of a SubagentStop's own `session_id` (the install
+     * script's jq folds it in as "parent_session_id:agent_id") only for a
+     * hook older than v7, which never populates the top-level field at all —
+     * that fallback only ever applied to SubagentStop, since PreToolUse/
+     * PostToolUse simply carried nothing identifiable pre-v7.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return ?string
+     */
+    private function resolveAgentId(array $payload): ?string
+    {
+        $agentId = $this->trimmedStringOrNull($payload['agent_id'] ?? null);
+        if ($agentId !== null) {
+            return $agentId;
+        }
+
+        $sessionId = $this->trimmedStringOrNull($payload['session_id'] ?? null);
+        if ($sessionId !== null && str_contains($sessionId, ':')) {
+            return $this->trimmedStringOrNull(explode(':', $sessionId, 2)[1] ?? null);
+        }
+
+        return null;
     }
 
     /**
