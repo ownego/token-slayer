@@ -155,10 +155,18 @@ function fakeRedis(array &$store): void
 
         return $existed ? 1 : 0;
     });
+    // Real phpredis returns KEYS results WITH the client's configured
+    // REDIS_PREFIX still on them (unlike GET/SET-style commands, which take
+    // and return unprefixed keys transparently) — caught live 2026-09-24 on
+    // prod: feeding a KEYS-returned string straight back into del()/exists()
+    // double-prefixes it, so it silently matches nothing. Prepending a fake
+    // prefix here forces SubagentCountCache to actually strip it, the same
+    // way it must against real Redis.
     Redis::shouldReceive('keys')->andReturnUsing(function (string $pattern) use (&$store) {
         $regex = '/^'.str_replace('\*', '.*', preg_quote($pattern, '/')).'$/';
+        $matching = array_values(array_filter(array_keys($store), fn ($key) => preg_match($regex, $key) === 1 && ! is_array($store[$key])));
 
-        return array_values(array_filter(array_keys($store), fn ($key) => preg_match($regex, $key) === 1 && ! is_array($store[$key])));
+        return array_map(fn ($key) => 'fake-prefix-'.$key, $matching);
     });
     Redis::shouldReceive('sadd')->andReturnUsing(function (string $key, mixed ...$members) use (&$store) {
         $store[$key] ??= [];
