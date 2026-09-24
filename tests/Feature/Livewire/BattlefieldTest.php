@@ -171,6 +171,8 @@ test('battlefield damage totals cover only the current boss', function () {
 });
 
 test('battlefield ships each fighter\'s currently-tracked subagent count in the data payload, so a reload does not lose the minion swarm', function () {
+    $store = [];
+    fakeRedis($store);
     Boss::factory()->create();
     $withAgents = User::factory()->create(['last_event_at' => now()->subMinute()]);
     $idle = User::factory()->create(['last_event_at' => now()->subMinute()]);

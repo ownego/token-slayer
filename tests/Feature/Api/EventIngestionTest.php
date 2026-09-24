@@ -12,7 +12,6 @@ use App\Models\Account;
 use App\Models\AiModel;
 use App\Models\Boss;
 use App\Models\Event;
-use App\Models\SubagentDispatch;
 use App\Models\User;
 use App\Services\Battlefield\ModelFlairResolver;
 use App\Services\FighterChargingCache;
@@ -25,10 +24,23 @@ use Illuminate\Support\Facades\Schema;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    $this->store = [];
+    fakeRedis($this->store);
     $this->user = User::factory()->create(['hook_token' => hash('sha256', 'tok')]);
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000_000, 'current_hp' => 1_000_000]);
     Cache::flush();
 });
+
+/**
+ * @param  array<string, int>  $store
+ * @param  int  $userId
+ * @param  string  $agentId
+ * @return bool whether a live presence key exists for this exact agent_id
+ */
+function hasAgentPresenceKey(array $store, int $userId, string $agentId): bool
+{
+    return array_key_exists("subagent:presence:{$userId}:{$agentId}", $store);
+}
 
 test('rejects unauthenticated requests', function () {
     $this->postJson('/api/events', ['hook_event_name' => 'SessionStart'])->assertStatus(401);
@@ -932,7 +944,7 @@ test('a subagent\'s own PreToolUse (hook v7, agent_id present) claims the pendin
     // fires regardless, since that signal is about THIS tool call, not
     // the count.
     expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1)
-        ->and(SubagentDispatch::where('agent_id', 'agent-1')->exists())->toBeTrue();
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-1'))->toBeTrue();
     Illuminate\Support\Facades\Event::assertNotDispatched(FighterAgentCountChanged::class);
     Illuminate\Support\Facades\Event::assertDispatched(FighterAgentToolUsed::class, function ($e) {
         return $e->user->is($this->user) && $e->agentId === 'agent-1' && $e->busy === true;
@@ -1002,7 +1014,7 @@ test('SubagentStop falls back to parsing agent_id out of a legacy "parent:agent_
         ->assertCreated();
 
     expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1)
-        ->and(SubagentDispatch::where('agent_id', 'agent-xyz')->exists())->toBeTrue();
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-xyz'))->toBeTrue();
 });
 
 test('a SubagentStop for an agent with no prior dispatch still tracks it, so a previously-pruned subagent re-emerging is never silently dropped', function () {
@@ -1024,8 +1036,8 @@ test('a SubagentStop for one agent never claims or affects a different, already-
         ->assertCreated();
 
     expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(2)
-        ->and(SubagentDispatch::where('agent_id', 'agent-1')->exists())->toBeTrue()
-        ->and(SubagentDispatch::where('agent_id', 'agent-2')->exists())->toBeTrue();
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-1'))->toBeTrue()
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-2'))->toBeTrue();
 });
 
 test('a parent Stop never touches the agent count, since a single "stop"-shaped event is not a reliable done signal', function () {

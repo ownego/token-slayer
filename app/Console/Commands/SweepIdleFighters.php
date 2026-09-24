@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Events\FighterAgentCountChanged;
 use App\Events\FighterIdled;
-use App\Models\SubagentDispatch;
 use App\Models\User;
 use App\Services\SubagentCountCache;
 use Illuminate\Console\Attributes\Description;
@@ -18,9 +17,9 @@ class SweepIdleFighters extends Command
     /**
      * Runs both idle sweeps in one process instead of two separate
      * per-minute schedule entries: fighters past game.idle_minutes, and
-     * subagent_dispatches rows past game.subagent_idle_seconds — see
-     * SubagentCountCache's own docblock for why the latter can't just be a
-     * read-time filter (an already-open browser needs the broadcast to
+     * subagent presence keys past game.subagent_idle_seconds — see
+     * SubagentCountCache's own docblock for why a Redis-key TTL alone can't
+     * fully replace this (an already-open browser needs the broadcast to
      * shrink its live minion swarm, not just the next page load).
      *
      * @param  SubagentCountCache  $subagentCounts
@@ -38,32 +37,13 @@ class SweepIdleFighters extends Command
                 }
             });
 
-        $this->sweepStaleSubagents($subagentCounts);
+        foreach ($subagentCounts->sweepAllStale() as $userId => $result) {
+            $user = User::find($userId);
+            if ($user !== null) {
+                event(new FighterAgentCountChanged($user, $result['count'], $result['seq']));
+            }
+        }
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @param  SubagentCountCache  $subagentCounts
-     * @return void
-     */
-    private function sweepStaleSubagents(SubagentCountCache $subagentCounts): void
-    {
-        $cutoff = now()->subSeconds(config('game.subagent_idle_seconds'));
-
-        SubagentDispatch::where('last_seen_at', '<', $cutoff)
-            ->distinct('user_id')
-            ->pluck('user_id')
-            ->each(function (int $userId) use ($subagentCounts) {
-                $result = $subagentCounts->pruneStale($userId);
-                if ($result === null) {
-                    return;
-                }
-
-                $user = User::find($userId);
-                if ($user !== null) {
-                    event(new FighterAgentCountChanged($user, $result['count'], $result['seq']));
-                }
-            });
     }
 }
