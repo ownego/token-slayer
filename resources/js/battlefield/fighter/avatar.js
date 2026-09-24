@@ -57,10 +57,15 @@ export function loadAvatarTexture(scene, fighterId, avatarUrl) {
 }
 
 /**
- * Creates a fallback avatar texture using a colored circle with an initial letter.
+ * Creates a fallback avatar texture using a colored circle with a generic
+ * person silhouette (head + shoulders), instead of a text glyph — a photo
+ * or a drawn icon reads as "an avatar" at a glance in the small minion
+ * badge/fighter-head size this renders at; a bare letter reads as "no
+ * avatar loaded yet" even when it's actually the final, permanent state
+ * (e.g. an account with no avatar_url at all) — caught live 2026-09-24.
  *
  * @param {Phaser.Scene} scene
- * @param {{ id: number|string, handle?: string }} fighter
+ * @param {{ id: number|string }} fighter
  * @return {string}
  */
 export function makeFallbackAvatarTexture(scene, fighter) {
@@ -72,22 +77,27 @@ export function makeFallbackAvatarTexture(scene, fighter) {
   const radius = size / 2;
   const palette = [0x6366f1, 0x10b981, 0xf59e0b, 0xec4899, 0x14b8a6, 0xf97316, 0x8b5cf6, 0x0ea5e9];
   const color = palette[Math.abs(Number(fighter.id) || 0) % palette.length];
-  const initial = (fighter.handle ?? '').trim().charAt(0).toUpperCase() || '?';
 
   const rt = scene.add.renderTexture(0, 0, size, size).setVisible(false);
-  const circle = scene.add.graphics({ x: 0, y: 0 }).setVisible(false);
-  circle.fillStyle(color, 1);
-  circle.fillCircle(radius, radius, radius);
-  rt.draw(circle, 0, 0);
-  const label = scene.add.text(0, 0, initial, {
-    fontFamily: 'monospace',
-    fontSize: '72px',
-    color: '#ffffff',
-  }).setOrigin(0.5).setVisible(false);
-  rt.draw(label, radius, radius);
+  const g = scene.add.graphics({ x: 0, y: 0 }).setVisible(false);
+  g.fillStyle(color, 1);
+  g.fillCircle(radius, radius, radius);
+
+  // Generic silhouette: a head circle plus a shoulders arc, clipped to the
+  // background circle so the shoulders never spill past its edge.
+  const mask = scene.make.graphics({ x: 0, y: 0 }, false);
+  mask.fillStyle(0xffffff, 1);
+  mask.fillCircle(radius, radius, radius);
+  g.setMask(mask.createGeometryMask());
+  g.fillStyle(0xffffff, 0.92);
+  g.fillCircle(radius, radius * 0.78, radius * 0.32);
+  g.fillEllipse(radius, size * 1.02, radius * 1.35, radius * 1.1);
+  g.clearMask();
+  mask.destroy();
+
+  rt.draw(g, 0, 0);
   rt.saveTexture(key);
-  circle.destroy();
-  label.destroy();
+  g.destroy();
   rt.destroy();
   scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
   return key;
