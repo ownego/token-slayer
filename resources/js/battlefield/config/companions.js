@@ -40,3 +40,33 @@ export const NECROMANCER_CONFIG = {
     appearBurst: { file: '/assets/battlefield/companions/necromancer/appear-burst.png', frameWidth: 100, frameHeight: 100, count: 6, rate: 12 },
   },
 };
+
+/**
+ * The two subagent-minion candidates a fighter's swarm is randomly drawn
+ * from (see minions.js) — one per dispatched-but-not-yet-stopped Task
+ * subagent. Idle + Walk + Attack01/Attack02; Hurt/Death were never extracted
+ * from the source asset pack. Attack01/Attack02 are played purely as
+ * cosmetic flourishes — an idle fidget ("khè khè / múa múa") and a clash
+ * between two different fighters' minions that wander close together —
+ * neither ever gates on or affects real damage.
+ */
+export const MINION_TYPES = [
+  {
+    key: 'demon-a',
+    animFiles: {
+      idle:    { file: '/assets/battlefield/companions/demon-a/idle.png',    frameWidth: 100, frameHeight: 100, count: 6, rate: 8,  loop: true },
+      walk:    { file: '/assets/battlefield/companions/demon-a/walk.png',    frameWidth: 100, frameHeight: 100, count: 8, rate: 10, loop: true },
+      attack1: { file: '/assets/battlefield/companions/demon-a/attack1.png', frameWidth: 100, frameHeight: 100, count: 7, rate: 12 },
+      attack2: { file: '/assets/battlefield/companions/demon-a/attack2.png', frameWidth: 100, frameHeight: 100, count: 7, rate: 12 },
+    },
+  },
+  {
+    key: 'blood-monster-a',
+    animFiles: {
+      idle:    { file: '/assets/battlefield/companions/blood-monster-a/idle.png',    frameWidth: 100, frameHeight: 100, count: 6, rate: 8,  loop: true },
+      walk:    { file: '/assets/battlefield/companions/blood-monster-a/walk.png',    frameWidth: 100, frameHeight: 100, count: 8, rate: 10, loop: true },
+      attack1: { file: '/assets/battlefield/companions/blood-monster-a/attack1.png', frameWidth: 100, frameHeight: 100, count: 8, rate: 12 },
+      attack2: { file: '/assets/battlefield/companions/blood-monster-a/attack2.png', frameWidth: 100, frameHeight: 100, count: 8, rate: 12 },
+    },
+  },
+];
