@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BAT_CONFIG, BG_COLOR, LAYOUTS, BOSS_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
+import { BAT_CONFIG, BG_COLOR, LAYOUTS, BOSS_TYPES, MINION_TYPES, MINION_CLASH_EFFECTS, NECROMANCER_CONFIG } from '@battlefield/config.js';
 import { BusEvent, TextureKey, SCENE_KEY, WORLD_ZOOM } from '@battlefield/constants.js';
 import { ATLAS_VERSION } from './config/atlas-version.js';
 import { bus } from './bus.js';
@@ -13,6 +13,7 @@ import { Bubble } from './bubble.js';
 import { MoveInput } from './move-input.js';
 import { Fighter } from './fighter.js';
 import { Necromancer } from './necromancer.js';
+import { Minions } from './minions.js';
 import { ensureSparkTexture } from './spark-texture.js';
 import { registerAllFighterAnimations } from './fighter/animations.js';
 
@@ -51,7 +52,7 @@ export class BattlefieldScene extends Phaser.Scene {
           this.load.spritesheet(boss.key, boss.file, { frameWidth: boss.frameWidth, frameHeight: boss.frameHeight });
       }
     }
-    for (const companion of [BAT_CONFIG, NECROMANCER_CONFIG]) {
+    for (const companion of [BAT_CONFIG, NECROMANCER_CONFIG, ...MINION_TYPES, ...MINION_CLASH_EFFECTS]) {
       for (const [anim, info] of Object.entries(companion.animFiles)) {
         const texKey = `${companion.key}-${anim}`;
         if (!this.textures.exists(texKey)) {
@@ -72,7 +73,7 @@ export class BattlefieldScene extends Phaser.Scene {
         ...BOSS_TYPES.filter(b => b.pixelArt !== false).flatMap(b =>
           b.animFiles ? Object.keys(b.animFiles).map(anim => `${b.key}-${anim}`) : [b.key]
         ),
-        ...[BAT_CONFIG, NECROMANCER_CONFIG].flatMap(c => Object.keys(c.animFiles).map(anim => `${c.key}-${anim}`)),
+        ...[BAT_CONFIG, NECROMANCER_CONFIG, ...MINION_TYPES, ...MINION_CLASH_EFFECTS].flatMap(c => Object.keys(c.animFiles).map(anim => `${c.key}-${anim}`)),
         TextureKey.FIREBALL, TextureKey.EXPLOSION,
       ];
       for (const key of pixelArtKeys) {
@@ -129,6 +130,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.currentUserId = state.currentUserId ?? null;
     this.fighter = new Fighter(this);
     this.fighter.seedInitial(state);
+    this.minions = new Minions(this);
 
     this.leaderboard = new Leaderboard(this);
     this.leaderboard.seed(state.leaderboard ?? []);
@@ -143,18 +145,30 @@ export class BattlefieldScene extends Phaser.Scene {
         });
       }
     }
+    // Synthesizes the live `fighter-agent-count-changed` payload shape (no
+    // seq — boot-time seeding always applies, see handleAgentCountChanged),
+    // so a fighter's minion swarm survives a reload instead of the count
+    // only ever coming from a live broadcast (agentCount comes from
+    // Battlefield::mount()'s SubagentCountCache::many() seed).
+    for (const f of state.fighters) {
+      if (f.agentCount) {
+        this.minions.handleAgentCountChanged({ user_id: f.id, count: f.agentCount });
+      }
+    }
 
     this._busHandlers = {
       [BusEvent.HIT]:              payload => this.fighter.handleHit(payload),
       [BusEvent.BOSS_SPAWNED]:     payload => this.boss.handleBossSpawned(payload),
       [BusEvent.BOSS_KILLED]:      payload => this.boss.handleBossKilled(payload),
       [BusEvent.FIGHTER_CHARGING]: payload => this.charge.handleCharging(payload),
-      [BusEvent.FIGHTER_IDLED]:    payload => this.fighter.handleIdled(payload),
+      [BusEvent.FIGHTER_IDLED]:    payload => { this.fighter.handleIdled(payload); this.minions.despawnAll(payload?.user_id); },
       [BusEvent.FIGHTER_JOINED]:   payload => this.fighter.handleFighterJoined(payload),
       [BusEvent.FIGHTER_MOVED]:    payload => this.fighter.handleFighterMoved(payload),
       [BusEvent.POSITIONS_RESYNCED]: payload => this.fighter.reconcilePositions(payload.positions),
       [BusEvent.FIGHTER_CHARGE_CLEARED]: payload => this.charge.handleChargeCleared(payload),
       [BusEvent.CHARACTER_CHANGED]: payload => this.fighter.updateCharacters([payload]),
+      [BusEvent.FIGHTER_AGENT_COUNT_CHANGED]: payload => this.minions.handleAgentCountChanged(payload),
+      [BusEvent.FIGHTER_AGENT_TOOL_USED]: payload => this.minions.handleAgentToolUsed(payload),
     };
 
     this.moveInput = new MoveInput(this);
@@ -168,6 +182,7 @@ export class BattlefieldScene extends Phaser.Scene {
         bus.off(evt, fn);
       }
       this.leaderboard?.destroy?.();
+      this.minions?.destroy?.();
       this.tooltip = null;
       this.hoveredUserId = null;
     });
@@ -177,11 +192,13 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   /**
-   * Syncs world-space activity bubbles to their fighter containers every frame.
+   * Syncs world-space activity bubbles to their fighter containers every
+   * frame, and advances each fighter's minion trail (see minions.js).
    *
+   * @param {number} time current time (scene.time.now), ms
    * @return {void}
    */
-  update() {
+  update(time) {
     for (const [userId, entry] of this.fighters.entries()) {
       if (!entry.sprite?.active) continue;
       const charge = this.charges?.get(userId);
@@ -190,6 +207,7 @@ export class BattlefieldScene extends Phaser.Scene {
       const avatarRadius = (entry.head?.displayHeight ?? 28) / 2;
       charge.bubble.moveTo(entry.sprite.x, entry.sprite.y + avatarRelY - avatarRadius - 16);
     }
+    this.minions.update(time);
   }
 
   /**
