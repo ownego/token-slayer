@@ -193,8 +193,8 @@ describe('MINION_TYPES', () => {
     }
   });
 
-  test('has exactly two candidates, each with a looping idle and walk', () => {
-    expect(MINION_TYPES).toHaveLength(2);
+  test('has exactly five candidates, each with a looping idle and walk', () => {
+    expect(MINION_TYPES).toHaveLength(5);
     for (const type of MINION_TYPES) {
       expect(type.animFiles.idle.loop).toBe(true);
       expect(type.animFiles.walk.loop).toBe(true);
