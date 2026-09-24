@@ -21,6 +21,8 @@ export const BusEvent = {
   POSITIONS_RESYNCED: 'positions-resynced',
   FIGHTER_CHARGE_CLEARED: 'fighter-charge-cleared',
   CHARACTER_CHANGED: 'character-changed',
+  FIGHTER_AGENT_COUNT_CHANGED: 'fighter-agent-count-changed',
+  FIGHTER_AGENT_TOOL_USED: 'fighter-agent-tool-used',
 };
 
 /** Animation state identifiers shared across scene and managers. */
