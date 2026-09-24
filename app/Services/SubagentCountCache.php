@@ -191,11 +191,36 @@ class SubagentCountCache
 
     /**
      * @param  int  $userId
-     * @return list<string> every presence key (pending or claimed) currently live for this user
+     * @return list<string> every presence key (pending or claimed) currently live for this user, safe to pass straight back into del()/exists()/expire()
      */
     private function presenceKeys(int $userId): array
     {
-        return Redis::keys($this->presenceKey($userId, '*'));
+        return array_map(
+            fn (string $key) => $this->ownKeyPortion($key),
+            Redis::keys($this->presenceKey($userId, '*'))
+        );
+    }
+
+    /**
+     * Real phpredis returns KEYS results WITH the client's configured
+     * REDIS_PREFIX still attached (unlike SETEX/EXISTS/EXPIRE/DEL, which
+     * take and return unprefixed keys transparently) — caught live
+     * 2026-09-24 on prod: feeding a raw KEYS-returned string straight back
+     * into del()/exists() double-prefixes it, so it silently matches
+     * nothing (recordActivity's "claim the oldest pending key" branch never
+     * actually deleted the old key, leaking one stale-but-not-yet-expired
+     * key per claim). This finds where this class's own key format begins
+     * within whatever wrapper Redis put around it, rather than depending on
+     * knowing the exact configured prefix string.
+     *
+     * @param  string  $key
+     * @return string
+     */
+    private function ownKeyPortion(string $key): string
+    {
+        $pos = strpos($key, self::PRESENCE_PREFIX);
+
+        return $pos === false ? $key : substr($key, $pos);
     }
 
     /**
