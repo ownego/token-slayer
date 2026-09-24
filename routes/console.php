@@ -9,8 +9,9 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+// Also sweeps stale subagent_dispatches rows in the same pass — see
+// SweepIdleFighters's own docblock for why it isn't a separate schedule entry.
 Schedule::command('fighters:sweep-idle')->everyMinute();
-Schedule::command('subagents:sweep-idle')->everyMinute();
 
 // Keeps the install-script/wheel digests warm so POST /api/events never
 // resolves a GitHub release inline: that call has an 8s timeout while the
