@@ -9,6 +9,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Redis;
 use Tests\TestCase;
 
 /*
@@ -119,4 +120,59 @@ function livesOn(Account $account, User $user, string $firstDay, int $days, int 
             'created_at' => Carbon::parse($firstDay)->addDays($offset),
         ]);
     }
+}
+
+/**
+ * Backs the `Redis` facade with a tiny in-memory fake — a plain keyed array
+ * simulating SETEX/EXPIRE/EXISTS/DEL/KEYS, plus SADD/SMEMBERS against one
+ * reserved entry per Redis SET (its value held as an array of members,
+ * distinguishing it from a plain presence key's scalar value) — for tests
+ * that exercise SubagentCountCache (see its own docblock: no real Redis
+ * server is available in this environment). Mutating `$store` directly
+ * between calls (e.g. unsetting a key, or replacing it with `[]`) simulates
+ * Redis expiring a key on its own, since nothing here implements real TTL
+ * countdown.
+ *
+ * @param  array<string, mixed>  $store  passed by reference so callers can seed/inspect/mutate the fake store directly
+ * @return void
+ */
+function fakeRedis(array &$store): void
+{
+    Redis::shouldReceive('setex')->andReturnUsing(function (string $key, int $ttl, mixed $value) use (&$store) {
+        $store[$key] = $value;
+
+        return true;
+    });
+    Redis::shouldReceive('expire')->andReturnUsing(function (string $key, int $ttl) use (&$store) {
+        return array_key_exists($key, $store);
+    });
+    Redis::shouldReceive('exists')->andReturnUsing(function (string $key) use (&$store) {
+        return array_key_exists($key, $store) ? 1 : 0;
+    });
+    Redis::shouldReceive('del')->andReturnUsing(function (string $key) use (&$store) {
+        $existed = array_key_exists($key, $store);
+        unset($store[$key]);
+
+        return $existed ? 1 : 0;
+    });
+    Redis::shouldReceive('keys')->andReturnUsing(function (string $pattern) use (&$store) {
+        $regex = '/^'.str_replace('\*', '.*', preg_quote($pattern, '/')).'$/';
+
+        return array_values(array_filter(array_keys($store), fn ($key) => preg_match($regex, $key) === 1 && ! is_array($store[$key])));
+    });
+    Redis::shouldReceive('sadd')->andReturnUsing(function (string $key, mixed ...$members) use (&$store) {
+        $store[$key] ??= [];
+        $added = 0;
+        foreach ($members as $member) {
+            if (! in_array($member, $store[$key], false)) {
+                $store[$key][] = $member;
+                $added++;
+            }
+        }
+
+        return $added;
+    });
+    Redis::shouldReceive('smembers')->andReturnUsing(function (string $key) use (&$store) {
+        return $store[$key] ?? [];
+    });
 }
