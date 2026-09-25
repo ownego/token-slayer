@@ -8,7 +8,7 @@ use Carbon\CarbonInterface;
 /**
  * The Infinity Stone clock for a recognizable boss: it spawns holding a
  * configured opening count, then gains one stone for every configured
- * wall-clock instant (09:30 Asia/Ho_Chi_Minh by default) that passes,
+ * wall-clock tick (09:30, 14:00 and 17:50 Asia/Ho_Chi_Minh) that passes,
  * capped at a maximum.
  *
  * Pure: callers pass "now", so the arithmetic is testable and the client can
@@ -46,11 +46,12 @@ final class StoneClock
     public static function countAt(CarbonInterface $spawnedAt, CarbonInterface $now): int
     {
         $count = min((int) config('game.stones.initial'), self::max());
-        $tick = self::firstTickAfter($spawnedAt);
 
-        while ($count < self::max() && $tick->lessThanOrEqualTo($now)) {
+        foreach (self::ticksAfter($spawnedAt, self::max() - $count) as $tick) {
+            if ($tick->greaterThan($now)) {
+                break;
+            }
             $count++;
-            $tick = $tick->addDay();
         }
 
         return $count;
@@ -65,41 +66,70 @@ final class StoneClock
      */
     public static function nextAt(CarbonInterface $spawnedAt, CarbonInterface $now): ?CarbonImmutable
     {
-        if (self::countAt($spawnedAt, $now) >= self::max()) {
-            return null;
-        }
+        return self::scheduleAt($spawnedAt, $now)[0] ?? null;
+    }
 
-        return self::firstTickAfter($now);
+    /**
+     * Every tick still to come, one per stone the boss has yet to earn,
+     * earliest first; empty once the cap is reached.
+     *
+     * @param  CarbonInterface  $spawnedAt
+     * @param  CarbonInterface  $now
+     * @return array<int, CarbonImmutable>
+     */
+    public static function scheduleAt(CarbonInterface $spawnedAt, CarbonInterface $now): array
+    {
+        return self::ticksAfter($now, self::max() - self::countAt($spawnedAt, $now));
     }
 
     /**
      * Wire shape shared by the boot payload and the BossSpawned broadcast.
+     * The schedule is a comma-joined list of UTC instants so the payload
+     * stays scalar; the client only counts how many have passed, so it needs
+     * no calendar or timezone logic of its own.
      *
      * @param  CarbonInterface  $spawnedAt
      * @param  CarbonInterface  $now
-     * @return array{stones: int, next_stone_at: string|null}
+     * @return array{stones: int, stone_schedule: string}
      */
     public static function state(CarbonInterface $spawnedAt, CarbonInterface $now): array
     {
         return [
             'stones' => self::countAt($spawnedAt, $now),
-            'next_stone_at' => self::nextAt($spawnedAt, $now)?->utc()->toIso8601ZuluString(),
+            'stone_schedule' => implode(',', array_map(
+                fn (CarbonImmutable $tick) => $tick->utc()->toIso8601ZuluString(),
+                self::scheduleAt($spawnedAt, $now),
+            )),
         ];
     }
 
     /**
-     * The configured wall-clock instant on the first local day whose tick
-     * falls strictly after $at.
+     * The next $limit configured wall-clock ticks strictly after $at,
+     * earliest first.
      *
      * @param  CarbonInterface  $at
-     * @return CarbonImmutable
+     * @param  int  $limit
+     * @return array<int, CarbonImmutable>
      */
-    private static function firstTickAfter(CarbonInterface $at): CarbonImmutable
+    private static function ticksAfter(CarbonInterface $at, int $limit): array
     {
-        $local = CarbonImmutable::instance($at)->setTimezone(config('game.stones.timezone'));
-        $tick = $local->setTime(config('game.stones.hour'), config('game.stones.minute'));
+        $times = config('game.stones.times');
+        sort($times);
+        $day = CarbonImmutable::instance($at)->setTimezone(config('game.stones.timezone'))->startOfDay();
+        $ticks = [];
 
-        return $tick->greaterThan($local) ? $tick : $tick->addDay();
+        while (count($ticks) < $limit) {
+            foreach ($times as $time) {
+                [$hour, $minute] = array_map('intval', explode(':', $time));
+                $tick = $day->setTime($hour, $minute);
+                if ($tick->greaterThan($at) && count($ticks) < $limit) {
+                    $ticks[] = $tick;
+                }
+            }
+            $day = $day->addDay();
+        }
+
+        return $ticks;
     }
 
     /**

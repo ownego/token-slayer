@@ -20,13 +20,13 @@ describe('boss script registry', () => {
     // stores the result at bossState.script — it never knows these key names.
     const script = scriptFor('boss-thanos');
 
-    expect(script.readState({ stones: 2, next_stone_at: 'x' })).toEqual({ stones: 2, nextStoneAt: 'x' });
+    expect(script.readState({ stones: 2, stone_schedule: 'a,b' })).toEqual({ stones: 2, stoneSchedule: 'a,b' });
   });
 
   test('the thanos script reads a payload without stone keys as an empty stone state', () => {
     const script = scriptFor('boss-thanos');
 
-    expect(script.readState({ boss_number: 7, max_hp: 1000 })).toEqual({ stones: 0, nextStoneAt: null });
+    expect(script.readState({ boss_number: 7, max_hp: 1000 })).toEqual({ stones: 0, stoneSchedule: '' });
   });
 
   test('every registered key is a real BOSS_TYPES key', () => {

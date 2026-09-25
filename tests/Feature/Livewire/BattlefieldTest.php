@@ -262,12 +262,12 @@ test('the re-run-the-installer nudge links straight to the quick-update page, no
 });
 
 test('battlefield boot payload carries the stone clock for a boss whose script has one', function () {
-    $this->travelTo('2026-09-23T10:00:00Z');
-    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
+    $this->travelTo('2026-09-23T08:00:00Z');
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-23T03:00:00Z']);
 
     Livewire::actingAs(User::factory()->create())
         ->test(Battlefield::class)
-        ->assertSeeHtml('&quot;script&quot;:{&quot;stones&quot;:3,&quot;nextStoneAt&quot;:&quot;2026-09-24T02:30:00Z&quot;}');
+        ->assertSeeHtml('&quot;script&quot;:{&quot;stones&quot;:2,&quot;stoneSchedule&quot;:&quot;2026-09-23T10:50:00Z,2026-09-24T02:30:00Z,2026-09-24T07:00:00Z,2026-09-24T10:50:00Z&quot;}');
 });
 
 test('battlefield boot payload has no script keys for a generic monster', function () {

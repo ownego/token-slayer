@@ -199,13 +199,15 @@ test('HitDealt sends only scalars, per the payload rule', function () {
 });
 
 test('BossSpawned carries the stone clock for a boss whose script has one', function () {
-    $this->travelTo('2026-09-23T10:00:00Z');
-    $boss = Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
+    $this->travelTo('2026-09-23T08:00:00Z'); // 15:00 local, after the 14:00 tick
+    $boss = Boss::factory()->thanode()->create(['spawned_at' => '2026-09-23T03:00:00Z']);
+    $payload = (new BossSpawned($boss))->broadcastWith();
 
-    expect((new BossSpawned($boss))->broadcastWith())->toMatchArray([
-        'stones' => 3,
-        'next_stone_at' => '2026-09-24T02:30:00Z',
+    expect($payload)->toMatchArray([
+        'stones' => 2,
+        'stone_schedule' => '2026-09-23T10:50:00Z,2026-09-24T02:30:00Z,2026-09-24T07:00:00Z,2026-09-24T10:50:00Z',
     ]);
+    expect($payload['stone_schedule'])->toBeString(); // scalar on the wire, split by the client
 });
 
 test('BossSpawned leaves script keys out for a generic monster, even in the old thanos slot', function () {
@@ -213,5 +215,5 @@ test('BossSpawned leaves script keys out for a generic monster, even in the old 
 
     expect((new BossSpawned($boss))->broadcastWith())
         ->not->toHaveKey('stones')
-        ->not->toHaveKey('next_stone_at');
+        ->not->toHaveKey('stone_schedule');
 });

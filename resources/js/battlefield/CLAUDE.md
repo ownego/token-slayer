@@ -129,7 +129,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `tests/js/fighter-preview.test.js` | centeredScaleFit, drawFighterPreview (fixed-scale, never-stretched fit) |
 | `tests/js/boss/bat-targeting.test.js` | computeBatHitTarget — cosmetic hit routing, threshold-crossing kill overrides |
 | `tests/js/boss/bat-wander.test.js` | randomWanderPoint — uniform elliptical-area sampling |
-| `tests/js/boss/thanos-stones.test.js` | advanceStones — step-forward, multi-day catch-up, cap, ISO-string input, purity |
+| `tests/js/boss/thanos-stones.test.js` | advanceStones — counts passed schedule ticks, catch-up, cap, comma-joined string input, purity |
 | `tests/js/boss/boss-type.test.js` | bossTypeOf — character by name whatever the number, rotation excludes fixed-name entries, unique fixed names |
 | `tests/js/boss/scripts.test.js` | scriptFor registry — resolves thanos, null for scriptless, every key is a real BOSS_TYPES key |
 | `tests/js/boss/summon-queue.test.js` | shouldSkipSummonFlourish — burst-limit threshold |

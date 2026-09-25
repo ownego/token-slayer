@@ -1,42 +1,46 @@
 import { describe, expect, test } from 'vitest';
 import { advanceStones, STONE_COLORS, STONE_MAX } from '@battlefield/boss/scripts/thanos-stones.js';
 
-// The server hands the client {stones, nextStoneAt}; the client only has to notice
-// when nextStoneAt has passed and step forward in 24h increments (no DST in Vietnam).
-const T0 = Date.parse('2026-09-22T02:30:00Z'); // a 09:30 Asia/Ho_Chi_Minh instant
-const DAY = 24 * 60 * 60 * 1000;
+// The server hands the client {stones, stoneSchedule}: the count plus every tick
+// still to come. The client only counts how many of those instants have passed.
+const T1 = Date.parse('2026-09-22T02:30:00Z'); // 09:30 Asia/Ho_Chi_Minh
+const T2 = Date.parse('2026-09-22T07:00:00Z'); // 14:00
+const T3 = Date.parse('2026-09-22T10:50:00Z'); // 17:50
 
 describe('advanceStones', () => {
-  test('leaves the state alone before the next instant', () => {
-    const state = { stones: 1, nextStoneAt: T0 };
-    expect(advanceStones(state, T0 - 1)).toEqual(state);
+  test('leaves the count alone before the next tick', () => {
+    expect(advanceStones({ stones: 3, stoneSchedule: [T1, T2, T3] }, T1 - 1))
+      .toEqual({ stones: 3, stoneSchedule: [T1, T2, T3] });
   });
 
-  test('adds one stone and rolls nextStoneAt forward a day when the instant passes', () => {
-    expect(advanceStones({ stones: 1, nextStoneAt: T0 }, T0)).toEqual({ stones: 2, nextStoneAt: T0 + DAY });
+  test('adds one stone and drops the tick once it passes', () => {
+    expect(advanceStones({ stones: 3, stoneSchedule: [T1, T2, T3] }, T1))
+      .toEqual({ stones: 4, stoneSchedule: [T2, T3] });
   });
 
-  test('catches up several days at once after a sleeping tab', () => {
-    expect(advanceStones({ stones: 1, nextStoneAt: T0 }, T0 + 2 * DAY + 5)).toEqual({ stones: 4, nextStoneAt: T0 + 3 * DAY });
+  test('catches up several ticks at once after a sleeping tab', () => {
+    expect(advanceStones({ stones: 3, stoneSchedule: [T1, T2, T3] }, T3 + 5))
+      .toEqual({ stones: 6, stoneSchedule: [] });
   });
 
-  test('stops at the cap and clears nextStoneAt', () => {
-    expect(advanceStones({ stones: STONE_MAX - 1, nextStoneAt: T0 }, T0 + 10 * DAY)).toEqual({ stones: STONE_MAX, nextStoneAt: null });
+  test('never goes past the cap even if the schedule runs long', () => {
+    expect(advanceStones({ stones: STONE_MAX - 1, stoneSchedule: [T1, T2] }, T3))
+      .toEqual({ stones: STONE_MAX, stoneSchedule: [] });
   });
 
-  test('a capped state stays put', () => {
-    const capped = { stones: STONE_MAX, nextStoneAt: null };
-    expect(advanceStones(capped, T0 + 99 * DAY)).toEqual(capped);
+  test('reads the comma-joined UTC string from the boot payload and broadcast', () => {
+    expect(advanceStones({ stones: 3, stoneSchedule: '2026-09-22T02:30:00Z,2026-09-22T07:00:00Z' }, T1))
+      .toEqual({ stones: 4, stoneSchedule: [T2] });
   });
 
-  test('accepts nextStoneAt as an ISO string and returns a number', () => {
-    expect(advanceStones({ stones: 0, nextStoneAt: '2026-09-22T02:30:00Z' }, T0)).toEqual({ stones: 1, nextStoneAt: T0 + DAY });
+  test('an empty schedule string means the gauntlet is complete', () => {
+    expect(advanceStones({ stones: STONE_MAX, stoneSchedule: '' }, T3)).toEqual({ stones: STONE_MAX, stoneSchedule: [] });
   });
 
   test('does not mutate its input', () => {
-    const state = { stones: 0, nextStoneAt: T0 };
-    advanceStones(state, T0);
-    expect(state).toEqual({ stones: 0, nextStoneAt: T0 });
+    const state = { stones: 3, stoneSchedule: [T1, T2] };
+    advanceStones(state, T2);
+    expect(state).toEqual({ stones: 3, stoneSchedule: [T1, T2] });
   });
 });
 

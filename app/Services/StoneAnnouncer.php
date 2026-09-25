@@ -94,11 +94,13 @@ class StoneAnnouncer
             $context = sprintf('%s holds every Infinity Stone.', $name);
         } else {
             $headline = sprintf('💎 %s collected the %s (%s)', $name, StoneClock::nameOf($stones), $count);
+            $next = StoneClock::nextAt($boss->spawned_at, now())?->setTimezone(config('game.stones.timezone'));
+            $today = now()->setTimezone(config('game.stones.timezone'));
             $context = sprintf(
-                '%d more until the gauntlet is complete — the next one lands at %02d:%02d tomorrow.',
+                '%d more until the gauntlet is complete — the next one lands at %s %s.',
                 $max - $stones,
-                config('game.stones.hour'),
-                config('game.stones.minute'),
+                $next?->format('H:i'),
+                $next?->isSameDay($today) ? 'today' : 'tomorrow',
             );
         }
 

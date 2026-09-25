@@ -93,7 +93,7 @@ test('carries a boss script state through the round-trip without knowing its key
       name: 'ThaNode',
       currentHp: 500,
       maxHp: 1000,
-      script: { stones: 2, nextStoneAt: 1_790_000_000_000 },
+      script: { stones: 2, stoneSchedule: [1_790_000_000_000] },
     },
     fighters: new Map(),
     charges: new Map(),
@@ -104,7 +104,7 @@ test('carries a boss script state through the round-trip without knowing its key
     name: 'ThaNode',
     currentHp: 500,
     maxHp: 1000,
-    script: { stones: 2, nextStoneAt: 1_790_000_000_000 },
+    script: { stones: 2, stoneSchedule: [1_790_000_000_000] },
   });
 });
 

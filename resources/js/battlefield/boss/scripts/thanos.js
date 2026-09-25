@@ -1,7 +1,7 @@
 // ThaNode's script: six Infinity Stone sockets under the HP bar that fill one
-// per morning the boss survives. The count is never stored on the client — it
-// is re-derived from {stones, nextStoneAt} (server-issued, see StoneClock) on
-// every tick. That pair lives at bossState.script, the generic slot the engine
+// per stone-clock tick the boss survives. The count is never stored on the
+// client — it is re-derived from {stones, stoneSchedule} (server-issued, see
+// StoneClock) on every tick. That pair lives at bossState.script, the generic slot the engine
 // keeps for any script and snapshotState() copies as a block, so an
 // orientation reboot or a sleeping tab lands on the right number.
 import { advanceStones, STONE_COLORS, STONE_MAX } from './thanos-stones.js';
@@ -14,18 +14,18 @@ export const thanosScript = {
    * Translates a flat snake_case BossSpawned payload into this script's own
    * state object, which the engine stores at bossState.script.
    *
-   * @param {{stones?: number, next_stone_at?: number|string|null}} payload
-   * @return {{stones: number, nextStoneAt: number|string|null}}
+   * @param {{stones?: number, stone_schedule?: string}} payload
+   * @return {{stones: number, stoneSchedule: string}}
    */
   readState(payload) {
-    return { stones: payload.stones ?? 0, nextStoneAt: payload.next_stone_at ?? null };
+    return { stones: payload.stones ?? 0, stoneSchedule: payload.stone_schedule ?? '' };
   },
 
   /**
    * Builds the sockets and starts the minute ticker.
    *
    * @param {Phaser.Scene} scene
-   * @param {{script?: {stones?: number, nextStoneAt?: number|string|null}}} bossState The engine's live boss state; tick() writes the advanced stone state back to bossState.script so snapshotState() sees it.
+   * @param {{script?: {stones?: number, stoneSchedule?: string|Array<number>}}} bossState The engine's live boss state; tick() writes the advanced stone state back to bossState.script so snapshotState() sees it.
    * @return {{sockets: Array<{socket: Phaser.GameObjects.Arc, gem: Phaser.GameObjects.Arc}>, ticker: Phaser.Time.TimerEvent}}
    */
   create(scene, bossState) {
@@ -55,7 +55,7 @@ export const thanosScript = {
    * Advances the stone state to now and reveals any newly earned gems.
    *
    * @param {Phaser.Scene} scene
-   * @param {{script?: {stones?: number, nextStoneAt?: number|string|null}}} bossState
+   * @param {{script?: {stones?: number, stoneSchedule?: string|Array<number>}}} bossState
    * @param {{sockets: Array<{socket: object, gem: object}>}} handle
    * @param {{silent?: boolean}} [opts] silent skips the reveal pop (initial paint).
    * @return {void}

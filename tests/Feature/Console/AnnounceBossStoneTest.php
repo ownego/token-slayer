@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Boss;
-use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -30,31 +29,41 @@ function slackText(): string
     return $text;
 }
 
-test('announces the stone ThaNode just collected, with its name and running count', function () {
-    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']); // 2 mornings survived
+test('announces the stone ThaNode just collected, with its name, running count and next tick', function () {
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-22T03:00:00Z']); // 14:00, 17:50, then this 09:30
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
     expect(slackText())
         ->toContain('ThaNode')
-        ->toContain('Reality Stone')
-        ->toContain('3/6');
+        ->toContain('Soul Stone')
+        ->toContain('4/6')
+        ->toContain('next one lands at 14:00 today');
+});
+
+test('after the last tick of the day the next one is tomorrow morning', function () {
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-23T03:00:00Z']);
+    $this->travelTo('2026-09-23T10:50:00Z'); // 17:50
+
+    $this->artisan('boss:announce-stone')->assertSuccessful();
+
+    expect(slackText())->toContain('Reality Stone')->toContain('3/6')->toContain('next one lands at 09:30 tomorrow');
 });
 
 test('announces the complete gauntlet on the sixth stone', function () {
-    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-18T03:00:00Z']); // 5 mornings survived
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T08:00:00Z']); // fifth tick after spawn is TICK
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
     expect(slackText())->toContain('Mind Stone')->toContain('6/6')->toContain('complete');
 });
 
-test('stays silent on every morning after the gauntlet is complete', function () {
-    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-18T03:00:00Z']);
-    $this->artisan('boss:announce-stone')->assertSuccessful(); // 6/6 today
+test('stays silent on every tick after the gauntlet is complete', function () {
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T08:00:00Z']);
+    $this->artisan('boss:announce-stone')->assertSuccessful(); // 6/6 at TICK
 
-    foreach ([1, 2, 3] as $daysLater) {
-        $this->travelTo(CarbonImmutable::parse(TICK)->addDays($daysLater));
+    foreach (['2026-09-23T07:00:00Z', '2026-09-23T10:50:00Z', '2026-09-24T02:30:00Z', '2026-09-26T02:30:00Z'] as $later) {
+        $this->travelTo($later);
         $this->artisan('boss:announce-stone')->assertSuccessful();
     }
 
@@ -62,7 +71,7 @@ test('stays silent on every morning after the gauntlet is complete', function ()
 });
 
 test('does not announce the same stone twice', function () {
-    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-22T03:00:00Z']);
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
     $this->artisan('boss:announce-stone')->assertSuccessful();
@@ -106,18 +115,17 @@ test('stays silent when no boss is alive, without spawning one', function () {
 
 test('missing webhook URL skips posting without failing', function () {
     config(['services.slack_notifier.webhook_url' => null]);
-    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-22T03:00:00Z']);
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
     Http::assertNothingSent();
 });
 
-test('is scheduled at the stone clock instant in its timezone', function () {
-    $event = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events())
-        ->first(fn ($e) => str_contains($e->command ?? '', 'boss:announce-stone'));
+test('is scheduled at every stone clock tick in its timezone', function () {
+    $events = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events())
+        ->filter(fn ($e) => str_contains($e->command ?? '', 'boss:announce-stone'));
 
-    expect($event)->not->toBeNull()
-        ->and($event->expression)->toBe('30 9 * * *')
-        ->and($event->timezone)->toBe('Asia/Ho_Chi_Minh');
+    expect($events->pluck('expression')->sort()->values()->all())->toBe(['0 14 * * *', '30 9 * * *', '50 17 * * *'])
+        ->and($events->pluck('timezone')->unique()->all())->toBe(['Asia/Ho_Chi_Minh']);
 });
