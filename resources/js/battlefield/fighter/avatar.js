@@ -34,7 +34,22 @@ export function loadAvatarTexture(scene, fighterId, avatarUrl) {
         return;
       }
       if (scene.textures.exists(key)) {
-        scene.textures.remove(key);
+        // Never destroy an already-populated texture under this key: a
+        // charging fighter's avatar "breathing" tween (Charge.handleCharging,
+        // charge.js) reads/writes fighter.head's displayWidth/displayHeight
+        // every tick, which touches the CURRENT Frame's sourceSize — and a
+        // minion badge can independently be showing this same key too (see
+        // minions.js's _positionBadge). Removing the texture destroys that
+        // Frame (nulls its data) while those live GameObjects still hold a
+        // direct reference to it; Phaser doesn't repoint them just because a
+        // new Texture gets registered under the same key string, so the next
+        // read/write on that stale Frame throws — caught live 2026-09-25 as
+        // "can't access property sourceSize, this.data is null". A second
+        // load resolving for a key that's already populated is redundant
+        // anyway (this fighter already has a real avatar showing), so just
+        // hand back what's already there instead of replacing it.
+        resolve(key);
+        return;
       }
       const size = AVATAR_TEXTURE_SIZE;
       const canvas = document.createElement('canvas');
