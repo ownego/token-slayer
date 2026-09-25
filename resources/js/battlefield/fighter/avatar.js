@@ -57,15 +57,15 @@ export function loadAvatarTexture(scene, fighterId, avatarUrl) {
 }
 
 /**
- * Creates a fallback avatar texture using a colored circle with a generic
- * person silhouette (head + shoulders), instead of a text glyph — a photo
- * or a drawn icon reads as "an avatar" at a glance in the small minion
- * badge/fighter-head size this renders at; a bare letter reads as "no
- * avatar loaded yet" even when it's actually the final, permanent state
- * (e.g. an account with no avatar_url at all) — caught live 2026-09-24.
+ * Creates a fallback avatar texture using a colored circle with an initial
+ * letter — used while a real avatar is still loading (loadAvatarTexture's
+ * promise hasn't resolved either way yet). Deliberately distinct from
+ * makePermanentFallbackAvatarTexture: this state is normally brief, so a
+ * plain letter is fine here, but must never be the one left showing forever
+ * once the load genuinely fails (see that function's own docblock).
  *
  * @param {Phaser.Scene} scene
- * @param {{ id: number|string }} fighter
+ * @param {{ id: number|string, handle?: string }} fighter
  * @return {string}
  */
 export function makeFallbackAvatarTexture(scene, fighter) {
@@ -75,8 +75,50 @@ export function makeFallbackAvatarTexture(scene, fighter) {
   }
   const size = 128;
   const radius = size / 2;
-  const palette = [0x6366f1, 0x10b981, 0xf59e0b, 0xec4899, 0x14b8a6, 0xf97316, 0x8b5cf6, 0x0ea5e9];
-  const color = palette[Math.abs(Number(fighter.id) || 0) % palette.length];
+  const color = fallbackColor(fighter.id);
+  const initial = (fighter.handle ?? '').trim().charAt(0).toUpperCase() || '?';
+
+  const rt = scene.add.renderTexture(0, 0, size, size).setVisible(false);
+  const circle = scene.add.graphics({ x: 0, y: 0 }).setVisible(false);
+  circle.fillStyle(color, 1);
+  circle.fillCircle(radius, radius, radius);
+  rt.draw(circle, 0, 0);
+  const label = scene.add.text(0, 0, initial, {
+    fontFamily: 'monospace',
+    fontSize: '72px',
+    color: '#ffffff',
+  }).setOrigin(0.5).setVisible(false);
+  rt.draw(label, radius, radius);
+  rt.saveTexture(key);
+  circle.destroy();
+  label.destroy();
+  rt.destroy();
+  scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
+  return key;
+}
+
+/**
+ * Creates the fallback avatar texture used once a real avatar load has
+ * genuinely FAILED (loadAvatarTexture's promise rejected — no avatar_url at
+ * all, a 404, a network error), as opposed to makeFallbackAvatarTexture's
+ * merely-still-loading state: a colored circle with a generic person
+ * silhouette (head + shoulders) instead of a text glyph. A photo or a drawn
+ * icon reads as "an avatar" at a glance in the small minion badge/
+ * fighter-head size this renders at; a bare letter reads as "no avatar
+ * loaded yet" even when it's actually permanent — caught live 2026-09-24.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {{ id: number|string }} fighter
+ * @return {string}
+ */
+export function makePermanentFallbackAvatarTexture(scene, fighter) {
+  const key = `fighter-${fighter.id}-fallback-permanent`;
+  if (scene.textures.exists(key)) {
+    return key;
+  }
+  const size = 128;
+  const radius = size / 2;
+  const color = fallbackColor(fighter.id);
 
   const rt = scene.add.renderTexture(0, 0, size, size).setVisible(false);
   const g = scene.add.graphics({ x: 0, y: 0 }).setVisible(false);
@@ -101,4 +143,18 @@ export function makeFallbackAvatarTexture(scene, fighter) {
   rt.destroy();
   scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.LINEAR);
   return key;
+}
+
+/**
+ * Deterministic background color for a fighter's fallback avatar (loading
+ * or permanent), picked from a small palette by id so the same fighter
+ * always gets the same color across both fallback textures.
+ *
+ * @param {number|string} fighterId
+ * @return {number}
+ */
+function fallbackColor(fighterId) {
+  const palette = [0x6366f1, 0x10b981, 0xf59e0b, 0xec4899, 0x14b8a6, 0xf97316, 0x8b5cf6, 0x0ea5e9];
+
+  return palette[Math.abs(Number(fighterId) || 0) % palette.length];
 }

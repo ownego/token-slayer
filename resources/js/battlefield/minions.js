@@ -14,8 +14,8 @@ const MINION_SIZE_RATIO = 0.5;
 const MINION_BADGE_SIZE_RATIO = 0.55;
 /** How far above the minion's own top the badge sits, as a fraction of the minion's current visual height. */
 const MINION_BADGE_OFFSET_RATIO = 0.65;
-/** Caps how many minions render per fighter regardless of the real dispatched count, so a burst of parallel subagents never clutters the battlefield. */
-const MINION_MAX_VISIBLE = 6;
+/** Caps how many minions render per fighter regardless of the real dispatched count, so a burst of parallel subagents never clutters the battlefield. Raised from 6 to 10 — live 2026-09-25 a fighter with genuinely 7+ concurrent subagents (a busy `Agent` SDK-based harness) was visibly clamped below its real count. */
+const MINION_MAX_VISIBLE = 10;
 /** Forced depth for the whole spawn ceremony (ground circle + rise-in) — always above the fighter's own depth (2) so the summon reads clearly, never hidden behind the character. Deliberately not the bare integer 3: several transient attack-effect graphics (arrow trail, blast beam, ghost fx, per-attack sprite) also render at depth 3, and same-depth tie-breaking is insertion-order-dependent — a fractional depth keeps a spawning minion unambiguously above those too, not just above the fighter. Once a minion has finished spawning it stops being pinned here and switches to the dynamic front/back sort below. */
 const MINION_DEPTH_FRONT = 3.2;
 /** Depth for a settled minion currently positioned "behind" its fighter (see isInFrontOfFighter) — below the fighter's own depth (2), same as the other "tucked behind the character" elements already in this scene (fighter/index.js's charge glow/flash/core and its flair ring's own back arc). */
