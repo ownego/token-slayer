@@ -8,9 +8,10 @@ return [
     // with no event at all is a real signal it's done — see
     // SubagentCountCache's own docblock. Seconds, not minutes: hook v7's
     // agent_id-bearing PreToolUse/PostToolUse give a heartbeat on every
-    // tool call a tracked subagent makes (not just its own dispatch/stop),
-    // so the window could shrink from the old 3 minutes down to tens of
-    // seconds without risking a still-genuinely-busy subagent going stale
-    // between heartbeats.
-    'subagent_idle_seconds' => (int) env('GAME_SUBAGENT_IDLE_SECONDS', 30),
+    // tool call a tracked subagent makes (not just its own dispatch/stop).
+    // Raised from 30 to 60 — live 2026-09-25 a real subagent running one
+    // tool call longer than 30s (nothing unusual for a build/test/download
+    // step) dropped off the battlefield mid-dispatch, well before it was
+    // actually done.
+    'subagent_idle_seconds' => (int) env('GAME_SUBAGENT_IDLE_SECONDS', 60),
 ];
