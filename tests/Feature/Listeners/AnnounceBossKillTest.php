@@ -160,7 +160,7 @@ test('killer without slack_handle falls back to name', function () {
 test('the incoming line says what a recognizable boss spawns holding', function () {
     $killer = User::factory()->create(['slack_handle' => 'alice']);
     $killed = Boss::factory()->defeated()->create(['number' => 6, 'killing_blow_user_id' => $killer->id]);
-    Boss::factory()->create(['number' => 7, 'spawned_at' => now()]);
+    Boss::factory()->thanode()->create(['number' => 7, 'spawned_at' => now()]);
 
     event(new BossKilled($killed, $killer));
 

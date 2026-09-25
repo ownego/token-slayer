@@ -28,10 +28,6 @@ test('falls back to the full pool when every name has been used recently', funct
     expect($pool)->toContain($name);
 });
 
-test('nameFor hands a recognizable character its fixed name without touching the pool', function () {
-    expect((new BossNameGenerator)->nameFor(7))->toBe('ThaNode');
-});
-
 test('the shared pool never contains a fixed character name', function () {
     $pool = (new ReflectionClass(BossNameGenerator::class))
         ->getReflectionConstant('POOL')

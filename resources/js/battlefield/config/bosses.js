@@ -76,6 +76,9 @@ export const BOSS_TYPES = [
     // 5x5 grid of 128px cells, but only 18 cells are filled: 9, 14, 19 and
     // 21-24 are blank, so every range below stops short of its row's end.
     key: 'boss-thanos',
+    // A recognizable character: worn by the boss named this (see boss/boss-type.js
+    // and App\Enums\BossCharacter), never picked by the number rotation.
+    fixedName: 'ThaNode',
     file: '/assets/battlefield/bosses/thanos.png?v=100',
     frameWidth: 128,
     frameHeight: 128,

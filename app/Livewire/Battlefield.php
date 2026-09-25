@@ -52,7 +52,7 @@ class Battlefield extends Component
     public function mount(BossArena $arena, FighterChargingCache $chargingCache, FighterPositionCache $positionCache): void
     {
         $this->boss = $arena->current();
-        $this->bossScript = collect(BossCharacter::forNumber($this->boss->number)->scriptState($this->boss))
+        $this->bossScript = collect(BossCharacter::of($this->boss)?->scriptState($this->boss) ?? [])
             ->mapWithKeys(fn (mixed $value, string $key) => [Str::camel($key) => $value])
             ->all();
         $this->fighters = User::where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))

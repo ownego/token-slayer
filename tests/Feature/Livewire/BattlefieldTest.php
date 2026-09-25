@@ -263,7 +263,7 @@ test('the re-run-the-installer nudge links straight to the quick-update page, no
 
 test('battlefield boot payload carries the stone clock for a boss whose script has one', function () {
     $this->travelTo('2026-09-23T10:00:00Z');
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-21T03:00:00Z']);
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
 
     Livewire::actingAs(User::factory()->create())
         ->test(Battlefield::class)

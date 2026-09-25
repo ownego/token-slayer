@@ -6,54 +6,82 @@ use App\Models\Boss;
 use App\Support\StoneClock;
 
 /**
- * Boss sprites, in cycle order. Values and order must match BOSS_TYPES in
- * resources/js/battlefield/config/bosses.js: the client picks the sprite as
- * BOSS_TYPES[number % length], and forNumber() mirrors that here so the
- * server can name a boss after the sprite it is actually wearing.
+ * Recognizable bosses: characters with their own name, sprite and script,
+ * as opposed to generic monsters that rotate through the sprite roster by
+ * boss number and draw a name from BossNameGenerator's pool.
+ *
+ * A boss's identity is the name it was spawned with, never its number, so
+ * adding a character does not re-skin bosses already alive. Each value is
+ * the BOSS_TYPES key in resources/js/battlefield/config/bosses.js whose
+ * entry carries the same fixedName; the client resolves the sprite the
+ * same way (bossTypeOf in resources/js/battlefield/boss/boss-type.js).
  */
 enum BossCharacter: string
 {
-    case Ghost = 'boss-ghost';
-    case Skeleton = 'boss-skeleton';
-    case AbyssalDreadknight = 'boss-abyssal-dreadknight';
-    case Slime = 'boss-slime';
-    case FlyingDemon = 'boss-flying-demon';
-    case Minotaur = 'boss-minotaur';
-    case DemonSlime = 'boss-demon-slime';
     case Thanos = 'boss-thanos';
 
     /**
-     * Resolve which sprite a boss number wears — the server-side twin of
-     * Boss.bossTypeFor() in resources/js/battlefield/boss/index.js.
+     * The recognizable character a boss is, judged by its stored name, or
+     * null for a generic monster.
      *
-     * @param  int  $number
-     * @return self
+     * @param  Boss  $boss
+     * @return self|null
      */
-    public static function forNumber(int $number): self
+    public static function of(Boss $boss): ?self
     {
-        $cases = self::cases();
+        foreach (self::cases() as $character) {
+            if ($boss->name === $character->fixedName()) {
+                return $character;
+            }
+        }
 
-        return $cases[$number % count($cases)];
+        return null;
     }
 
     /**
-     * The name a recognizable character always spawns with, or null for a
-     * generic monster that draws from BossNameGenerator's shared pool.
+     * The name this character always spawns with.
      *
-     * @return string|null
+     * @return string
      */
-    public function fixedName(): ?string
+    public function fixedName(): string
     {
         return match ($this) {
             self::Thanos => 'ThaNode',
-            default => null,
         };
     }
 
     /**
+     * How many bosses in a row must go by without this character before it
+     * spawns again: seven keeps it at one boss in eight.
+     *
+     * @return int
+     */
+    public function spawnGap(): int
+    {
+        return match ($this) {
+            self::Thanos => 7,
+        };
+    }
+
+    /**
+     * Whether the next boss should be this character, given the names of
+     * the most recent bosses, newest first. Needs a full gap of history, so
+     * a fresh arena opens with generic monsters.
+     *
+     * @param  array<int, string|null>  $recentNamesNewestFirst
+     * @return bool
+     */
+    public function isDueAfter(array $recentNamesNewestFirst): bool
+    {
+        $window = array_slice($recentNamesNewestFirst, 0, $this->spawnGap());
+
+        return count($window) === $this->spawnGap()
+            && ! in_array($this->fixedName(), $window, true);
+    }
+
+    /**
      * Extra wire state for this character's client-side script
-     * (resources/js/battlefield/boss/scripts/), snake_case for the broadcast;
-     * an empty array for a generic monster so its payload shape is unchanged.
+     * (resources/js/battlefield/boss/scripts/), snake_case for the broadcast.
      *
      * @param  Boss  $boss
      * @return array<string, mixed>
@@ -62,22 +90,32 @@ enum BossCharacter: string
     {
         return match ($this) {
             self::Thanos => StoneClock::state($boss->spawned_at, now()),
-            default => [],
         };
     }
 
     /**
      * A short clause for the "new boss incoming" Slack line describing what
-     * a recognizable character spawns with — e.g. "holding the Power Stone".
-     * Null for a generic monster, which keeps the plain line.
+     * this character spawns with — e.g. "holding the Power Stone".
      *
      * @param  Boss  $boss
      * @return string|null
      */
     public function spawnFlavor(Boss $boss): ?string
     {
-        $stones = (int) ($this->scriptState($boss)['stones'] ?? 0);
+        return match ($this) {
+            self::Thanos => $this->stoneFlavor((int) ($this->scriptState($boss)['stones'] ?? 0)),
+        };
+    }
 
+    /**
+     * "holding the Power Stone" / "holding 3 Infinity Stones", or null when
+     * the boss holds none.
+     *
+     * @param  int  $stones
+     * @return string|null
+     */
+    private function stoneFlavor(int $stones): ?string
+    {
         return match (true) {
             $stones === 1 => sprintf('holding the %s', StoneClock::nameOf(1)),
             $stones > 1 => sprintf('holding %d Infinity Stones', $stones),

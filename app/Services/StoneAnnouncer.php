@@ -31,8 +31,11 @@ class StoneAnnouncer
             return false;
         }
 
-        $state = BossCharacter::forNumber($boss->number)->scriptState($boss);
-        $stones = (int) ($state['stones'] ?? 0);
+        if (BossCharacter::of($boss) !== BossCharacter::Thanos) {
+            return false;
+        }
+
+        $stones = (int) (BossCharacter::Thanos->scriptState($boss)['stones'] ?? 0);
 
         if ($stones < 1) {
             return false;

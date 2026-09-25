@@ -31,7 +31,7 @@ function slackText(): string
 }
 
 test('announces the stone ThaNode just collected, with its name and running count', function () {
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-21T03:00:00Z']); // 2 mornings survived
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']); // 2 mornings survived
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
@@ -42,7 +42,7 @@ test('announces the stone ThaNode just collected, with its name and running coun
 });
 
 test('announces the complete gauntlet on the sixth stone', function () {
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-18T03:00:00Z']); // 5 mornings survived
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-18T03:00:00Z']); // 5 mornings survived
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
@@ -50,7 +50,7 @@ test('announces the complete gauntlet on the sixth stone', function () {
 });
 
 test('stays silent on every morning after the gauntlet is complete', function () {
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-18T03:00:00Z']);
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-18T03:00:00Z']);
     $this->artisan('boss:announce-stone')->assertSuccessful(); // 6/6 today
 
     foreach ([1, 2, 3] as $daysLater) {
@@ -62,7 +62,7 @@ test('stays silent on every morning after the gauntlet is complete', function ()
 });
 
 test('does not announce the same stone twice', function () {
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-21T03:00:00Z']);
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
     $this->artisan('boss:announce-stone')->assertSuccessful();
@@ -71,7 +71,7 @@ test('does not announce the same stone twice', function () {
 });
 
 test('announces the opening stone if run before the first 09:30', function () {
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-23T03:00:00Z']); // after today's tick
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-23T03:00:00Z']); // after today's tick
     $this->travelTo('2026-09-23T05:00:00Z');
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
@@ -87,8 +87,16 @@ test('stays silent for a generic monster', function () {
     Http::assertNothingSent();
 });
 
+test('stays silent for a pool-named boss that happens to hold the old thanos slot number', function () {
+    Boss::factory()->create(['number' => 55, 'name' => 'Smaug', 'spawned_at' => '2026-09-16T03:00:00Z']);
+
+    $this->artisan('boss:announce-stone')->assertSuccessful();
+
+    Http::assertNothingSent();
+});
+
 test('stays silent when no boss is alive, without spawning one', function () {
-    Boss::factory()->defeated()->create(['number' => 7]);
+    Boss::factory()->defeated()->thanode()->create();
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
@@ -98,7 +106,7 @@ test('stays silent when no boss is alive, without spawning one', function () {
 
 test('missing webhook URL skips posting without failing', function () {
     config(['services.slack_notifier.webhook_url' => null]);
-    Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-21T03:00:00Z']);
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 

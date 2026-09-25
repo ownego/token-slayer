@@ -3,48 +3,37 @@
 use App\Enums\BossCharacter;
 use App\Models\Boss;
 
-test('boss characters match the battlefield JS config keys in cycle order', function () {
-    // Values and order must match BOSS_TYPES in resources/js/battlefield/config/bosses.js;
-    // the client picks the sprite as BOSS_TYPES[number % length], so a mismatch here
-    // names a boss after a sprite it is not wearing.
-    expect(array_column(BossCharacter::cases(), 'value'))
-        ->toBe([
-            'boss-ghost', 'boss-skeleton', 'boss-abyssal-dreadknight', 'boss-slime',
-            'boss-flying-demon', 'boss-minotaur', 'boss-demon-slime', 'boss-thanos',
-        ]);
-});
-
-test('forNumber cycles through the roster exactly like Boss.bossTypeFor', function () {
-    expect(BossCharacter::forNumber(7))->toBe(BossCharacter::Thanos)
-        ->and(BossCharacter::forNumber(15))->toBe(BossCharacter::Thanos)
-        ->and(BossCharacter::forNumber(1))->toBe(BossCharacter::Skeleton)
-        ->and(BossCharacter::forNumber(8))->toBe(BossCharacter::Ghost);
+test('recognizable characters are keyed by their battlefield sprite', function () {
+    // Values must be BOSS_TYPES keys in resources/js/battlefield/config/bosses.js
+    // whose entry carries the same fixedName; config.test.js pins the JS side.
+    expect(array_column(BossCharacter::cases(), 'value'))->toBe(['boss-thanos']);
 });
 
 test('a recognizable character carries its own fixed name', function () {
     expect(BossCharacter::Thanos->fixedName())->toBe('ThaNode');
 });
 
-test('generic monsters carry no fixed name', function (string $key) {
-    expect(BossCharacter::from($key)->fixedName())->toBeNull();
+test('a boss is recognized by the name it was spawned with, whatever its number', function (int $number, ?string $name, ?BossCharacter $expected) {
+    expect(BossCharacter::of(Boss::factory()->make(['number' => $number, 'name' => $name])))->toBe($expected);
 })->with([
-    'ghost' => 'boss-ghost',
-    'skeleton' => 'boss-skeleton',
-    'abyssal dreadknight' => 'boss-abyssal-dreadknight',
-    'slime' => 'boss-slime',
-    'flying demon' => 'boss-flying-demon',
-    'minotaur' => 'boss-minotaur',
-    'demon slime' => 'boss-demon-slime',
+    'ThaNode in an arbitrary slot' => [3, 'ThaNode', BossCharacter::Thanos],
+    'pool name in the old thanos slot' => [55, 'Smaug', null],
+    'unnamed legacy boss' => [7, null, null],
+]);
+
+test('a character is due only once the last seven bosses all went without it', function (array $recentNewestFirst, bool $due) {
+    expect(BossCharacter::Thanos->isDueAfter($recentNewestFirst))->toBe($due);
+})->with([
+    'fresh arena' => [[], false],
+    'six bosses so far' => [['A', 'B', 'C', 'D', 'E', 'F'], false],
+    'seven generic bosses' => [['A', 'B', 'C', 'D', 'E', 'F', 'G'], true],
+    'seven generic, older history ignored' => [['A', 'B', 'C', 'D', 'E', 'F', 'G', 'ThaNode'], true],
+    'ThaNode six bosses ago' => [['A', 'B', 'C', 'D', 'E', 'ThaNode', 'G'], false],
+    'unnamed legacy bosses count as generic' => [[null, null, null, null, null, null, null], true],
 ]);
 
 test('a recognizable character announces what it spawns holding', function () {
-    $boss = Boss::factory()->make(['number' => 7, 'spawned_at' => now()]);
+    $boss = Boss::factory()->thanode()->make(['spawned_at' => now()]);
 
     expect(BossCharacter::Thanos->spawnFlavor($boss))->toBe('holding the Power Stone');
-});
-
-test('generic monsters have no spawn flavor', function () {
-    $boss = Boss::factory()->make(['number' => 1, 'spawned_at' => now()]);
-
-    expect(BossCharacter::Skeleton->spawnFlavor($boss))->toBeNull();
 });

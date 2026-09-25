@@ -7,6 +7,7 @@ import { applyStunEffect } from './stun.js';
 import { isDreadknight, startDreadknightPatrol } from './dreadknight.js';
 import { BatSwarm } from './bats.js';
 import { scriptFor } from './scripts/index.js';
+import { bossTypeForNumber, bossTypeOf } from './boss-type.js';
 
 /** Manages boss patrol cycle, attacks, HP bar updates, and spawn/kill events. */
 export class Boss {
@@ -27,7 +28,18 @@ export class Boss {
    * @return {object}
    */
   static bossTypeFor(number) {
-    return BOSS_TYPES[number % BOSS_TYPES.length];
+    return bossTypeForNumber(number);
+  }
+
+  /**
+   * Returns the boss type config a boss wears: a recognizable character by its
+   * name, anyone else by number — see boss/boss-type.js.
+   *
+   * @param {{ number?: number, name?: string }|null|undefined} boss
+   * @return {object}
+   */
+  static bossTypeOf(boss) {
+    return bossTypeOf(boss);
   }
 
   /**
@@ -70,7 +82,7 @@ export class Boss {
     this.scene.lastKnownBossHp = state.boss.currentHp;
     this.script = null;
 
-    const initialType = Boss.bossTypeFor(state.boss.number);
+    const initialType = Boss.bossTypeOf(state.boss);
     const initialKey = initialType.key;
     const initialTexKey = initialType.animFiles ? `${initialKey}-idle` : initialKey;
     const initialAnim = this.ensureBossIdleAnim(initialKey);
@@ -467,7 +479,7 @@ export class Boss {
       onComplete: () => oldSprite.destroy(),
     });
 
-    const bt = Boss.bossTypeFor(payload.boss_number);
+    const bt = Boss.bossTypeOf({ number: payload.boss_number, name: payload.boss_name });
     const typeKey = bt.key;
     const texKey = bt.animFiles ? `${typeKey}-idle` : typeKey;
     const idleKey = this.ensureBossIdleAnim(typeKey);
@@ -549,7 +561,7 @@ export class Boss {
     this._stopScript();
     if (this.scene.bossSprite) {
       this.scene.tweens.killTweensOf(this.scene.bossSprite);
-      const bt = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
+      const bt = Boss.bossTypeOf(this.scene.bossState);
       const deathKey = `${bt.key}-death`;
       if (this.scene.anims.exists(deathKey)) {
         const dyingSprite = this.scene.bossSprite;

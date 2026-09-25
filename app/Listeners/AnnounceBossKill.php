@@ -91,7 +91,7 @@ class AnnounceBossKill implements ShouldQueue
      */
     private function spawnFlavorSuffix(Boss $boss): string
     {
-        $flavor = BossCharacter::forNumber($boss->number)->spawnFlavor($boss);
+        $flavor = BossCharacter::of($boss)?->spawnFlavor($boss);
 
         return $flavor === null ? '' : " — {$flavor}";
     }

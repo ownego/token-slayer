@@ -200,7 +200,7 @@ test('HitDealt sends only scalars, per the payload rule', function () {
 
 test('BossSpawned carries the stone clock for a boss whose script has one', function () {
     $this->travelTo('2026-09-23T10:00:00Z');
-    $boss = Boss::factory()->create(['number' => 7, 'spawned_at' => '2026-09-21T03:00:00Z']);
+    $boss = Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T03:00:00Z']);
 
     expect((new BossSpawned($boss))->broadcastWith())->toMatchArray([
         'stones' => 3,
@@ -208,8 +208,8 @@ test('BossSpawned carries the stone clock for a boss whose script has one', func
     ]);
 });
 
-test('BossSpawned leaves script keys out for a generic monster', function () {
-    $boss = Boss::factory()->create(['number' => 1]);
+test('BossSpawned leaves script keys out for a generic monster, even in the old thanos slot', function () {
+    $boss = Boss::factory()->create(['number' => 55, 'name' => 'Smaug']);
 
     expect((new BossSpawned($boss))->broadcastWith())
         ->not->toHaveKey('stones')

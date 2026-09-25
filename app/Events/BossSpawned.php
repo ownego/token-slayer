@@ -50,7 +50,7 @@ class BossSpawned implements ShouldBroadcastNow
             'boss_name' => $this->boss->name,
             'max_hp' => $this->boss->max_hp,
             'fighters' => $activeFighters,
-            ...BossCharacter::forNumber($this->boss->number)->scriptState($this->boss),
+            ...(BossCharacter::of($this->boss)?->scriptState($this->boss) ?? []),
         ];
     }
 }

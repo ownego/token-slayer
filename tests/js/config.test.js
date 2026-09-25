@@ -86,13 +86,11 @@ describe('BOSS_TYPES', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test('matches the backend BossCharacter enum keys in cycle order', () => {
-    // BossCharacter::forNumber() on the server and Boss.bossTypeFor() here both index
-    // this list by number % length; a reorder on one side only renames the wrong boss.
-    expect(BOSS_TYPES.map((b) => b.key)).toEqual([
-      'boss-ghost', 'boss-skeleton', 'boss-abyssal-dreadknight', 'boss-slime',
-      'boss-flying-demon', 'boss-minotaur', 'boss-demon-slime', 'boss-thanos',
-    ]);
+  test('recognizable characters carry the fixed name of their backend BossCharacter case', () => {
+    // App\Enums\BossCharacter identifies a boss by this name; a typo on either
+    // side leaves ThaNode on a generic sprite with no script.
+    expect(Object.fromEntries(BOSS_TYPES.filter((b) => b.fixedName).map((b) => [b.key, b.fixedName])))
+      .toEqual({ 'boss-thanos': 'ThaNode' });
   });
 
   test('every boss spritesheet exists on disk', () => {

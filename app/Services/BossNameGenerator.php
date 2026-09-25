@@ -53,14 +53,28 @@ class BossNameGenerator
     }
 
     /**
-     * Name for a boss about to spawn: a recognizable character keeps its own
-     * name, everything else draws from the shared pool.
+     * Name for the boss about to spawn: a recognizable character whose turn
+     * has come (BossCharacter::isDueAfter) takes its fixed name, otherwise a
+     * pool name avoiding the last few bosses. The name is the boss's
+     * identity from then on — see BossCharacter::of().
      *
-     * @param  int  $number
+     * @param  int  $windowSize  How many recent bosses the pool pick avoids.
      * @return string
      */
-    public function nameFor(int $number): string
+    public function nameForSpawn(int $windowSize = 10): string
     {
-        return BossCharacter::forNumber($number)->fixedName() ?? $this->nextForSpawn();
+        $recent = Boss::query()
+            ->orderByDesc('number')
+            ->limit(max($windowSize, ...array_map(fn (BossCharacter $c) => $c->spawnGap(), BossCharacter::cases())))
+            ->pluck('name')
+            ->all();
+
+        foreach (BossCharacter::cases() as $character) {
+            if ($character->isDueAfter($recent)) {
+                return $character->fixedName();
+            }
+        }
+
+        return $this->next(array_values(array_filter(array_slice($recent, 0, $windowSize))));
     }
 }

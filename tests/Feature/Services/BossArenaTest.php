@@ -29,13 +29,36 @@ test('spawnNext creates the next-numbered boss with linear HP', function () {
         ->and($next->current_hp)->toBe($next->max_hp);
 });
 
-test('spawning into the thanos slot names the boss ThaNode', function () {
-    Boss::factory()->defeated()->create(['number' => 6]);
+test('spawns ThaNode once seven bosses in a row have gone without it', function () {
+    foreach (range(51, 57) as $number) {
+        Boss::factory()->defeated()->create(['number' => $number]);
+    }
 
     $boss = $this->arena->spawnNext();
 
-    expect($boss->number)->toBe(7)
+    expect($boss->number)->toBe(58)
         ->and($boss->name)->toBe('ThaNode');
+});
+
+test('does not spawn ThaNode before the arena has seen seven bosses', function () {
+    foreach (range(1, 6) as $number) {
+        Boss::factory()->defeated()->create(['number' => $number]);
+    }
+
+    expect($this->arena->spawnNext()->name)->not->toBe('ThaNode');
+});
+
+test('waits seven bosses after a ThaNode before the next one', function () {
+    Boss::factory()->defeated()->thanode()->create(['number' => 10]);
+    foreach (range(11, 16) as $number) {
+        Boss::factory()->defeated()->create(['number' => $number]);
+    }
+
+    expect($this->arena->spawnNext()->name)->not->toBe('ThaNode');
+
+    $this->arena->current()->update(['status' => 'defeated']);
+
+    expect($this->arena->spawnNext()->name)->toBe('ThaNode');
 });
 
 test('spawning into a generic slot draws a name from the shared pool', function () {
@@ -49,7 +72,7 @@ test('spawning into a generic slot draws a name from the shared pool', function 
         ->and($boss->name)->toBeIn($pool);
 });
 
-test('the factory names a boss the way the arena would, so fixtures match production', function () {
-    expect(Boss::factory()->make(['number' => 7])->name)->toBe('ThaNode')
-        ->and(Boss::factory()->make(['number' => 15])->name)->toBe('ThaNode');
+test('the factory only makes a ThaNode when asked, whatever the number', function () {
+    expect(Boss::factory()->make(['number' => 7])->name)->not->toBe('ThaNode')
+        ->and(Boss::factory()->thanode()->make(['number' => 3])->name)->toBe('ThaNode');
 });

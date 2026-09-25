@@ -153,7 +153,7 @@ export class Fighter {
       config.perRow,
       config.rowSpacing,
     );
-    const bossType = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
+    const bossType = Boss.bossTypeOf(this.scene.bossState);
     const damageByUser = new Map(state.damageTotals ?? []);
     let gridIdx = 0;
     state.fighters.forEach((f) => {
@@ -228,7 +228,7 @@ export class Fighter {
     );
     const { pos, isCustom } = resolveFighterPlacement(payload.position, positions[positions.length - 1], {
       layout: this.scene.layout,
-      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      bossType: Boss.bossTypeOf(this.scene.bossState),
       fsize: config.displaySize * damageScale,
     });
     this.addFighter(fighter, pos, config);
@@ -468,7 +468,7 @@ export class Fighter {
     };
     const ctx = {
       layout: this.scene.layout,
-      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      bossType: Boss.bossTypeOf(this.scene.bossState),
       fsize: entry.displaySize * (entry.damageScale ?? 1),
     };
     const route = planRoute(entry.sprite.x, entry.sprite.y, raw.x, raw.y, ctx)
