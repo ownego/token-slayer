@@ -6,6 +6,7 @@ use App\Models\Event;
 use App\Models\User;
 use App\Services\FighterChargingCache;
 use App\Services\FighterPositionCache;
+use App\Services\SubagentCountCache;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 
@@ -167,6 +168,23 @@ test('battlefield damage totals cover only the current boss', function () {
 
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('&quot;damageTotals&quot;:[['.$fighter->id.',120]]');
+});
+
+test('battlefield ships each fighter\'s currently-tracked subagent count in the data payload, so a reload does not lose the minion swarm', function () {
+    $store = [];
+    fakeRedis($store);
+    Boss::factory()->create();
+    $withAgents = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    $idle = User::factory()->create(['last_event_at' => now()->subMinute()]);
+
+    app(SubagentCountCache::class)->recordDispatch($withAgents->id);
+    app(SubagentCountCache::class)->recordDispatch($withAgents->id);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;id&quot;:'.$withAgents->id.',&quot;handle&quot;')
+        ->assertSeeHtml('&quot;agentCount&quot;:2')
+        ->assertSeeHtml('&quot;id&quot;:'.$idle->id)
+        ->assertSeeHtml('&quot;agentCount&quot;:0');
 });
 
 test('battlefield ships cached charging activity in the data payload', function () {

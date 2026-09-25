@@ -409,20 +409,28 @@ export class Necromancer {
   /**
    * Spawns a one-shot summon-circle burst at the given world position — used
    * under a newly-joined fighter as it rises in, separate from the
-   * Necromancer's own sprite/position.
+   * Necromancer's own sprite/position. `scale` defaults to the fighter-join
+   * ceremony's own size; minions.js passes a smaller one to keep the circle
+   * proportionate to its own much smaller rise effect.
+   *
+   * Returns the created sprite so a caller with a reason to end the effect
+   * early (see minions.js's own summon-circle dismissal) can do so instead
+   * of always waiting out its full ~1.75s clip at this fixed world position.
    *
    * @param {number} x
    * @param {number} y
-   * @return {void}
+   * @param {number} [scale=2.6]
+   * @return {Phaser.GameObjects.Sprite|undefined}
    */
-  spawnSummonCircle(x, y) {
+  spawnSummonCircle(x, y, scale = 2.6) {
     const key = `${NECROMANCER_CONFIG.key}-circle`;
     if (!this.scene.anims.exists(key)) {
-      return;
+      return undefined;
     }
-    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(2.6).setBlendMode(Phaser.BlendModes.ADD);
+    const circle = this.scene.add.sprite(x, y, key).setDepth(1).setScale(scale).setBlendMode(Phaser.BlendModes.ADD);
     circle.play(key);
     circle.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => circle.destroy());
+    return circle;
   }
 
   /**

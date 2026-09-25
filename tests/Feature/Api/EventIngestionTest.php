@@ -2,6 +2,8 @@
 
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
+use App\Events\FighterAgentCountChanged;
+use App\Events\FighterAgentToolUsed;
 use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
 use App\Events\FighterJoined;
@@ -13,6 +15,7 @@ use App\Models\Event;
 use App\Models\User;
 use App\Services\Battlefield\ModelFlairResolver;
 use App\Services\FighterChargingCache;
+use App\Services\SubagentCountCache;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -21,10 +24,23 @@ use Illuminate\Support\Facades\Schema;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    $this->store = [];
+    fakeRedis($this->store);
     $this->user = User::factory()->create(['hook_token' => hash('sha256', 'tok')]);
     Boss::factory()->create(['number' => 1, 'max_hp' => 1_000_000, 'current_hp' => 1_000_000]);
     Cache::flush();
 });
+
+/**
+ * @param  array<string, int>  $store
+ * @param  int  $userId
+ * @param  string  $agentId
+ * @return bool whether a live presence key exists for this exact agent_id
+ */
+function hasAgentPresenceKey(array $store, int $userId, string $agentId): bool
+{
+    return array_key_exists("subagent:presence:{$userId}:{$agentId}", $store);
+}
 
 test('rejects unauthenticated requests', function () {
     $this->postJson('/api/events', ['hook_event_name' => 'SessionStart'])->assertStatus(401);
@@ -848,4 +864,202 @@ test('ingest still records the event when the digests cannot be produced', funct
         ->assertCreated();
 
     expect(Event::count())->toBe(1);
+});
+
+test('an Agent dispatch increments the agent count too, since Claude Agent SDK-based harnesses report the subagent tool as "Agent" not "Task"', function () {
+    // Verified live 2026-09-22 against a real Agent-SDK-based harness: its
+    // PreToolUse payload for a subagent dispatch carries tool_name "Agent",
+    // not "Task" (Claude Code CLI's own name for the same concept). Missing
+    // this meant the feature silently never fired for that harness at all —
+    // SubagentStop still counted (unconditional), but nothing ever incremented.
+    Illuminate\Support\Facades\Event::fake([FighterAgentCountChanged::class]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PreToolUse',
+            'tool_name' => 'Agent',
+        ])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1);
+});
+
+test('a Task dispatch increments the agent count and broadcasts it with a seq', function () {
+    Illuminate\Support\Facades\Event::fake([FighterAgentCountChanged::class]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PreToolUse',
+            'tool_name' => 'Task',
+        ])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1);
+    Illuminate\Support\Facades\Event::assertDispatched(FighterAgentCountChanged::class, function ($e) {
+        return $e->user->is($this->user) && $e->count === 1 && $e->seq > 0;
+    });
+});
+
+test('parallel Task dispatches keep growing the agent count, one pending slot per dispatch', function () {
+    $dispatch = fn () => $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', ['hook_event_name' => 'PreToolUse', 'tool_name' => 'Task'])
+        ->assertCreated();
+
+    $dispatch();
+    $dispatch();
+    $dispatch();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(3);
+});
+
+test('a non-Task PreToolUse does not change the agent count', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', ['hook_event_name' => 'PreToolUse', 'tool_name' => 'Bash'])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(0);
+});
+
+test('a subagent\'s own PreToolUse (hook v7, agent_id present) claims the pending dispatch and marks that agent busy', function () {
+    // agent_id joined the whitelist in hook v7 (install-script.blade.php) —
+    // a PreToolUse fired from INSIDE a subagent now carries it just like
+    // SubagentStop already did. A tool starting is both a liveness signal
+    // (claims/refreshes the presence row, same as SubagentStop) and the
+    // "this agent is doing something right now" signal the minion's ring
+    // visual is driven by.
+    Illuminate\Support\Facades\Event::fake([FighterAgentCountChanged::class, FighterAgentToolUsed::class]);
+    app(SubagentCountCache::class)->recordDispatch($this->user->id);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PreToolUse',
+            'tool_name' => 'Bash',
+            'agent_id' => 'agent-1',
+        ])
+        ->assertCreated();
+
+    // Claims the pending slot -- count stays 1, doesn't grow to 2, so no
+    // FighterAgentCountChanged re-broadcast (recordActivity returns null
+    // for this branch — see its own docblock). FighterAgentToolUsed still
+    // fires regardless, since that signal is about THIS tool call, not
+    // the count.
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1)
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-1'))->toBeTrue();
+    Illuminate\Support\Facades\Event::assertNotDispatched(FighterAgentCountChanged::class);
+    Illuminate\Support\Facades\Event::assertDispatched(FighterAgentToolUsed::class, function ($e) {
+        return $e->user->is($this->user) && $e->agentId === 'agent-1' && $e->busy === true;
+    });
+});
+
+test('a subagent\'s own PostToolUse (hook v7) refreshes presence and marks that agent idle again', function () {
+    Illuminate\Support\Facades\Event::fake([FighterAgentCountChanged::class, FighterAgentToolUsed::class]);
+    app(SubagentCountCache::class)->recordActivity($this->user->id, 'agent-1');
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'PostToolUse',
+            'tool_name' => 'Bash',
+            'agent_id' => 'agent-1',
+        ])
+        ->assertCreated();
+
+    // Just a refresh of an already-claimed row -- doesn't change the count,
+    // so no FighterAgentCountChanged (recordActivity returns null here too).
+    Illuminate\Support\Facades\Event::assertNotDispatched(FighterAgentCountChanged::class);
+    Illuminate\Support\Facades\Event::assertDispatched(FighterAgentToolUsed::class, function ($e) {
+        return $e->user->is($this->user) && $e->agentId === 'agent-1' && $e->busy === false;
+    });
+});
+
+test('a PreToolUse/PostToolUse without agent_id (pre-v7 hook) never touches presence or dispatches FighterAgentToolUsed', function () {
+    Illuminate\Support\Facades\Event::fake([FighterAgentToolUsed::class]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', ['hook_event_name' => 'PreToolUse', 'tool_name' => 'Bash'])
+        ->assertCreated();
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', ['hook_event_name' => 'PostToolUse', 'tool_name' => 'Bash'])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(0);
+    Illuminate\Support\Facades\Event::assertNotDispatched(FighterAgentToolUsed::class);
+});
+
+test('SubagentStop claims a pending dispatch, keeping the count steady, without re-broadcasting an unchanged count', function () {
+    Illuminate\Support\Facades\Event::fake([FighterAgentCountChanged::class]);
+    app(SubagentCountCache::class)->recordDispatch($this->user->id);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'SubagentStop',
+            'agent_id' => 'agent-xyz',
+        ])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1);
+    Illuminate\Support\Facades\Event::assertNotDispatched(FighterAgentCountChanged::class);
+});
+
+test('SubagentStop falls back to parsing agent_id out of a legacy "parent:agent_id" session_id when the field itself is absent', function () {
+    // The install script's jq still folds agent_id into SubagentStop's own
+    // session_id for hooks that predate agent_id being forwarded as its own
+    // field — see resolveAgentId's own docblock.
+    app(SubagentCountCache::class)->recordDispatch($this->user->id);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'SubagentStop',
+            'session_id' => 'sess-A:agent-xyz',
+        ])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1)
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-xyz'))->toBeTrue();
+});
+
+test('a SubagentStop for an agent with no prior dispatch still tracks it, so a previously-pruned subagent re-emerging is never silently dropped', function () {
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'SubagentStop',
+            'agent_id' => 'agent-xyz',
+        ])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1);
+});
+
+test('a SubagentStop for one agent never claims or affects a different, already-claimed agent\'s slot', function () {
+    app(SubagentCountCache::class)->recordActivity($this->user->id, 'agent-1');
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', ['hook_event_name' => 'SubagentStop', 'agent_id' => 'agent-2'])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(2)
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-1'))->toBeTrue()
+        ->and(hasAgentPresenceKey($this->store, $this->user->id, 'agent-2'))->toBeTrue();
+});
+
+test('a parent Stop never touches the agent count, since a single "stop"-shaped event is not a reliable done signal', function () {
+    // Verified live 2026-09-22 on staging: a Claude Agent SDK-based harness
+    // can dispatch a subagent that keeps running in the background across
+    // several of the parent's own turns -- each of those turns still ends
+    // with its own Stop. A Stop-triggered "correct this session's leftover"
+    // safety net (the original design) silently zeroed the count out from
+    // under every genuinely-still-running subagent. Verified again live
+    // 2026-09-23: even a single SUBAGENT's own turns can end in more than
+    // one SubagentStop-shaped event over its lifetime, for the same reason
+    // (the harness backgrounding one of ITS tool calls) -- see
+    // SubagentCountCache's own docblock for why presence tracking replaced
+    // a plain per-event counter. Stop stays a no-op for this feature either way.
+    app(SubagentCountCache::class)->recordDispatch($this->user->id);
+    app(SubagentCountCache::class)->recordActivity($this->user->id, 'agent-1');
+    Illuminate\Support\Facades\Event::fake([FighterAgentCountChanged::class]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', ['hook_event_name' => 'Stop', 'tokens' => 0])
+        ->assertCreated();
+
+    expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1);
+    Illuminate\Support\Facades\Event::assertNotDispatched(FighterAgentCountChanged::class);
 });

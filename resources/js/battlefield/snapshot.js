@@ -41,6 +41,15 @@ export function snapshotState(currentState, scene) {
         character: f.ftype?.key ?? null,
         charging: charge ? { activity: charge.activity ?? '' } : null,
         position: pos,
+        // Minions are cosmetic-only and were deliberately never snapshotted
+        // (a reboot just re-seeds from the next live broadcast) — but now
+        // that the boot payload itself seeds an initial count (see
+        // Battlefield::mount()'s SubagentCountCache::many() and scene.js's
+        // own agentCount seeding loop), an orientation-change reboot must
+        // carry it through the SAME `state.fighters` shape too, or it
+        // silently drops every fighter's live subagent count back to 0 on
+        // every rotate — caught by battlefield-reviewer before ship.
+        agentCount: scene.minions?.byUser.get(f.id)?.length ?? 0,
       };
     });
   }

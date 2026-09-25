@@ -41,7 +41,7 @@ test('install.sh registers the claude code hook events the server handles', func
     // test stays green while registering nothing. Assert the list itself.
     $script = $this->get('/install')->getContent();
 
-    expect($script)->toContain('events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop", "SubagentStop"]');
+    expect($script)->toContain('events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStop"]');
 });
 
 test('install.sh registers the antigravity CLI hook events the server handles', function () {
@@ -1032,7 +1032,7 @@ test('the payload filter is unconditional, not opt-in', function (string $url) {
     'ps1' => ['/install.ps1'],
 ]);
 
-test('both installers whitelist exactly the fourteen allowed fields', function (string $url) {
+test('both installers whitelist exactly the fifteen allowed fields', function (string $url) {
     $script = $this->get($url)->assertOk()->getContent();
 
     // Assert against the whitelist BLOCK, not the whole script: several of
@@ -1049,6 +1049,7 @@ test('both installers whitelist exactly the fourteen allowed fields', function (
         'custom_activity', 'client_version', 'account_email', 'account_uuid',
         'account_source', 'account_org_id',
         'input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens',
+        'agent_id',
     ] as $field) {
         expect($block)->toContain($field);
     }
@@ -1057,20 +1058,19 @@ test('both installers whitelist exactly the fourteen allowed fields', function (
     'ps1' => ['/install.ps1'],
 ]);
 
-test('only the five handled hook events are registered', function (string $url) {
+test('the six handled hook events are registered, including PostToolUse (hook v7)', function (string $url) {
     // EventController handles session-start, user-prompt-submit/pre-invocation,
-    // pre-tool-use, stop, and subagent-stop (SubagentStop's transcript_path
-    // points at the subagent's own file, so it reuses the same stop handling).
-    // PostToolUse, SessionEnd and Notification still fall through to a bare
-    // 201 -- and PostToolUse is both the highest-frequency event and the one
-    // carrying tool_response, so not registering it stops that content at
-    // the source rather than filtering it.
+    // pre-tool-use, post-tool-use, stop, and subagent-stop (SubagentStop's
+    // transcript_path points at the subagent's own file, so it reuses the
+    // same stop handling). SessionEnd and Notification still fall through
+    // to a bare 201. PostToolUse rejoined the list in hook v7 -- see that
+    // registration's own comment for why it's now safe (the FILTERED
+    // whitelist above already strips tool_response unconditionally).
     $script = $this->get($url)->assertOk()->getContent();
 
     // Assert on the registration list itself. A bare not->toContain of a name
     // would also match the line that REMOVES a stale registration.
-    expect($script)->toContain('events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop", "SubagentStop"]')
-        ->and($script)->not->toContain('"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"')
+    expect($script)->toContain('events = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SubagentStop"]')
         ->and($script)->not->toContain('"Stop", "SubagentStop", "SessionEnd", "Notification"')
         ->and($script)->not->toContain('for event in ["PreToolUse", "PostToolUse"]:');
 })->with(['sh' => ['/install'], 'ps1' => ['/install.ps1']]);

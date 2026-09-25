@@ -65,6 +65,19 @@ Naming convention: `{character}-{state}.png` for base animations, `{character}-a
 | `necromancer/death.png` | 9 | also reused, forward/reversed, as the vanish/reappear teleport transition |
 | `necromancer/appear-burst.png` | 6 | |
 
+From "Tiny RPG Character Asset Pack 02 v1.01-Free Demon_A&Blood Monster_A" — same source/author (**Zerie**) and license (**CC0 1.0 Universal**) as the Fighter Characters pack above. Idle/Walk/Attack01/Attack02 were extracted (Attack01/Attack02 used purely as a cosmetic idle fidget, never for damage); the pack also ships Hurt/Death, unused since minions never fight (see `.ai/domain/battlefield.md` Companions).
+
+| File | Frames | Notes |
+|---|---|---|
+| `demon-a/idle.png` | 6 | loops |
+| `demon-a/walk.png` | 8 | loops |
+| `demon-a/attack1.png` | 7 | cosmetic idle fidget |
+| `demon-a/attack2.png` | 7 | cosmetic idle fidget |
+| `blood-monster-a/idle.png` | 6 | loops |
+| `blood-monster-a/walk.png` | 8 | loops |
+| `blood-monster-a/attack1.png` | 8 | cosmetic idle fidget |
+| `blood-monster-a/attack2.png` | 8 | cosmetic idle fidget |
+
 ## Boss Spritesheets (`bosses/`)
 
 | File | Dimensions | Frames | Frame size |

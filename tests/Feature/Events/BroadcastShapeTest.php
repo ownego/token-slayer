@@ -2,6 +2,8 @@
 
 use App\Events\BossKilled;
 use App\Events\BossSpawned;
+use App\Events\FighterAgentCountChanged;
+use App\Events\FighterAgentToolUsed;
 use App\Events\FighterCharacterChanged;
 use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
@@ -16,6 +18,20 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+test('FighterAgentToolUsed broadcasts on the battlefield channel with expected payload', function () {
+    $user = User::factory()->create();
+    $event = new FighterAgentToolUsed($user, 'agent-abc123', true);
+
+    expect($event)->toBeInstanceOf(ShouldBroadcastNow::class)
+        ->and($event->broadcastOn()[0]->name)->toBe('battlefield')
+        ->and($event->broadcastAs())->toBe('FighterAgentToolUsed')
+        ->and($event->broadcastWith())->toMatchArray([
+            'user_id' => $user->id,
+            'agent_id' => 'agent-abc123',
+            'busy' => true,
+        ]);
+});
 
 test('HitDealt broadcasts on the battlefield channel with expected payload', function () {
     $user = User::factory()->create();
@@ -45,6 +61,8 @@ test('every battlefield event broadcasts now on the battlefield channel with a s
         'FighterChargeCleared' => new FighterChargeCleared($user),
         'FighterCharacterChanged' => new FighterCharacterChanged($user),
         'FighterMoved' => new FighterMoved($user, 0.5, 0.7),
+        'FighterAgentCountChanged' => new FighterAgentCountChanged($user, 1, 1),
+        'FighterAgentToolUsed' => new FighterAgentToolUsed($user, 'agent-abc123', true),
     ];
 
     foreach ($events as $shortName => $event) {
@@ -216,4 +234,17 @@ test('BossSpawned leaves script keys out for a generic monster, even in the old 
     expect((new BossSpawned($boss))->broadcastWith())
         ->not->toHaveKey('stones')
         ->not->toHaveKey('stone_schedule');
+});
+
+test('FighterAgentCountChanged broadcasts on the battlefield channel with expected payload', function () {
+    $user = User::factory()->create();
+    $event = new FighterAgentCountChanged($user, 2, 7);
+
+    expect($event->broadcastOn()[0]->name)->toBe('battlefield')
+        ->and($event->broadcastAs())->toBe('FighterAgentCountChanged')
+        ->and($event->broadcastWith())->toBe([
+            'user_id' => $user->id,
+            'count' => 2,
+            'seq' => 7,
+        ]);
 });

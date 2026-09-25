@@ -6,7 +6,7 @@ import { Boss } from '@battlefield/boss.js';
 import { planRoute } from '@battlefield/move-geometry.js';
 import { resolveFighterPlacement } from '@battlefield/fighter-placement.js';
 import { driftedPositions } from '@battlefield/resync.js';
-import { loadAvatarTexture, makeFallbackAvatarTexture } from './avatar.js';
+import { loadAvatarTexture, makeFallbackAvatarTexture, makePermanentFallbackAvatarTexture } from './avatar.js';
 import { FLAIR_FONT_FAMILY, FLAIR_FONT_WEIGHT, ensureFlairFont, isFlairFontReady } from './flair-font.js';
 import {
   buildRingChars,
@@ -436,7 +436,18 @@ export class Fighter {
         if (head.scene) {
           head.setTexture(realKey).setDisplaySize(avSize, avSize);
         }
-      }).catch(e => console.warn('[battlefield]', e.message));
+      }).catch(e => {
+        console.warn('[battlefield]', e.message);
+        // The load genuinely failed (no avatar_url, a 404, a network
+        // error) rather than still being in flight — swap off the
+        // letter-glyph "still loading" fallback onto the silhouette one,
+        // so this fighter (and any minion badge mirroring its texture,
+        // see minions.js's _positionBadge) doesn't read as permanently
+        // "not loaded yet".
+        if (head.scene) {
+          head.setTexture(makePermanentFallbackAvatarTexture(this.scene, fighter)).setDisplaySize(avSize, avSize);
+        }
+      });
     }
   }
 
