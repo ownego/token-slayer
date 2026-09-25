@@ -49,6 +49,15 @@ test('configured times are honoured in clock order whatever order they are liste
         ->toBe('2026-09-21T07:00:00Z');
 });
 
+test('an empty tick list freezes the clock at the opening count instead of looping forever', function () {
+    config(['game.stones.times' => []]);
+    $spawn = CarbonImmutable::parse(SPAWN);
+
+    expect(StoneClock::countAt($spawn, CarbonImmutable::parse('2026-09-28T00:00:00Z')))->toBe(1)
+        ->and(StoneClock::nextAt($spawn, $spawn))->toBeNull()
+        ->and(StoneClock::state($spawn, $spawn))->toBe(['stones' => 1, 'stone_schedule' => '']);
+});
+
 test('nextAt is the first tick after now, or null once the cap is reached', function () {
     $spawn = CarbonImmutable::parse(SPAWN);
 

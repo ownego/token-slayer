@@ -12,12 +12,20 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Posts a Slack line each time a boss with a stone clock collects a stone.
- * Runs from the boss:announce-stone schedule at the stone-clock instant;
- * idempotent per (boss, stone) so a retry inside the same day stays quiet.
+ * Posts a Slack line each time ThaNode collects a stone. Runs from the
+ * boss:announce-stone schedule at every stone-clock tick; only a stone earned
+ * in the last FRESH_MINUTES is announced, and a cache guard per (boss, stone)
+ * keeps a retry inside that window quiet.
  */
 class StoneAnnouncer
 {
+    /**
+     * How long after a tick its stone still counts as just collected.
+     *
+     * @var int
+     */
+    private const int FRESH_MINUTES = 15;
+
     /**
      * Announce the boss's latest stone if there is one and it hasn't been
      * announced yet.
@@ -35,9 +43,13 @@ class StoneAnnouncer
             return false;
         }
 
-        $stones = (int) (BossCharacter::Thanos->scriptState($boss)['stones'] ?? 0);
+        $stones = StoneClock::countAt($boss->spawned_at, now());
 
-        if ($stones < 1) {
+        // Only a stone earned by a tick in the last few minutes is news: this
+        // skips the opening stone (the kill line already names it), a run long
+        // after a tick, and a capped boss whose guard was lost to a cache flush,
+        // while still covering a scheduler run that starts a little late.
+        if ($stones <= StoneClock::countAt($boss->spawned_at, now()->subMinutes(self::FRESH_MINUTES))) {
             return false;
         }
 

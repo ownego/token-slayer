@@ -114,6 +114,11 @@ final class StoneClock
     private static function ticksAfter(CarbonInterface $at, int $limit): array
     {
         $times = config('game.stones.times');
+
+        if ($times === []) {
+            return []; // no ticks configured: the clock never advances
+        }
+
         sort($times);
         $day = CarbonImmutable::instance($at)->setTimezone(config('game.stones.timezone'))->startOfDay();
         $ticks = [];

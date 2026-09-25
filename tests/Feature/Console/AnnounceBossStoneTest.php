@@ -79,13 +79,42 @@ test('does not announce the same stone twice', function () {
     Http::assertSentCount(1);
 });
 
-test('announces the opening stone if run before the first 09:30', function () {
-    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-23T03:00:00Z']); // after today's tick
-    $this->travelTo('2026-09-23T05:00:00Z');
+test('never announces the opening stone, which the kill line already carries', function () {
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-23T02:30:05Z']); // spawned inside the 09:30 minute
+    $this->travelTo('2026-09-23T02:30:30Z'); // the cron run a few seconds later
 
     $this->artisan('boss:announce-stone')->assertSuccessful();
 
-    expect(slackText())->toContain('Power Stone')->toContain('1/6');
+    Http::assertNothingSent();
+});
+
+test('stays silent when run long after the last tick', function () {
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-22T03:00:00Z']);
+    $this->travelTo('2026-09-23T05:00:00Z'); // 12:00 local, 09:30's stone is old news
+
+    $this->artisan('boss:announce-stone')->assertSuccessful();
+
+    Http::assertNothingSent();
+});
+
+test('a cache flush after the gauntlet is complete does not re-announce it', function () {
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-21T08:00:00Z']);
+    $this->artisan('boss:announce-stone')->assertSuccessful(); // 6/6 at TICK
+
+    Cache::flush();
+    $this->travelTo('2026-09-23T07:00:00Z');
+    $this->artisan('boss:announce-stone')->assertSuccessful();
+
+    Http::assertSentCount(1);
+});
+
+test('a scheduler run a few minutes late still announces the stone', function () {
+    Boss::factory()->thanode()->create(['spawned_at' => '2026-09-22T03:00:00Z']);
+    $this->travelTo('2026-09-23T02:40:00Z'); // ten minutes after 09:30
+
+    $this->artisan('boss:announce-stone')->assertSuccessful();
+
+    expect(slackText())->toContain('Soul Stone')->toContain('4/6');
 });
 
 test('stays silent for a generic monster', function () {
