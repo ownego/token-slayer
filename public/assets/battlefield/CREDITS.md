@@ -110,6 +110,31 @@ From "Tiny RPG Character Asset Pack 02 v1.01-Free Demon_A&Blood Monster_A" — s
 | `minotaur-chierit.png` | 288×160 | idle (0–15), move (16–27), attack (32–47) |
 | `demon-slime-chierit.png` | 288×160 | idle (0–5), move (22–33), attack (44–58), hurt (66–70), death (88–109) |
 
+### Thanos
+
+**⚠️ No usable license — third-party IP.** Ripped from the commercial SNES game
+*Marvel Super Heroes: War of the Gems* (Capcom), via spritedatabase.net. The
+character is owned by Marvel/Disney and the artwork by Capcom; neither the ripper
+nor this project holds any right to it. Kept here at the maintainers' explicit
+decision — replace it with a licensed or original boss before this project is
+distributed, open-sourced, or shown outside the team.
+
+Source sheet was a rip sheet (no alpha, irregular spacing, watermark). What is
+checked in is a re-packed 5×5 grid of 128×128 cells with a real alpha channel.
+
+| Frames | Animation | Notes |
+|---|---|---|
+| 0–4 | move | |
+| 5–8 | attack | gauntlet flash |
+| 10–11 | idle | loops |
+| 12–13 | — | forward punch / back turn, unused |
+| 15–18 | — | jump / dive, unused |
+| 20 | death | single frame; shifted +30px so its footY matches the other 17 |
+| 9, 14, 19, 21–24 | — | blank cells |
+
+Every non-blank frame lands its lowest opaque row at `y=115` within its cell, so
+the boss never jumps vertically between animations.
+
 ### Abyssal Dreadknight
 
 Original artwork, no external license.

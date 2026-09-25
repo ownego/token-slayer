@@ -86,6 +86,13 @@ describe('BOSS_TYPES', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  test('recognizable characters carry the fixed name of their backend BossCharacter case', () => {
+    // App\Enums\BossCharacter identifies a boss by this name; a typo on either
+    // side leaves ThaNode on a generic sprite with no script.
+    expect(Object.fromEntries(BOSS_TYPES.filter((b) => b.fixedName).map((b) => [b.key, b.fixedName])))
+      .toEqual({ 'boss-thanos': 'ThaNode' });
+  });
+
   test('every boss spritesheet exists on disk', () => {
     for (const b of BOSS_TYPES) {
       if (b.animFiles) {
@@ -147,9 +154,52 @@ describe('BOSS_TYPES', () => {
         expect(width % b.frameWidth,  `${b.key}: sheet width ${width} not divisible by frameWidth ${b.frameWidth}`).toBe(0);
         expect(height % b.frameHeight, `${b.key}: sheet height ${height} not divisible by frameHeight ${b.frameHeight}`).toBe(0);
         const totalFrames = (width / b.frameWidth) * (height / b.frameHeight);
-        expect(b.idleEnd, `${b.key}: idleEnd ${b.idleEnd} outside sheet (${totalFrames} frames)`).toBeLessThan(totalFrames);
+        // Every declared range, not just idle: generateFrameNumbers() silently yields
+        // an empty frame list when start/end fall outside the sheet, so the animation
+        // is created but plays nothing.
+        for (const state of ['idle', 'move', 'attack', 'hurt', 'death']) {
+          const start = b[`${state}Start`];
+          if (start == null) continue;
+          const end = b[`${state}End`];
+          expect(end, `${b.key}: ${state}End must be >= ${state}Start`).toBeGreaterThanOrEqual(start);
+          expect(end, `${b.key}: ${state}End ${end} outside sheet (${totalFrames} frames)`).toBeLessThan(totalFrames);
+        }
       }
     }
+  });
+});
+
+describe('boss-thanos', () => {
+  const thanos = BOSS_TYPES.find((b) => b.key === 'boss-thanos');
+
+  test('is registered as a simple-sheet boss on a 128px grid', () => {
+    expect(thanos, 'boss-thanos missing from BOSS_TYPES').toBeDefined();
+    expect(thanos.frameWidth).toBe(128);
+    expect(thanos.frameHeight).toBe(128);
+    expect(thanos.animFiles, 'boss-thanos is a single sheet, not per-state files').toBeUndefined();
+  });
+
+  // The sheet is a 5x5 grid with only 18 of 25 cells filled: 9, 14, 19 and 21-24
+  // are blank. A range that runs over one of those renders an invisible frame
+  // mid-animation, which reads as a stutter rather than an obvious failure.
+  test('no declared range runs over a blank cell', () => {
+    const BLANK = new Set([9, 14, 19, 21, 22, 23, 24]);
+    for (const state of ['idle', 'move', 'attack', 'hurt', 'death']) {
+      const start = thanos[`${state}Start`];
+      if (start == null) continue;
+      for (let i = start; i <= thanos[`${state}End`]; i++) {
+        expect(BLANK.has(i), `${state} covers blank frame ${i}`).toBe(false);
+      }
+    }
+  });
+
+  test('idle loops over the two standing frames', () => {
+    expect(thanos.idleStart).toBe(10);
+    expect(thanos.idleEnd).toBe(11);
+  });
+
+  test('keeps NEAREST filtering (pixel art, hard-edged alpha)', () => {
+    expect(thanos.pixelArt, 'must not opt out of NEAREST').not.toBe(false);
   });
 });
 
@@ -208,5 +258,12 @@ describe('LAYOUTS companion zones', () => {
     expect(LAYOUTS[mode].bats.radiusY).toBeGreaterThan(0);
     expect(LAYOUTS[mode].necromancer.anchor.x).toBeGreaterThan(0);
     expect(LAYOUTS[mode].necromancer.anchor.y).toBeGreaterThan(0);
+  });
+
+  test.each(['landscape', 'portrait'])('%s places the stone sockets below the HP text, above the fighter row', (mode) => {
+    const { hpBar, stones, fighters } = LAYOUTS[mode];
+    expect(stones.y).toBeGreaterThan(hpBar.y + 24 + 11); // HP text sits at hpBar.y + 24, 22px tall
+    expect(stones.y).toBeLessThan(fighters.rowY);
+    expect(stones.gap).toBeGreaterThan(stones.radius * 2);
   });
 });

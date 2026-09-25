@@ -14,4 +14,16 @@ return [
     // step) dropped off the battlefield mid-dispatch, well before it was
     // actually done.
     'subagent_idle_seconds' => (int) env('GAME_SUBAGENT_IDLE_SECONDS', 60),
+
+    // Infinity-stone clock for recognizable bosses (see App\Support\StoneClock):
+    // the boss spawns holding `initial` stones, then gains one each time this
+    // wall-clock tick passes (HH:MM in `timezone`; also the Slack schedule).
+    // `max` is deliberately not env-driven: the client mirrors it (STONE_MAX in
+    // resources/js/battlefield/boss/scripts/thanos-stones.js).
+    'stones' => [
+        'initial' => (int) env('GAME_STONE_INITIAL', 1),
+        'times' => ['09:30', '14:00', '17:50'],
+        'timezone' => 'Asia/Ho_Chi_Minh',
+        'max' => 6,
+    ],
 ];

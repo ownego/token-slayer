@@ -20,6 +20,22 @@ final class CacheKeys
     public const string DAMAGE_TOTALS = 'damage-totals:global';
 
     /**
+     * Guard key marking that a boss's Nth Infinity Stone has been announced
+     * on Slack, so a scheduler retry cannot post twice. Stored without TTL by
+     * StoneAnnouncer: the count freezes once the gauntlet is complete, so an
+     * expiring key would re-announce the last stone. Bounded at one key per
+     * stone per boss; forgotten only when the post itself fails.
+     *
+     * @param  int  $bossId
+     * @param  int  $stones
+     * @return string
+     */
+    public static function bossStoneAnnounced(int $bossId, int $stones): string
+    {
+        return "boss:{$bossId}:stone-announced:{$stones}";
+    }
+
+    /**
      * Lowercase-email → account-id resolver map key.
      *
      * @var string

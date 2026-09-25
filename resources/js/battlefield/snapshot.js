@@ -15,6 +15,9 @@ export function snapshotState(currentState, scene) {
       name: scene.bossState.name,
       currentHp: scene.bossState.currentHp,
       maxHp: scene.bossState.maxHp,
+      // Boss-script state (boss/scripts/) rides along only when the boss has one,
+      // so a scriptless boss keeps the exact boot-payload shape.
+      ...(scene.bossState.script ? { script: scene.bossState.script } : {}),
     };
   }
   if (scene.leaderboard) {

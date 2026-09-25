@@ -218,7 +218,7 @@ export class MoveInput {
     const fsize = entry ? entry.displaySize * (entry.damageScale ?? 1) : 48;
     return {
       layout: this.scene.layout,
-      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      bossType: Boss.bossTypeOf(this.scene.bossState),
       fsize,
     };
   }

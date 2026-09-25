@@ -2,6 +2,7 @@
 
 namespace App\Listeners;
 
+use App\Enums\BossCharacter;
 use App\Events\BossKilled;
 use App\Models\Boss;
 use App\Models\Event;
@@ -71,7 +72,7 @@ class AnnounceBossKill implements ShouldQueue
         $line = sprintf('🐉 %s defeated by %s', $this->bossLabel($killed), $killerLabel);
 
         if ($newBoss) {
-            $line .= sprintf(' · ⚔️ %s (%s HP) incoming', $this->bossLabel($newBoss), number_format($newBoss->max_hp));
+            $line .= sprintf(' · ⚔️ %s (%s HP) incoming%s', $this->bossLabel($newBoss), number_format($newBoss->max_hp), $this->spawnFlavorSuffix($newBoss));
         }
 
         return $line;
@@ -80,6 +81,19 @@ class AnnounceBossKill implements ShouldQueue
     private function bossLabel(Boss $boss): string
     {
         return $boss->name ?: sprintf('Boss #%d', $boss->number);
+    }
+
+    /**
+     * " — holding the Power Stone" for a recognizable boss, "" otherwise.
+     *
+     * @param  Boss  $boss
+     * @return string
+     */
+    private function spawnFlavorSuffix(Boss $boss): string
+    {
+        $flavor = BossCharacter::of($boss)?->spawnFlavor($boss);
+
+        return $flavor === null ? '' : " — {$flavor}";
     }
 
     /**
@@ -142,7 +156,7 @@ class AnnounceBossKill implements ShouldQueue
         if ($newBoss) {
             $fields[] = [
                 'type' => 'mrkdwn',
-                'text' => sprintf("*New boss*\n⚔️ %s (%s HP)", $this->bossLabel($newBoss), number_format($newBoss->max_hp)),
+                'text' => sprintf("*New boss*\n⚔️ %s (%s HP)%s", $this->bossLabel($newBoss), number_format($newBoss->max_hp), $this->spawnFlavorSuffix($newBoss)),
             ];
         }
 

@@ -14,6 +14,10 @@ it('builds per-account membership keys', function () {
     expect(CacheKeys::untrackedContributors(7))->toBe('account:7:untracked-contributors');
 });
 
+it('builds one stone-announced key per boss and stone', function () {
+    expect(CacheKeys::bossStoneAnnounced(7, 3))->toBe('boss:7:stone-announced:3');
+});
+
 it('forgets both membership keys for an account', function () {
     Cache::put(CacheKeys::trackedMembers(7), ['x'], 60);
     Cache::put(CacheKeys::untrackedContributors(7), ['y'], 60);

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\BossCharacter;
 use App\Models\Boss;
 use App\Services\BossNameGenerator;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -37,5 +38,15 @@ class BossFactory extends Factory
             'current_hp' => 0,
             'defeated_at' => now(),
         ]);
+    }
+
+    /**
+     * A ThaNode: the recognizable character is identified by its name.
+     *
+     * @return static
+     */
+    public function thanode(): static
+    {
+        return $this->state(fn () => ['name' => BossCharacter::Thanos->fixedName()]);
     }
 }

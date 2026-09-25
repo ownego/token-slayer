@@ -22,7 +22,12 @@ bosses/mini-demon.png     — 32×32 frames, scale 4
 bosses/ghost-fury.png     — 32×32 frames, scale 4
 bosses/minotaur-chierit.png   — 288×160 frames, scale 1
 bosses/demon-slime-chierit.png — 288×160 frames, scale 1
+bosses/thanos.png         — 128×128 frames, scale 1.5, 5×5 grid with 7 blank cells
 ```
+
+A sheet may leave cells blank (`thanos.png` fills only 18 of 25). Phaser indexes the
+full grid row-major regardless, so each range in `BOSS_TYPES` has to stop before the
+blank tail of its row — `config.test.js` pins the blank set for that sheet.
 
 **Multi-file animated boss** (modern bosses): one PNG per animation state, inside a named folder:
 ```
