@@ -941,9 +941,9 @@ test('both installers only accept a retried read once two consecutive reads agre
 test('both installers do not retry when the first transcript read already sees tokens', function (string $url) {
     $script = $this->get($url)->assertOk()->getContent();
 
-    // A first read that already sees tokens>0 must be trusted immediately --
-    // no added latency for the case that already works today. Only a
-    // zero-token first read enters the retry branch.
+    // A read that already sees tokens>0, once the final-reply wait is over,
+    // is trusted with no further retry. Only a zero-token read enters the
+    // retry branch.
     expect($script)->toContain('if [ "${TOK:-0}" = "0" ]; then');
 })->with([
     'sh' => ['/install'],
@@ -961,12 +961,12 @@ test('both installers cap the transcript re-read retry so a stuck flush cannot h
 
 test('both installers wait until the transcript holds the final reply before counting a turn', function (string $url) {
     // The transcript is written asynchronously, so at Stop a turn's final
-    // assistant message is often not in the file yet. A turn with tool calls
-    // then reads its earlier messages as non-zero, skips the zero-read retry,
-    // and never counts the final one (9 of 9 headless test turns, 2026-09-26).
-    // last_assistant_message is that final reply's text, per
+    // assistant message is often not in the file yet. Read at once, a turn
+    // with tool calls sees its earlier messages as non-zero, skips the
+    // zero-read retry, and misses the final one (9 of 9 headless test turns,
+    // 2026-09-26). last_assistant_message is that final reply's text, per
     // https://code.claude.com/docs/en/hooks, so the walk reports whether the
-    // newest text entry matches it and the hook rereads until it does.
+    // newest text entry contains its tail and the hook rereads until it does.
     $script = $this->get($url)->assertOk()->getContent();
 
     expect($script)->toContain('.last_assistant_message')
@@ -987,12 +987,25 @@ test('both installers cap the final-reply wait so a transcript that never catche
 ]);
 
 test('both installers skip the final-reply wait when the hook input has no final text', function (string $url) {
-    // Codex and Antigravity send no last_assistant_message, and a subagent
-    // that hands back through SubagentHandback may send it empty. The walk
-    // then reports caught_up at once, so those hooks never wait.
+    // A subagent that hands back through SubagentHandback may send
+    // last_assistant_message empty. The walk then reports caught_up at once,
+    // so that hook never waits.
     $script = $this->get($url)->assertOk()->getContent();
 
     expect($script)->toContain('if $want == "" then true');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers wait for the final reply only for Claude Code', function (string $url) {
+    // Codex sends last_assistant_message too, but its walk emits no
+    // caught_up. Antigravity's transcript shape is unverified, so matching
+    // its final text could fail and make every Antigravity turn wait the
+    // full cap. Only a hook run with no PROVIDER (Claude Code) sets WANT.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('WANT=""'."\n".'    if [ -z "${PROVIDER:-}" ]; then');
 })->with([
     'sh' => ['/install'],
     'ps1' => ['/install.ps1'],

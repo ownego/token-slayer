@@ -537,12 +537,19 @@ if [ -x "$JQ" ]; then
     # its earlier messages and misses the final one (9 of 9 headless test
     # turns, 2026-09-26). Stop and SubagentStop carry that final reply's text
     # as last_assistant_message, so the walk above reports caught_up once the
-    # newest text entry contains its last 200 characters; until then the file
-    # is reread every 200ms, at most 10 times (2s), and whatever it holds then
-    # is sent. Only the tail is passed, as a --arg is length-capped (~32 KB on
-    # Windows). An empty WANT (Codex, Antigravity, a subagent that handed back
-    # through SubagentHandback) skips the wait.
-    WANT=$(printf '%s' "$BODY" | "$JQ" -r '(.last_assistant_message // "") | rtrim | .[-200:]' 2>/dev/null)
+    # newest text entry contains its last 200 characters. Claude Code trims
+    # trailing spaces from last_assistant_message but the transcript keeps
+    # them, so WANT is right-trimmed and matched as a substring, not a suffix.
+    # Until caught_up, the file is reread every 200ms, at most 10 times (~2s),
+    # then the zero-read retry above applies to the last read. Only the tail
+    # is passed, as a --arg is length-capped (~32 KB on Windows). Only Claude
+    # Code (no PROVIDER) waits: Codex's walk emits no caught_up, and
+    # Antigravity's transcript shape is unverified. An empty WANT (a
+    # SubagentHandback subagent with no closing text) makes caught_up true.
+    WANT=""
+    if [ -z "${PROVIDER:-}" ]; then
+      WANT=$(printf '%s' "$BODY" | "$JQ" -r '(.last_assistant_message // "") | rtrim | .[-200:]' 2>/dev/null)
+    fi
     USAGE=$(extract_usage)
     WAITED=0
     while [ "$WAITED" -lt 10 ] && [ "$(printf '%s' "$USAGE" | "$JQ" -r '.caught_up' 2>/dev/null)" = "false" ]; do
