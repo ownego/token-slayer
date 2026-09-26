@@ -50,7 +50,7 @@ Related: `accounts.md` (who the usage is attributed to), `broadcasting.md` (ever
 
 When changing the registered-event list, the re-registration loop must strip our fingerprint from **every** key already in `~/.claude/settings.json` before re-adding. It once iterated only the events still in its own list, so shrinking the list would have left stale registrations firing silently.
 
-## Hook versions (`config('token_slayer.hook_version')`, currently **7**)
+## Hook versions (`config('token_slayer.hook_version')`, currently **8**)
 
 | Version | Date | What changed | Server dependency |
 |---|---|---|---|
@@ -58,6 +58,7 @@ When changing the registered-event list, the re-registration loop must strip our
 | 5 | 2026-09-04 | Hook versioned from this repo; `SubagentStop` reads the subagent's **own** transcript (`agent_transcript_path`) | `EventController::SUBAGENT_TOKENS_MIN_HOOK_VERSION = 5` — lower versions' SubagentStop tokens are discarded |
 | 6 | 2026-09-11 | Transcript parsed only on Stop/SubagentStop; `transcript_path` no longer sent; adds `input_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens` (stored, never added to damage) | `TurnUsage::fromPayload` |
 | 7 | 2026-09-24 | `agent_id` added to whitelist; `PostToolUse` registered again | `resolveAgentId()`, `FighterAgentToolUsed` |
+| 8 | 2026-09-27 | Stop/SubagentStop wait (up to 2s) until the transcript holds `last_assistant_message`, so a turn's final message is counted | none |
 
 `client_version` (the CLI wheel's release tag, from a repo this project does not publish) and `hook_version` (owned here) are **independent**. A hook-only change bumps `hook_version` only. Both are written to `~/.config/{namespace}/version` and `hook-version`, and both are sent on every event. The outdated-hook nudge (`HookVersionStatus`) shows on the battlefield, the profile page and the Filament topbar.
 
@@ -74,7 +75,9 @@ When changing the registered-event list, the re-registration loop must strip our
 
 **`models` is attacker-controllable** (a hook token is all that guards it). `ModelUsageParser::sanitize()` validates it before anything reaches the DB. A turn is recorded under one `events.model`: the most expensive family it touched (`ModelFamily::rank()`: fable 40 > opus 30 > gpt 25 > sonnet 20 > haiku 10), then the highest token count within that family. Ranking by token count alone would be wrong: in a limit-fallback turn the cheap model produces more tokens because it finished the work. Multi-model turns were measured at 2 in 4,524 on one machine.
 
-Very short turns can leave only placeholder usage in the transcript. The hook reads it faithfully, and the resulting undercount is accepted (decided 2026-09-06). Don't re-propose a retry.
+**The final message can land after Stop fires.** The transcript is written asynchronously and "may not yet include the current turn's most recent messages when a hook fires" ([hooks reference](https://code.claude.com/docs/en/hooks)). In a turn with tool calls the first read already sees the earlier messages, so before v8 the zero-read retry never ran and the final message was lost: exactly that message, on every multi-message turn of a 20-turn replay (2026-09-26). Since v8 the walk also reports `caught_up`, whether the turn's newest text entry contains the tail of the hook input's `last_assistant_message`, and the hook rereads every 200ms, at most 10 times, until it does. An empty or missing `last_assistant_message` (Codex, Antigravity, a subagent that hands back through `SubagentHandback`) skips the wait. `caught_up` is deleted before the merge and never sent.
+
+Very short turns can leave only placeholder usage in the transcript. The hook reads it faithfully, and the resulting undercount is accepted (decided 2026-09-06). Don't re-propose a retry. This is a different case from the late final message above: there the file itself holds the small count, so no wait helps.
 
 ## Subagent presence (cosmetic, never damage)
 
