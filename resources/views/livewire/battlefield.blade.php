@@ -59,7 +59,10 @@
     </div>
 
     @unless (request('embed') === 'ide')
-        <nav id="bf-nav" class="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-1.5">
+        {{-- max-w keeps the pills wrapping before they reach the portrait-only
+             "Board" button pinned top-right; without it, a 390px phone ran
+             "Loadout" underneath it. --}}
+        <nav id="bf-nav" class="absolute left-3 top-3 z-10 flex max-w-[calc(100%-7rem)] flex-wrap items-center gap-1.5">
             <a
                 href="{{ route('profile') }}"
                 class="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300"
