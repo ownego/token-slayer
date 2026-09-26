@@ -8,6 +8,9 @@ DO NOT hand-edit shapes — recapture if the API changes.
 - refresh.json  — refresh_token grant response (rotates the refresh token)
 - profile.json  — GET /api/oauth/profile
 - usage.json    — GET /api/oauth/usage
+- profile-max-20x.json — GET /api/oauth/profile for a Max 20x org (added with PlanResolver, 7b352db); used by AccountProfileSyncerTest/AccountConnectServiceTest
+
+Loaded by `fakeAnthropic()` in tests/Pest.php (token/usage/profile; `messages` is an inline stub, not a fixture).
 
 ## Verified API facts (load-bearing for the prober)
 - usage `utilization` is ALREADY a percent (five_hour=0.0, seven_day=25.0) — do NOT multiply by 100.

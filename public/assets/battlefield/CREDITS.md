@@ -1,8 +1,8 @@
 # Battlefield Assets
 
-## Background & Environment
+## Simple bosses & FX (Super Grotto Escape)
 
-Pixel art from **Warped: Super Grotto Escape Collection** by **Ansimuz**.
+Pixel art from **Warped: Super Grotto Escape Collection** by **Ansimuz** — the single-sheet bosses (`bosses/ghost.png`, `ghost-fury.png`, `skeleton.png`, `slime.png`, `mini-demon.png`) and every file in `fx/` (added in `5fb7b02`). No background/environment art from this pack is in use; the battlefield background is a flat `BG_COLOR` plus a generated vignette.
 
 - Original page: https://ansimuz.itch.io/super-grotto-escape-pack
 - License: **CC0 1.0 Universal** (public domain)
@@ -16,9 +16,9 @@ Sprites from **Tiny RPG Character Asset Pack v1.03** by **Zerie**:
 - License: **CC0 1.0 Universal** (public domain)
 - All sheets: **100×100 px per frame**, `frameWidth: 100, frameHeight: 100`
 
-### Fighter spritesheets (`fighters/`)
+### Fighter spritesheets (`resources/assets/battlefield/fighters/`)
 
-Each character has separate files per animation state. All frames are 100×100 px.
+Each character has separate source strips per animation state, committed under `resources/assets/` and packed at build time into the gitignored `public/assets/battlefield/fighters/fighters-atlas.*` (see `CLAUDE.md`). All frames are 100×100 px. Columns count frames per strip; "variants" = number of `attackN` / `effectN` strips.
 
 | Character           | idle | walk | attack | death | attack variants | effect variants |
 |---------------------|------|------|--------|-------|-----------------|-----------------|
@@ -45,11 +45,13 @@ Each character has separate files per animation state. All frames are 100×100 p
 
 Naming convention: `{character}-{state}.png` for base animations, `{character}-attack{N}.png` and `{character}-effect{N}.png` for variants.
 
-**These 5 (added later, `d9c60d3`) went straight into `fighters-atlas.png`/`.json` — no standalone per-state PNGs are checked into `fighters/` for them,** unlike the original 15. `knight-templar` and `lancer` (melee `BLADE` attacks) have no effect-strip variants at all. `priest` also has a dedicated 4-frame `heal` animation (`rate: 5`) played on the Necromancer, not on Priest itself — see `.ai/domain/battlefield.md` Companions. `skeleton-archer` also has the skeleton-family's 5-frame `summon` animation, like `skeleton`/`armored-skeleton`/`greatsword-skeleton`.
+The last 5 rows were added later (`d9c60d3`), with their source strips in the same directory. `knight-templar` and `lancer` (melee `BLADE` attacks) have no effect-strip variants at all. `priest` also has a dedicated 4-frame `heal` animation (`rate: 5`) played on the Necromancer, not on Priest itself — see `.ai/domain/battlefield.md` Companions. `skeleton-archer` also has the skeleton-family's 5-frame `summon` animation, like `skeleton`/`armored-skeleton`/`greatsword-skeleton`.
 
 ## Companion Spritesheets (`companions/`)
 
-**Source/license not recorded when these were added (`4d0a01a`) — TODO: confirm and fill in before relying on this section for attribution.** All frames 100×100 px, loaded as direct per-animation spritesheets (like a multi-anim boss), not the shared fighter atlas.
+`minion-clash/burst1.png` / `burst2.png` are crops of the fighter pack's own `wizard-effect1` / `wizard-effect2` frames (Zerie, CC0 — see above), not separate art.
+
+**Bat + Necromancer (`bat/`, `necromancer/`): source/license not recorded when added (`4d0a01a`) — TODO: confirm and fill in before relying on this section for attribution.** All frames 100×100 px, loaded as direct per-animation spritesheets (like a multi-anim boss), not the shared fighter atlas.
 
 | File | Frames | Notes |
 |---|---|---|

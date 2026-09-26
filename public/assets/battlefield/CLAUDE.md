@@ -1,63 +1,73 @@
 # Battlefield Assets
 
-## Fighter Sprites
+Sprite formats and where each one is configured. Sources/licenses: `CREDITS.md`. Add-a-type recipes: `.claude/skills/battlefield/SKILL.md`. Companion behaviour: `.ai/domain/battlefield.md`.
 
-- All fighter frames are packed into a **single atlas**: `fighters/fighters-atlas.png` + `fighters-atlas.json`
-- Atlas size: **4096×3000 px**, each frame is **100×100 px**
-- Frame key format: `{type}-{animation}-{frameIndex}` e.g. `swordsman-attack2-0`
-- Fighter types: `archer`, `armored`, `axeman`, `elite`, `greatsword`, `knight`, `knight-templar`, `lancer`, `orc`, `priest`, `skeleton`, `skeleton-archer`, `slime`, `soldier`, `swordsman`, `werebear`, `werewolf`, `wizard`
-- **Do NOT upscale the atlas** — Real-ESRGAN produced 19200×3200 sheets incompatible with `frameWidth: 100`. The 100px frame size is fixed.
-- Adding a new fighter type requires updating the atlas PNG+JSON and adding an entry to `FIGHTER_TYPES` in `config.js`
+All sprite art is loaded with NEAREST filtering (except bosses with `pixelArt: false`). Frame counts/sizes in config are validated against the PNGs by `tests/js/config.test.js`.
 
-## Boss Sprites
+## Fighter sprites (shared atlas, generated)
 
-Two formats exist:
+- **Source of truth:** `resources/assets/battlefield/fighters/<key>-<state>.png` (committed, 176 strips for 20 types). Horizontal strips, every frame **100×100**. States: `idle`, `walk`, `attack`, `death`, `attack<N>`, `effect<N>`, plus optional `summon` (skeleton family's rise-in) and `heal` (priest).
+- **Generated:** `scripts/pack-sprites.js` (run by `npm run build`/`npm run dev`) shelf-packs them into `public/assets/battlefield/fighters/fighters-atlas.png` + `.json` (4096 px wide; height grows with strip count) and writes `resources/js/battlefield/config/atlas-version.js`. All three are **gitignored** — don't edit or commit them; the `fighters/` directory doesn't exist in a fresh clone until you build.
+- Atlas frame key: `<key>-<state>-<i>` (e.g. `swordsman-attack2-0`); Phaser anim key `<key>-<state>` (`fighter/animations.js`).
+- Types (= `FIGHTER_TYPES` keys, in order): `soldier`, `knight`, `swordsman`, `axeman`, `orc`, `armored-orc`, `elite-orc`, `skeleton`, `armored-skeleton`, `slime`, `archer`, `werewolf`, `werebear`, `orc-rider`, `greatsword-skeleton`, `knight-templar`, `lancer`, `wizard`, `priest`, `skeleton-archer`.
+- **Never upscale.** A Real-ESRGAN attempt produced 19200×3200 sheets incompatible with the fixed 100 px frame.
 
-**Simple sprite sheet** (legacy bosses): single PNG, uniform `frameWidth`/`frameHeight`, defined in `BOSS_TYPES` in `config.js`:
+## Boss sprites (`bosses/`, `BOSS_TYPES` in `resources/js/battlefield/config/bosses.js`)
+
+Two formats. `BOSS_TYPES` order (cycled by boss number): ghost, skeleton, abyssal-dreadknight, slime, flying-demon, minotaur, demon-slime.
+
+**Single sheet** — one PNG, uniform frame, anims by frame range (`idleStart/idleEnd`, `moveStart/…`):
 ```
-bosses/ghost.png          — 32×32 frames, scale 4
-bosses/skeleton.png       — 32×32 frames, scale 4
-bosses/slime.png          — 32×32 frames, scale 4
-bosses/mini-demon.png     — 32×32 frames, scale 4
-bosses/ghost-fury.png     — 32×32 frames, scale 4
-bosses/minotaur-chierit.png   — 288×160 frames, scale 1
-bosses/demon-slime-chierit.png — 288×160 frames, scale 1
+bosses/ghost.png              32×32,   scale 4   (?v=100)
+bosses/skeleton.png           32×32,   scale 4   (?v=100)
+bosses/slime.png              32×32,   scale 4   (?v=100)
+bosses/minotaur-chierit.png   288×160, scale 1   idle/move/attack ranges
+bosses/demon-slime-chierit.png 288×160, scale 1, pixelArt:false   idle/move/attack/hurt/death ranges
 ```
-
-**Multi-file animated boss** (modern bosses): one PNG per animation state, inside a named folder:
+**Per-state folder** — one strip per anim (`animFiles`), texture key `<bossKey>-<anim>`:
 ```
-bosses/flying-demon-xzany/   — 81×71 frames, scale 2, states: idle/flying/attack/hurt/death
-bosses/abyssal-dreadknight/  — states: idle/move/run/jump/slash-low/slam/thrust/spin/dash/hurt/getup
+bosses/flying-demon-xzany/    81×71, scale 2, float — idle, move(flying.png), attack, hurt, death
+bosses/abyssal-dreadknight/   105 px tall, width varies per strip, scale 1.5 — idle, move(walk.png), run, jump,
+                              slash-low, slam, thrust, spin, dash, hurt, getup, fx-slash, fx-slam (fx 120×77)
 ```
+**Unused on disk:** `bosses/mini-demon.png` (48×48 ×4), `bosses/ghost-fury.png` (32×32 ×2) — not in `BOSS_TYPES`.
 
-## Companion Sprites
+## Companion sprites (`companions/`, `resources/js/battlefield/config/companions.js`)
 
-Ambient actors, neither a fighter nor a boss — see `.ai/domain/battlefield.md` Companions. One PNG per animation state, direct spritesheets like the multi-file boss format (not the shared fighter atlas), defined in `COMPANIONS`/`BAT_CONFIG`/`NECROMANCER_CONFIG`/`MINION_TYPES` in `config/companions.js`:
+Direct per-animation spritesheets (like per-state bosses), texture key `<configKey>-<anim>`.
 ```
-companions/bat/               — 100×100 frames, scale 1.4, states: flying/attack1/attack2/hurt/death
-companions/necromancer/       — 100×100 frames, scale 2.6, states: idle/walk/summon/circle/death/appearBurst
-companions/demon-a/           — 100×100 frames, scale computed per-fighter (see minions.js), states: idle/walk/attack1/attack2/death
-companions/blood-monster-a/   — 100×100 frames, scale computed per-fighter (see minions.js), states: idle/walk/attack1/attack2/death
-companions/smw-goomba/        — 110×110 frames (charHeight 22), states: idle/walk/attack-slam/attack-shellspin/attack-punch/attack-headbutt/attack-banana/hurt
-companions/smw-babybowser/    — 125×125 frames (charHeight 25), states: idle/walk/attack-fire/attack-brush/hurt
-companions/smw-bowser/        — 145×145 frames (charHeight 29), states: idle/walk/attack-fireball/attack-claw/attack-dash/hurt
-companions/minion-clash/      — 100×100 frames, states: burst1 (10 frames)/burst2 (7 frames)
+companions/bat/              BAT_CONFIG          100×100, scale 1.4 — flying, attack1, attack2, hurt, death
+companions/necromancer/      NECROMANCER_CONFIG  100×100, scale 2.6 — idle, walk, summon, circle(summon-circle.png), death, appearBurst(appear-burst.png)
+companions/demon-a/          MINION_TYPES        100×100, charHeight 20 — idle, walk, attack1, attack2, death
+companions/blood-monster-a/  MINION_TYPES        100×100, charHeight 20 — idle, walk, attack1, attack2, death
+companions/smw-goomba/       MINION_TYPES        110×110, charHeight 22 — idle, walk, attack-slam, attack-shellspin, attack-punch, attack-headbutt, attack-banana, hurt
+companions/smw-babybowser/   MINION_TYPES        125×125, charHeight 25 — idle, walk, attack-fire, attack-brush, hurt
+companions/smw-bowser/       MINION_TYPES        145×145, charHeight 29 — idle, walk, attack-fireball, attack-claw, attack-dash, hurt
+companions/minion-clash/     MINION_CLASH_EFFECTS 100×100 — burst1 (10 frames), burst2 (7 frames)
 ```
-`demon-a`/`blood-monster-a`/`smw-goomba`/`smw-babybowser`/`smw-bowser` are the `MINION_TYPES`. The three `smw-*` types were rebuilt 2026-09-26 from the source sheet and shrunk to a height between native and the old 20px with a palette-snapping shrink (the 2026-09-24 repack had smooth-downscaled them to ~20px, baking in blur; the native set + converter are kept locally in `docs/sprite-work/_native-backup/`): each type keeps ONE frame size across all its strips and declares its ink height as `charHeight` in `config/companions.js`, which is what `minions.js` scales by — so do not "normalize" them back to 100×100. Their attack/hurt strips are self-made from source frames (Python/PIL; scripts + source frames kept locally in `docs/sprite-work/`), every strip drawn facing RIGHT; `attack-dash` is deliberately in place (code moves Bowser to the target). Bump their `?v=` on every edit. Minions fight each other cosmetically — one attacks, the other plays `hurt` (smw) or `death` held then reversed (demon/blood); see `.ai/domain/battlefield.md` Companions.
+Minion rules (test-locked, see the skill's "Add a minion type"):
+- One frame size per type; `charHeight` = the character's ink height in its own frame. `minions.js` scales by it, so the smw types' larger frames still render at the same height as the 100 px pair — don't "normalize" them to 100×100.
+- Every strip faces RIGHT. `attack-dash`/`attack-slam` stay in place; code moves the sprite (`travel`).
+- smw strips were rebuilt 2026-09-26 with a palette-snapping shrink; attack/hurt strips are self-made from source frames. Tooling + native-resolution set live locally only in `docs/sprite-work/` (gitignored).
+- `minion-clash/burst{1,2}.png` are crops of the atlas's `wizard-effect1`/`wizard-effect2` frames, saved standalone so a clash doesn't depend on the atlas.
 
-`companions/minion-clash/burst{1,2}.png` are `MINION_CLASH_EFFECTS` — NOT hand-drawn assets, they're crops of the shared fighter atlas's own `wizard-effect1`/`wizard-effect2` attack-impact frames (`fighters/fighters-atlas.png`, contiguous regions, re-saved as standalone strips) so a generic cross-fighter minion clash can reuse that look without loading the whole atlas/wizard path or borrowing one specific fighter type's own attack visual. Played by `minions.js`'s `_spawnClashVfx`, one picked at random per clash.
-
-## FX Sprites
-
+## FX sprites (`fx/`, loaded in `scene.js` preload)
 ```
-fx/fireball.png        — 16×16 frames
-fx/explosion.png       — 32×32 frames
-fx/big-explosion.png   — sprite sheet, used for boss death
-fx/player-shoot-hit.png
+fx/fireball.png    16×16 × 4   TextureKey.FIREBALL
+fx/explosion.png   32×32 × 4   TextureKey.EXPLOSION
 ```
+**Unused on disk:** `fx/big-explosion.png`, `fx/player-shoot-hit.png`.
 
-## Naming Convention
+## Cache-busting
 
-- Boss folders: `{name}-{source}` e.g. `flying-demon-xzany`, `abyssal-dreadknight`
-- Simple boss PNGs: `{name}.png` or `{name}-{source}.png`
-- Simple boss PNGs and FX sprites use a static `?v=100` cache-busting suffix in `config.js`. The fighter atlas instead uses `ATLAS_VERSION` (`config/atlas-version.js`), appended as `?v=${ATLAS_VERSION}` in `scene.js` — **bump this string whenever the atlas PNG/JSON changes**, or browsers keep serving the stale cached atlas (see `.ai/domain/battlefield.md` #8).
+These are non-hashed URLs and the staging host's nginx caches them for 7 days (per the comments in `scripts/pack-sprites.js` and `companions.js`), so a changed PNG needs a new URL:
+| Asset | How |
+|---|---|
+| Fighter atlas | automatic — `?v=${ATLAS_VERSION}` content hash |
+| smw-* minions | hand-bumped `?v=<n>` in `companions.js` (currently `?v=5`) — bump on every edit |
+| ghost/skeleton/slime bosses | static `?v=100` in `bosses.js` |
+| everything else (other companions, per-state bosses, chierit sheets, FX) | no `?v=` — **add one** in the config when you edit the PNG |
+
+## Naming
+- Boss folders/files: `<name>-<source>` (e.g. `flying-demon-xzany`, `minotaur-chierit.png`) or `<name>` for original/in-house art.
+- Companion folders: config `key`; strip files named after the anim key (kebab-case), except the few mapped in the table above.
