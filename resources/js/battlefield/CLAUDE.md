@@ -86,10 +86,11 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `constants.js` | AnimState, AttackType, TextureKey, BusEvent, SCENE_KEY, BossPhase, DreadknightAttack enums |
 | `config.js` → `config/` | Barrel over `bosses.js` (BOSS_TYPES), `fighters.js` (FIGHTER_TYPES), `companions.js` (BAT_CONFIG, NECROMANCER_CONFIG, MINION_TYPES — direct per-animation spritesheets, not the shared fighter atlas), `layouts.js` (LAYOUTS), `timings.js` (TIMINGS), `atlas-version.js` (ATLAS_VERSION — bump whenever the fighter atlas PNG/JSON changes, see `.ai/domain/battlefield.md` #8) |
 | `layout.js` | Pure position helpers: computeFighterPositions, fighterDisplayConfig, damageScaleMultiplier, chargeFootY, rowsNeeded |
-| `move-geometry.js` | Pure move-target geometry: isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute — boss/HP-bar column, leaderboard, and Damage HUD exclusion zones (both fixed: leaderboard top-right, Damage HUD top-left, in both orientations); size-aware edge margins. `planRoute` is shared by `move-input.js` (mover's local animation) and `fighter/index.js`'s `handleFighterMoved` (remote echo) so every client renders the same detour |
+| `move-geometry.js` | Pure move-target geometry: isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute, moveOrigin — boss/HP-bar column, leaderboard, and Damage HUD exclusion zones (both fixed: leaderboard top-right, Damage HUD top-left, in both orientations); size-aware edge margins. `planRoute` is shared by `move-input.js` (mover's local animation) and `fighter/index.js`'s `handleFighterMoved` (remote echo) so every client renders the same detour. Both plan from `moveOrigin(sprite, entry.pos, ctx)`, never the raw sprite: a melee dash (blade) parks the sprite inside the boss column, and a move that kills that dash mid-flight would otherwise plan from a blocked origin and strand the fighter on the boss |
 | `fighter-placement.js` | Pure entry placement: `resolveFighterPlacement(saved, gridPos, ctx)` — decides whether a fighter entering the scene (boot payload or `FighterJoined` echo) restores its persisted position or takes the default grid slot; snaps a no-longer-valid saved position instead of resetting it. Shared by `seedInitial` and `handleFighterJoined` so both entry paths place a fighter identically |
 | `hud-position.js` | Pure `computeHudTop({navBottom, canvasTop, parentTop, scale})` — vertical offset for the HTML Damage HUD so it never collides with the top-left nav stack (Profile/Dashboard pills) in either orientation. Exposed on `window.__battlefield` by `index.js` because the HUD's Alpine code lives in a plain inline `<script>` in `battlefield.blade.php`, not a module |
 | `resync.js` | Pure `driftedPositions(localFighters, serverPositions, epsilon)` — diffs the client's local fighter positions against the server-authoritative snapshot returned by `Battlefield::resync()`, used after an Echo reconnect to repair positions lost to Reverb's lack of event replay |
+| `render-scale.js` | Pure `canvasSizeFor(availableCssWidth, dpr, layout)` — canvas pixel size + renderScale (camera zoom). Both `bootGame` and the orientation-flip `applyModeChange` in `index.js` must size through it, or the camera zoom and canvas size disagree and the world renders zoomed in |
 | `format.js` | Pure format helpers: formatHp — exposed on `window.__battlefield` by `index.js` so the Damage HUD's inline `<script>` in `battlefield.blade.php` calls it directly instead of duplicating the logic |
 | `snapshot.js` | Snapshot/restore scene state on orientation change |
 | `bus.js` | Tiny event bus for cross-manager communication |
@@ -103,7 +104,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `projectile.js` | `class Projectile` — all projectile types (slash, blast, shuriken, arrow, blade) |
 | `projectile-textures.js` | Canvas-drawn one-off projectile textures (e.g. `ensureSlashTexture`), registered into the scene's texture manager once and reused |
 | `spark-texture.js` | Pure `ensureSparkTexture(scene)` — the shared particle-trail texture every projectile type uses |
-| `impact.js` | `class Impact` — damage popup, hit flash effects |
+| `impact.js` | `class Impact` — damage popup, hit flash effects, boss flinch. The flinch tracks its own running tween + rest scale and snaps back before re-flinching: baselining on the boss's current scale ratchets it flatter under overlapping hits |
 | `boss.js` → `boss/` | `class Boss` (`index.js`) — boss patrol, react animations, HP bar; `dreadknight.js` (abyssal-dreadknight deterministic turn-based patrol); `stun.js` (visual-only stun effect); `bats.js` (`class BatSwarm` — the per-boss-fight bat minions); `bat-targeting.js` (pure `computeBatHitTarget` — cosmetic hit-routing + threshold-kill logic); `bat-wander.js` (pure `randomWanderPoint`, shared with `necromancer.js` and `minions.js`); `summon-queue.js` (pure `shouldSkipSummonFlourish` — burst-limit backstop for `necromancer.js`'s summon queue) |
 | `necromancer.js` | `class Necromancer` — the permanent summon-fixture; `spawnSummonCircle(x, y, scale = 2.6)` also reused (smaller scale) by `minions.js`'s own spawn effect; see `.ai/domain/battlefield.md` Companions |
 | `minions.js` | `class Minions` — per-fighter subagent-count minion swarm (`demon-a`/`blood-monster-a`), independent world-space sprites repositioned each frame from `scene.js`'s `update()`: idle home-slot wander (`minion-layout.js`, biased into near-fighter gathering zones via `minion-grouping.js` when another fighter is close, radius reaching toward the zone's own nearest-neighbor midpoint) or trail-follow (`minion-trail.js`) depending on the fighter's own sampled speed; resyncs from its real position on the moving→idle transition so arriving doesn't snap the swarm; every rendered position step (trail sample or idle target alike) is capped at the fighter's own real speed (`MINION_WALK_SPEED_PX_PER_S` floor) so movement onset, a zone appearing/dissolving, or a neighbor leaving all read as a normal walk, never a "vút" dash. Each minion also carries a small avatar badge (the owning fighter's own avatar texture) above its head, plus a pulsing cyan ring (`handleAgentToolUsed`, `minion.assignedAgentId`, hook v7's `FighterAgentToolUsed`) on whichever ONE minion is currently assigned to a busy `agent_id`. Cross-fighter clashes play a staggered multi-burst sequence from `MINION_CLASH_EFFECTS` (`config/companions.js`); see `.ai/domain/battlefield.md` Companions |
@@ -117,7 +118,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | Test | What it covers |
 |---|---|
 | `tests/js/layout.test.js` | computeFighterPositions, fighterDisplayConfig, damageScaleMultiplier, chargeFootY, rowsNeeded |
-| `tests/js/move-geometry.test.js` | isValidMoveTarget (edges, boss column, leaderboard, Damage HUD), bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel |
+| `tests/js/move-geometry.test.js` | isValidMoveTarget (edges, boss column, leaderboard, Damage HUD), bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, moveOrigin |
 | `tests/js/fighter-placement.test.js` | resolveFighterPlacement — saved-position restore, snap-instead-of-reset, grid fallback |
 | `tests/js/resync.test.js` | driftedPositions — drift detection tolerance, skips fighters mid-waypoint-move, skips fighters absent locally |
 | `tests/js/hud-position.test.js` | computeHudTop — nav clearance, letterboxed-canvas alignment, offset-parent relativity, no-nav (IDE embed) fallback |
@@ -128,6 +129,7 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `tests/js/snapshot.test.js` | snapshotState roundtrip |
 | `tests/js/constants.test.js` | BusEvent, TextureKey, SCENE_KEY shape validation |
 | `tests/js/leaderboard.test.js` | Legacy `makeMethods` damage-tracking factory (kept alongside the `Leaderboard` class; not currently wired into scene.js) |
+| `tests/js/render-scale.test.js` | canvasSizeFor — scale from width×dpr, 1x floor, 2.5x cap, portrait layout |
 | `tests/js/format.test.js` | formatHp — K/M/B tier formatting |
 | `tests/js/pack-sprites.test.js` | Fighter atlas packing |
 | `tests/js/flair.test.js` | Flair state/ring-layout pure helpers (buildRingChars, createFlairState, isFlairActive, hasFlairChanged, darkenHex...) |
@@ -141,5 +143,6 @@ Some managers are a single file; others are a thin barrel (`x.js` → `export * 
 | `tests/js/character-preview/skill-loop.test.js` | createSkillLoop — looping vs one-shot sticky skill playback, token-based cancel |
 | `tests/js/managers/Boss.test.js` | Boss pure helpers, dreadknight turn sequence |
 | `tests/js/managers/Charge.test.js` | Charge pure helpers |
-| `tests/js/managers/Fighter.test.js` | Fighter pure helpers |
+| `tests/js/managers/Fighter.test.js` | Fighter pure helpers; handleFighterMoved / handleHit (fake scene) — a move or second hit landing mid blade-dash never records the boss column as the fighter's home |
+| `tests/js/managers/Impact.test.js` | Impact boss flinch (fake scene) — overlapping hits flinch around the rest scale, not a half-squashed one |
 | `tests/js/managers/Leaderboard.test.js` | Leaderboard.abbreviateDamage formatting |

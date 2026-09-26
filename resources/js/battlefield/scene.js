@@ -96,8 +96,8 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layout = LAYOUTS[this.mode];
     const L = this.layout;
 
-    // The canvas is created at logical size * renderScale (see index.js's
-    // renderScaleFor) purely for pixel density; zooming the camera by the
+    // The canvas is created at logical size * renderScale (see render-scale.js's
+    // canvasSizeFor) purely for pixel density; zooming the camera by the
     // same factor keeps the whole scene authored in logical coordinates.
     // WORLD_ZOOM stacks an additional, deliberate (small) zoom-out on top of
     // that so the whole battlefield reads a little smaller within the same

@@ -1,6 +1,6 @@
 import { Boss } from '@battlefield/boss.js';
 import { AnimState } from '@battlefield/constants.js';
-import { isInsideLeaderboardPanel, planRoute } from '@battlefield/move-geometry.js';
+import { isInsideLeaderboardPanel, moveOrigin, planRoute } from '@battlefield/move-geometry.js';
 
 /**
  * Returns the font size in pixels for a fighter handle label.
@@ -51,7 +51,7 @@ export class MoveInput {
       debounceTimer = setTimeout(() => {
         const entry = this.scene.fighters.get(this.scene.currentUserId);
         if (entry?.isStunned) return;
-        const from  = entry?.sprite ? { x: entry.sprite.x, y: entry.sprite.y } : { x: pointer.worldX, y: pointer.worldY };
+        const from  = entry?.sprite ? moveOrigin(entry.sprite, entry.pos, this._geometryCtx()) : { x: pointer.worldX, y: pointer.worldY };
         const route = this._planRoute(from.x, from.y, pointer.worldX, pointer.worldY);
         if (!route || route.length === 0) return;
 

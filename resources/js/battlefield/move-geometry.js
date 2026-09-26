@@ -234,6 +234,26 @@ export function snapToValidTarget(px, py, ctx) {
 }
 
 /**
+ * Returns the point a fighter's next move should be planned from: its live
+ * sprite position, unless that sits somewhere a fighter can't stand (a melee
+ * dash parks it inside the boss column mid-attack), in which case its resting
+ * `home` — planRoute can never leave a blocked origin, so planning from there
+ * would strand the fighter on the boss.
+ *
+ * @param {{x: number, y: number}} sprite
+ * @param {{x: number, y: number}|null} home
+ * @param {{layout: object, bossType: object, fsize: number}} ctx
+ * @return {{x: number, y: number}}
+ */
+export function moveOrigin(sprite, home, ctx) {
+  const live = { x: sprite.x, y: sprite.y };
+  if (isValidMoveTarget(live.x, live.y, ctx) || !home || !isValidMoveTarget(home.x, home.y, ctx)) {
+    return live;
+  }
+  return { x: home.x, y: home.y };
+}
+
+/**
  * Returns a waypoint list from (fromX, fromY) to (toX, toY), detouring
  * through the guaranteed-clear bypassY row when a direct path is blocked
  * (e.g. by the boss/HP-bar column). Used for both the mover's own locally
