@@ -5,9 +5,10 @@ import { randomWanderPoint } from './boss/bat-wander.js';
 import { homeSlotOffset, homeSlotAngle, isInFrontOfFighter } from './minion-layout.js';
 import { sampleTrail, pushTrailSample } from './minion-trail.js';
 import { computeZones, zoneFanOffset } from './minion-grouping.js';
+import { countSidesNear, pickAttackerSide, travelLanding, pickRandom, fidgetAttacks, flipToFace, flipToFaceAngle } from './minion-fight.js';
 
-/** Ink height (px) of a MINION_TYPES idle frame within its 100x100 source frame — measured directly off Demon_A/Blood Monster_A's Idle strip, mirrors fighter/index.js's own SPRITE_CHAR_HEIGHT constant for the fighter atlas. */
-const MINION_CHAR_HEIGHT = 20;
+/** Reference ink height (px) the badge/ring/clash-burst ratios below were tuned against — Demon_A/Blood Monster_A's native idle height. A type's own sprite scale comes from its own `charHeight` (config/companions.js) so every type renders at the same visual height; everything sized from "the minion's visual height" goes through this reference instead of a per-type value. */
+const BASE_CHAR_HEIGHT = 20;
 /** A minion's visual height as a fraction of its fighter's own current effective size (baseSize * the container's own live scaleX — see _currentSize) — recomputed every frame since minions are independent world-space sprites now (not container children), so nothing else carries crowd/damage growth for them. */
 const MINION_SIZE_RATIO = 0.5;
 /** A minion's own avatar badge (the owning fighter's avatar image, shrunk down) as a fraction of the minion's current display size — small enough to read as a tag, not compete with the minion sprite itself. */
@@ -49,6 +50,12 @@ const FIDGET_MAX_MS = 8000;
 const FIGHT_PROXIMITY_PX = 34;
 /** Cooldown after a clash before either participant is eligible to fight again, so two minions that happen to be lingering close together don't retrigger every frame. */
 const FIGHT_COOLDOWN_MS = 5000;
+/** A fight's "area" — where each side's minions are counted toward who gets to attack (see minion-fight.js's pickAttackerSide) — as a multiple of FIGHT_PROXIMITY_PX around the two clashing minions' midpoint. */
+const FIGHT_AREA_RATIO = 2;
+/** How far short of its target a travelling attack (leap/dash) lands, as a fraction of the minions' visual height, so the two end up side by side instead of stacked. */
+const TRAVEL_STOP_RATIO = 0.9;
+/** Backstop: release a fight participant after this long even if its hit/animation-complete never arrived (e.g. the other minion was despawned mid-fight). */
+const FIGHT_RELEASE_MS = 4000;
 /** Fire-toned tints for the clash particle burst — the same default palette Charge.chargeParticleColors falls back to for a fighter with no chargeColors of its own, duplicated here (rather than importing Charge) to keep minions.js free of a dependency on the charge manager for one small constant array. */
 const CLASH_PARTICLE_TINTS = [0x991100, 0xcc3300, 0xdd6600, 0xee9900, 0xffbb00];
 /** How many particles the clash burst emits — small since it plays at minion scale, not a full attack-sized burst (compare slashBurst's 9-20 in attacks/fx.js). */
@@ -357,7 +364,6 @@ export class Minions {
       // already stopped and leader.moving is now false.
       const trailEndsAt = leader.history.length > 0 ? leader.history[leader.history.length - 1].t : -Infinity;
 
-      const scale = this._minionScale(entry);
       const plainHomeRadius = this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO;
 
       // Only computed/needed for the idle branch below — a moving fighter's
@@ -393,6 +399,7 @@ export class Minions {
         if (!minion.sprite?.active) {
           return;
         }
+        const scale = this._minionScale(entry, minion.charHeight);
         if (leader.moving && minion.summonCircle) {
           this._dismissSummonCircle(minion);
         }
@@ -413,8 +420,10 @@ export class Minions {
           }
           minion.wasTrailFollowing = usesTrail;
 
+          let facingZone = null;
           if (!usesTrail) {
             const zone = minion.zoneKey != null ? zoneByKey.get(minion.zoneKey) : null;
+            facingZone = zone;
             const targetAngle = zone
               ? zone.angle + zoneFanOffset(membersByKey.get(minion.zoneKey).indexOf(minion), membersByKey.get(minion.zoneKey).length, ZONE_ARC_WIDTH_RAD)
               : homeSlotAngle(i, list.length);
@@ -428,9 +437,14 @@ export class Minions {
               : plainHomeRadius;
             this._setHomeTarget(minion, targetAngle, targetRadius);
           }
-          const point = usesTrail
-            ? sampleTrail(leader.history, sampleTime)
-            : this._idlePoint(foot, this._homeOffset(minion), minion);
+          // A minion mid-fight is "pinned": it holds its current spot (or
+          // follows the leap/dash tween driving it) instead of walking back
+          // toward its home slot until the fight releases it.
+          const point = minion.pinned
+            ? { x: minion.sprite.x, y: minion.sprite.y }
+            : usesTrail
+              ? sampleTrail(leader.history, sampleTime)
+              : this._idlePoint(foot, this._homeOffset(minion), minion);
           if (point) {
             // Never let a single frame's step toward `point` outrun a
             // normal walk, whether it's a trail sample or an idle target
@@ -475,6 +489,13 @@ export class Minions {
             minion.sprite.setDepth(minionDepth);
             if (Math.abs(dx) > 0.5) {
               minion.sprite.setFlipX(dx < 0);
+            } else if (facingZone && !minion.pinned) {
+              // Settled in a gathering zone: square up to the other side
+              // instead of keeping whatever way it last walked — otherwise a
+              // minion that just walked home from a fight keeps its back to
+              // the enemy and its next idle fidget reads as attacking
+              // backwards (caught live 2026-09-26: "đánh k đúng hướng").
+              minion.sprite.setFlipX(flipToFaceAngle(facingZone.angle, minion.sprite.flipX));
             }
             this._updateMinionAnim(minion, Math.hypot(dx, dy) / dtSeconds);
             this._positionBadge(minion, { x: targetX, y: targetY }, scale, minionDepth, entry);
@@ -607,7 +628,7 @@ export class Minions {
     const home = homeSlotOffset(index, count, this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO);
     const spawnX = foot.x + home.x;
     const spawnY = foot.y + home.y;
-    const finalScale = this._minionScale(entry);
+    const finalScale = this._minionScale(entry, type.charHeight);
 
     const summonCircle = this.scene.necromancer?.spawnSummonCircle(spawnX, spawnY, SUMMON_CIRCLE_SCALE) ?? null;
 
@@ -634,7 +655,7 @@ export class Minions {
     // for the whole ~SUMMON_RISE_MS window, then snap down to correct size
     // the instant summoning flips false — caught live as "bụp 1 phát từ to
     // hóa về bình thường".
-    const badgePx = finalScale * MINION_CHAR_HEIGHT * MINION_BADGE_SIZE_RATIO;
+    const badgePx = finalScale * type.charHeight * MINION_BADGE_SIZE_RATIO;
     const badge = this.scene.add
       .image(spawnX, spawnY, entry.head?.texture?.key ?? sprite.texture.key)
       .setDisplaySize(badgePx, badgePx)
@@ -645,6 +666,11 @@ export class Minions {
       sprite,
       badge,
       typeKey: type.key,
+      type,
+      charHeight: type.charHeight,
+      pinned: false,
+      reacting: false,
+      fightTimers: [],
       animState: 'idle',
       fidgeting: false,
       fighting: false,
@@ -669,7 +695,7 @@ export class Minions {
       }
       minion.sprite.setAlpha(1);
       minion.badge?.setAlpha(1);
-      const visualHeight = finalScale * MINION_CHAR_HEIGHT;
+      const visualHeight = finalScale * type.charHeight;
       const riseOffset = visualHeight * SUMMON_RISE_OFFSET_RATIO;
       minion.sprite.setScale(0);
       minion.sprite.y = spawnY + riseOffset;
@@ -729,6 +755,10 @@ export class Minions {
     minion.fidgetTimer?.remove();
     minion.idleTimer?.remove();
     minion.summonTimer?.remove();
+    for (const timer of minion.fightTimers ?? []) {
+      timer.remove();
+    }
+    minion.fightTimers = [];
     this.scene.tweens.killTweensOf(minion.sprite);
     this.scene.tweens.killTweensOf(minion.idleOffset);
     if (minion.summonCircle?.active) {
@@ -916,13 +946,16 @@ export class Minions {
   /**
    * A minion's current world-space scale, derived from its fighter's
    * current effective size the same way body/head derive theirs from
-   * baseSize (see _currentSize).
+   * baseSize (see _currentSize). Divided by the type's own ink height, so a
+   * type shipped at a bigger native resolution still renders at the same
+   * visual height as the rest.
    *
    * @param {object} entry the fighter entry from scene.fighters
+   * @param {number} charHeight the minion type's ink height in its own frame (config `charHeight`)
    * @return {number}
    */
-  _minionScale(entry) {
-    return (this._currentSize(entry) * MINION_SIZE_RATIO) / MINION_CHAR_HEIGHT;
+  _minionScale(entry, charHeight = BASE_CHAR_HEIGHT) {
+    return (this._currentSize(entry) * MINION_SIZE_RATIO) / charHeight;
   }
 
   /**
@@ -956,7 +989,7 @@ export class Minions {
     if (headKey && minion.badge.texture.key !== headKey && this.scene.textures.exists(headKey)) {
       minion.badge.setTexture(headKey);
     }
-    const visualHeight = scale * MINION_CHAR_HEIGHT;
+    const visualHeight = scale * minion.charHeight;
     const badgePx = visualHeight * MINION_BADGE_SIZE_RATIO;
     minion.badge.setPosition(point.x, point.y - visualHeight * MINION_BADGE_OFFSET_RATIO);
     minion.badge.setDisplaySize(badgePx, badgePx);
@@ -982,7 +1015,7 @@ export class Minions {
     if (!minion.toolRing?.active) {
       return;
     }
-    const visualHeight = scale * MINION_CHAR_HEIGHT;
+    const visualHeight = scale * minion.charHeight;
     const badgePx = visualHeight * MINION_BADGE_SIZE_RATIO;
     const badgeY = point.y - visualHeight * MINION_BADGE_OFFSET_RATIO;
     const r = badgePx / 2 + Math.max(2, badgePx * TOOL_RING_MARGIN_RATIO);
@@ -1014,10 +1047,11 @@ export class Minions {
   }
 
   /**
-   * Schedules a minion's next cosmetic idle fidget (a one-shot Attack1/
-   * Attack2 flourish — "khè khè / múa múa", never real combat). Skips and
-   * reschedules if the minion is walking or mid-fight when the timer fires,
-   * so the fidget only ever plays while genuinely settled.
+   * Schedules a minion's next cosmetic idle fidget — one of its own attack
+   * strips played in place (never travelling, never touching damage), picked
+   * at random from the attacks allowed to fidget (see fidgetAttacks). Skips
+   * and reschedules if the minion is walking or mid-fight when the timer
+   * fires, so the fidget only ever plays while genuinely settled.
    *
    * @param {object} minion
    * @return {void}
@@ -1032,12 +1066,12 @@ export class Minions {
         this._scheduleFidget(minion);
         return;
       }
-      const anim = Phaser.Math.Between(0, 1) === 0 ? 'attack1' : 'attack2';
+      const attack = pickRandom(fidgetAttacks(minion.type.attacks), Math.random());
       minion.fidgeting = true;
-      minion.sprite.play(`${minion.typeKey}-${anim}`);
+      minion.sprite.play(`${minion.typeKey}-${attack.anim}`);
       minion.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
         minion.fidgeting = false;
-        if (minion.sprite?.active) {
+        if (minion.sprite?.active && !minion.fighting) {
           minion.sprite.play(`${minion.typeKey}-idle`);
         }
         this._scheduleFidget(minion);
@@ -1048,8 +1082,8 @@ export class Minions {
   /**
    * Finds every pair of minions belonging to DIFFERENT fighters currently
    * within FIGHT_PROXIMITY_PX of each other and not already busy/cooling
-   * down, and triggers a cosmetic clash between the first such pair per
-   * minion this frame.
+   * down, and starts a fight between the first such pair per minion this
+   * frame.
    *
    * @param {number} time
    * @param {Array<{userId: number|string, minion: object}>} allActive every currently-positioned minion this frame
@@ -1071,7 +1105,7 @@ export class Minions {
           entryB.minion.sprite.x, entryB.minion.sprite.y,
         );
         if (dist <= FIGHT_PROXIMITY_PX) {
-          this._triggerFight(entryA.minion, entryB.minion);
+          this._triggerFight(entryA, entryB, allActive);
           break;
         }
       }
@@ -1081,45 +1115,172 @@ export class Minions {
   /**
    * @param {object} minion
    * @param {number} time
-   * @return {boolean} whether this minion is free to start a new clash right now
+   * @return {boolean} whether this minion is free to start a new fight right now
    */
   _isFightEligible(minion, time) {
-    return minion.sprite?.active && !minion.fighting && !minion.fidgeting && !minion.summoning && time >= minion.fightCooldownUntil;
+    return minion.sprite?.active && !minion.fighting && !minion.fidgeting && !minion.summoning && !minion.pinned && time >= minion.fightCooldownUntil;
   }
 
   /**
-   * Plays a one-shot Attack1/Attack2 clash between two minions from
-   * different fighters, facing each other, plus a one-shot explosion burst
-   * + fire-toned particle scatter at their midpoint (see _spawnClashVfx) —
-   * purely cosmetic, never touches damage/HP. Both cool down for
-   * FIGHT_COOLDOWN_MS once their own animation completes, independently
-   * (their strips may differ in length).
+   * Starts a fight between two minions of different fighters. Who attacks is
+   * weighted by how many of each side's minions stand in the fight's area
+   * (3 vs 7 -> 30% / 70%, see pickAttackerSide); the other one takes the hit.
+   * Purely cosmetic — never touches damage/HP.
    *
-   * @param {object} minionA
-   * @param {object} minionB
+   * @param {{userId: number|string, minion: object}} entryA
+   * @param {{userId: number|string, minion: object}} entryB
+   * @param {Array<{userId: number|string, minion: object}>} allActive every currently-positioned minion this frame
    * @return {void}
    */
-  _triggerFight(minionA, minionB) {
-    const aOnLeft = minionA.sprite.x <= minionB.sprite.x;
-    minionA.sprite.setFlipX(!aOnLeft);
-    minionB.sprite.setFlipX(aOnLeft);
-    const anim = Phaser.Math.Between(0, 1) === 0 ? 'attack1' : 'attack2';
-    for (const minion of [minionA, minionB]) {
-      minion.fighting = true;
-      minion.sprite.play(`${minion.typeKey}-${anim}`);
-      minion.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-        minion.fighting = false;
-        minion.fightCooldownUntil = this.scene.time.now + FIGHT_COOLDOWN_MS;
-        if (minion.sprite?.active) {
-          minion.sprite.play(`${minion.typeKey}-idle`);
-        }
+  _triggerFight(entryA, entryB, allActive) {
+    const a = entryA.minion;
+    const b = entryB.minion;
+    const mid = { x: (a.sprite.x + b.sprite.x) / 2, y: (a.sprite.y + b.sprite.y) / 2 };
+    const points = allActive.map(e => ({ side: e.userId, x: e.minion.sprite.x, y: e.minion.sprite.y }));
+    const counts = countSidesNear(points, mid, FIGHT_PROXIMITY_PX * FIGHT_AREA_RATIO, entryA.userId, entryB.userId);
+    const side = pickAttackerSide(counts.a, counts.b, Math.random());
+    const [attacker, victim] = side === 'a' ? [a, b] : [b, a];
+    this._performAttack(attacker, victim);
+  }
+
+  /**
+   * Plays one random attack of the attacker's type at the victim: both face
+   * each other (every strip is drawn facing right), a travelling attack
+   * (leap/dash) tweens the attacker to land beside its target between its
+   * `travel.from`..`travel.to` frames, and at the attack's `hitFrame` the
+   * victim reacts (see _landHit). Both stay pinned — not walking back to
+   * their home slots — until their own part is over.
+   *
+   * @param {object} attacker
+   * @param {object} victim
+   * @return {void}
+   */
+  _performAttack(attacker, victim) {
+    const attack = pickRandom(attacker.type.attacks, Math.random());
+    const strip = attacker.type.animFiles[attack.anim];
+    const frameMs = 1000 / strip.rate;
+    for (const m of [attacker, victim]) {
+      m.fighting = true;
+      m.pinned = true;
+      m.fightTimers = [];
+    }
+    attacker.sprite.setFlipX(flipToFace(attacker.sprite.x, victim.sprite.x, attacker.sprite.flipX));
+    victim.sprite.setFlipX(flipToFace(victim.sprite.x, attacker.sprite.x, victim.sprite.flipX));
+    attacker.sprite.play(`${attacker.typeKey}-${attack.anim}`);
+
+    if (attack.travel) {
+      const stopShort = this._visualHeight(attacker) * TRAVEL_STOP_RATIO;
+      const to = travelLanding(
+        { x: attacker.sprite.x, y: attacker.sprite.y },
+        { x: victim.sprite.x, y: victim.sprite.y },
+        stopShort,
+      );
+      this.scene.tweens.add({
+        targets: attacker.sprite,
+        x: to.x,
+        y: to.y,
+        delay: attack.travel.from * frameMs,
+        duration: (attack.travel.to - attack.travel.from) * frameMs,
+        ease: 'Quad.easeIn',
       });
     }
+
+    attacker.fightTimers.push(this.scene.time.delayedCall(attack.hitFrame * frameMs, () => this._landHit(attacker, victim)));
+    attacker.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => this._endFightRole(attacker));
+    // Backstops, in case an animation-complete never arrives (a despawn mid-fight).
+    attacker.fightTimers.push(this.scene.time.delayedCall(strip.count * frameMs + 250, () => this._endFightRole(attacker)));
+    victim.fightTimers.push(this.scene.time.delayedCall(FIGHT_RELEASE_MS, () => {
+      if (!victim.reacting) {
+        this._endFightRole(victim);
+      }
+    }));
+  }
+
+  /**
+   * The moment an attack connects: the existing clash bursts go off between
+   * the two, and the victim plays its type's hit reaction.
+   *
+   * @param {object} attacker
+   * @param {object} victim
+   * @return {void}
+   */
+  _landHit(attacker, victim) {
+    if (!attacker.sprite?.active || !victim.sprite?.active) {
+      return;
+    }
     this._spawnClashVfxSequence(
-      (minionA.sprite.x + minionB.sprite.x) / 2,
-      (minionA.sprite.y + minionB.sprite.y) / 2,
-      (minionA.sprite.scale + minionB.sprite.scale) / 2,
+      (attacker.sprite.x + victim.sprite.x) / 2,
+      (attacker.sprite.y + victim.sprite.y) / 2,
+      (this._visualHeight(attacker) + this._visualHeight(victim)) / 2 / BASE_CHAR_HEIGHT,
     );
+    this._playReaction(victim);
+  }
+
+  /**
+   * Plays a victim's hit reaction (config `reaction`): a hurt strip, or a
+   * death strip held on its last frame for `holdMs` and then played
+   * backwards (`getUp`) — so it reads as falling, lying there a moment and
+   * getting back up, never popping straight back up.
+   *
+   * @param {object} victim
+   * @return {void}
+   */
+  _playReaction(victim) {
+    const reaction = victim.type.reaction;
+    const key = `${victim.typeKey}-${reaction.anim}`;
+    victim.reacting = true;
+    victim.sprite.play(key);
+    victim.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!reaction.holdMs && !reaction.getUp) {
+        this._endFightRole(victim);
+        return;
+      }
+      victim.fightTimers.push(this.scene.time.delayedCall(reaction.holdMs ?? 0, () => {
+        if (!reaction.getUp || !victim.sprite?.active) {
+          this._endFightRole(victim);
+          return;
+        }
+        victim.sprite.playReverse(key);
+        victim.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => this._endFightRole(victim));
+      }));
+    });
+  }
+
+  /**
+   * Releases one fight participant back to normal idle/walk behaviour and
+   * starts its cooldown. Safe to call more than once (the backstop timers
+   * may fire after the normal path already released it).
+   *
+   * @param {object} minion
+   * @return {void}
+   */
+  _endFightRole(minion) {
+    if (!minion.fighting) {
+      return;
+    }
+    minion.fighting = false;
+    minion.pinned = false;
+    minion.reacting = false;
+    for (const timer of minion.fightTimers ?? []) {
+      timer.remove();
+    }
+    minion.fightTimers = [];
+    minion.fightCooldownUntil = this.scene.time.now + FIGHT_COOLDOWN_MS;
+    if (minion.sprite?.active) {
+      minion.animState = 'idle';
+      minion.sprite.play(`${minion.typeKey}-idle`);
+    }
+  }
+
+  /**
+   * A minion's current visual height in world px — the same for every type
+   * (see _minionScale), recovered from its live scale and its own ink height.
+   *
+   * @param {object} minion
+   * @return {number}
+   */
+  _visualHeight(minion) {
+    return minion.sprite.scale * minion.charHeight;
   }
 
   /**
@@ -1132,11 +1293,11 @@ export class Minions {
    *
    * @param {number} x
    * @param {number} y
-   * @param {number} scale the clashing minions' own average current scale
+   * @param {number} scale the clashing minions' visual height over BASE_CHAR_HEIGHT (the scale a 20px-tall minion would have)
    * @return {void}
    */
   _spawnClashVfxSequence(x, y, scale) {
-    const jitterRadius = scale * MINION_CHAR_HEIGHT * CLASH_VFX_JITTER_RATIO;
+    const jitterRadius = scale * BASE_CHAR_HEIGHT * CLASH_VFX_JITTER_RATIO;
     for (let i = 0; i < CLASH_VFX_BURST_COUNT; i++) {
       const delay = Math.max(0, i * CLASH_VFX_STAGGER_MS + Phaser.Math.Between(-40, 40));
       this.scene.time.delayedCall(delay, () => {
