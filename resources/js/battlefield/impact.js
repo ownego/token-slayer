@@ -43,16 +43,7 @@ export class Impact {
 
     if (!target) {
       const boss = this.scene.bossSprite;
-      const baseScaleX = boss.scaleX;
-      const baseScaleY = boss.scaleY;
-      this.scene.tweens.add({
-        targets: boss,
-        scaleX: baseScaleX * 1.1,
-        scaleY: baseScaleY * 0.9,
-        duration: TIMINGS.flinchMs / 2,
-        yoyo: true,
-        ease: 'Quad.easeOut',
-      });
+      this._flinchBoss(boss);
       boss.setTint(0xffffff);
       this.scene.time.delayedCall(80, () => boss.clearTint());
     }
@@ -81,6 +72,43 @@ export class Impact {
       },
     });
     this.scene.bossState.currentHp = hpAfter;
+  }
+
+  /**
+   * Squash-and-stretches the boss around its rest scale.
+   *
+   * The rest scale is captured only when no flinch is running on this sprite:
+   * a hit landing mid-yoyo would otherwise read the half-squashed scale as its
+   * baseline and leave the boss there, and a burst of hits ratchets it flatter
+   * until a reload. A still-running flinch is stopped and snapped back first.
+   * Not killTweensOf — that would also kill the boss patrol tween.
+   *
+   * @param {Phaser.GameObjects.Sprite} boss
+   * @return {void}
+   */
+  _flinchBoss(boss) {
+    const running = this._flinch?.boss === boss ? this._flinch : null;
+    if (running) {
+      running.tween.stop();
+      boss.scaleX = running.restX;
+      boss.scaleY = running.restY;
+    }
+    const restX = boss.scaleX;
+    const restY = boss.scaleY;
+    const tween = this.scene.tweens.add({
+      targets: boss,
+      scaleX: restX * 1.1,
+      scaleY: restY * 0.9,
+      duration: TIMINGS.flinchMs / 2,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        if (this._flinch?.tween === tween) {
+          this._flinch = null;
+        }
+      },
+    });
+    this._flinch = { boss, tween, restX, restY };
   }
 
   /**
