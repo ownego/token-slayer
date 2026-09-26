@@ -33,23 +33,28 @@
             <div class="cs-root">
                 <div class="roster">
                     <div class="roster-label"><span class="flourish"></span>Roster · <span x-text="characters.length"></span><span class="flourish"></span></div>
-                    <div class="roster-scroll">
-                        <div class="roster-grid">
-                            <template x-for="(character, index) in characters" :key="character">
-                                <div
-                                    class="orb"
-                                    x-bind:class="{ 'is-preview': character === previewKey, 'is-equipped': character === equippedKey }"
-                                    tabindex="0"
-                                    x-bind:style="`--accent:${accentFor(character)}; --d:${index}`"
-                                    @click="selectCharacter(character)"
-                                    @keydown.enter="selectCharacter(character)"
-                                >
-                                    <span class="halo"></span>
-                                    <div class="orb-crop" x-bind:data-character="character"></div>
-                                    <span class="orb-label" x-text="character"></span>
-                                    <span class="check" x-show="character === equippedKey">✓</span>
-                                </div>
-                            </template>
+                    <div class="roster-scroll-wrap">
+                        <div class="roster-scroll" x-ref="rosterScroll" @scroll.passive="_syncRosterThumb()">
+                            <div class="roster-grid">
+                                <template x-for="(character, index) in characters" :key="character">
+                                    <div
+                                        class="orb"
+                                        x-bind:class="{ 'is-preview': character === previewKey, 'is-equipped': character === equippedKey }"
+                                        tabindex="0"
+                                        x-bind:style="`--accent:${accentFor(character)}; --d:${index}`"
+                                        @click="selectCharacter(character)"
+                                        @keydown.enter="selectCharacter(character)"
+                                    >
+                                        <span class="halo"></span>
+                                        <div class="orb-crop" x-bind:data-character="character"></div>
+                                        <span class="orb-label" x-text="character"></span>
+                                        <span class="check" x-show="character === equippedKey">✓</span>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="roster-rail" x-ref="rosterRail" @pointerdown="_onRailPointerDown($event)">
+                            <div class="roster-thumb" x-ref="rosterThumb" x-bind:class="{ 'is-dragging': rosterDragging }"></div>
                         </div>
                     </div>
                 </div>
@@ -203,7 +208,9 @@
    grid's first column sat flush against that clip edge with zero room to
    bleed. Width is grown by the SAME +8px .roster-scroll gains below, for
    the same reason as above. */
-.roster { position: relative; width: 308px; padding: 20px 20px 20px 40px; display: flex; flex-direction: column; }
+/* 340px (was 308): the extra room goes to the right, between the grid and
+   the hand-drawn scrollbar rail, so the bar never crowds the last column. */
+.roster { position: relative; width: 340px; padding: 20px 20px 20px 40px; display: flex; flex-direction: column; }
 .roster::after {
     content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 45%, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 55%, transparent);
@@ -231,35 +238,43 @@
    overflow-x is hidden explicitly: left unset it computes to auto (see the
    comment above), and an orb's hover scale(1.1) + halo bleeding a few px
    past the grid then summoned a horizontal scrollbar. The bleed still has
-   the side padding to land in.
-   Scrollbar, modelled on Firefox's overlay bar: invisible until the pointer
-   is over the list, then a hairline, then a little wider only while the
-   pointer is on the bar itself — always fully rounded. Chrome ignores every
-   ::-webkit-scrollbar rule as soon as the element has ANY scrollbar-width /
-   scrollbar-color (Chrome 121+) and falls back to its square, arrowed bar,
-   so the standard pair is scoped to browsers without ::-webkit-scrollbar
-   (Firefox already behaves like this natively). Chrome/Safari get a fixed
-   10px transparent gutter whose thumb is inset by a transparent border —
-   widening the thumb, never the gutter, so the grid never shifts sideways. */
+   the side padding to land in; the right padding (30px) also keeps the
+   last column clear of the rail below. */
+.roster-scroll-wrap { position: relative; flex: 1 1 0; min-height: 0; display: flex; }
 .roster-scroll {
-    flex: 1 1 0; min-height: 0;
-    overflow-x: hidden; overflow-y: auto; padding: 16px 14px 6px 8px;
+    flex: 1; min-height: 0;
+    overflow-x: hidden; overflow-y: auto; padding: 16px 30px 6px 8px;
+    scrollbar-width: none;
 }
-/* Shared by the stacked card's own scroll (.cs-outer.is-stacked). */
+.roster-scroll::-webkit-scrollbar { display: none; }
+/* Hand-drawn scrollbar (thumb geometry: character-preview/scroll-thumb.js).
+   A native bar can't do this in Chrome — ::-webkit-scrollbar styles don't
+   transition, and any scrollbar-width makes Chrome ignore them for its
+   square arrowed bar — so the native one is hidden above and this rail
+   eases through three states like Firefox's overlay bar: a faint 2px hint,
+   4px while the pointer is over the roster, 8px while on the rail itself or
+   dragging. The rail is a 14px-wide hit area; the thumb grows leftward
+   from its right edge. */
+.roster-rail { position: absolute; top: 16px; bottom: 6px; right: 2px; width: 14px; cursor: pointer; touch-action: none; }
+.roster-rail.is-hidden { display: none; }
+.roster-thumb {
+    position: absolute; top: 0; right: 3px; width: 2px; min-height: 24px;
+    border-radius: 999px; background: rgba(251,191,36,0.3);
+    transition: width 0.22s ease, background-color 0.22s ease;
+    will-change: transform;
+}
+.roster:hover .roster-thumb { width: 4px; background: rgba(251,191,36,0.55); }
+.roster-rail:hover .roster-thumb,
+.roster-thumb.is-dragging { width: 8px; background: rgba(251,191,36,0.85); }
+/* The stacked card's own vertical scroll keeps a styled native bar (touch
+   devices overlay it anyway). */
 @supports not selector(::-webkit-scrollbar) {
-    .roster-scroll, .cs-outer.is-stacked { scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.5) transparent; }
+    .cs-outer.is-stacked { scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.5) transparent; }
 }
-:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
-:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-track,
-:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-corner { background: transparent; }
-:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
-:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-thumb {
-    background-color: transparent; background-clip: padding-box;
-    border: 3px solid transparent; border-radius: 999px;
-}
-:is(.roster-scroll, .cs-outer.is-stacked):hover::-webkit-scrollbar-thumb { background-color: rgba(251,191,36,0.45); }
-:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-thumb:hover { border-width: 1px; background-color: rgba(251,191,36,0.7); }
-:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-thumb:active { border-width: 1px; background-color: rgba(251,191,36,0.9); }
+.cs-outer.is-stacked::-webkit-scrollbar { width: 8px; background: transparent; }
+.cs-outer.is-stacked::-webkit-scrollbar-track { background: transparent; }
+.cs-outer.is-stacked::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.cs-outer.is-stacked::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.45) padding-box; border: 2px solid transparent; border-radius: 999px; }
 .roster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
 .orb {
@@ -514,7 +529,17 @@
 .is-stacked .cs-root { flex-direction: column; min-height: 0; }
 .is-stacked .roster { width: auto; padding: 16px; }
 .is-stacked .roster::after, .is-stacked .roster::before { display: none; }
-.is-stacked .roster-scroll { flex: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; }
+.is-stacked .roster-scroll-wrap { flex: none; }
+.is-stacked .roster-scroll { overflow-x: auto; overflow-y: hidden; padding: 16px 8px 6px; }
+.is-stacked .roster-rail { display: none; }
+/* The stacked roster scrolls sideways, which a mouse wheel can't do, so it
+   gets back a thin native bar to drag. */
+@supports not selector(::-webkit-scrollbar) {
+    .is-stacked .roster-scroll { scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.5) transparent; }
+}
+.is-stacked .roster-scroll::-webkit-scrollbar { display: block; height: 6px; background: transparent; }
+.is-stacked .roster-scroll::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.is-stacked .roster-scroll::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.45); border-radius: 999px; }
 .is-stacked .roster-grid { display: flex; gap: 14px; grid-template-columns: none; }
 .is-stacked .roster-grid .orb { flex: 0 0 auto; }
 .is-stacked .preview { padding: 20px 16px 24px; }
@@ -556,6 +581,7 @@
             _skillThumbTimers: [],
             layout: 'split',
             fit: 1,
+            rosterDragging: false,
             _onViewportChange: null,
 
             init() {
@@ -597,7 +623,70 @@
                     this.fit = this.layout === 'split'
                         ? bf.fitScale({ viewportWidth, viewportHeight, contentWidth: card.offsetWidth, contentHeight: card.offsetHeight })
                         : 1;
+                    this._syncRosterThumb();
                 });
+            },
+
+            // Positions the roster's hand-drawn scrollbar thumb (see the
+            // .roster-rail CSS for why the native bar is hidden). Uses
+            // layout sizes (clientHeight/offsetHeight), which the card's
+            // --fit transform doesn't affect, so it stays right at any scale.
+            _syncRosterThumb() {
+                const bf = window.__battlefield;
+                const scroller = this.$refs.rosterScroll;
+                const rail = this.$refs.rosterRail;
+                if (!bf?.thumbGeometry || !scroller || !rail) {
+                    return;
+                }
+                const g = bf.thumbGeometry({
+                    scrollTop: scroller.scrollTop,
+                    scrollHeight: scroller.scrollHeight,
+                    clientHeight: scroller.clientHeight,
+                    trackHeight: rail.clientHeight,
+                });
+                rail.classList.toggle('is-hidden', !g.visible);
+                this.$refs.rosterThumb.style.height = g.size + 'px';
+                this.$refs.rosterThumb.style.transform = `translateY(${g.offset}px)`;
+            },
+
+            // Drag the thumb, or press anywhere else on the rail to jump the
+            // thumb's centre there and keep dragging from it. Pointer
+            // deltas are divided by --fit: they arrive in screen px, but the
+            // rail's geometry is in the card's unscaled layout px.
+            _onRailPointerDown(event) {
+                const bf = window.__battlefield;
+                const scroller = this.$refs.rosterScroll;
+                const rail = this.$refs.rosterRail;
+                const thumb = this.$refs.rosterThumb;
+                if (!bf?.scrollTopForThumb || event.button !== 0) {
+                    return;
+                }
+                event.preventDefault();
+                const box = () => ({ scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight, trackHeight: rail.clientHeight });
+                const railTop = rail.getBoundingClientRect().top;
+                const thumbRect = thumb.getBoundingClientRect();
+                const onThumb = event.clientY >= thumbRect.top && event.clientY <= thumbRect.bottom;
+                const thumbSize = thumb.offsetHeight;
+                const grabOffset = onThumb ? (event.clientY - thumbRect.top) / this.fit : thumbSize / 2;
+                const moveTo = (clientY) => {
+                    const offset = (clientY - railTop) / this.fit - grabOffset;
+                    scroller.scrollTop = bf.scrollTopForThumb({ offset, ...box() });
+                };
+                if (!onThumb) {
+                    moveTo(event.clientY);
+                }
+                this.rosterDragging = true;
+                rail.setPointerCapture(event.pointerId);
+                const onMove = (e) => moveTo(e.clientY);
+                const onUp = () => {
+                    this.rosterDragging = false;
+                    rail.removeEventListener('pointermove', onMove);
+                    rail.removeEventListener('pointerup', onUp);
+                    rail.removeEventListener('pointercancel', onUp);
+                };
+                rail.addEventListener('pointermove', onMove);
+                rail.addEventListener('pointerup', onUp);
+                rail.addEventListener('pointercancel', onUp);
             },
 
             _bootPreview() {

@@ -171,7 +171,7 @@ Tests that lock config — update them in the same change: `config.test.js` (ros
 | `minion-layout.js` | Pure `homeSlotOffset`, `homeSlotAngle`, `shortestAngleDelta`, `isInFrontOfFighter` |
 | `minion-grouping.js` | Pure `isNear`, `clusterAngles`, `computeZones`, `zoneFanOffset` — gathering zones |
 | `fighter.js` → `fighter/` | `class Fighter` — lifecycle, hits, moves, flair ring; `avatar.js` (texture load + loading/failed fallbacks); `animations.js` (`registerFighterAnimations` / `registerAllFighterAnimations` — atlas anims, idempotent, derives `<key>-summon` from reversed death when absent); pure `preview.js` (`centeredScaleFit`, `drawFighterPreview`); pure `flair.js`; `flair-font.js` (model-ring webfont + load gate) |
-| `character-preview/` | Separate mini Phaser app for `livewire/character-select.blade.php`: `game.js`, `scene.js` (loads the atlas itself), `attack-labels.js`, `moveset.js`, `skill-loop.js`, `modal-fit.js` (pure `loadoutLayout`/`fitScale` — picks the modal's split vs stacked layout by viewport width and uniformly scales the fixed-size split card to fit, so zoom/DevTools/window size never overflow it; exposed on `window.__battlefield` for the blade's inline Alpine) |
+| `character-preview/` | Separate mini Phaser app for `livewire/character-select.blade.php`: `game.js`, `scene.js` (loads the atlas itself), `attack-labels.js`, `moveset.js`, `skill-loop.js`, `modal-fit.js` (pure `loadoutLayout`/`fitScale` — picks the modal's split vs stacked layout by viewport width and uniformly scales the fixed-size split card to fit, so zoom/DevTools/window size never overflow it; exposed on `window.__battlefield` for the blade's inline Alpine), `scroll-thumb.js` (pure `thumbGeometry`/`scrollTopForThumb` — the roster's hand-drawn scrollbar; Chrome can't transition `::-webkit-scrollbar`, so the native bar is hidden and this thumb eases 2→4→8px like Firefox's overlay bar; also exposed on `window.__battlefield`) |
 
 ## Test Files
 | Test | What it covers |
@@ -202,6 +202,7 @@ Tests that lock config — update them in the same change: `config.test.js` (ros
 | `tests/js/character-preview/moveset.test.js` | buildMoveset incl. reversed Summon-from-Death |
 | `tests/js/character-preview/skill-loop.test.js` | createSkillLoop — looping vs one-shot, token cancel |
 | `tests/js/character-preview/modal-fit.test.js` | loadoutLayout breakpoint; fitScale — never upscales, tighter axis wins, zoom levels fit, zero-size guard |
+| `tests/js/character-preview/scroll-thumb.test.js` | thumbGeometry — no thumb when content fits, size/offset from scroll, min size, overscroll clamp; scrollTopForThumb inverse + clamping |
 | `tests/js/managers/Boss.test.js` | hpBarColor, bossLabel, bossTypeFor, stun cooldown, dreadknight turn sequence (Phaser stubbed) |
 | `tests/js/managers/Charge.test.js` | chargeParticleColors |
 | `tests/js/managers/Fighter.test.js` | fighterRestScale; handleFighterMoved/handleHit with a fake scene — a mid-dash move/hit never records the boss column as home |
