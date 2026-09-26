@@ -95,7 +95,7 @@ Actual order (do not reorder casually — later managers read state the earlier 
 Any new field that owns a Phaser object/timer must be released in `_teardownMinion` (covers `_destroyOne`, `despawnAll`, `destroy`).
 
 ## JSDoc Convention (JS — NOT the PHP DocBlock rules)
-Google JavaScript Style Guide §7. The codebase uses **`@return`** (≈240 uses vs 7 `@returns`) — keep `@return` for consistency.
+Google JavaScript Style Guide §7. Always **`@return`** (singular), never `@returns`.
 
 - **Types always in braces**: `{number}`, `{Function|null}`, `{Array<{x: number, y: number}>}`, `{{user_id: number|string, count: number}}` for payloads.
 - **Method descriptions** start with a third-person verb: "Returns …", "Spawns …".

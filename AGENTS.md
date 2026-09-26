@@ -114,7 +114,7 @@ These rules extend the Boost/Laravel defaults above. When they conflict, these w
 ## Comments
 
 - PHP: prefer PHPDoc over inline comments; inline comments only for genuinely non-obvious logic (race workarounds, protocol quirks) — state the constraint, not what the next line does.
-- JavaScript: manager/class public methods get Google-style JSDoc (`@param`/`@returns`); pure/utility functions get a single-line comment at most. Do not apply the PHP DocBlock convention to JS.
+- JavaScript: Google-style JSDoc (`@param {type} name` per arg + `@return {type}` — singular `@return`, never `@returns`) on every manager method (public and `_` private) and every exported pure function; full convention in `resources/js/battlefield/CLAUDE.md`. Do not apply the PHP DocBlock convention to JS.
 
 ## Git
 
