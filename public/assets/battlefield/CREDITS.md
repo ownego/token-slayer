@@ -65,7 +65,7 @@ Naming convention: `{character}-{state}.png` for base animations, `{character}-a
 | `necromancer/death.png` | 9 | also reused, forward/reversed, as the vanish/reappear teleport transition |
 | `necromancer/appear-burst.png` | 6 | |
 
-From "Tiny RPG Character Asset Pack 02 v1.01-Free Demon_A&Blood Monster_A" — same source/author (**Zerie**) and license (**CC0 1.0 Universal**) as the Fighter Characters pack above. Idle/Walk/Attack01/Attack02 were extracted (Attack01/Attack02 used purely as a cosmetic idle fidget, never for damage); the pack also ships Hurt/Death, unused since minions never fight (see `.ai/domain/battlefield.md` Companions).
+From "Tiny RPG Character Asset Pack 02 v1.01-Free Demon_A&Blood Monster_A" — same source/author (**Zerie**) and license (**CC0 1.0 Universal**) as the Fighter Characters pack above. Idle/Walk/Attack01/Attack02 were extracted (Attack01/Attack02 used purely as a cosmetic idle fidget, never for damage); Death was extracted 2026-09-26 as the minions' hit reaction (fallen, held, then played backwards to get up — see `.ai/domain/battlefield.md` Companions); the pack's Hurt strip is still unused.
 
 | File | Frames | Notes |
 |---|---|---|
@@ -73,10 +73,16 @@ From "Tiny RPG Character Asset Pack 02 v1.01-Free Demon_A&Blood Monster_A" — s
 | `demon-a/walk.png` | 8 | loops |
 | `demon-a/attack1.png` | 7 | cosmetic idle fidget |
 | `demon-a/attack2.png` | 7 | cosmetic idle fidget |
+| `demon-a/death.png` | 4 | hit reaction (with-shadows variant, matching the other strips) |
 | `blood-monster-a/idle.png` | 6 | loops |
 | `blood-monster-a/walk.png` | 8 | loops |
 | `blood-monster-a/attack1.png` | 8 | cosmetic idle fidget |
 | `blood-monster-a/attack2.png` | 8 | cosmetic idle fidget |
+| `blood-monster-a/death.png` | 4 | hit reaction (with-shadows variant, matching the other strips) |
+
+### SMW minions (`companions/smw-*`)
+
+From the "Super Mario Maker 2 — Super Mario World — Enemies (SMW)" sheet (Nintendo; ripped sheet, no license — third-party IP kept at the maintainers' decision). Idle/walk/base poses are the sheet's own frames at native resolution; every attack/hurt strip (and its effects: fire, fireball, wind, hit sparks, paint, banana, shell spin) is self-made from those frames.
 
 ## Boss Spritesheets (`bosses/`)
 

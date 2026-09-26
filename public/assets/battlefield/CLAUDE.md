@@ -36,14 +36,14 @@ Ambient actors, neither a fighter nor a boss — see `.ai/domain/battlefield.md`
 ```
 companions/bat/               — 100×100 frames, scale 1.4, states: flying/attack1/attack2/hurt/death
 companions/necromancer/       — 100×100 frames, scale 2.6, states: idle/walk/summon/circle/death/appearBurst
-companions/demon-a/           — 100×100 frames, scale computed per-fighter (see minions.js), states: idle/walk/attack1/attack2
-companions/blood-monster-a/   — 100×100 frames, scale computed per-fighter (see minions.js), states: idle/walk/attack1/attack2
-companions/smw-goomba/        — 100×100 frames (repacked from a much smaller source crop — see minions.js), states: idle/walk/attack1/attack2
-companions/smw-babybowser/    — 100×100 frames (repacked), states: idle/walk/attack1/attack2
-companions/smw-bowser/        — 100×100 frames (repacked), states: idle/walk/attack1/attack2
+companions/demon-a/           — 100×100 frames, scale computed per-fighter (see minions.js), states: idle/walk/attack1/attack2/death
+companions/blood-monster-a/   — 100×100 frames, scale computed per-fighter (see minions.js), states: idle/walk/attack1/attack2/death
+companions/smw-goomba/        — 110×110 frames (charHeight 22), states: idle/walk/attack-slam/attack-shellspin/attack-punch/attack-headbutt/attack-banana/hurt
+companions/smw-babybowser/    — 125×125 frames (charHeight 25), states: idle/walk/attack-fire/attack-brush/hurt
+companions/smw-bowser/        — 145×145 frames (charHeight 29), states: idle/walk/attack-fireball/attack-claw/attack-dash/hurt
 companions/minion-clash/      — 100×100 frames, states: burst1 (10 frames)/burst2 (7 frames)
 ```
-`demon-a`/`blood-monster-a`/`smw-goomba`/`smw-babybowser`/`smw-bowser` are the `MINION_TYPES`. The `smw-*` three (2026-09-24) are cropped/rebuilt from the "SMW Enemies" character sheet and repacked onto a 100x100 canvas at a matching ink height (~20px) so they render at the same on-screen size as the original pair despite very different native resolutions — staging trial, not yet confirmed as keepers. Attack1/Attack2 are a purely cosmetic idle fidget (a "khè khè / múa múa" flourish) — minions never fight, so neither ever touches damage; Hurt/Death were never extracted (see `.ai/domain/battlefield.md` Companions).
+`demon-a`/`blood-monster-a`/`smw-goomba`/`smw-babybowser`/`smw-bowser` are the `MINION_TYPES`. The three `smw-*` types were rebuilt 2026-09-26 from the source sheet and shrunk to a height between native and the old 20px with a palette-snapping shrink (the 2026-09-24 repack had smooth-downscaled them to ~20px, baking in blur; the native set + converter are kept locally in `docs/sprite-work/_native-backup/`): each type keeps ONE frame size across all its strips and declares its ink height as `charHeight` in `config/companions.js`, which is what `minions.js` scales by — so do not "normalize" them back to 100×100. Their attack/hurt strips are self-made from source frames (Python/PIL; scripts + source frames kept locally in `docs/sprite-work/`), every strip drawn facing RIGHT; `attack-dash` is deliberately in place (code moves Bowser to the target). Bump their `?v=` on every edit. Minions fight each other cosmetically — one attacks, the other plays `hurt` (smw) or `death` held then reversed (demon/blood); see `.ai/domain/battlefield.md` Companions.
 
 `companions/minion-clash/burst{1,2}.png` are `MINION_CLASH_EFFECTS` — NOT hand-drawn assets, they're crops of the shared fighter atlas's own `wizard-effect1`/`wizard-effect2` attack-impact frames (`fighters/fighters-atlas.png`, contiguous regions, re-saved as standalone strips) so a generic cross-fighter minion clash can reuse that look without loading the whole atlas/wizard path or borrowing one specific fighter type's own attack visual. Played by `minions.js`'s `_spawnClashVfx`, one picked at random per clash.
 
