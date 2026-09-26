@@ -8,6 +8,7 @@ import { canvasSizeFor } from './render-scale.js';
 import { formatHp } from './format.js';
 import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
 import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
+import { loadoutLayout, fitScale } from './character-preview/modal-fit.js';
 import { BusEvent, SCENE_KEY, WORLD_ZOOM } from './constants.js';
 
 const ECHO_EVENT_MAP = {
@@ -157,6 +158,8 @@ function bootGame(mount, state, mode) {
       drawFighterPreview,
       drawFighterFrame,
       createCharacterPreview: createPreviewGame,
+      loadoutLayout,
+      fitScale,
       destroyCharacterPreview: destroyPreviewGame,
     };
   });

@@ -14,7 +14,13 @@
         @click.self="close()"
         class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
     >
-        <div class="cs-outer" id="cardRoot" x-bind:style="`--accent:${accent}`">
+        <div
+            class="cs-outer"
+            id="cardRoot"
+            x-ref="card"
+            x-bind:class="layout === 'stacked' ? 'is-stacked' : 'is-split'"
+            x-bind:style="`--accent:${accent}; --fit:${fit}`"
+        >
             <div class="cs-grain"></div>
 
             <!-- Only Character ships for now — future tabs (Item, ...) are a
@@ -86,23 +92,25 @@
                         </template>
                     </div>
 
-                    <button
-                        type="button"
-                        class="btn-equip"
-                        @click="equip()"
-                        x-bind:disabled="previewKey === equippedKey"
-                    >
-                        <span class="core"></span>
-                        <span class="sheen"></span>
-                        <span class="label">
-                            <span class="icon-cluster">
-                                <span class="sword-fx sword-left">🗡️</span>
-                                <span class="icon-wiggle">🛡</span>
-                                <span class="sword-fx sword-right">🗡️</span>
+                    <div class="equip-bar">
+                        <button
+                            type="button"
+                            class="btn-equip"
+                            @click="equip()"
+                            x-bind:disabled="previewKey === equippedKey"
+                        >
+                            <span class="core"></span>
+                            <span class="sheen"></span>
+                            <span class="label">
+                                <span class="icon-cluster">
+                                    <span class="sword-fx sword-left">🗡️</span>
+                                    <span class="icon-wiggle">🛡</span>
+                                    <span class="sword-fx sword-right">🗡️</span>
+                                </span>
+                                <span x-text="previewKey === equippedKey ? 'Equipped' : 'Equip'"></span>
                             </span>
-                            <span x-text="previewKey === equippedKey ? 'Equipped' : 'Equip'"></span>
-                        </span>
-                    </button>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -110,18 +118,37 @@
 </div>
 
 <style>
-/* --- Card shell --- */
+/* --- Card shell ---
+   Two layouts, picked in JS by modal-fit.js's loadoutLayout() because
+   browser zoom and a docked DevTools panel change the CSS viewport the same
+   way a smaller screen does:
+   - is-split: authored at one fixed size and scaled down as a whole by
+     --fit (modal-fit.js's fitScale()) so it never overflows and looks the
+     same at every zoom / browser / window size — only smaller. Fixed-px
+     pieces overflowing a vh-capped card is what used to cut off Equip.
+   - is-stacked: phones and narrow windows; one column that scrolls inside a
+     dvh-capped card, with Equip pinned to the bottom so it's always
+     reachable. */
 .cs-outer {
     position: relative;
-    width: clamp(288px, 82vw, 1440px);
-    max-height: 92vh;
     box-sizing: border-box;
     padding: 3px;
     background: linear-gradient(135deg, rgba(249,158,11,0.5), rgba(249,115,22,0.15) 30%, rgba(20,184,166,0.15) 70%, rgba(45,212,191,0.4));
     border-radius: 18px;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: hidden;
     box-shadow: 0 25px 70px -15px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04), 0 0 90px -20px rgba(249,115,22,0.25);
+}
+.cs-outer.is-split {
+    flex: none;
+    width: 1100px;
+    transform: scale(var(--fit, 1));
+    transform-origin: center;
+}
+.cs-outer.is-stacked {
+    width: calc(100vw - 32px);
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
 }
 .cs-grain {
     position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0.05; mix-blend-mode: overlay;
@@ -149,7 +176,7 @@
 /* --- Roster + preview split --- */
 .cs-root {
     position: relative; z-index: 2;
-    display: flex; min-height: 540px;
+    display: flex; min-height: 600px;
     background:
         radial-gradient(ellipse 700px 400px at 25% 10%, color-mix(in srgb, var(--accent, #f97316) 14%, transparent), transparent 60%),
         radial-gradient(ellipse 600px 400px at 90% 90%, color-mix(in srgb, var(--accent, #f97316) 8%, transparent), transparent 60%),
@@ -176,7 +203,7 @@
    grid's first column sat flush against that clip edge with zero room to
    bleed. Width is grown by the SAME +8px .roster-scroll gains below, for
    the same reason as above. */
-.roster { position: relative; width: 308px; padding: 20px 20px 20px 40px; }
+.roster { position: relative; width: 308px; padding: 20px 20px 20px 40px; display: flex; flex-direction: column; }
 .roster::after {
     content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 45%, color-mix(in srgb, var(--accent, #fbbf24) 35%, transparent) 55%, transparent);
@@ -199,15 +226,40 @@
    wider than the 6px scrollbar itself so content doesn't butt against it;
    left padding gives column 1's halo/hover-scale bleed the same room —
    this is the box that actually clips it (see .roster's comment above). */
-.roster-scroll { max-height: 380px; overflow-y: auto; padding: 16px 14px 6px 8px; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.4) rgba(255,255,255,0.03); }
-.roster-scroll::-webkit-scrollbar { width: 6px; }
-.roster-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
-.roster-scroll::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.4); border-radius: 3px; }
-/* Firefox has no arbitrary-width scrollbar-css, only the thin/auto/none
-   keywords — 'auto' is the closest available "bigger" state on hover. */
-.roster-scroll:hover { scrollbar-width: auto; }
-.roster-scroll:hover::-webkit-scrollbar { width: 10px; }
-.roster-scroll:hover::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.65); }
+/* Fills whatever height .roster gets (flex: 1 1 0 + min-height: 0) instead
+   of a fixed 380px that left dead space under the grid on tall cards.
+   overflow-x is hidden explicitly: left unset it computes to auto (see the
+   comment above), and an orb's hover scale(1.1) + halo bleeding a few px
+   past the grid then summoned a horizontal scrollbar. The bleed still has
+   the side padding to land in.
+   Scrollbar, modelled on Firefox's overlay bar: invisible until the pointer
+   is over the list, then a hairline, then a little wider only while the
+   pointer is on the bar itself — always fully rounded. Chrome ignores every
+   ::-webkit-scrollbar rule as soon as the element has ANY scrollbar-width /
+   scrollbar-color (Chrome 121+) and falls back to its square, arrowed bar,
+   so the standard pair is scoped to browsers without ::-webkit-scrollbar
+   (Firefox already behaves like this natively). Chrome/Safari get a fixed
+   10px transparent gutter whose thumb is inset by a transparent border —
+   widening the thumb, never the gutter, so the grid never shifts sideways. */
+.roster-scroll {
+    flex: 1 1 0; min-height: 0;
+    overflow-x: hidden; overflow-y: auto; padding: 16px 14px 6px 8px;
+}
+/* Shared by the stacked card's own scroll (.cs-outer.is-stacked). */
+@supports not selector(::-webkit-scrollbar) {
+    .roster-scroll, .cs-outer.is-stacked { scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.5) transparent; }
+}
+:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar { width: 10px; height: 10px; background: transparent; }
+:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-track,
+:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-corner { background: transparent; }
+:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-thumb {
+    background-color: transparent; background-clip: padding-box;
+    border: 3px solid transparent; border-radius: 999px;
+}
+:is(.roster-scroll, .cs-outer.is-stacked):hover::-webkit-scrollbar-thumb { background-color: rgba(251,191,36,0.45); }
+:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-thumb:hover { border-width: 1px; background-color: rgba(251,191,36,0.7); }
+:is(.roster-scroll, .cs-outer.is-stacked)::-webkit-scrollbar-thumb:active { border-width: 1px; background-color: rgba(251,191,36,0.9); }
 .roster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 
 .orb {
@@ -252,7 +304,9 @@
 
 /* --- Preview panel --- */
 .preview { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 30px; }
-.preview-label { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #78716c; }
+/* margin-bottom clears .tick-ring, which reaches 24px outside the frame —
+   the flex gap alone (16px) let the ring's top ticks cover the label. */
+.preview-label { margin-bottom: 12px; display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #78716c; }
 .preview-frame { position: relative; width: 210px; height: 210px; border-radius: 50%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
 .tick-groove {
     position: absolute; inset: -18px; border-radius: 50%;
@@ -456,25 +510,30 @@
 @keyframes icon-wiggle { 0%, 100% { transform: rotate(0deg) scale(1); } 10% { transform: rotate(-12deg) scale(1.1); } 20% { transform: rotate(10deg) scale(1.1); } 30% { transform: rotate(-6deg) scale(1.05); } 40%, 85% { transform: rotate(0deg) scale(1); } }
 @keyframes sheen-move { 0% { left: -60%; } 50% { left: 130%; } 100% { left: 130%; } }
 
-/* --- Responsive --- */
-@media (max-width: 480px) {
-    .cs-root { flex-direction: column; min-height: 0; }
-    .roster { width: 100%; padding: 16px; box-sizing: border-box; }
-    .roster::after, .roster::before { display: none; }
-    .roster-scroll { max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; }
-    .roster-grid { display: flex; gap: 14px; grid-template-columns: none; }
-    .roster-grid .orb { flex: 0 0 auto; }
-    .preview { padding: 20px 16px 24px; }
-    .actions { gap: 8px; }
-    .btn-move { width: 78px; padding: 6px 6px 5px; }
-    .btn-equip { padding: 12px 32px; font-size: 17px; }
+/* --- Stacked layout (phones, narrow windows) --- */
+.is-stacked .cs-root { flex-direction: column; min-height: 0; }
+.is-stacked .roster { width: auto; padding: 16px; }
+.is-stacked .roster::after, .is-stacked .roster::before { display: none; }
+.is-stacked .roster-scroll { flex: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 6px; }
+.is-stacked .roster-grid { display: flex; gap: 14px; grid-template-columns: none; }
+.is-stacked .roster-grid .orb { flex: 0 0 auto; }
+.is-stacked .preview { padding: 20px 16px 24px; }
+.is-stacked .actions { gap: 8px; }
+.is-stacked .btn-move { width: 78px; padding: 6px 6px 5px; }
+/* Sticky inside the card's own scroll so Equip stays on screen however long
+   the skill grid gets. The bar (not the button) is what sticks: it carries a
+   solid fade so skills scrolling underneath don't show through the button,
+   which is translucent while disabled ("Equipped"). */
+.is-stacked .equip-bar {
+    position: sticky; bottom: 0; z-index: 5; align-self: stretch;
+    display: flex; justify-content: center;
+    margin: 0 -16px -24px; padding: 20px 16px 16px;
+    background: linear-gradient(180deg, transparent, #05060d 45%);
 }
+.is-stacked .btn-equip { padding: 12px 32px; font-size: 17px; }
 @media (max-width: 380px) {
-    .preview-frame { transform: scale(0.85); }
-    .preview-label { transform: scale(0.9); }
-}
-@media (max-height: 640px) {
-    .cs-root { min-height: 0; }
+    .is-stacked .preview-frame { transform: scale(0.85); }
+    .is-stacked .preview-label { transform: scale(0.9); }
 }
 </style>
 
@@ -495,6 +554,9 @@
             _previewTileKey: null,
             _equippedTileKey: null,
             _skillThumbTimers: [],
+            layout: 'split',
+            fit: 1,
+            _onViewportChange: null,
 
             init() {
                 // no-op until open() — the preview game only exists while the modal is open.
@@ -503,7 +565,39 @@
             open() {
                 this.previewKey = this.equippedKey ?? this.previewKey;
                 this.isOpen = true;
-                this.$nextTick(() => this._bootPreview());
+                this._onViewportChange = () => this._fitToViewport();
+                window.addEventListener('resize', this._onViewportChange);
+                window.visualViewport?.addEventListener('resize', this._onViewportChange);
+                this.$nextTick(() => {
+                    this._fitToViewport();
+                    this._bootPreview();
+                });
+            },
+
+            // Re-picks the layout and re-fits the split card to the current
+            // viewport — on open, on every resize (window, zoom, DevTools
+            // docking, mobile URL bar via visualViewport) and whenever the
+            // skill row changes the card's height. Measures offsetWidth/
+            // offsetHeight, which a CSS transform doesn't affect, so the
+            // card's own current --fit never skews the next measurement.
+            _fitToViewport() {
+                if (!this.isOpen) {
+                    return;
+                }
+                const bf = window.__battlefield;
+                if (!bf?.fitScale) {
+                    setTimeout(() => this._fitToViewport(), 50);
+                    return;
+                }
+                const viewportWidth = document.documentElement.clientWidth;
+                const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+                this.layout = bf.loadoutLayout(viewportWidth);
+                this.$nextTick(() => {
+                    const card = this.$refs.card;
+                    this.fit = this.layout === 'split'
+                        ? bf.fitScale({ viewportWidth, viewportHeight, contentWidth: card.offsetWidth, contentHeight: card.offsetHeight })
+                        : 1;
+                });
             },
 
             _bootPreview() {
@@ -535,6 +629,9 @@
                 window.__battlefield?.destroyCharacterPreview?.(this.equippedTileGame);
                 this._skillThumbTimers.forEach(clearInterval);
                 this._skillThumbTimers = [];
+                window.removeEventListener('resize', this._onViewportChange);
+                window.visualViewport?.removeEventListener('resize', this._onViewportChange);
+                this._onViewportChange = null;
                 this.previewGame = null;
                 this.previewScene = null;
                 this.previewTileGame = null;
@@ -558,7 +655,10 @@
                 this.skills = this.previewScene?.getMoveset()?.skills ?? [];
                 this.activeSkillId = 'idle';
                 this._refreshAnimatedTiles();
-                this.$nextTick(() => this._drawSkillThumbnails());
+                this.$nextTick(() => {
+                    this._drawSkillThumbnails();
+                    this._fitToViewport();
+                });
             },
 
             selectSkill(skillId) {
