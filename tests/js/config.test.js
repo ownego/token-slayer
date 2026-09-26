@@ -200,6 +200,35 @@ describe('MINION_TYPES', () => {
       expect(type.animFiles.walk.loop).toBe(true);
     }
   });
+
+  test.each(MINION_TYPES.map((t) => [t.key, t]))('%s shares one frame size across every strip, so one charHeight scales them all', (name, cfg) => {
+    const sizes = new Set(Object.values(cfg.animFiles).map((i) => `${i.frameWidth}x${i.frameHeight}`));
+    expect(sizes.size, `${name} frame sizes ${[...sizes]}`).toBe(1);
+    expect(cfg.charHeight).toBeGreaterThan(0);
+  });
+
+  test.each(MINION_TYPES.map((t) => [t.key, t]))('%s every attack points at a one-shot strip and lands its hit inside it', (name, cfg) => {
+    expect(cfg.attacks.length).toBeGreaterThan(0);
+    for (const attack of cfg.attacks) {
+      const strip = cfg.animFiles[attack.anim];
+      expect(strip, `${name}: missing strip ${attack.anim}`).toBeDefined();
+      expect(strip.loop, `${name}.${attack.anim} must not loop`).toBeFalsy();
+      expect(attack.hitFrame).toBeGreaterThanOrEqual(0);
+      expect(attack.hitFrame).toBeLessThan(strip.count);
+      if (attack.travel) {
+        expect(attack.travel.from).toBeLessThan(attack.travel.to);
+        expect(attack.travel.to, `${name}.${attack.anim} must arrive by the hit`).toBeLessThanOrEqual(attack.hitFrame);
+      }
+    }
+  });
+
+  test.each(MINION_TYPES.map((t) => [t.key, t]))('%s reacts to being hit slowly enough to watch (at least ~1.8s)', (name, cfg) => {
+    const strip = cfg.animFiles[cfg.reaction.anim];
+    expect(strip, `${name}: missing reaction strip ${cfg.reaction.anim}`).toBeDefined();
+    expect(strip.loop).toBeFalsy();
+    const playMs = (strip.count / strip.rate) * 1000 * (cfg.reaction.getUp ? 2 : 1) + (cfg.reaction.holdMs ?? 0);
+    expect(playMs, `${name} reaction ${Math.round(playMs)}ms`).toBeGreaterThanOrEqual(1800);
+  });
 });
 
 describe('LAYOUTS companion zones', () => {

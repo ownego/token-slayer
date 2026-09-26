@@ -44,76 +44,114 @@ export const NECROMANCER_CONFIG = {
 /**
  * The subagent-minion candidates a fighter's swarm is randomly drawn from
  * (see minions.js) — one per dispatched-but-not-yet-stopped Task subagent.
- * Idle + Walk + Attack01/Attack02; Hurt/Death were never extracted from
- * either source asset pack. Attack01/Attack02 are played purely as cosmetic
- * flourishes — an idle fidget ("khè khè / múa múa") and a clash between two
- * different fighters' minions that wander close together — neither ever
- * gates on or affects real damage. `demon-a`/`blood-monster-a` are the
- * original pack (100x100 native); `smw-goomba`/`smw-babybowser`/`smw-bowser`
- * (2026-09-24) are cropped/rebuilt from the "SMW Enemies" character sheet and
- * repacked onto the same 100x100 canvas at a matching ink height so all five
- * render at one consistent on-screen size despite very different source
- * resolutions per character — staging trial, not yet confirmed as keepers.
+ * Purely cosmetic: fights between two fighters' minions never touch damage.
+ *
+ * Per type:
+ * - `charHeight` — the character's ink height in its own frame, in frame px.
+ *   minions.js scales every type to the same on-screen height from this, so
+ *   a type can ship at its source's native resolution (bigger frames) and
+ *   still render the same size as the others. Every strip of one type must
+ *   share one frame size for this to hold.
+ * - `attacks` — what the minion may play when it attacks (picked at random).
+ *   `hitFrame` is the 0-based frame where the blow connects: the victim's
+ *   reaction and the clash burst start there. `travel` marks a leap/dash:
+ *   the attacker is moved to its target between frames `from` and `to`
+ *   (the strip itself stays in place). `fidget: false` keeps an attack out
+ *   of the idle fidget, where there is no target to travel to.
+ * - `reaction` — what the victim plays when hit. `holdMs` keeps its last
+ *   frame on screen, `getUp` then plays the strip backwards (a death strip
+ *   reads as falling down, lying there, then getting back up).
+ *
+ * Every effect is drawn facing RIGHT; minions.js flips the attacker toward
+ * its target and the victim toward its attacker.
+ *
+ * `demon-a`/`blood-monster-a` are the Zerie Tiny RPG pack at native 100px.
+ * The three `smw-*` types come from the "SMW Enemies" sheet with self-made
+ * attack/hurt strips, shrunk from native resolution to a height between it
+ * and the old 20px (goomba 24->22, babybowser 30->25, bowser 38->29) with a
+ * palette-snapping shrink, so pixels read chunkier without the old repack's
+ * blur. The native set + the converter live in docs/sprite-work/_native-backup/
+ * (local only). Bump `?v=` on every edit of these files (7-day Cache-Control).
  */
 export const MINION_TYPES = [
   {
     key: 'demon-a',
+    charHeight: 20,
     animFiles: {
       idle:    { file: '/assets/battlefield/companions/demon-a/idle.png',    frameWidth: 100, frameHeight: 100, count: 6, rate: 8,  loop: true },
       walk:    { file: '/assets/battlefield/companions/demon-a/walk.png',    frameWidth: 100, frameHeight: 100, count: 8, rate: 10, loop: true },
       attack1: { file: '/assets/battlefield/companions/demon-a/attack1.png', frameWidth: 100, frameHeight: 100, count: 7, rate: 12 },
       attack2: { file: '/assets/battlefield/companions/demon-a/attack2.png', frameWidth: 100, frameHeight: 100, count: 7, rate: 12 },
+      death:   { file: '/assets/battlefield/companions/demon-a/death.png',   frameWidth: 100, frameHeight: 100, count: 4, rate: 6 },
     },
+    attacks: [{ anim: 'attack1', hitFrame: 4 }, { anim: 'attack2', hitFrame: 3 }],
+    reaction: { anim: 'death', holdMs: 2000, getUp: true },
   },
   {
     key: 'blood-monster-a',
+    charHeight: 20,
     animFiles: {
       idle:    { file: '/assets/battlefield/companions/blood-monster-a/idle.png',    frameWidth: 100, frameHeight: 100, count: 6, rate: 8,  loop: true },
       walk:    { file: '/assets/battlefield/companions/blood-monster-a/walk.png',    frameWidth: 100, frameHeight: 100, count: 8, rate: 10, loop: true },
       attack1: { file: '/assets/battlefield/companions/blood-monster-a/attack1.png', frameWidth: 100, frameHeight: 100, count: 8, rate: 12 },
       attack2: { file: '/assets/battlefield/companions/blood-monster-a/attack2.png', frameWidth: 100, frameHeight: 100, count: 8, rate: 12 },
+      death:   { file: '/assets/battlefield/companions/blood-monster-a/death.png',   frameWidth: 100, frameHeight: 100, count: 4, rate: 6 },
     },
+    attacks: [{ anim: 'attack1', hitFrame: 4 }, { anim: 'attack2', hitFrame: 5 }],
+    reaction: { anim: 'death', holdMs: 2000, getUp: true },
   },
-  // SMW-sourced minion candidates (2026-09-24 staging trial) — frames cropped
-  // from the "SMW Enemies" character sheet, hand-picked/round-trip-built per
-  // character, then repacked onto a 100x100 canvas each (ink height scaled to
-  // ~20px, matching MINION_CHAR_HEIGHT — see minions.js) so they render at the
-  // same on-screen size as demon-a/blood-monster-a despite very different
-  // source resolutions per character.
-  // `?v=2` cache-busts these three specifically (bump on every future sprite
-  // edit while this trio is still being tuned) — unlike the fighter atlas
-  // (ATLAS_VERSION) or simple boss PNGs (static `?v=100`), no MINION_TYPES
-  // entry had ANY cache-busting before this, and these companion PNGs are
-  // served with a 7-day Cache-Control (nginx default for static files) —
-  // caught live 2026-09-24 when a facing-direction fix (see idle/walk/
-  // attack1/attack2 below) was deployed but stayed invisible in an
-  // already-cached browser tab.
   {
     key: 'smw-goomba',
+    charHeight: 22,
     animFiles: {
-      idle:    { file: '/assets/battlefield/companions/smw-goomba/idle.png?v=2',    frameWidth: 100, frameHeight: 100, count: 4, rate: 6,  loop: true },
-      walk:    { file: '/assets/battlefield/companions/smw-goomba/walk.png?v=2',    frameWidth: 100, frameHeight: 100, count: 3, rate: 8,  loop: true },
-      attack1: { file: '/assets/battlefield/companions/smw-goomba/attack1.png?v=2', frameWidth: 100, frameHeight: 100, count: 5, rate: 10 },
-      attack2: { file: '/assets/battlefield/companions/smw-goomba/attack2.png?v=2', frameWidth: 100, frameHeight: 100, count: 2, rate: 8  },
+      idle:               { file: '/assets/battlefield/companions/smw-goomba/idle.png?v=5',             frameWidth: 110, frameHeight: 110, count: 8,  rate: 6,  loop: true },
+      walk:               { file: '/assets/battlefield/companions/smw-goomba/walk.png?v=5',             frameWidth: 110, frameHeight: 110, count: 4,  rate: 8,  loop: true },
+      'attack-slam':      { file: '/assets/battlefield/companions/smw-goomba/attack-slam.png?v=5',      frameWidth: 110, frameHeight: 110, count: 9,  rate: 10 },
+      'attack-shellspin': { file: '/assets/battlefield/companions/smw-goomba/attack-shellspin.png?v=5', frameWidth: 110, frameHeight: 110, count: 10, rate: 12 },
+      'attack-punch':     { file: '/assets/battlefield/companions/smw-goomba/attack-punch.png?v=5',     frameWidth: 110, frameHeight: 110, count: 9,  rate: 12 },
+      'attack-headbutt':  { file: '/assets/battlefield/companions/smw-goomba/attack-headbutt.png?v=5',  frameWidth: 110, frameHeight: 110, count: 10, rate: 12 },
+      'attack-banana':    { file: '/assets/battlefield/companions/smw-goomba/attack-banana.png?v=5',    frameWidth: 110, frameHeight: 110, count: 10, rate: 12 },
+      hurt:               { file: '/assets/battlefield/companions/smw-goomba/hurt.png?v=5',             frameWidth: 110, frameHeight: 110, count: 20, rate: 7 },
     },
+    attacks: [
+      { anim: 'attack-slam', hitFrame: 5, travel: { from: 2, to: 5 } },
+      { anim: 'attack-shellspin', hitFrame: 6 },
+      { anim: 'attack-punch', hitFrame: 4 },
+      { anim: 'attack-headbutt', hitFrame: 4 },
+      { anim: 'attack-banana', hitFrame: 7 },
+    ],
+    reaction: { anim: 'hurt' },
   },
   {
     key: 'smw-babybowser',
+    charHeight: 25,
     animFiles: {
-      idle:    { file: '/assets/battlefield/companions/smw-babybowser/idle.png?v=2',    frameWidth: 100, frameHeight: 100, count: 8, rate: 6,  loop: true },
-      walk:    { file: '/assets/battlefield/companions/smw-babybowser/walk.png?v=2',    frameWidth: 100, frameHeight: 100, count: 4, rate: 8,  loop: true },
-      attack1: { file: '/assets/battlefield/companions/smw-babybowser/attack1.png?v=2', frameWidth: 100, frameHeight: 100, count: 9, rate: 12 },
-      attack2: { file: '/assets/battlefield/companions/smw-babybowser/attack2.png?v=2', frameWidth: 100, frameHeight: 100, count: 6, rate: 10 },
+      idle:           { file: '/assets/battlefield/companions/smw-babybowser/idle.png?v=5',         frameWidth: 125, frameHeight: 125, count: 8,  rate: 6,  loop: true },
+      walk:           { file: '/assets/battlefield/companions/smw-babybowser/walk.png?v=5',         frameWidth: 125, frameHeight: 125, count: 4,  rate: 8,  loop: true },
+      'attack-fire':  { file: '/assets/battlefield/companions/smw-babybowser/attack-fire.png?v=5',  frameWidth: 125, frameHeight: 125, count: 13, rate: 12 },
+      'attack-brush': { file: '/assets/battlefield/companions/smw-babybowser/attack-brush.png?v=5', frameWidth: 125, frameHeight: 125, count: 11, rate: 12 },
+      hurt:           { file: '/assets/battlefield/companions/smw-babybowser/hurt.png?v=5',         frameWidth: 125, frameHeight: 125, count: 20, rate: 7 },
     },
+    attacks: [{ anim: 'attack-fire', hitFrame: 5 }, { anim: 'attack-brush', hitFrame: 8 }],
+    reaction: { anim: 'hurt' },
   },
   {
     key: 'smw-bowser',
+    charHeight: 29,
     animFiles: {
-      idle:    { file: '/assets/battlefield/companions/smw-bowser/idle.png?v=2',    frameWidth: 100, frameHeight: 100, count: 3, rate: 6,  loop: true },
-      walk:    { file: '/assets/battlefield/companions/smw-bowser/walk.png?v=2',    frameWidth: 100, frameHeight: 100, count: 9, rate: 10, loop: true },
-      attack1: { file: '/assets/battlefield/companions/smw-bowser/attack1.png?v=2', frameWidth: 100, frameHeight: 100, count: 7, rate: 12 },
-      attack2: { file: '/assets/battlefield/companions/smw-bowser/attack2.png?v=2', frameWidth: 100, frameHeight: 100, count: 7, rate: 12 },
+      idle:              { file: '/assets/battlefield/companions/smw-bowser/idle.png?v=5',            frameWidth: 145, frameHeight: 145, count: 8,  rate: 6,  loop: true },
+      walk:              { file: '/assets/battlefield/companions/smw-bowser/walk.png?v=5',            frameWidth: 145, frameHeight: 145, count: 9,  rate: 10, loop: true },
+      'attack-fireball': { file: '/assets/battlefield/companions/smw-bowser/attack-fireball.png?v=5', frameWidth: 145, frameHeight: 145, count: 11, rate: 12 },
+      'attack-claw':     { file: '/assets/battlefield/companions/smw-bowser/attack-claw.png?v=5',     frameWidth: 145, frameHeight: 145, count: 9,  rate: 12 },
+      'attack-dash':     { file: '/assets/battlefield/companions/smw-bowser/attack-dash.png?v=5',     frameWidth: 145, frameHeight: 145, count: 9,  rate: 12 },
+      hurt:              { file: '/assets/battlefield/companions/smw-bowser/hurt.png?v=5',            frameWidth: 145, frameHeight: 145, count: 20, rate: 7 },
     },
+    attacks: [
+      { anim: 'attack-fireball', hitFrame: 8 },
+      { anim: 'attack-claw', hitFrame: 4 },
+      { anim: 'attack-dash', hitFrame: 5, travel: { from: 3, to: 5 }, fidget: false },
+    ],
+    reaction: { anim: 'hurt' },
   },
 ];
 
