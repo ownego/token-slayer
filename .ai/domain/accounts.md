@@ -1,18 +1,34 @@
 # Domain: Org Accounts, Attribution & Quota
 
-> Status: design approved 2026-07-10; implementation phased (attribution → quota → analytics). Update this file as phases land — sections below describe the target state.
+Related: `token-tracking.md` (where `account_*` fields arrive on each event). The admin UI for everything here is Filament (`app/Filament/`, served at `/dashboard`).
 
-An **Account** = one Claude (Anthropic) Max subscription owned by the org, identified by its login email. Developers (users) are members of zero or more accounts (`account_user` pivot). One user regularly switches between accounts (personal + org), so account attribution is **per-event, never per-user**.
+An **Account** is one org-owned AI subscription, identified by its login email and scoped per provider (`accounts.provider`, enum `App\Enums\Provider`: `claude` | `codex`; email is unique per provider). Developers (users) are members of zero or more accounts through the `account_user` pivot. One user regularly switches between accounts (personal + org), so attribution is **per event, never per user**.
 
-**Schema note (2026-09-02):** `accounts` is a provider-agnostic envelope (`id`, `email`, `name`, timestamps). All Claude-specific OAuth/credential-health state — `organization_uuid`, `organization_type`, `rate_limit_tier`, `plan`, `oauth_access_token`, `oauth_refresh_token`, `oauth_expires_at`, `oauth_refresh_expires_at`, `status`, `last_probed_at`, `probe_error`, `account_uuid` — lives on a separate `claude_credentials` table (`Account::claudeCredential(): HasOne`), split off so a future Codex provider can hold its own structurally different credential table symmetrically. Existing code keeps reading/writing `$account->organization_uuid`-style attributes unchanged — `Account` proxies each of these through `claudeCredential` via Eloquent `Attribute` accessors — but any RAW query-builder `where()`/`orderBy()`/`join()`/`pluck()` on these column names must go through the `claudeCredential` relation instead (e.g. `whereHas('claudeCredential', ...)`, `whereRelation('claudeCredential', 'organization_uuid', $uuid)`) — they no longer exist as queryable columns directly on `accounts` going forward (Deploy 2 drops the old, now-unused columns after a bake period).
+## Schema
+
+| Table | Holds |
+|---|---|
+| `accounts` | Provider-agnostic envelope: `id`, `email`, `name`, `provider`, timestamps (plus legacy Claude columns, see below) |
+| `claude_credentials` (`Account::claudeCredential()`, HasOne) | `plan` (`AccountPlan`), `organization_uuid`, `organization_type`, `rate_limit_tier`, `account_uuid`, `oauth_access_token`/`oauth_refresh_token` (encrypted), `oauth_expires_at`, `oauth_refresh_expires_at`, `status`, `last_probed_at`, `last_refreshed_at`, `probe_error` |
+| `codex_credentials` (`Account::codexCredential()`) | `chatgpt_account_id` (unique), `chatgpt_user_id`, `plan_type`, `codex_access_token`/`codex_refresh_token`, `codex_expires_at`, `earliest_refresh_at`, `last_refreshed_at`, `last_probed_at`, `status`, `probe_error` |
+| `account_user` | Pivot with `status` (`MembershipStatus`) |
+| `devices` | A user's machines (`device_id` fingerprint; `'default'` for the legacy CLI) |
+| `account_provisioned_grants` | Per (account, device) grant: `status` (`GrantStatus` pending/claimed/revoked), `provisioned_at`/`claimed_at`/`revoked_at`/`deprovisioned_at`, session expiry, and the encrypted pending secret |
+| `account_usage_snapshots` | Append-only probe results (5h/7d utilization in percent 0–100, resets, raw JSON) |
+| `rebalance_plans` | Adopted rebalance plans |
+| `events.account_id` / `account_email` / `account_source` / `account_org_id` | Per-event attribution (written once at ingest) |
+
+**Proxy accessors:** `Account` exposes the Claude credential columns (`$account->organization_uuid`, `->status`, `->oauth_access_token`, …) through Eloquent `Attribute` accessors. Its `saved` hook persists a dirty `claudeCredential`. `Account::plan` is Claude-only; Codex plan comes from `codex_credentials.plan_type` (`CodexPlan`). Raw query-builder `where()`/`orderBy()`/`join()`/`pluck()` on those names must go through the relation instead (`whereHas('claudeCredential', …)`, `whereRelation('claudeCredential', 'organization_uuid', $uuid)`). The old columns still physically exist on `accounts`; a later deploy is meant to drop them, so never read them directly.
+
+**Provider dispatch:** callers never branch on `Account::provider`. They ask `ProviderServiceFactory` for the provider's `UsageProberContract` (`UsageProber` / `CodexUsageProber`), `GrantRevokerContract` (`AccountProvisioningService` / `CodexProvisioningService`), or `AccountDisconnecterContract` (`AccountConnectService` / `CodexConnectService`).
 
 ## Membership states (`account_user.status`)
 
-The pivot's `status` (string-backed enum `MembershipStatus`) records how far a user's attribution setup has progressed for that account. It never drives attribution itself — events do — only the admin UI and the provisioning handoff:
+`MembershipStatus` records how far a user's setup has progressed for that account. It never drives attribution (events do); it only feeds the admin UI and the provisioning handoff. The Members relation manager relabels two of them:
 
-- `untracked` — a known contributor who has not confirmed token-slayer setup for this account. Shown as **"Unverified"** (warning) in the Members table; can be verified (promoted) in place.
-- `tracked` — setup confirmed, attribution live. Shown as **"Verified"** (success).
-- `pending` — an admin provisioned an OAuth grant for the user (see *Provisioning* below) and is waiting for the user's machine to confirm setup. Shown as **"Pending setup"** (warning).
+- `untracked`: a known contributor (auto-created by `AccountMembershipRecorder` on their first attributed event) who has not confirmed setup. Shown as **"Unverified"**, hidden behind the *Unverified members* filter, and can be verified (promoted) in place.
+- `tracked`: setup confirmed. Shown as **"Verified"**.
+- `pending`: an admin provisioned a grant and is waiting for the user's machine to confirm. Shown as **"Pending setup"**.
 
 ## Attribution (which account served this usage?)
 
@@ -21,41 +37,79 @@ Verified constraints (2026-07-10, do not re-litigate):
 - `~/.claude.json → .oauthAccount` (email/uuid/org/tier) exists on all OSes but goes **stale** when credentials are swapped externally (ccm-style switchers).
 - Setup-tokens (`sk-ant-oat01…`) are rejected by `/api/oauth/usage` and `/api/oauth/profile` (missing `user:profile` scope).
 
-Resolution chain (client-side, in the hook helper):
-1. `~/.config/{namespace}/account.json` — `{"email","uuid","source","updated_at"}`. The forward contract: written manually today, later by token-slayer's own account-switching feature or by ccm/claudehub.
-2. Fallback: `~/.claude.json → .oauthAccount` (`source=auto`).
+Client side (in the hook helper), the identity comes from `~/.config/{namespace}/account.json` (`{"email","uuid","source","updated_at"}`, written by the CLI's account switcher or by ccm/claudehub), falling back to `~/.claude.json → .oauthAccount` (`source=auto`). The org id beacon goes in `account_org_id`: the Anthropic organization uuid for Claude, the `chatgpt_account_id` for Codex.
 
-Events POST `account_email`, `account_uuid`, `account_source`, `client_version`. Server-side, `AccountResolver` matches the claimed email against a cached org-account email map → `events.account_id` (null = personal/unknown; raw claim kept in `events.account_email` for later reconciliation/backfill).
+Server side, `AccountResolver::resolve($orgId, $email, $provider)`:
 
-## Provisioning (admin sets up an account for a user)
+1. `provider === 'codex'` → Codex accounts only; every other provider → Claude accounts only. This is a security boundary: a Codex `chatgpt_account_id` must never be written into a Claude `organization_uuid`.
+2. Exact **org-id** match first (`accounts:org-map` / `accounts:codex-org-map`), then a lowercase **email** match (`accounts:email-map` / `accounts:codex-email-map`). All four maps are cached for 1 h and flushed by `Account` `saved`/`deleted` (`CacheKeys::forgetAccountMaps()`).
+3. On an email match that also carried an org id, the resolver **learns** it (`learnOrganizationUuid` / `learnChatgptAccountId`). It never overwrites a different existing value; it logs the conflict instead.
+4. `null` means personal/unknown. The raw claim stays in `events.account_email` / `account_org_id` for later backfill. The *Unrecognized* page (`UnrecognizedAccountsQuery`) lists org beacons that matched nothing, and `event-attribution:backfill` re-attributes them once the account exists.
 
-Provisioning is folded into the Members tab's **Add member** action: a *provision* toggle (default on, Claude accounts only — Codex has no in-UI equivalent, see `admin-provisioning.md` in the `token-slayer-cli` repo) runs the admin OAuth code-paste flow on the user's behalf, stores the encrypted grant, and writes the pivot as `pending`. Turning it off just adds a `tracked` membership. (The former standalone "Provision for user" button is retired.)
+## Connecting an account (server-side OAuth grant)
 
-**The grant's raw secret lives on `account_provisioned_grants` itself** (`pending_claude_access_token`/`pending_claude_refresh_token`/`pending_claude_expires_at` for Claude, `pending_codex_auth_json` for Codex — all `encrypted` casts), **not in a cache with a TTL** (2026-09-08 fix: the earlier cache-with-TTL design lost several real, unclaimed production grants outright when their TTL elapsed before the employee ran `setup`). It lives until Claimed (`AccountProvisioningService::confirmSetup()`/`CodexProvisioningService::revoke()` clear it) or Revoked — never on a clock. `AccountProvisioningService::claim()` reads whichever field a grant actually holds and is shared across both providers, since `device->grants()` mixes them on one device.
+- **Claude:** admin-driven PKCE code-paste flow (`AccountConnectService::start()` → admin pastes the code → `resolve()`). It either updates an existing account's token or produces a `ConnectDraft` that the admin confirms before the row is created. `ClaudeReconnectModal` handles re-auth. There is **no revocation endpoint** at Anthropic: disconnect wipes stored tokens only (see `tests/fixtures/anthropic/README.md`).
+- **Codex:** device-code flow (`CodexConnectService`; the admin enters the `user_code` at auth.openai.com while the Filament modal polls), or the CLI `token-slayer admin codex-connect` → `POST /api/admin/codex/connect` (`hook.token:admin` = hook token plus a live role check).
 
-The user's machine finishes the handoff: `token-slayer setup` pulls each provisioned grant and, once configured, calls `POST /api/provisioned/confirm` (`hook.token` bearer) with the `organization_uuid`s it set up. `AccountProvisioningService::confirmSetup` then, per org:
+## Provisioning (admin sets up an account for a user's device)
 
-- resolves the Account by `organization_uuid` — **never creates one** from client input (unknown orgs are skipped);
-- promotes the membership to `tracked` **only if the user actually holds a live provisioned grant** for it (`provisionedUsers()`, `revoked_at` null) — this closes a self-graft where a client could claim membership of any account;
-- is **additive-only** and idempotent: accounts the user set up that aren't ours, or weren't just provisioned, are ignored; already-`tracked` rows stay put. No cache invalidation — the email map self-expires (~1 day).
+Provisioning is part of the Members tab's **Add member** action. A *provision* toggle (default on for Claude, absent for Codex) runs the code-paste flow on the user's behalf. It stores the grant against one of the user's `devices` and writes the pivot as `pending`. With the toggle off, it just adds a `tracked` membership. Codex device grants come from the CLI (`token-slayer admin codex-provision` → `POST /api/admin/codex/provision`), and the modal shows that command.
+
+**The grant's raw secret lives on `account_provisioned_grants` itself** (`pending_claude_access_token`/`pending_claude_refresh_token`/`pending_claude_expires_at`, or `pending_codex_auth_json`, all `encrypted` casts), **not in a cache with a TTL**. The 2026-09-08 fix moved it there after TTL expiry lost real, unclaimed production grants. The secret lives until it is confirmed (`clearPendingSecret()` in `confirmSetup()`) or revoked, never on a clock.
+
+The user's machine completes the handoff:
+1. `token-slayer setup` → `GET /api/provisioned` (`hook.token`). `AccountProvisioningService::claim($user, $fingerprint)` uses `DeviceClaimResolver` to pick the device (a null fingerprint may only speak for `'default'`) and returns each grant's secret. It is shared across both providers, since one device can hold both.
+2. Once configured → `POST /api/provisioned/confirm` (`ConfirmProvisionedSetupRequest`) with `set_up` and `removed` org uuids (plus observed refresh-token deadlines). `confirmSetup()` then:
+   - resolves each Account by `organization_uuid` and **never creates one** from client input;
+   - promotes `pending → tracked` **only if the user holds a live grant** for it (`revoked_at` null). This closes a self-graft where a client could claim membership of any account;
+   - for `removed`, revokes and stamps `deprovisioned_at` on this device's newest grant, or writes a tombstone. It does this only when the user already has an `account_user` row, so a token holder can't plant tombstones on foreign accounts;
+   - is additive-only and idempotent. A failure on one org is reported and swallowed, never a 500.
 
 ## Quota tracking
 
-Server holds an **independent PKCE OAuth grant per account** (admin-driven code-paste connect flow; no collision with developers' own tokens). Constants in `config/token_slayer.php` (`anthropic.*`). A 5-minute `accounts:probe` command refreshes tokens (4 h headroom) and hits the free usage API → `account_usage_snapshots` (util 5h/7d as percent 0–100 + resets + raw JSON, pruned after 30 days). Refresh-token death → `claude_credentials.status = needs_reauth` (proxied as `$account->status` — see the schema note above). A daily profile sync stores the raw `organization_type` and `rate_limit_tier` from `/api/oauth/profile` and derives the normalized `accounts.plan` (an `AccountPlan` enum: free/pro/max_5x/max_20x/max/unknown) from that `organization_type` × `rate_limit_tier` pair via `PlanResolver`.
+The server holds an **independent OAuth grant per account**, so it never collides with developers' own tokens. Constants live in `config/token_slayer.php` (`anthropic.*`, `probe.*`, `session_anchor.*`).
 
-## Rebalance & reconciliation
+- **Refresh:** `AccountTokenRefresher` refreshes when a token is within `probe.refresh_headroom_hours` (4 h) of expiry. A dead refresh token (`invalid_grant`/`unauthorized`) → `status = needs_reauth` + `AccountTokenRejected` → `SendReauthAlert` → Slack (`AccountTokenRejectedNotification`). The *Expiring* page (`ExpiringAccountsQuery`) lists accounts needing action.
+- **WAF gotcha:** platform.claude.com returns a bare 429 for default Guzzle/curl/browser User-Agents, so `AnthropicOAuthClient` always sends `anthropic.user_agent` (claude-cli style).
+- **Probe:** `UsageProber` (Claude, `/api/oauth/usage`) / `CodexUsageProber` (`/backend-api/wham/usage`) → append-only `account_usage_snapshots`. `utilization` is already a percent; don't multiply by 100. Per-model limits are read from `limits[]` (`ModelQuotaLimits`), not from top-level keys. Codex reports different windows (`CodexUsageWindows`: e.g. a single 30-day cap on free tier).
+- **Plan:** a daily profile sync (`AccountProfileSyncer`) stores the raw `organization_type` + `rate_limit_tier` and derives `plan` (`AccountPlan`: free/pro/max_5x/max_20x/max/unknown) through `PlanResolver`. The 5x tier string also appears on Team seats, so the pair matters. `PlanBadgeResolver` renders either provider's plan badge.
+- **Session anchoring:** `SessionAnchorer` sends a real 1-token message (`session_anchor.model`, Haiku) at fixed times, so each Claude account's rolling 5 h window starts on schedule. A 0-token beacon does not start a window.
+- **Projection:** `QuotaProjection` linearly extrapolates the burn rate to reset time for the gauges (`QuotaGaugesQuery`). `FleetUsageRefresher` re-probes on demand (the widget's Refresh button) and busts `DamageTotals`.
 
-The Rebalance admin page recommends which member should move from one account to another to keep the fleet's per-account load and headcount healthy. A run over a chosen `RebalanceWindow` (week/month/all-time — every capacity/demand figure in one run shares this window so they stay comparable) is a stateless draft: it is a search result, not stored, and recalculating can produce a different one.
+## Artisan commands & schedule (`routes/console.php`)
 
-- **Home account.** `HomeAccountResolver` decides the single account a person is considered to actually work on: recent (trailing 7-day) usage decides first, the whole window is only a tie-break. This tells apart a genuine **migration** (a real handover, visible in recent usage and never reversed) from a brief **spill** (bouncing off a full account and straight back, always outweighed by the week around it) — only a migration changes someone's home account and frees the seat they left.
-- **Member target, not just a token budget.** Accounts are seated to a target headcount (`config('token_slayer.rebalance.members_per_account')`, default 5) ahead of load, because simultaneous same-hour usage trips a 5-hour quota window regardless of weekly totals — a crowded account is a risk a token figure alone never reports. It is a target, not a hard cap: given more people than it allows, it rises to the smallest number that fits everyone. Nobody is moved onto an account already at target, so once every account sits at target, a headcount-neutral **swap** (two people trading accounts) is the only move left.
-- **Quota weight.** A person's token-to-quota burn rate relative to a typical member (1.0 = typical), solved by `QuotaCostSolver` from quota windows they **shared** with other people, not only windows they used alone — solo-only windows were too rare (1-4 per account) to price most people at all.
-- **Confidence.** A `RebalanceRecommendation` carries `confident: bool` + `confidenceReason: ?string`: unconfident, with the reason naming which subject (the account, the person, or both) is short of history, whenever either side has fewer than `min_history_days` of recorded usage — this stops the planner asserting a move from thin data.
-- **Adopting a plan.** A draft only persists once an admin adopts it, writing a `RebalancePlan` row (`adopted_by`, the moves, the accounts/capacity/summary snapshot it was computed against). Its moves are then ticked off one at a time (`applied_indexes`) as the admin works through them — since each move is a real browser round-trip to Anthropic, this is what lets the work survive however many page reloads that spans.
+| Command | Schedule | Does |
+|---|---|---|
+| `accounts:probe` | every 5 min, `withoutOverlapping` | Probe every `probeable` (Claude) + `codexProbeable` account through `ProviderServiceFactory` |
+| `accounts:anchor-sessions` | 03:45 & 08:45 Asia/Ho_Chi_Minh, `withoutOverlapping` | `SessionAnchorer` for every Claude probeable account; no retry, because a late anchor starts the window off-schedule |
+| `accounts:sync-profiles` | daily, `withoutOverlapping` | `AccountProfileSyncer` for Claude accounts not `disabled`/`needs_reauth` (a stale-token 401 would erase the re-auth signal) |
+| `accounts:prune-usage-snapshots` | **not scheduled** (removed in `2f9d9f3`, "deferred for later review") | Deletes snapshots > 30 days (hard-coded; `snapshots.retention_days` config is currently unread) |
+| `accounts:reencrypt-oauth-tokens` | manual | Re-encrypt stored tokens after an `APP_KEY` rotation |
+| `account-membership:backfill` | manual | `HistoricalMembershipBackfiller`: untracked rows for pre-recording contributors |
+| `event-attribution:backfill {--org=}` | manual | `EventAttributionBackfiller`: in-place `account_id` fill for org-beacon events |
+| `grant-session-expiry:backfill` | manual | `GrantSessionExpiryBackfiller` |
+
+Other schedules (not accounts): `fighters:sweep-idle` every minute, `client-artifacts:refresh` every 5 min, `battlefield:recap {daily|weekly|monthly|yearly}` at 09:00 Asia/Ho_Chi_Minh.
+
+**Recipe: add a scheduled account job.** Use a thin command with `#[Signature('<domain-noun>:<verb>')]` + `#[Description]` in `app/Console/Commands/` that iterates and delegates each item to a Service. Catch per item with `report()` so one account can't stop the batch (see `ProbeAccountUsage`). Add a `Schedule::command(...)` entry with `withoutOverlapping()` (it calls external APIs) and a test in `tests/Feature/Console/`. Fake HTTP with `fakeAnthropic()` / `Http::fake`.
+
+## Rebalance & reconciliation (`Services/Accounts/`, *Rebalance* page)
+
+The Rebalance admin page recommends which member should move to keep per-account load and headcount healthy. A run over a chosen `RebalanceWindow` (week/month/all-time; every figure in one run shares the window) is a stateless draft: recalculating can produce a different one.
+
+Pipeline: `FleetSnapshot` (one coherent `FleetReading` of who is where, capacity, demand) → `AccountRebalanceRecommender` → `RebalancePlanner` (improves the current arrangement one worthwhile move at a time) → `RebalanceRecommendation[]`. `FleetCapacityForecast` answers "do we need another account, and who would move onto it". `ObservedFleetLoad` checks projections against the raw ledger.
+
+- **Capacity:** `AccountCapacityEstimator` measures what a weekly quota is worth from **closed** windows (`ClosedQuotaWindows`), not trailing-tokens ÷ current util. `SuppressedDemandEstimator` adds the demand an account would have served had it not capped out.
+- **Home account:** `HomeAccountResolver` decides where a person actually works. Trailing 7-day usage decides first; the whole window only breaks ties. This separates a real **migration** from a brief **spill**. `StaleMembershipQuery` finds seats still held on accounts their holder has left.
+- **Member target:** `rebalance.members_per_account` (default 5) is a target, not a cap. Simultaneous usage trips a 5 h window whatever the weekly total is. When there are more people than seats, the target rises to the smallest number that fits. Nobody is moved onto an account already at target, so at saturation a headcount-neutral **swap** is the only move.
+- **Quota weight:** `QuotaCostSolver` solves each person's token-to-quota burn rate (1.0 = typical) from **shared** windows, because solo windows were too rare to price most people. `UserDemandEstimator` measures demand per person over a week.
+- **Confidence:** each recommendation has `confident` + `confidenceReason`. It is unconfident when the account or person has less than `rebalance.min_history_days` of data.
+- **Adopting:** a draft persists only when an admin adopts it as a `RebalancePlan` row (`adopted_by`, moves, the snapshot it was computed against). Moves are ticked off one by one in `applied_indexes`, so the work survives page reloads across many real browser round-trips to Anthropic.
 
 ## Invariants
 
-- Tokens at rest are always `encrypted` casts. Never log them.
-- `events.account_id` is written once at ingest and never recomputed from membership — membership answers "who may use this account", events answer "who did".
-- Deleting an account nulls `events.account_id` (raw email survives for re-attribution).
-- Account stats keyed by `events.account_id`; a user active in two accounts must contribute to each correctly (the regression the old `users.account_id` join could not express).
+- Tokens at rest are always `encrypted` casts. Never log them. After an `APP_KEY` rotation, run `accounts:reencrypt-oauth-tokens`.
+- `events.account_id` is written once at ingest and never recomputed from membership (membership answers "who may use this account"; events answer "who did"). The one sanctioned exception is `event-attribution:backfill`, which only fills `null` rows by exact org-id match.
+- Deleting an account nulls `events.account_id`; the raw email/org id survive for re-attribution.
+- Account stats are keyed by `events.account_id`, so a user active in two accounts contributes to each correctly.
+- Client input never creates an Account, and never promotes a membership without a live grant.

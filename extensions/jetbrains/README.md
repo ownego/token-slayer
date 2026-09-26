@@ -1,6 +1,6 @@
 # token-slayer — JetBrains / PhpStorm plugin
 
-Companion to the [token-slayer](https://github.com/vntrungld/token-slayer) battlefield: sign in
+Companion to the [token-slayer](https://github.com/ownego/token-slayer) battlefield: sign in
 with Slack, watch the battlefield in a tool window, get hit/boss notifications, and
 install Claude Code hooks — all without leaving your JetBrains IDE.
 

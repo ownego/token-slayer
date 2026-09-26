@@ -17,7 +17,7 @@ export function createFlairState() {
  * @param {?string} flair
  * @param {number} now
  * @param {number} durationMs
- * @returns {{flair: ?string, expiresAt: number}} a new state; the input is not mutated
+ * @return {{flair: ?string, expiresAt: number}} a new state; the input is not mutated
  */
 export function startFlair(state, flair, now, durationMs) {
   if (!flair) {
@@ -45,7 +45,7 @@ export function clearFlair() {
  *
  * @param {?number} payloadDurationMs
  * @param {number} fallbackMs
- * @returns {number}
+ * @return {number}
  */
 export function resolveFlairDuration(payloadDurationMs, fallbackMs) {
   return typeof payloadDurationMs === 'number' && payloadDurationMs > 0 ? payloadDurationMs : fallbackMs;
@@ -75,7 +75,7 @@ const RING_CHAR_STEP = 0.3;
  *
  * @param {string} label  the model's flair key, already uppercased by the caller
  * @param {number} [charStepRad]  radians between glyphs; smaller reads denser
- * @returns {Array<{ch: string, phase: number}>}
+ * @return {Array<{ch: string, phase: number}>}
  */
 export function buildRingChars(label, charStepRad = RING_CHAR_STEP) {
   const unit = `${label}  ✦  `;
@@ -101,7 +101,7 @@ export const SPIN_BOOST_MS = 1000;
  *
  * @param {number} elapsedMs  time since the triggering hit, in ms
  * @param {number} [boostMs]  length of the spin-up window
- * @returns {number}
+ * @return {number}
  */
 export function spinMultiplier(elapsedMs, boostMs = SPIN_BOOST_MS) {
   if (elapsedMs < 0 || elapsedMs > boostMs) {
@@ -118,7 +118,7 @@ export function spinMultiplier(elapsedMs, boostMs = SPIN_BOOST_MS) {
  * that is already most legible also reads as the most eye-catching.
  *
  * @param {number} angle  the glyph's current position on the ring, in radians
- * @returns {number}  0 (far side) to 1 (dead center of the front arc)
+ * @return {number}  0 (far side) to 1 (dead center of the front arc)
  */
 export function spotlightBoost(angle) {
   let d = angle - Math.PI / 2;
@@ -136,7 +136,7 @@ export function spotlightBoost(angle) {
  *
  * @param {{flair: ?string, color: ?string}} previous
  * @param {{flair: ?string, color: ?string}} next
- * @returns {boolean}
+ * @return {boolean}
  */
 export function hasFlairChanged(previous, next) {
   return previous.flair !== next.flair || previous.color !== next.color;
@@ -151,7 +151,7 @@ export function hasFlairChanged(previous, next) {
  *
  * @param {string} hex
  * @param {number} amount
- * @returns {string}
+ * @return {string}
  */
 export function darkenHex(hex, amount) {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex);

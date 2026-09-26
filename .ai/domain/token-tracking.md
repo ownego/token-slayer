@@ -1,72 +1,147 @@
 # Domain: Token Tracking (hook → event → damage pipeline)
 
-## Ingestion
+Related: `accounts.md` (who the usage is attributed to), `broadcasting.md` (every event fired below), `battlefield.md` (how the client renders it).
 
-`POST /api/events` (`EventController@store`), authenticated by `hook.token` middleware — `Authorization: Bearer <users.hook_token>` identifies the **user**. Provider comes from the `?provider=` query param baked into each install script: `claude-code` (default), `codex`, `cowork`, `claude-ai`.
+## Life of a hook event (end to end)
 
-**Six hook events are registered** for Claude Code (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop` — Antigravity's equivalents: `SessionStart`, `PreInvocation`, `PreToolUse`, `Stop`, never `PostToolUse`, see below; Codex: `SessionStart`, `Stop`, `SubagentStop`). `SessionEnd` and `Notification` still fall through to a bare 201. **`PostToolUse` rejoined the list in hook v7** (2026-09-24) — it was excluded before for being both the highest-frequency event (one per tool call) and the one carrying `tool_response`; the whitelist below still strips `tool_response` unconditionally, so registering it now only sends the same small field set every other event already does, plus `agent_id`. It closes the "busy" half of a subagent's own tool call (`pre-tool-use` opens it — see the Subagent dispatch tracking section) and gives `subagents:sweep-idle` a real per-tool-call heartbeat. Antigravity's own registration still explicitly drops `PostToolUse` (`ns_data.pop("PostToolUse", None)`) — that platform's hook shape for it is unverified, unlike Claude Code's.
+1. **Developer machine.** Claude Code / Codex / Antigravity fires a hook → `~/.config/{namespace}/send-hook.sh` (rendered from `resources/views/install-script.blade.php`, or its PowerShell twin). For `Stop`/`SubagentStop` only, it reads the transcript locally and adds `tokens`, `models`, `input_tokens`, `cache_*` to the body. It sources the user's `custom.sh`, then filters the body to the whitelist below and `POST`s it (3 s curl timeout, backgrounded — the hook never blocks a session).
+2. **`POST /api/events?provider=…`** → `hook.token` middleware (`AuthenticateHookToken`): `sha256(bearer)` must equal `users.hook_token` (only the hash is stored — `HookTokenRotator`). The user is exposed as `$request->user('hook')`.
+3. **`EventController@store`** (`app/Http/Controllers/Api/EventController.php`), in order:
+   1. `AccountResolver::resolve(account_org_id, account_email, provider)` → `?int $accountId` (see `accounts.md`).
+   2. `hook_event_name` → kebab-case (`PreToolUse` → `pre-tool-use`).
+   3. `resolveStopUsage()` → `TurnUsage` (Stop/SubagentStop only); `ModelUsageParser::primaryModel()` picks `events.model`.
+   4. Stamps `users.last_event_at`, `client_version`, `hook_version`.
+   5. Per-type branch (table below) — charging cache + broadcasts, subagent presence.
+   6. Stop/SubagentStop with `tokens > 0`: `Event::create` (append-only), `AccountMembershipRecorder::record()` (best-effort), `DamageService::apply()`, then `BossKilled`×n → `BossSpawned` → `HitDealt` (+ flair from `ModelFlairResolver`).
+   7. Responds `201` with the **update signal**: `hook_version`, `install_sha256`, `install_ps1_sha256`, `wheel_sha256`, `paused`. The hook saves that body to `~/.config/{namespace}/update-state`; on `SessionStart` it runs `token-slayer update --if-newer` (skipped when `SLAYER_NO_AUTO_UPDATE` is set). No separate update endpoint exists.
+4. Every broadcast goes through `dispatchSafely()` → `rescue(fn () => event($e))`: a downed Reverb must never 500 the hook.
 
-When changing that list, the re-registration loop must strip our fingerprint from **every** key already in `~/.claude/settings.json` before re-adding — it once iterated only the events still in its own list, so shrinking the list would have left the stale registrations in place, still firing, with no error anywhere.
+## Providers (`?provider=` query param, stored in `events.provider`)
 
-**The payload is a fixed sixteen-field whitelist**, applied unconditionally: `hook_event_name`, `session_id`, `tokens`, `models`, `tool_name`, `custom_activity`, `client_version`, `hook_version`, `account_email`, `account_uuid`, `account_source`, `account_org_id`, `input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, plus `agent_id` (hook v7). Everything else the hook receives on stdin — the prompt, `tool_input`, `tool_response`, the last assistant message, `cwd`, `permission_mode`, `transcript_path` — never leaves the machine. The filter used to be opt-in behind `SLAYER_MINIMAL_PAYLOAD`, which meant content left the machine unless a developer knew to set an env var; that flag is gone.
+| Value | Client | Hook events sent | Notes |
+|---|---|---|---|
+| `claude-code` (default) | Claude Code hook (`/install`, `/install.ps1`) | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse` (v7+), `Stop`, `SubagentStop` | `SessionEnd`/`Notification` would fall through to a bare 201; not registered. |
+| `codex` | Same installer, `~/.codex/hooks.json` | `SessionStart`, `Stop`, `SubagentStop` | Own token extractor (below). Account match by `chatgpt_account_id`. |
+| `antigravity` | Same installer, `~/.gemini/config/hooks.json` | `SessionStart`, `PreInvocation`, `PreToolUse`, `Stop` | Explicitly drops `PostToolUse` (`ns_data.pop`) — payload shape unverified. Uses the Claude-shaped extractor. |
+| `cowork` | `/install-cowork` + `/cowork-watcher.py` (Python watcher) | `Stop` only | Server re-sets a persistent `cowork` charging label after each hit. |
+| `claude-ai` | Userscript `/tracker.user.js` | `Stop` only | Estimated usage; label `claude.ai`. |
 
-**Ordering matters and is load-bearing:** the filter runs *after* `custom.sh` is sourced, and `custom.sh` shares the shell, so it still sees the full body. The `custom_activity` recipes documented on the guide page read `tool_input` locally and only the label they build is sent. `account_uuid` is on the wire but read by nothing; it is kept deliberately rather than removed.
+`EventController::providerActivityLabel()` owns the Stop-only labels. Any provider other than `codex` resolves accounts against **Claude** accounts.
 
-Hook event names arrive as `hook_event_name` (e.g. `Stop`, `PreToolUse`) and are normalized to kebab-case. Behavior per type:
+## Per-type behavior in `EventController`
 
-- `user-prompt-submit` / `pre-invocation` / `pre-tool-use` → charging bubble broadcasts (`FighterCharging`), activity summarized from tool payload. A `pre-tool-use` whose `tool_name` is `Task` or `Agent` also records a fresh pending dispatch in `SubagentCountCache` and broadcasts `FighterAgentCountChanged`. Separately (hook v7), a `pre-tool-use` carrying `agent_id` (fired from *inside* a subagent, not the parent dispatching it) claims/refreshes that subagent's presence row and broadcasts `FighterAgentToolUsed {..., busy: true}` — see the Subagent dispatch tracking section below.
-- `post-tool-use` (hook v7) → the busy signal's other half: with `agent_id` present, refreshes presence the same way and broadcasts `FighterAgentToolUsed {..., busy: false}`. No `agent_id` (pre-v7 hook) → no-op, same as `pre-tool-use`.
-- `session-start` → `FighterJoined`.
-- `stop` / `subagent-stop` → the only types that create an `Event` row, and only when resolved tokens > 0 (see below for the SubagentStop-specific guard). `subagent-stop` also records that subagent's activity in `SubagentCountCache` (never a decrement — see the Subagent dispatch tracking section for why); a plain `stop` does **not** touch it.
+| Normalized type | Charging cache / broadcasts | Subagent presence (`SubagentCountCache`) | Writes `events`? |
+|---|---|---|---|
+| `user-prompt-submit`, `pre-invocation` | put `custom_activity ?? 'thinking…'` → `FighterCharging` | — | no |
+| `pre-tool-use` | put `custom_activity ?? summarizeToolUse()` → `FighterCharging` | `tool_name` ∈ {`Task`,`Agent`} → `recordDispatch()` + `FighterAgentCountChanged`. Has `agent_id` → `recordActivity()` (+ count broadcast only if it changed) + `FighterAgentToolUsed{busy:true}` | no |
+| `post-tool-use` | — | Has `agent_id` → `recordActivity()` + `FighterAgentToolUsed{busy:false}`; otherwise no-op | no |
+| `session-start` | `FighterJoined` | — | no |
+| `subagent-stop` | as `stop` | `resolveAgentId()` → `recordActivity()` (never a decrement) | yes, if tokens > 0 **and** `hook_version ≥ 5` |
+| `stop` | tokens > 0: hit broadcasts, then `FighterCharging` (Stop-only providers) or forget the cache. tokens = 0: forget + `FighterChargeCleared` | deliberately untouched | yes, if tokens > 0 |
+
+- Activity labels are truncated to 40 chars. `summarizeToolUse()` only ever surfaces the tool name (`mcp__server__tool` → `MCP: server`) — never command text, paths or URLs, because the bubble is public.
+- `FighterIdled` is **not** sent from ingestion; only `fighters:sweep-idle` sends it (after `game.idle_minutes`, default 30). A zero-token Stop sends `FighterChargeCleared`, because `FighterIdled` removes the fighter client-side.
+
+## Payload whitelist (hook side)
+
+**Fixed sixteen fields**, applied unconditionally by jq: `hook_event_name`, `session_id`, `tokens`, `models`, `tool_name`, `custom_activity`, `client_version`, `hook_version`, `account_email`, `account_uuid`, `account_source`, `account_org_id`, `input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `agent_id` (v7). Nulls are stripped (`with_entries(select(.value != null))`), so any field may be absent. The prompt, `tool_input`, `tool_response`, the last assistant message, `cwd`, `permission_mode` and `transcript_path` never leave the machine. (The filter used to be opt-in behind `SLAYER_MINIMAL_PAYLOAD`; that flag is gone.)
+
+**Ordering is load-bearing:** the filter runs *after* `custom.sh` is sourced. `custom.sh` shares the shell, so it still sees the full body. The `custom_activity` recipes on the guide page read `tool_input` locally, and only the label they build is sent. `account_uuid` is sent but nothing reads it. It is kept on purpose.
+
+When changing the registered-event list, the re-registration loop must strip our fingerprint from **every** key already in `~/.claude/settings.json` before re-adding. It once iterated only the events still in its own list, so shrinking the list would have left stale registrations firing silently.
+
+## Hook versions (`config('token_slayer.hook_version')`, currently **7**)
+
+| Version | Date | What changed | Server dependency |
+|---|---|---|---|
+| < 5 | — | Sends no `hook_version` (only `client_version`) | `HookVersionStatus` treats "client_version set, hook_version null" as outdated |
+| 5 | 2026-09-04 | Hook versioned from this repo; `SubagentStop` reads the subagent's **own** transcript (`agent_transcript_path`) | `EventController::SUBAGENT_TOKENS_MIN_HOOK_VERSION = 5` — lower versions' SubagentStop tokens are discarded |
+| 6 | 2026-09-11 | Transcript parsed only on Stop/SubagentStop; `transcript_path` no longer sent; adds `input_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens` (stored, never added to damage) | `TurnUsage::fromPayload` |
+| 7 | 2026-09-24 | `agent_id` added to whitelist; `PostToolUse` registered again | `resolveAgentId()`, `FighterAgentToolUsed` |
+
+`client_version` (the CLI wheel's release tag, from a repo this project does not publish) and `hook_version` (owned here) are **independent**. A hook-only change bumps `hook_version` only. Both are written to `~/.config/{namespace}/version` and `hook-version`, and both are sent on every event. The outdated-hook nudge (`HookVersionStatus`) shows on the battlefield, the profile page and the Filament topbar.
 
 ## Token resolution for Stop events
 
-**The hook owns token extraction; the server never opens a transcript.** The helper computes both the token total and a `{model: tokens}` map on the machine that owns the file, and sends them inline. There is no server-side fallback: it only ever ran when the hook host and the server were the same machine, so production never used it, and `transcript_path` is no longer sent at all. `TranscriptReader` and its retry loop were removed with it.
+**The hook owns token extraction; the server never opens a transcript.** The hook computes the token total and a `{model: tokens}` map on the machine that owns the file, and sends both inline. There is no server-side fallback. `TranscriptReader` and its retry loop were removed.
 
-**Two extractors, dispatched by provider.** One shared Claude-shaped walk for every provider is exactly why Codex ingestion was silently dead from 2026-06-28 to 2026-09-04 — that walk returns `0` on every Codex rollout, and `EventController` answers `201` with no row, so nothing surfaced.
+**Two extractors, dispatched by provider.** Using one Claude-shaped walk for every provider is why Codex ingestion was silently dead from 2026-06-28 to 2026-09-04. That walk returns `0` on every Codex rollout, and `EventController` answers `201` with no row, so nothing surfaced.
 
-- **Claude-shaped** (`claude-code`, and `antigravity`, whose shape is unverified and deliberately untouched): walk backwards accumulating `assistant` / `PLANNER_RESPONSE` / `source == "MODEL"` entries, stopping at the first `user` entry that is not a `tool_result` wrapper. The model lives at `message.model` — **not** at a top level `model` key; 0 of 75,811 assistant entries in a real corpus had one. The bare `$e.model` branch is a fallback for the unverified non-Claude shapes only.
-- **Codex**: rollout JSONL shares no shape with a Claude transcript. Sum `event_msg.payload.info.last_token_usage.output_tokens`, stop at `task_started`, take the model from the first `turn_context` seen walking back. Three traps, each verified against real rollouts: `total_token_usage` is cumulative for the whole session; `total_tokens` includes input and cached input, which for Codex is ~30× output; `reasoning_output_tokens` is a **subset** of `output_tokens`, so adding it double-counts.
+- **Claude-shaped** (`claude-code`, and `antigravity`, which is unverified and left untouched): walk backwards accumulating `assistant` / `PLANNER_RESPONSE` / `source == "MODEL"` entries, stopping at the first `user` entry that is not a `tool_result` wrapper. The model lives at `message.model`, **not** at a top-level `model` key (0 of 75,811 assistant entries had one). The bare `$e.model` branch is a fallback for the unverified non-Claude shapes only.
+- **Codex**: rollout JSONL shares no shape with a Claude transcript. Sum `event_msg.payload.info.last_token_usage.output_tokens`, stop at `task_started`, and take the model from the first `turn_context` seen walking back. Three traps: `total_token_usage` is cumulative for the whole session; `total_tokens` includes input and cached input (~30× output); `reasoning_output_tokens` is a **subset** of `output_tokens`, so adding it double-counts.
 
-**The capture and the merge must change together.** The jq emits an object (`{tokens, models}`). Merged with the old scalar `. + {tokens:$t}` it would nest as `{"tokens":{"tokens":478,…}}`, and PHP's `(int)` cast on an array yields `1` with no warning — every event would deal 1 token of damage into the append-only ledger.
+**The capture and the merge must change together.** The jq emits an object (`{tokens, models}`). Merged with the old scalar `. + {tokens:$t}`, it would nest as `{"tokens":{"tokens":478,…}}`. PHP's `(int)` cast on an array yields `1` with no warning, so every event would deal 1 token into the append-only ledger.
 
-A turn is recorded under a single `events.model`: the most expensive family it touched (`fable > opus > gpt > sonnet > haiku`), then the highest token count within that family. Ranking by token count would be wrong for the case that matters — in a limit-fallback turn the cheap model produces more tokens because it finished the work. Multi-model turns are logged; measured at 2 in 4,524 turns on one machine, so the real team-wide rate is meant to be observed rather than trusted.
+**`models` is attacker-controllable** (a hook token is all that guards it). `ModelUsageParser::sanitize()` validates it before anything reaches the DB. A turn is recorded under one `events.model`: the most expensive family it touched (`ModelFamily::rank()`: fable 40 > opus 30 > gpt 25 > sonnet 20 > haiku 10), then the highest token count within that family. Ranking by token count alone would be wrong: in a limit-fallback turn the cheap model produces more tokens because it finished the work. Multi-model turns were measured at 2 in 4,524 on one machine.
 
-Zero tokens → no Event row; fighter gets `FighterIdled` so the charge visual clears.
+Very short turns can leave only placeholder usage in the transcript. The hook reads it faithfully, and the resulting undercount is accepted (decided 2026-09-06). Don't re-propose a retry.
 
-**Historical blind spot, now closed for upgraded hooks:** subagent turns live in a separate transcript the parent's own `transcript_path` never pointed at. `SubagentStop` (hook_version ≥ `EventController::SUBAGENT_TOKENS_MIN_HOOK_VERSION`) now reads that transcript itself and reports its own usage — see `resolveStopUsage()`. A hook below that version still sends `SubagentStop` (both install scripts register it unconditionally) but its usage is discarded, so `events` stays a floor for that developer until they reinstall.
+## Subagent presence (cosmetic, never damage)
 
-## Subagent dispatch tracking (cosmetic, not damage)
+`SubagentCountCache` (`app/Services/SubagentCountCache.php`) tracks how many dispatched subagents each user has running. This drives the minion swarm (`resources/js/battlefield/minions.js`, see `battlefield.md`) and never HP.
 
-Independent of the token/damage path above: `SubagentCountCache` (`app/Services/SubagentCountCache.php`) tracks how many Task-dispatched subagents a user currently has running — driving the battlefield's minion swarm (`resources/js/battlefield/minions.js`), never HP.
-
-**Presence-tracked with per-subagent Redis keys carrying their own TTL, not a plain increment/decrement counter, and (as of 2026-09-24) not a DB table either.** An earlier version trusted every "stop"-shaped hook event (`subagent-stop`) as a genuine "this subagent is done" signal and decremented a per-session cache counter on each one. Verified live 2026-09-23: a *single* subagent can fire more than one such event over its own lifetime whenever the harness backgrounds one of ITS OWN tool calls (the same turn-boundary quirk already documented above for the parent session's own `stop`) — so a plain counter silently drained a burst of real dispatches to zero well before any of them were actually done, sometimes for minutes. A second version replaced it with a `subagent_dispatches` DB table (a row per subagent, `last_seen_at` compared against a cutoff by `subagents:sweep-idle`) — correct, but hook v7's per-tool-call heartbeat (`pre-tool-use`/`post-tool-use` refreshing presence on every call a tracked subagent makes, not just whatever a `subagent-stop` happens to fire) turned that into one row UPDATE per tool call, genuinely heavy write volume for data that only ever needs to survive `game.subagent_idle_seconds`. The current version keys each tracked subagent as its own Redis key (`subagent:presence:{userId}:{agentId}`, or `:pending:{token}` before an agent_id is known) carrying that TTL directly — refreshing activity is a single `EXPIRE`, and a subagent going quiet needs no manual cutoff comparison or delete at all: Redis expires the key itself. All Redis calls in `SubagentCountCache` are wrapped fail-soft (log + safe default, never throw) so a Redis outage degrades this cosmetic feature silently instead of breaking real event ingestion — notably true on staging, whose `CACHE_STORE` is `database`, not Redis. TTL alone only handles removal, not notifying an already-open browser that a swarm should shrink — see `sweepAllStale()` below. A subagent that goes quiet and later sends another event after its key already expired simply gets a fresh key — the count rises again and the client replays the spawn/summon ceremony, which is the desired "re-summon" behavior, not special-cased anywhere.
-
-**`agent_id` joined the hook's payload whitelist in v7** (`install-script.blade.php`) — Claude Code already attaches it to `PreToolUse`/`PostToolUse`/`SubagentStop` when the event fires from *inside* a subagent (per the official hook docs: `agent_id`+`agent_type`, absent at the top level where the parent dispatches the subagent). A hook older than v7 never sends it, so every check below is naturally a no-op for that client — no forced update, no warning; a developer on an old hook just keeps the pre-v7 (less granular) presence/liveness behavior indefinitely. So:
-
-- `pre-tool-use` with `tool_name` of `Task` **or** `Agent` → `SubagentCountCache::recordDispatch()` creates a *pending* key (`subagent:presence:{userId}:pending:{token}`). Both tool names are accepted for the same concept — see the note further down on why `Agent` had to be added alongside `Task`. This is the PARENT's own event (dispatching the subagent), never carries `agent_id` itself.
-- Any event carrying a real `agent_id` (`pre-tool-use`/`post-tool-use` fired from inside a subagent, and `subagent-stop`) → `recordActivity($userId, $agentId)`: refreshes (re-`EXPIRE`s) the key already claimed by that `agent_id`, else claims the oldest still-pending key (deletes it, creates the claimed key fresh), else (nothing pending — e.g. a previously-expired subagent re-emerging) creates a fresh key outright. `EventController::resolveAgentId()` prefers the real top-level `agent_id` field, falling back to parsing it out of a `subagent-stop`'s legacy combined `session_id` (`parent_session_id:agent_id`, folded in by the install script's jq) for an older, not-yet-updated hook. `pre-tool-use`/`post-tool-use` additionally broadcast `FighterAgentToolUsed {user_id, agent_id, busy}` (`true`/`false` respectively) alongside the usual `FighterAgentCountChanged` — the busy signal driving the minion's per-agent "using a tool" ring visual, see `.ai/domain/battlefield.md`.
-- `stop` (the parent's own) → still deliberately a no-op for this feature, for the reason already established above (Task dispatch is not guaranteed synchronous with the turn that launched it).
-- `subagents:sweep-idle` (scheduled every minute, folded into `fighters:sweep-idle` — one process instead of two, `routes/console.php`) → `SubagentCountCache::sweepAllStale()`. TTL alone deletes an expired key, but nothing tells an already-open browser to shrink its swarm when that happens silently — this is what notices. Candidate users come from a permanent Redis SET (`subagent:known-users`, added to on every `recordDispatch`/`recordActivity`, never removed — cheap: `SADD` of an existing member is a no-op) rather than scanning presence keys directly, since a user whose *last* key just expired has nothing left matching `subagent:presence:{userId}:*` to be found by. For each known user, compares the current live count against a small Cache-backed "last broadcast" value and only broadcasts (and updates that value) on an actual change.
-
-Every change broadcasts `FighterAgentCountChanged {user_id, count, seq}` — `seq` is a separate, still-Cache-backed monotonic per-user counter (`SubagentCountCache::nextSeq`, unaffected by the presence-tracking refactor — it already worked on whatever `CACHE_STORE` is configured) the client uses to discard a broadcast that arrives after a fresher one it already applied, since near-simultaneous concurrent writes have no guaranteed delivery order over the wire. See `.ai/domain/battlefield.md` for the client-side minion rendering, including the front/back depth sort and the per-agent tool-use ring.
+- **Storage:** one Redis key per subagent, `subagent:presence:{userId}:{agentId}`, or `…:pending:{random}` before its `agent_id` is known. Each key has TTL = `config('game.subagent_idle_seconds')` (default **60**, raised from 30 on 2026-09-25 because a single >30 s tool call dropped a live subagent). Refreshing activity is one `EXPIRE`. A quiet subagent needs no cleanup, because Redis expires it.
+- **`recordDispatch()`** (parent's `PreToolUse` with `Task`/`Agent`): creates a pending key. `Agent` is what Claude Agent SDK harnesses report instead of `Task` (verified 2026-09-22).
+- **`recordActivity($userId, $agentId)`** (any event with an `agent_id`): refresh own key → else claim the oldest pending key → else create a fresh key. A subagent that re-emerges after expiry simply re-summons. Returns `null` when the count didn't change, so no redundant broadcast is sent.
+- **`resolveAgentId()`** prefers the top-level `agent_id` (v7). It falls back to the `parent_session_id:agent_id` form that older hooks fold into a SubagentStop's `session_id`.
+- **Why not a counter or a table:** one subagent can fire several `SubagentStop`s, because the harness ends a turn when it backgrounds one of its own tool calls. A decrementing counter therefore drained live swarms to zero (verified 2026-09-23). A DB table with `last_seen_at` then cost one UPDATE per tool call once v7 added the heartbeat. Redis TTL replaced both (2026-09-24).
+- **Parent `stop` never touches presence.** With SDK harnesses, a subagent can outlive several parent turns. Resetting on Stop wiped real swarms (verified 2026-09-22).
+- **`fighters:sweep-idle`** (every minute, `routes/console.php`) also calls `sweepAllStale()`. TTL deletes keys silently, and this sweep is what tells open browsers to shrink. It finds candidate users in the permanent Redis SET `subagent:known-users`, not by scanning presence keys: a user whose last key expired has no key left to find. It broadcasts only when the live count differs from the Cache-backed `subagent-count:last-broadcast:{userId}`.
+- **Fail-soft:** every Redis call goes through `safely()` (log + default, never throw). A Redis outage degrades minions and nothing else. Tests use `fakeRedis()` from `tests/Pest.php`, because no real Redis runs in the test environment.
+- Every change broadcasts `FighterAgentCountChanged {user_id, count, seq}`. `seq` is a Cache-backed monotonic per-user counter the client uses to drop out-of-order broadcasts.
 
 ## After a hit
 
-`DamageService::apply(user, tokens)` mutates boss HP transactionally, returns killed bosses + the (possibly new) live boss. Controller then broadcasts `BossKilled`/`BossSpawned`/`HitDealt`. Broadcasts are best-effort (`rescue()`) — a downed websocket must never 500 the hook.
+`DamageService::apply(user, tokens)` locks the alive boss row (`BossArena::lockedCurrent()`) inside a transaction. Damage beyond the boss's remaining HP rolls over into the next boss (`BossArena::spawnNext()`). It returns `DamageResult{boss, killedBosses}`, and the controller broadcasts from that. `BossKilled` also has a queued listener, `AnnounceBossKill`, which posts to Slack via `services.slack_notifier.webhook_url`.
 
-## Aggregation
+## Aggregation & caches
 
-`DamageTotals` — global/per-user/per-account sums over rolling windows (hourly/daily/monthly), 60 s cache on the global key. All aggregates derive from `events`; there are no mutable counters.
+| Service | What | TTL / invalidation |
+|---|---|---|
+| `DamageTotals` | global / per-user / per-account token sums | 60 s on `CacheKeys::DAMAGE_TOTALS`; `FleetUsageRefresher` busts it |
+| `FighterChargingCache` | current charging label per user (for boot payload) | `put` on activity, `forget` on hit/clear |
+| `FighterPositionCache` | last dragged position (`FighterMoved`) — despite the name, DB-backed (`fighter_positions` table) | written by `Livewire\Battlefield::move` |
+| `ModelFlairResolver` | enabled flair models from `ai_models` | 60 s |
+| `AccountMembershipRecorder` | known member ids per account | 1 h; flushed by `Account` model events |
+
+All aggregates derive from `events`. There are no mutable usage counters. `GET /api/state` (unauthenticated) returns the alive boss, the fighters active within `idle_minutes`, and the last 10 events.
 
 ## Install scripts
 
-Blade-rendered shell scripts served from web routes (`/install`, `/install.ps1`, `/install-cowork`, `/tracker.user.js`), one POSIX (`install-script.blade.php`) and one PowerShell (`install-script-ps1.blade.php`) — kept in lockstep, same conventions in both. The lockstep rule is enforced by tests that run against **both** routes; a whole-script `toContain` is not enough, since field names also appear in comments and in the lines that *remove* a stale registration. The rendered hook is additionally parsed with `sh -n`, because a misplaced `fi` would break it silently — the hook is fire-and-forget with its output discarded, so the only symptom would be missing events.
+Served from `routes/web.php`:
 
-**Two version lines, deliberately independent.** `client_version` is the CLI wheel's release tag, resolved from a repo this project does not publish; `hook_version` (`config('token_slayer.hook_version')`) is owned here. A hook-only change bumps the latter, so developers can be told to update without waiting on a CLI release. Both are stamped into `~/.config/{namespace}/` (`version` and `hook-version`) and reported back on every event. Idempotent by design: Claude hooks are **assigned** per event key in `~/.claude/settings.json` (not appended); the Codex `config.toml` block is marker-delimited and replaced. Re-running the install URL is the upgrade path. Hook token is read at runtime from `~/.config/{namespace}/token`.
+| Route | View | Notes |
+|---|---|---|
+| `/install` | `install-script.blade.php` (POSIX) | Claude Code + Codex + Antigravity hooks, jq, CLI venv |
+| `/install.ps1` | `install-script-ps1.blade.php` | Native Windows; lockstep with POSIX |
+| `/install-cowork`, `/cowork-watcher.py` | `cowork-install-script`, `cowork-watcher` | `?provider=cowork` baked in |
+| `/tracker.user.js` | `userscript.blade.php` | `?provider=claude-ai` baked in |
+| `/dist/slayer_cli-latest.whl` | `SlayerWheelController` | `hook.token` protected |
 
-**jq is always the installer's own pinned binary, never the system's.** Every install downloads a version-pinned, SHA256-checksum-verified `jq` into `~/.config/{namespace}/bin/` (`jq` on POSIX, `jq.exe` on Windows) and self-heals (re-downloads) on a checksum mismatch. The hook template resolves it once as `$JQ` and every call site guards with `[ -x "$JQ" ]`, never `[ -n "$JQ" ]` (a non-empty literal path is not proof the file exists) and never a bare `command -v jq` / system `jq` — cross-machine/version drift in a system-installed jq was silently corrupting attribution on prod, which is why this is pinned instead of "check if installed."
+- `/install` and `/install.ps1` are served from `ReleaseArtifacts`, which renders each script once and caches the bytes **together with** their sha256. The served bytes and the published digest therefore cannot drift. `client-artifacts:refresh` (every 5 min) keeps that cache warm, so ingest never waits on GitHub (8 s timeout versus the client's 3 s). The routes return 503 when the cache is empty.
+- **Lockstep POSIX ↔ PS1** is enforced by tests that run against **both** routes (`InstallScriptTest`, `InstallScriptPs1Test`, `HookSnippetTest`). A whole-script `toContain` is not enough, because field names also appear in comments and in the lines that *remove* stale registrations. The rendered hook is also parsed with `sh -n`: the hook is fire-and-forget, so a syntax error would only show up as missing events.
+- **Idempotent:** Claude hooks are **assigned** per event key in `~/.claude/settings.json` (fingerprint-matched, not appended). Codex hooks are merged into `~/.codex/hooks.json`. A legacy `# >>> {ns} hooks` block in `~/.codex/config.toml` is removed, because it collides with Codex's own `[hooks.state]` table and breaks config.toml. Re-running the install URL is the upgrade path. The hook token is read at runtime from `~/.config/{namespace}/token`.
+- The installer also registers two CLI hooks: `slayer_cli hook usage-refresh` (Stop) and `hook session-track-start` (SessionStart). It invokes the venv Python directly with `SLAYER_NS`, never the shared shim, so a multi-namespace machine updates the right install.
+- **jq is always the installer's own pinned binary.** Every install downloads a version-pinned, SHA256-verified `jq` into `~/.config/{namespace}/bin/` and re-downloads it on a checksum mismatch. The hook resolves it once as `$JQ`, and every call site guards with `[ -x "$JQ" ]`. Never use `[ -n "$JQ" ]` or a system `jq`: system-jq version drift silently corrupted attribution on prod. Keep the `custom.sh` examples on the guide page (`resources/views/guide.blade.php`) on the same convention.
+- **Fail-fast, all-or-nothing.** Every setup step exits immediately with the real captured error (curl/pip stderr). There is no rollback; recovery is re-running the URL.
+- `token-slayer setup` (CLI) pulls admin-provisioned grants and confirms them via `POST /api/provisioned/confirm`. See *Provisioning* in `accounts.md`.
 
-**The installer is fail-fast and all-or-nothing.** Every setup step (jq bootstrap, venv/pip/wheel install, Git-for-Windows presence on the PS1 path) exits/throws immediately on failure with the real captured error (curl/pip stderr, not a generic summary) — a partially-working install is treated as no install. This reverses an earlier deliberate design where Python-toolchain failures were non-blocking; there is no rollback on failure, recovery is just re-running the idempotent install URL. The user-facing `custom.sh` example in `resources/views/livewire/profile.blade.php` follows the same `$JQ`/`-x` convention — keep it in sync if the hook's jq-guard convention changes again.
+## Recipes
 
-The `token-slayer setup` CLI pulls any admin-provisioned accounts and then confirms them back to the server via `POST /api/provisioned/confirm` (same `hook.token` bearer), which promotes the `pending` memberships to `tracked`. See the *Provisioning* section of `accounts.md`.
+**Bump the hook version** (any change to the hook template that clients must pick up):
+1. Write the failing test first in `InstallScriptTest` **and** `InstallScriptPs1Test` (or `HookSnippetTest`).
+2. Edit both templates in lockstep.
+3. Bump the default in `config/token_slayer.php` (`hook_version`). If the server must behave differently for older hooks, gate on the **per-request** `payload.hook_version`, never on `users.hook_version`: one developer can run two machines on different versions (see `SUBAGENT_TOKENS_MIN_HOOK_VERSION`).
+4. Add a row to the hook-versions table above.
+5. Clients self-update on their next `SessionStart`. `TOKEN_SLAYER_UPDATES_PAUSED=true` halts the whole fleet.
+
+**Add a hook event type:** register it in the installer's event list (both scripts, and check the fingerprint-strip loop), add a branch in `EventController@store`, and add cases to `tests/Feature/Api/EventIngestionTest.php`. If it fires often, keep the branch cheap: no DB write per call. That cost is why presence moved to Redis.
+
+**Add a provider:**
+1. Pick the `?provider=` value and bake it into its install script/route.
+2. If its transcript isn't Claude-shaped, add a dedicated extractor in the hook. Never reuse the Claude walk (see the Codex outage above).
+3. If it only emits Stop, add a label in `providerActivityLabel()`.
+4. If it has its own accounts, extend `AccountResolver::resolve()` and the `App\Enums\Provider` enum (see `accounts.md`).
+5. Add ingestion tests with that `?provider=`.
+
+**Add a new broadcast from ingestion:** follow the `scaffold-broadcast-event` skill, and dispatch via `dispatchSafely()`.
