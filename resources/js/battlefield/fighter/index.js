@@ -3,7 +3,7 @@ import { FIGHTER_TYPES, TIMINGS } from '@battlefield/config.js';
 import { computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from '@battlefield/layout.js';
 import { AnimState, AttackType, TextureKey } from '@battlefield/constants.js';
 import { Boss } from '@battlefield/boss.js';
-import { planRoute } from '@battlefield/move-geometry.js';
+import { moveOrigin, planRoute } from '@battlefield/move-geometry.js';
 import { resolveFighterPlacement } from '@battlefield/fighter-placement.js';
 import { driftedPositions } from '@battlefield/resync.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture, makePermanentFallbackAvatarTexture } from './avatar.js';
@@ -482,8 +482,8 @@ export class Fighter {
       bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
       fsize: entry.displaySize * (entry.damageScale ?? 1),
     };
-    const route = planRoute(entry.sprite.x, entry.sprite.y, raw.x, raw.y, ctx)
-      ?? [{ x: entry.sprite.x, y: entry.sprite.y }];
+    const origin = moveOrigin(entry.sprite, entry.pos, ctx);
+    const route = planRoute(origin.x, origin.y, raw.x, raw.y, ctx) ?? [origin];
 
     // Kill any in-progress move tweens before starting new ones
     this.scene.tweens.killTweensOf(entry.sprite);
@@ -1318,7 +1318,14 @@ export class Fighter {
       // fighter.pos must be current before applyFlair: its burst places a
       // world-space particle emitter at fighter.pos, and a fighter mid-move
       // would otherwise get its spark burst rendered at a stale position.
-      fighter.pos = { x: fighter.sprite.x, y: fighter.sprite.y };
+      // moveOrigin, not the raw sprite: a hit landing mid blade-dash finds
+      // the sprite inside the boss column, and recording that as home would
+      // make this attack return there and strand every later move on it.
+      fighter.pos = moveOrigin(fighter.sprite, fighter.pos, {
+        layout: this.scene.layout,
+        bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+        fsize: fighter.displaySize * (fighter.damageScale ?? 1),
+      });
       fighter.waypointMoving = false;
       this.applyFlair(fighter, payload.flair ?? null, payload.flair_duration_ms ?? null, payload.flair_color ?? null);
     }

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { LAYOUTS } from '@battlefield/config.js';
-import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute } from '@battlefield/move-geometry.js';
+import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute, moveOrigin } from '@battlefield/move-geometry.js';
 
 const BOSS_TYPE = { frameWidth: 32, frameHeight: 32, scale: 4 };
 const landscapeCtx = { layout: LAYOUTS.landscape, bossType: BOSS_TYPE, fsize: 48 };
@@ -146,4 +146,23 @@ test('planRoute detours through bypassY when a same-height move would otherwise 
   expect(route[1].y).toBeCloseTo(468.5, 1);
   expect(route[2].x).toBeCloseTo(620, 1);
   expect(route[2].y).toBeCloseTo(200, 1);
+});
+
+test('moveOrigin keeps the live sprite position when it is a valid standing spot', () => {
+  expect(moveOrigin({ x: 700, y: 470 }, { x: 300, y: 470 }, landscapeCtx)).toEqual({ x: 700, y: 470 });
+});
+
+// A melee dash leaves the sprite inside the boss column for a few frames; a
+// route planned from there can never leave (planRoute returns null), so the
+// fighter's resting home is the only origin that can still reach anywhere.
+test('moveOrigin falls back to the resting home when the sprite is mid-dash inside the boss column', () => {
+  expect(moveOrigin({ x: 480, y: 200 }, { x: 300, y: 470 }, landscapeCtx)).toEqual({ x: 300, y: 470 });
+});
+
+test('moveOrigin keeps the sprite position when the home is no better (both blocked)', () => {
+  expect(moveOrigin({ x: 480, y: 200 }, { x: 480, y: 210 }, landscapeCtx)).toEqual({ x: 480, y: 200 });
+});
+
+test('moveOrigin tolerates a fighter with no recorded home yet', () => {
+  expect(moveOrigin({ x: 480, y: 200 }, null, landscapeCtx)).toEqual({ x: 480, y: 200 });
 });
