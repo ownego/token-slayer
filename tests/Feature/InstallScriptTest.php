@@ -959,6 +959,54 @@ test('both installers cap the transcript re-read retry so a stuck flush cannot h
     'ps1' => ['/install.ps1'],
 ]);
 
+test('both installers wait until the transcript holds the final reply before counting a turn', function (string $url) {
+    // The transcript is written asynchronously, so at Stop a turn's final
+    // assistant message is often not in the file yet. A turn with tool calls
+    // then reads its earlier messages as non-zero, skips the zero-read retry,
+    // and never counts the final one (9 of 9 headless test turns, 2026-09-26).
+    // last_assistant_message is that final reply's text, per
+    // https://code.claude.com/docs/en/hooks, so the walk reports whether the
+    // newest text entry matches it and the hook rereads until it does.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('.last_assistant_message')
+        ->and($script)->toContain('caught_up:')
+        ->and($script)->toContain('.caught_up');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers cap the final-reply wait so a transcript that never catches up cannot hang the hook', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('"$WAITED" -lt 10');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers skip the final-reply wait when the hook input has no final text', function (string $url) {
+    // Codex and Antigravity send no last_assistant_message, and a subagent
+    // that hands back through SubagentHandback may send it empty. The walk
+    // then reports caught_up at once, so those hooks never wait.
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('if $want == "" then true');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
+test('both installers keep the final-reply flag out of the event body', function (string $url) {
+    $script = $this->get($url)->assertOk()->getContent();
+
+    expect($script)->toContain('. + ($u | del(.caught_up))');
+})->with([
+    'sh' => ['/install'],
+    'ps1' => ['/install.ps1'],
+]);
+
 test('both installers dedupe a single API message split across multiple content-block rows before summing tokens', function (string $url) {
     $script = $this->get($url)->assertOk()->getContent();
 
