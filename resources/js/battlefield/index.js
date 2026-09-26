@@ -4,6 +4,7 @@ import { LAYOUTS, BG_COLOR } from './config.js';
 import { bus } from './bus.js';
 import { snapshotState } from './snapshot.js';
 import { computeHudTop } from './hud-position.js';
+import { canvasSizeFor } from './render-scale.js';
 import { formatHp } from './format.js';
 import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
 import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
@@ -100,39 +101,23 @@ export function detectMode() {
 }
 
 /**
- * How many real canvas pixels to render per logical pixel.
- *
- * The scene is authored in a fixed logical coordinate space (960x540, see
- * LAYOUTS) and Scale.FIT stretches that canvas to fill whatever space the
- * page gives it. On a wide display that stretch is close to 2x -- measured
- * live at 1863 CSS px for a 960px canvas -- so every pixel the game drew was
- * being blown up nearly double, which is what made avatars (and everything
- * else) look soft and blocky next to crisp pixel-art sprites.
- *
- * Rendering the canvas at `logical * scale` and zooming the camera by the
- * same factor keeps every coordinate in the codebase logical while giving
- * the renderer enough real pixels to land roughly 1:1 on screen. Derived
- * from the space actually available (times devicePixelRatio) rather than
- * fixed, so small screens don't pay for pixels they can't show; capped
- * because past ~2.5x the cost stops buying visible sharpness.
+ * Returns the canvas size for a layout against the mount's current width.
  *
  * @param {HTMLElement} mount
- * @param {{logicalWidth: number}} layout
- * @return {number}
+ * @param {{logicalWidth: number, logicalHeight: number}} layout
+ * @return {{width: number, height: number, renderScale: number}}
  */
-function renderScaleFor(mount, layout) {
-  const available = (mount?.clientWidth || window.innerWidth) * (window.devicePixelRatio || 1);
-  return Math.min(2.5, Math.max(1, available / layout.logicalWidth));
+function canvasSizeForMount(mount, layout) {
+  return canvasSizeFor(mount?.clientWidth || window.innerWidth, window.devicePixelRatio, layout);
 }
 
 function bootGame(mount, state, mode) {
-  const layout = LAYOUTS[mode];
-  const renderScale = renderScaleFor(mount, layout);
+  const { width, height, renderScale } = canvasSizeForMount(mount, LAYOUTS[mode]);
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: mount,
-    width: Math.round(layout.logicalWidth * renderScale),
-    height: Math.round(layout.logicalHeight * renderScale),
+    width,
+    height,
     backgroundColor: BG_COLOR,
     pixelArt: false,
     antialias: true,
@@ -155,9 +140,11 @@ function bootGame(mount, state, mode) {
       // the higher-resolution canvas). Anything positioning DOM overlays
       // against the canvas -- the Damage HUD in battlefield.blade.php --
       // must scale against this, or it silently shrinks by renderScale.
-      logicalWidth: layout.logicalWidth,
-      logicalHeight: layout.logicalHeight,
-      renderScale,
+      // Getters: an orientation flip swaps the layout and re-derives the
+      // render scale on this same game (see applyModeChange).
+      get logicalWidth() { return LAYOUTS[game.registry.get('mode')].logicalWidth; },
+      get logicalHeight() { return LAYOUTS[game.registry.get('mode')].logicalHeight; },
+      get renderScale() { return game.registry.get('renderScale'); },
       // See constants.js's own docblock — the DOM Damage HUD (battlefield.
       // blade.php's fitToCanvas()) needs this to keep mirroring the
       // in-canvas TOP DAMAGE panel now that the camera shows more of the
@@ -199,11 +186,12 @@ export function bootBattlefield(mount, state) {
 
   const applyModeChange = (next) => {
     currentMode = next;
-    const layout = LAYOUTS[next];
+    const { width, height, renderScale } = canvasSizeForMount(mount, LAYOUTS[next]);
     const scene = currentGame.scene.getScene('battlefield');
     currentState = snapshotState(currentState, scene);
-    currentGame.scale.setGameSize(layout.logicalWidth, layout.logicalHeight);
+    currentGame.scale.setGameSize(width, height);
     currentGame.registry.set('mode', next);
+    currentGame.registry.set('renderScale', renderScale);
     currentGame.registry.set('initialState', currentState);
     scene.scene.restart();
   };
