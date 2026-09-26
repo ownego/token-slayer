@@ -244,14 +244,18 @@ if [ -x "$JQ" ]; then
              input_tokens: .it, cache_creation_input_tokens: 0, cache_read_input_tokens: .crt}
         ' "$TRANSCRIPT" 2>/dev/null
       else
-        "$JQ" -sr '
+        "$JQ" -sr --arg want "$WANT" '
           . as $a
           | (length - 1) as $end
-          | reduce range($end; -1; -1) as $i ({t:0, it:0, cct:0, crt:0, m:{}, seen:{}, stop:false};
+          | reduce range($end; -1; -1) as $i ({t:0, it:0, cct:0, crt:0, m:{}, seen:{}, stop:false, lt:null};
               if .stop then . else
                 ($a[$i]) as $e
                 | if $e.type == "assistant" or $e.type == "PLANNER_RESPONSE" or $e.source == "MODEL" then
-                    ($e.message.id // $e.id // null) as $mid
+                    (if .lt == null then
+                       ([($e.message.content // [])[]? | objects | select(.type == "text") | .text | strings] | join("")) as $x
+                       | if $x != "" then .lt = $x else . end
+                     else . end)
+                    | ($e.message.id // $e.id // null) as $mid
                     | if ($mid != null and (.seen[$mid] // false)) then .
                       else
                         (($e.message.usage.output_tokens // $e.usage.output_tokens // $e.usage.outputTokens // 0)) as $tok
@@ -273,7 +277,8 @@ if [ -x "$JQ" ]; then
                     .stop = true
                   else . end
               end)
-          | {tokens: .t, models: .m, input_tokens: .it, cache_creation_input_tokens: .cct, cache_read_input_tokens: .crt}
+          | {tokens: .t, models: .m, input_tokens: .it, cache_creation_input_tokens: .cct, cache_read_input_tokens: .crt,
+             caught_up: (if $want == "" then true else ((.lt // "") | contains($want)) end)}
         ' "$TRANSCRIPT" 2>/dev/null
       fi
     }
@@ -282,8 +287,8 @@ if [ -x "$JQ" ]; then
     # guaranteed flushed to disk; reading right away can see a truncated
     # file and compute tokens=0, silently dropping the whole turn (the
     # server only creates an Event when tokens>0 -- a zero read is never
-    # retried server-side). A first read that already sees tokens>0 is
-    # trusted immediately with no added latency, unchanged from before.
+    # retried server-side). A first read that already sees tokens>0 (after
+    # the final-reply wait below) is trusted with no further retry.
     # Only a zero first read is retried: reread the same file every 300ms,
     # up to 5 extra times (~1.5s), until two CONSECUTIVE reads agree on a
     # non-zero result. The transcript is append-only, so identical output
@@ -297,7 +302,26 @@ if [ -x "$JQ" ]; then
     # and reading a genuinely later turn would require a full
     # prompt-to-response round trip inside this same short window, which
     # does not happen in practice.
+    #
+    # A non-zero read can still be short: the transcript "may not yet include
+    # the current turn's most recent messages when a hook fires"
+    # (https://code.claude.com/docs/en/hooks), so a turn with tool calls reads
+    # its earlier messages and misses the final one (9 of 9 headless test
+    # turns, 2026-09-26). Stop and SubagentStop carry that final reply's text
+    # as last_assistant_message, so the walk above reports caught_up once the
+    # newest text entry contains its last 200 characters; until then the file
+    # is reread every 200ms, at most 10 times (2s), and whatever it holds then
+    # is sent. Only the tail is passed, as a --arg is length-capped (~32 KB on
+    # Windows). An empty WANT (Codex, Antigravity, a subagent that handed back
+    # through SubagentHandback) skips the wait.
+    WANT=$(printf '%s' "$BODY" | "$JQ" -r '(.last_assistant_message // "") | rtrim | .[-200:]' 2>/dev/null)
     USAGE=$(extract_usage)
+    WAITED=0
+    while [ "$WAITED" -lt 10 ] && [ "$(printf '%s' "$USAGE" | "$JQ" -r '.caught_up' 2>/dev/null)" = "false" ]; do
+      sleep 0.2
+      USAGE=$(extract_usage)
+      WAITED=$((WAITED + 1))
+    done
     TOK=$(printf '%s' "$USAGE" | "$JQ" -r '.tokens // 0' 2>/dev/null)
     if [ "${TOK:-0}" = "0" ]; then
       PREV="$USAGE"
@@ -314,7 +338,7 @@ if [ -x "$JQ" ]; then
       done
     fi
     case "$USAGE" in
-      '{'*) BODY=$(printf '%s' "$BODY" | "$JQ" -c --argjson u "$USAGE" '. + $u' 2>/dev/null || printf '%s' "$BODY") ;;
+      '{'*) BODY=$(printf '%s' "$BODY" | "$JQ" -c --argjson u "$USAGE" '. + ($u | del(.caught_up))' 2>/dev/null || printf '%s' "$BODY") ;;
     esac
   fi
 fi
