@@ -20,6 +20,14 @@ export function bubbleCenterY({ spriteY, headY, headH, scale, bubbleH }) {
 }
 
 /**
+ * How many lines an action bubble shows: one. A longer action is cut with an
+ * ellipsis rather than wrapped (two lines read as a block over the fighter).
+ *
+ * @type {number}
+ */
+export const ACTIVITY_LINES = 1;
+
+/**
  * The action bubble's type size and line length for a fighter: bounded, so
  * a fighter grown by damage doesn't stretch its bubble into a long banner
  * (the old sizing scaled both with displaySize — ~38 characters at 24px).
@@ -32,8 +40,8 @@ export function activityFit(displaySize) {
 
   return {
     fontPx: clamp(Math.round(displaySize * 0.2), 10, 14),
-    maxChars: clamp(Math.round(displaySize * 0.3), 14, 20),
-    maxLines: 2,
+    maxChars: clamp(Math.round(displaySize * 0.35), 16, 22),
+    maxLines: ACTIVITY_LINES,
   };
 }
 
