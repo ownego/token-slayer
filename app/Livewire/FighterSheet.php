@@ -28,6 +28,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Renderless;
 use Livewire\Component;
 
 /**
@@ -141,6 +142,22 @@ class FighterSheet extends Component
     {
         $this->open = true;
         $this->tab = in_array($tab, ['profile', 'character'], true) ? $tab : 'profile';
+    }
+
+    /**
+     * Remembers the tab the page already switched to, so a later render keeps
+     * it. Renderless: both panels are in the page, and a render would rerun
+     * every aggregate just to flip a class.
+     *
+     * @param  string  $tab
+     * @return void
+     */
+    #[Renderless]
+    public function selectTab(string $tab): void
+    {
+        if (in_array($tab, ['profile', 'character'], true)) {
+            $this->tab = $tab;
+        }
     }
 
     /**

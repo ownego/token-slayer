@@ -16,5 +16,5 @@ test('history page lists defeated bosses with killing-blow user', function () {
         'defeated_at' => now()->subHours(1),
     ]);
 
-    $this->get('/history')->assertOk()->assertSee('Smaug')->assertSee('alice');
+    $this->actingAs(User::factory()->create())->get('/history')->assertOk()->assertSee('Smaug')->assertSee('alice');
 });

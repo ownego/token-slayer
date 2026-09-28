@@ -13,6 +13,7 @@ use App\Services\ProviderServiceFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Livewire\Attributes\Renderless;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -533,4 +534,88 @@ test('account members show their real avatar and the character they play, not ju
     Livewire::actingAs($me)->test(FighterSheet::class)->call('open', 'profile')
         ->assertSeeHtml('<img src="'.e($mate->avatarProxyUrl()).'"')
         ->assertSeeHtml('data-char="werebear"');
+});
+
+test('the sheet frame and its loader are there before it is ever opened, so a click shows it at once', function () {
+    // the loader is Clawd bouncing on the start line, not a grey skeleton
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->assertSeeHtml('x-data="sheetFrame()"')
+        ->assertSeeHtml('class="fs fs-skel"')
+        ->assertSeeHtml('x-data="clawdHop()"');
+});
+
+test('switching tab is only remembered by the server, never re-rendered for', function () {
+    // both panels are already in the page; a render here reran every aggregate
+    $component = Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->call('selectTab', 'character')
+        ->assertSet('tab', 'character')
+        ->call('selectTab', 'nonsense')
+        ->assertSet('tab', 'character');
+
+    $method = new ReflectionMethod(FighterSheet::class, 'selectTab');
+    expect($method->getAttributes(Renderless::class))->not->toBeEmpty();
+});
+
+test('the damage numbers show a loading state while a new period is fetched', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('wire:target="setPeriod,applyRange"');
+});
+
+test('the By-model rows show a loading state while a new period is fetched', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('wire:target="setModelPeriod"');
+});
+
+test('an opened sheet keeps its loader in the page until the runner has finished, then shows the sheet', function () {
+    // the loader must outlive the first render, or the render's morph swaps it
+    // out mid-run
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('class="fs fs-skel"')
+        ->assertSeeHtml('@fighter-sheet-ready.window="finish()"')
+        ->assertSeeHtml('x-show="!loading"');
+});
+
+test('a render never strips the Clawd the page drew into the loader', function () {
+    // Clawd is drawn into the svg in the page; without wire:ignore the first
+    // render's morph emptied it mid-bounce
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('wire:ignore x-data="clawdHop()"');
+});
+
+test('no render can touch the loader while the runner sprints to the end', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('<div x-show="loading" wire:ignore>');
+});
+
+test('a render never re-cloaks the open frame', function () {
+    // the frame ships x-cloak for the first paint; a morph that re-added it
+    // hid the whole open sheet for a beat on every render (and froze the
+    // loader's finishing sprint)
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('x-data="sheetFrame()"'."\n".'        wire:ignore.self');
+});
+
+test('a render never snaps the period ink back to the first tab mid-slide', function () {
+    // the ink is placed by inline style from the page; a morph that synced
+    // its attributes to the server's bare span dropped it back to the left
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('<span class="period-ink" wire:ignore aria-hidden="true"></span>');
+});
+
+test('the loaded sheet takes the loader\'s exact place: its fade never puts a transform on it', function () {
+    // x-transition.opacity leaves a transform on the element while it runs,
+    // which re-anchors the fixed overlay inside to that box: the sheet sat
+    // 7x24px off for 200ms, then jumped into place
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('x-transition:enter="fs-content-enter"')
+        ->assertDontSeeHtml('x-transition.opacity.duration.200ms');
 });

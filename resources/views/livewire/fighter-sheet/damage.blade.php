@@ -19,6 +19,7 @@
     @keydown.escape="if (more) { $event.stopPropagation(); escape() }"
 >
     <div class="periods" role="tablist">
+        <span class="period-ink" wire:ignore aria-hidden="true"></span>
         @foreach (['hour' => 'This hour', 'today' => 'Today', 'week' => 'This week', 'month' => 'This month', 'all' => 'All time'] as $value => $label)
             <button class="period" role="tab" type="button" data-p="{{ $value }}" aria-selected="{{ $period === $value ? 'true' : 'false' }}" tabindex="{{ $period === $value ? '0' : '-1' }}" @click="pick('{{ $value }}')" @keydown="nav($event)">{{ $label }}</button>
         @endforeach
@@ -34,7 +35,7 @@
     @error('to')
         <p class="range-error" aria-live="polite" style="margin:6px 0 0;color:var(--blood);font-size:12px">{{ $message }}</p>
     @enderror
-    <div class="meter-panel">
+    <div class="meter-panel" wire:loading.class="is-loading" wire:target="setPeriod,applyRange">
         <div class="meter-top">
             <span class="dmg-wrap"><span class="dmg" id="dmg" data-value="{{ $damage['mine'] }}">{{ CompactNumber::format($damage['mine']) }}</span></span>
             <span class="dmg-label"><span class="live-dot"></span>damage dealt</span>

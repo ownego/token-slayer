@@ -24,3 +24,11 @@ test('never renders below logical size', () => {
 test('sizes a portrait flip against the portrait layout, not the bare logical size', () => {
   expect(canvasSizeFor(1080, 1, LAYOUTS.portrait)).toEqual({ width: 1080, height: 1920, renderScale: 2 });
 });
+
+test('lite mode renders at the layout size itself, whatever the screen, and the browser scales it up', () => {
+  const landscape = { logicalWidth: 960, logicalHeight: 540 };
+  const portrait = { logicalWidth: 540, logicalHeight: 960 };
+  expect(canvasSizeFor(1637, 1, landscape, { maxScale: 1 })).toEqual({ width: 960, height: 540, renderScale: 1 });
+  expect(canvasSizeFor(2560, 2, landscape, { maxScale: 1 })).toEqual({ width: 960, height: 540, renderScale: 1 });
+  expect(canvasSizeFor(390, 3, portrait, { maxScale: 1 })).toEqual({ width: 540, height: 960, renderScale: 1 });
+});

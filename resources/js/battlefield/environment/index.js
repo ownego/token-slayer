@@ -4,6 +4,10 @@ import { ensureMoteSoftTexture } from '@battlefield/spark-texture.js';
 import { moonDisplay, skyFrame, mixHex } from './sky-layer.js';
 import { horizonYFor } from '@battlefield/layout.js';
 import { dressingLayout } from './dressing.js';
+import { cameoFrame, hopPlan, nextCameoDelay, peekPlan, nextCameoKind, pickRideCloud, dancePlan, rideCloudY } from './clawd-cameo.js';
+import { bannerPixels, bloomPixels, flowerBed, islandPixels, landmarkLayout, pixelate, stemPixels, windmillPixels } from './landmarks.js';
+import { LOGOS } from './logo-paths.js';
+import { bakeInto, bakeRuns, floatLive, runBounds } from './bake-runs.js';
 import { BIRD_FRAMES, castlePixels, cloudBank, cloudPixels, flockLayout, hillProfile, meteorFrame, meteorPlan, mountainProfile, mountainShader, nextSkyEvent, treePixels } from './pixel-art.js';
 
 /**
@@ -60,6 +64,69 @@ function paintTones(c, grid, ox, oy, u) {
 }
 
 /**
+ * Bakes a colour grid (a `#rrggbb` per inked cell, null for empty) into a
+ * nearest-filtered canvas texture, one px per cell.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {string} key
+ * @param {Array<Array<string|null>>} grid
+ * @return {void}
+ */
+function bakeColours(scene, key, grid) {
+  const t = scene.textures.createCanvas(key, grid[0].length, grid.length);
+  grid.forEach((row, y) => row.forEach((colour, x) => {
+    if (colour) {
+      t.context.fillStyle = colour;
+      t.context.fillRect(x, y, 1, 1);
+    }
+  }));
+  t.refresh();
+  t.setFilter(Phaser.Textures.FilterMode.NEAREST);
+}
+
+/**
+ * Rasterizes one of the real tool marks (logo-paths.js) onto a `size`-cell
+ * pixel grid: drawn 8× supersampled with its own fill, then snapped cell by
+ * cell (landmarks.js's pixelate).
+ *
+ * @param {string} name A LOGOS key.
+ * @param {number} size Cells per side.
+ * @return {Array<Array<string|null>>}
+ */
+function logoGrid(name, size) {
+  const samples = 8;
+  const side = size * samples;
+  const canvas = document.createElement('canvas');
+  canvas.width = side;
+  canvas.height = side;
+  const c = canvas.getContext('2d');
+  c.scale(side / 24, side / 24);
+  const { path, fill } = LOGOS[name];
+  if (fill.length > 1) {
+    const g = c.createLinearGradient(0, 0, 24, 24);
+    fill.forEach((stop, i) => g.addColorStop(i / (fill.length - 1), stop));
+    c.fillStyle = g;
+  } else {
+    c.fillStyle = fill[0];
+  }
+  c.fill(new Path2D(path), 'evenodd');
+
+  return pixelate(c.getImageData(0, 0, side, side).data, size, samples, 0.45);
+}
+
+/**
+ * Clawd's pose name → its baked texture (spark-texture.js's ensureClawdTextures).
+ *
+ * @type {Object<string, string>}
+ */
+const CLAWD_POSE_TEXTURE = {
+  'default': TextureKey.CLAWD_DEFAULT,
+  'look-left': TextureKey.CLAWD_LOOK_LEFT,
+  'look-right': TextureKey.CLAWD_LOOK_RIGHT,
+  'arms-up': TextureKey.CLAWD_ARMS,
+};
+
+/**
  * Builds the living-sky layer plus its arena dressing: a real-astronomy
  * sun/moon, a colour-graded sky/ridge/floor gradient, drifting clouds, a
  * star field, an occasional shooting star, two braziers, a distant keep
@@ -70,10 +137,15 @@ function paintTones(c, grid, ox, oy, u) {
  * unchanged in landscape and portrait.
  *
  * @param {Phaser.Scene} scene
- * @param {{layout: object, sky: {lat: number, lon: number}|null|undefined}} options
+ * Lite mode (render-mode.js — the browser draws WebGL on the CPU) keeps the
+ * same scene but bakes every still piece into a few images (bake-runs.js),
+ * re-baked when the sky's colours move, and animates only what moves on its
+ * own: Clawd, the sails, the sun and moon, birds, shooting stars, fire.
+ *
+ * @param {{layout: object, sky: {lat: number, lon: number}|null|undefined, lite?: boolean}} options
  * @return {{update: function(Date, boolean=): void, tick: function(number, number): void, destroy: function(): void, horizonY: number}}
  */
-export function createEnvironment(scene, { layout, sky }) {
+export function createEnvironment(scene, { layout, sky, lite = false }) {
   const W = layout.logicalWidth;
   const H = layout.logicalHeight;
   const HZ = horizonYFor(layout);
@@ -140,7 +212,13 @@ export function createEnvironment(scene, { layout, sky }) {
   ];
   cloudShapes.forEach((shape, c) => {
     const ct = scene.textures.createCanvas(fresh('env-cloud' + c), shape.w, shape.h);
-    paintTones(ct.context, (shape.bank ? cloudBank : cloudPixels)(shape.w, shape.h, rnd), 0, 0, 1);
+    const art = (shape.bank ? cloudBank : cloudPixels)(shape.w, shape.h, rnd);
+    paintTones(ct.context, art, 0, 0, 1);
+    // each column's first inked row, so a perching Clawd sits on the cloud's real top
+    const tops = Array.from({ length: shape.w }, (_, x) => {
+      const y = art.findIndex(row => row[x]);
+      return y < 0 ? shape.h : y;
+    });
     ct.refresh();
     ct.setFilter(Phaser.Textures.FilterMode.NEAREST);
     const copies = shape.bank ? 1 : 2;
@@ -148,6 +226,7 @@ export function createEnvironment(scene, { layout, sky }) {
       env.clouds.push({
         o: scene.add.image(rnd() * W, 16 + rnd() * (HZ * 0.45), 'env-cloud' + c).setScale(shape.bank ? px : px + (rnd() < 0.3 ? 1 : 0)),
         sp: (shape.bank ? 3 : 5) + rnd() * 5,
+        tops,
         base: 0.8 + rnd() * 0.2,
       });
     }
@@ -199,6 +278,7 @@ export function createEnvironment(scene, { layout, sky }) {
     const { profile, trees } = hillProfile(W, Math.round(HZ * 0.8), Math.round(HZ * 0.97), rnd);
     c.fillStyle = '#ffffff';
     profile.forEach((y, x) => c.fillRect(x, y, 1, HZ - y));
+    env[key + 'Sky'] = profile;
     // a mixed forest in clumps with clearings: pines, tall pines, round trees and bushes
     for (const tree of trees) {
       const art = treePixels(tree.kind, tree.h);
@@ -232,6 +312,11 @@ export function createEnvironment(scene, { layout, sky }) {
     env.castle = scene.add.image(dressing.keep.x, base, 'env-castle').setOrigin(0.5, 1).setScale(u);
     const left = dressing.keep.x - (art[0].length * u) / 2;
     const top = base - art.length * u;
+    env.castleSpan = { x0: left, x1: left + art[0].length * u };
+    // the castle's heraldry: a banner with Cursor's cube on the right tower (art column 38)
+    bakeColours(scene, fresh('env-banner'), bannerPixels(logoGrid('cursor', 9)));
+    env.banner = scene.add.image(left + 38.5 * u, top + 9 * u, 'env-banner').setOrigin(0.5, 0).setScale(Math.max(1, Math.round(u / 2)));
+
     env.windows = [];
     art.forEach((row, y) => row.forEach((tone, x) => {
       // windows: dark cells above the gate's rows
@@ -247,6 +332,70 @@ export function createEnvironment(scene, { layout, sky }) {
     env.torches = [-3.5, 3.5].map(dx => scene.add.image(dressing.keep.x + dx * u, gateY, TextureKey.SOFTGLOW)
       .setTint(0xff8a3a).setBlendMode('ADD').setScale(u * 0.18).setAlpha(0));
   }
+
+  // Landmarks from the team's tools (environment/landmarks.js), pure
+  // decoration: a windmill turning Claude's starburst on the hill crest, an
+  // Antigravity island floating in the sky, OpenAI-knot flowers on the
+  // right-hand crest and a Gemini sparkle that shows at night (Cursor's
+  // banner hangs on the castle, above).
+  {
+    const hillSky = env['env-nearSky'];
+    const lm = landmarkLayout({ width: W, horizonY: HZ, keepX: dressing.keep.x }, x => hillSky[Math.max(0, Math.min(W - 1, x))]);
+    const u = lm.unit;
+    const mill = windmillPixels();
+    const mt = scene.textures.createCanvas(fresh('env-windmill'), mill.art[0].length, mill.art.length);
+    paintTones(mt.context, mill.art, 0, 0, 1);
+    mt.refresh();
+    mt.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    const millBase = lm.windmill.y + 2 * u;
+    env.windmill = scene.add.image(lm.windmill.x, millBase, 'env-windmill').setOrigin(0.5, 1).setScale(u);
+    bakeColours(scene, fresh('env-sails'), logoGrid('claude', 21));
+    env.sails = scene.add.image(
+      lm.windmill.x - (mill.art[0].length * u) / 2 + (mill.hub.x + 0.5) * u,
+      millBase - mill.art.length * u + (mill.hub.y + 0.5) * u,
+      'env-sails',
+    ).setScale(u);
+
+    // smaller than the rest: it floats far off, and must fit under the boss plate;
+    // the Antigravity arch hovers over it, bobbing on its own
+    const su = Math.max(2, Math.round(u * 0.6));
+    bakeColours(scene, fresh('env-island'), islandPixels(30, 14, rnd));
+    env.island = scene.add.image(lm.island.x, lm.island.y, 'env-island').setScale(su);
+    env.islandY = lm.island.y;
+    bakeColours(scene, fresh('env-antigravity'), logoGrid('antigravity', 18));
+    env.antigravity = scene.add.image(lm.island.x, lm.island.y - 7 * su, 'env-antigravity').setOrigin(0.5, 1).setScale(su);
+    env.antigravityY = lm.island.y - 7 * su;
+
+    // a patch of OpenAI-knot flowers on the right-hand hill crest, swaying,
+    // each bloom slowly turning; small, being far off
+    const fu = 2;
+    // each head reads as the ChatGPT app icon: the white knot on its green disc
+    bakeColours(scene, fresh('env-knot'), bloomPixels(logoGrid('openai', 11)));
+    env.flowers = flowerBed(lm.flowers, fu, x => hillSky[Math.max(0, Math.min(W - 1, x))], rnd).map((f, k) => {
+      const key = fresh('env-stem' + k);
+      bakeColours(scene, key, stemPixels(f.h));
+      return {
+        ...f,
+        stem: scene.add.image(f.x, f.y, key).setOrigin(0.5, 1).setScale(fu),
+        bloom: scene.add.image(f.x, f.y - f.h * fu, 'env-knot').setScale(fu),
+        len: f.h * fu,
+      };
+    });
+
+    bakeColours(scene, fresh('env-gemini'), logoGrid('gemini', 17));
+    env.geminiGlow = scene.add.image(lm.star.x, lm.star.y, TextureKey.SOFTGLOW).setTint(0x9a8cf5).setBlendMode('ADD').setScale(0.5).setAlpha(0);
+    env.gemini = scene.add.image(lm.star.x, lm.star.y, 'env-gemini').setScale(Math.max(1, Math.round(u / 2))).setAlpha(0);
+  }
+
+  // Clawd's cameos (environment/clawd-cameo.js): one sprite between the two
+  // mountain ranges, so the front range hides whatever is below its skyline,
+  // and one above the clouds for sitting on them. Two ridge art pixels per
+  // quadrant cell: at one it read as a speck.
+  env.clawdRidge = scene.add.image(0, 0, TextureKey.CLAWD_DEFAULT).setOrigin(0.5, 1).setScale(R).setAlpha(0);
+  // a second, shy Clawd: it only ever peeks, taking turns with the hopper
+  env.clawdPeek = scene.add.image(0, 0, TextureKey.CLAWD_DEFAULT).setOrigin(0.5, 1).setScale(R).setAlpha(0);
+  // small up on the clouds: it reads as far off
+  env.clawdCloud = scene.add.image(0, 0, TextureKey.CLAWD_DEFAULT).setOrigin(0.5, 1).setScale(R / 2).setAlpha(0);
 
   // Birds: a flock of small flapping pixel birds in a loose V, now and then
   // by day.
@@ -302,6 +451,8 @@ export function createEnvironment(scene, { layout, sky }) {
     g.fillStyle(0x3b3f52, 1); g.fillRect(bx - 5 * u, by - 3 * u, 10 * u, 3 * u);
     g.fillStyle(0x2a2d3c, 1); g.fillRect(bx - 4 * u, by, 8 * u, u);
     g.fillStyle(0x23252f, 1); g.fillRect(bx - u, by + u, 2 * u, 7 * u); g.fillRect(bx - 3 * u, by + 8 * u, 6 * u, u);
+    // a Graphics has no getBounds: lite mode's bake (bake-runs.js) reads this
+    g.bakeBounds = { x: bx - 5 * u, y: by - 3 * u, right: bx + 5 * u, bottom: by + 9 * u };
     const glow = scene.add.image(bx, by - 4 * u, TextureKey.SOFTGLOW).setTint(0xff9a3c).setBlendMode('ADD');
     const fire = scene.add.particles(bx, by - 3 * u, TextureKey.MOTE_SOFT, {
       lifespan: { min: 380, max: 700 }, speedY: { min: -19 * u, max: -9 * u }, speedX: { min: -6, max: 6 },
@@ -352,9 +503,14 @@ export function createEnvironment(scene, { layout, sky }) {
   env.layer.add([
     env.sky, env.stars, ...env.twinkles.map(t => t.o), env.shoot, env.shootHead,
     env.moonGlow, env.moon, env.sunGlow, env.sun,
+    env.geminiGlow, env.gemini,
     ...env.clouds.map(c => c.o),
+    env.clawdCloud,
     ...env.birds,
-    env.back, env.far, env.castle, ...env.windows, ...env.windowGlows, ...env.torches, env.near, env.floor, env.horizon,
+    env.back, env.clawdRidge, env.clawdPeek, env.far, env.castle, env.banner, ...env.windows, ...env.windowGlows, ...env.torches,
+    // the island and Clawd's own clouds float low, in front of the ranges and behind the hills
+    env.island, env.antigravity,
+    env.near, env.windmill, env.sails, ...env.flowers.flatMap(f => [f.stem, f.bloom]), env.floor, env.horizon,
     ...env.braziers.flatMap(b => [b.glow, b.g, b.fire]),
     ...env.motes.map(m => m.o),
     env.vig,
@@ -364,6 +520,18 @@ export function createEnvironment(scene, { layout, sky }) {
   let moonT = 0;
   let shooting = false;
   let flocking = false;
+  // the Clawd cameo playing behind the mountains now ({plan, start, sprite}), or null
+  let cameo = null;
+  // the kind of the last cameo, so the hopper and the shy peeker take turns
+  let lastCameo = null;
+  // Clawd dancing on one of the sky's own drifting clouds, all the time
+  const ride = {
+    cloud: env.clouds[pickRideCloud(env.clouds.map(c => ({ y: c.o.y, w: c.o.displayWidth })), env.clawdCloud.displayWidth)],
+    plan: dancePlan([-1, 0, 1].map(k => Math.round(k * env.clawdCloud.displayWidth * 0.6)), { seatY: 0, riderH: env.clawdCloud.displayHeight }, rnd),
+  };
+  // lowered to just under the HUD panels, so Clawd is in view as it drifts
+  ride.cloud.o.y = rideCloudY(ride.cloud.o.y, HZ);
+  let nextCameoAt = 0;
   // the first flock / shooting star comes soon after load, so it's actually seen
   let nextFlockAt = 0;
   let nextShootAt = 0;
@@ -425,6 +593,16 @@ export function createEnvironment(scene, { layout, sky }) {
       // darker and warmer than the range behind it, so the castle stands out instead of melting into the rock
       env.castle.setTint(toInt(mixHex(mixHex(mixHex(h, '#000000', 0.48), '#6b5a4a', 0.25), frame.ambient, 0.3)));
       env.near.setTint(toInt(mixHex(mixHex(h, '#000000', 0.55), frame.ambient, 0.25)));
+      // warm stone, lighter than the hills behind it so the tower reads
+      env.windmill.setTint(toInt(mixHex(mixHex('#d8c6a8', h, 0.25), '#1c2236', frame.night * 0.7)));
+      // the coloured pieces keep their own colours, only dimmed by the night
+      const dim = toInt(mixHex('#ffffff', '#3a4466', frame.night * 0.7));
+      [env.sails, env.island, env.antigravity, env.clawdCloud, ...env.flowers.map(fl => fl.bloom)].forEach(o => o.setTint(dim));
+      env.banner.setTint(toInt(mixHex(mixHex('#ffffff', h, 0.25), '#1c2236', frame.night * 0.6)));
+      // behind the front range, a touch of the horizon's haze
+      const ridgeTint = toInt(mixHex(mixHex('#ffffff', h, 0.2), '#3a4466', frame.night * 0.7));
+      env.clawdRidge.setTint(ridgeTint);
+      env.clawdPeek.setTint(ridgeTint);
       // Keep fighters readable on a bright day rather than washing the
       // floor all the way out to the raw ambient colour.
       env.floor.setTint(toInt(mixHex(frame.ambient, '#1a2238', 0.35 + 0.25 * frame.day)));
@@ -433,6 +611,7 @@ export function createEnvironment(scene, { layout, sky }) {
         cl.o
           .setTint(toInt(mixHex(mixHex('#ffffff', h, frame.twilight * 0.6), '#2a3355', frame.night * 0.8)))
           .setAlpha((0.35 + 0.5 * frame.day + 0.15 * frame.twilight) * cl.base));
+      env.flowers.forEach(fl => fl.stem.setTint(toInt(mixHex('#ffffff', '#3a4466', frame.night * 0.6))));
 
       const pk = Math.round(frame.moon.phase * 60);
       if (pk !== env.moonPhaseKey) {
@@ -458,6 +637,8 @@ export function createEnvironment(scene, { layout, sky }) {
       }
     }
     env.stars.setAlpha(frame.night);
+    env.gemini.setAlpha(frame.night);
+    env.geminiGlow.setAlpha(frame.night * 0.5);
     env.frame = frame;
     placeMoon();
     env.sun.setPosition(frame.sun.x, frame.sun.y).setAlpha(frame.sun.visible ? 1 : 0)
@@ -467,6 +648,13 @@ export function createEnvironment(scene, { layout, sky }) {
     env.night = frame.night;
     env.day = frame.day;
     env.dusk = frame.twilight;
+    // lite: re-bake when the colours moved — at most every 5 minutes, since a
+    // bake costs about one full-mode frame on a CPU rasterizer
+    if (env.bakes && (force || (env.lastKey !== env.bakedKey && Date.now() - env.bakedAt > 300000))) {
+      env.bakedKey = env.lastKey;
+      env.bakedAt = Date.now();
+      bake();
+    }
   }
 
   /**
@@ -489,16 +677,15 @@ export function createEnvironment(scene, { layout, sky }) {
       moonT = time;
       placeMoon();
     }
-    const dark = Math.max(env.night, env.dusk || 0);
     if (scene.reducedMotion) {
-      env.twinkles.forEach(t => t.o.setAlpha(env.night));
-      env.braziers.forEach(b => b.glow.setAlpha(0.35 + 0.55 * dark).setScale((W / 220) * (1 + dark) * (b.u / 3)));
-      env.windows.forEach(w => w.setAlpha(env.night * 0.85));
-      env.windowGlows.forEach(g => g.setAlpha(env.night * 0.5));
-      env.torches.forEach(t => t.setAlpha(Math.max(env.night, env.dusk || 0) * 0.8));
-      env.motes.forEach(m => m.o.setFillStyle(dark > 0.5 ? 0xd9ff7a : 0xfff3c4).setAlpha(dark > 0.2 ? dark * 0.7 : (env.day || 0) * 0.3));
+      stillLights();
       return;
     }
+    if (lite) {
+      animateEvents(time, dt);
+      return;
+    }
+    const dark = Math.max(env.night, env.dusk || 0);
     env.clouds.forEach(c => {
       c.o.x += c.sp * dt;
       if (c.o.x - c.o.displayWidth / 2 > W) {
@@ -524,6 +711,60 @@ export function createEnvironment(scene, { layout, sky }) {
       m.o.setFillStyle(dark > 0.5 ? 0xd9ff7a : 0xfff3c4)
         .setAlpha(dark > 0.2 ? dark * blink * 0.95 : (env.day || 0) * 0.35 * (0.5 + 0.5 * blink));
     });
+    // Landmarks: the flowers sway, the island bobs, the Gemini sparkle
+    // breathes after dark.
+    env.flowers.forEach(fl => {
+      const sway = Math.sin(time / 900 + fl.phase) * 0.08;
+      fl.stem.setRotation(sway);
+      fl.bloom.setPosition(fl.x + Math.sin(sway) * fl.len, fl.y - Math.cos(sway) * fl.len);
+      fl.bloom.rotation += 0.35 * dt;
+    });
+    env.island.y = env.islandY + Math.sin(time / 1400) * 4;
+    env.antigravity.y = env.antigravityY + Math.sin(time / 1400) * 4 + Math.sin(time / 700) * 3 - 3;
+    env.gemini.setScale(Math.max(1, Math.round(W / 800)) * (0.85 + 0.15 * Math.sin(time / 600)));
+    env.geminiGlow.setAlpha(env.night * (0.35 + 0.2 * Math.sin(time / 600)));
+    animateEvents(time, dt);
+  }
+
+  /**
+   * The still lighting for the current sky state: star field, braziers,
+   * castle windows and torches, dust/fireflies, each at its steady level —
+   * what reduced motion shows, and what lite mode bakes.
+   *
+   * @return {void}
+   */
+  function stillLights() {
+    const dark = Math.max(env.night, env.dusk || 0);
+    env.twinkles.forEach(t => t.o.setAlpha(env.night));
+    env.braziers.forEach(b => b.glow.setAlpha(0.35 + 0.55 * dark).setScale((W / 220) * (1 + dark) * (b.u / 3)));
+    env.windows.forEach(w => w.setAlpha(env.night * 0.85));
+    env.windowGlows.forEach(g => g.setAlpha(env.night * 0.5));
+    env.torches.forEach(t => t.setAlpha(Math.max(env.night, env.dusk || 0) * 0.8));
+    env.motes.forEach(m => m.o.setFillStyle(dark > 0.5 ? 0xd9ff7a : 0xfff3c4).setAlpha(dark > 0.2 ? dark * 0.7 : (env.day || 0) * 0.3));
+  }
+
+  /**
+   * What moves in both full and lite mode: the windmill's sails, Clawd (its
+   * cameos behind the mountains and its dance on the clouds), and the
+   * occasional bird flock by day or shooting star at night.
+   *
+   * @param {number} time scene.time.now, ms
+   * @param {number} dt seconds since the last frame
+   * @return {void}
+   */
+  function animateEvents(time, dt) {
+    env.sails.rotation += 0.7 * dt;
+    if (!nextCameoAt) {
+      nextCameoAt = time + nextCameoDelay(true, Math.random);
+    }
+    if (!cameo && time >= nextCameoAt) {
+      nextCameoAt = time + nextCameoDelay(false, Math.random);
+      startCameo(nextCameoKind(lastCameo), time);
+    }
+    if (cameo) {
+      playCameo(time);
+    }
+    rideCloud(time);
     // Birds by day and at dusk, a shooting star at night: each on its own
     // schedule (nextSkyEvent), the first one soon after the page loads.
     if (!nextFlockAt) {
@@ -597,8 +838,112 @@ export function createEnvironment(scene, { layout, sky }) {
   }
 
 
+  /**
+   * Starts a Clawd cameo behind the mountains: `peek` (shyly over the front
+   * ridge) or `hop` (along behind it); `cloud` instead drifts the cloud
+   * Clawd dances on to the middle of the sky (staging's debug hook).
+   *
+   * @param {string} kind
+   * @param {number} time scene.time.now, ms
+   * @return {string} the kind actually played
+   */
+  function startCameo(kind, time) {
+    if (cameo && kind !== 'cloud') {
+      cameo.sprite.setAlpha(0);
+    }
+    const clawdH = env.clawdRidge.displayHeight;
+    if (kind === 'cloud') {
+      // drift Clawd's cloud round to the open sky right of the boss now
+      ride.cloud.o.x = Math.round(W * 0.6);
+      return kind;
+    }
+    const farSky = env['env-farSky'];
+    const box = {
+      width: W,
+      height: clawdH,
+      skyline: x => farSky[Math.max(0, Math.min(W - 1, Math.round(x)))],
+      avoid: [env.castleSpan],
+    };
+    lastCameo = kind;
+    cameo = { plan: (kind === 'hop' ? hopPlan : peekPlan)(box, Math.random), start: time, sprite: kind === 'hop' ? env.clawdRidge : env.clawdPeek };
+    return kind;
+  }
+
+  /**
+   * Keeps Clawd dancing on its cloud: stood on the cloud's real top (legs
+   * sunk into it) wherever the cloud has drifted to.
+   *
+   * @param {number} time scene.time.now, ms
+   * @return {void}
+   */
+  function rideCloud(time) {
+    const { o, tops } = ride.cloud;
+    const f = cameoFrame(ride.plan, time % ride.plan.duration);
+    const seat = o.y - o.displayHeight / 2 + tops[Math.floor(tops.length / 2)] * o.scaleY + env.clawdCloud.displayHeight * 0.3;
+    env.clawdCloud.setTexture(CLAWD_POSE_TEXTURE[f.pose] ?? TextureKey.CLAWD_DEFAULT)
+      .setPosition(Math.round(o.x + f.x), Math.round(seat + f.y))
+      .setAlpha(1);
+  }
+
+  /**
+   * Draws the running cameo's current frame, and ends it once its plan is done.
+   *
+   * @param {number} time scene.time.now, ms
+   * @return {void}
+   */
+  function playCameo(time) {
+    const f = cameoFrame(cameo.plan, time - cameo.start);
+    cameo.sprite.setTexture(CLAWD_POSE_TEXTURE[f.pose] ?? TextureKey.CLAWD_DEFAULT)
+      .setPosition(Math.round(f.x), Math.round(f.y))
+      .setAlpha(f.alpha);
+    if (time - cameo.start >= cameo.plan.duration) {
+      cameo.sprite.setAlpha(0);
+      cameo = null;
+    }
+  }
+
   /** Debug hook (staging's ?sky-debug=1): sky events on demand. */
-  const debug = { flock: flyFlock, shoot: shootStar };
+  const debug = { flock: flyFlock, shoot: shootStar, clawd: kind => startCameo(kind ?? 'peek', scene.time.now) };
+
+  /**
+   * Lite mode: splits the layer into still runs and live pieces
+   * (bake-runs.js) and gives each still run one render texture, cropped to
+   * what it covers and placed where the run was in the draw order. Dust is
+   * dropped: it only ever drifts.
+   *
+   * @return {void}
+   */
+  function setupBakes() {
+    const live = new Set([
+      env.moonGlow, env.moon, env.sunGlow, env.sun, env.shoot, env.shootHead,
+      env.clawdCloud, env.clawdRidge, env.clawdPeek, env.sails, ...env.birds, ...env.braziers.map(b => b.fire),
+    ]);
+    const dust = new Set(env.motes.map(m => m.o));
+    dust.forEach(o => o.setVisible(false));
+    // the brazier fires go up on top of everything, so the glows, the floor
+    // and the vignette all bake into one run instead of three
+    const order = floatLive(env.layer.list.filter(o => !dust.has(o)), env.braziers.map(b => b.fire), []);
+    order.forEach(o => env.layer.bringToTop(o));
+    const items = order;
+    env.bakes = bakeRuns(items, o => live.has(o)).filter(run => !run.live).map(run => {
+      const { x: x0, y: y0, w, h } = runBounds(run.items, { width: W, height: H });
+      const rt = scene.add.renderTexture(x0, y0, w, h).setOrigin(0);
+      env.layer.addAt(rt, env.layer.getIndex(run.items[0]));
+      run.items.forEach(o => o.setVisible(false));
+      return { rt, items: run.items, x0, y0 };
+    });
+  }
+
+  /**
+   * Lite mode: redraws every still run into its render texture, with the
+   * sky's current colours and steady lights.
+   *
+   * @return {void}
+   */
+  function bake() {
+    stillLights();
+    env.bakes.forEach(({ rt, items, x0, y0 }) => bakeInto(rt, items, x0, y0));
+  }
 
   /** Tears down the environment's own layer (and every child it owns). */
   function destroy() {
@@ -620,6 +965,9 @@ export function createEnvironment(scene, { layout, sky }) {
     update(d, true);
   }
 
+  if (lite) {
+    setupBakes();
+  }
   update(new Date(), true);
 
   return { update, tick, destroy, setClock, debug, horizonY: HZ };

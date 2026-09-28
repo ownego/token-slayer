@@ -834,6 +834,14 @@
 .fs .periods { position: relative; z-index: 1; }
 .fs .period { margin-bottom: -1px; }
 .fs .period[aria-selected="true"] { border-bottom: 1px solid var(--night); }   /* covers the panel's top edge under it */
+/* the selected tab's lit background is one ink that slides between tabs (sheet/pickers.js's slide()) */
+.fs .period-ink {
+    position: absolute; left: 0; top: 0; bottom: -1px; width: 0; z-index: 0; pointer-events: none;
+    background: var(--night); border: 1px solid rgba(251,191,36,0.45); border-bottom: 1px solid var(--night);
+}
+.fs .period-ink.ready { transition: transform 0.28s cubic-bezier(0.3, 0.7, 0.2, 1), width 0.28s cubic-bezier(0.3, 0.7, 0.2, 1); }
+.fs .periods > .period { z-index: 1; transition: color 0.2s ease; }
+.fs .periods:has(.period-ink) .period[aria-selected="true"] { background: transparent; border-color: transparent; }
 .fs .meter-panel { position: relative; z-index: 0; margin-top: 0; }
 /* focus rings only for keyboard users; a mouse click + window refocus shouldn't paint one */
 .fs[data-input="mouse"] :focus-visible { outline: none; }
@@ -1220,3 +1228,64 @@
 .fs .face > img, .fs .mate > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .fs .mchar { display: inline-block; position: relative; width: 18px; height: 18px; overflow: hidden; vertical-align: middle; margin: 0 4px; }
 .fs .mchar > i { position: absolute; width: 100px; height: 100px; transform-origin: 0 0; image-rendering: pixelated; background-repeat: no-repeat; }
+
+/* app addition: the sheet frame's enter/exit and the first-open loader */
+.fs .skel-runner { flex: 1 1 auto; display: grid; place-items: center; }
+/* the loaded sheet fades in over the loader by opacity alone: any transform on
+   .fs (as x-transition.opacity leaves) re-anchors its fixed overlay to .fs's
+   own box, shifting the sheet off the loader's place until it ends */
+.fs-content-enter { transition: opacity 0.2s ease; }
+.fs-content-from { opacity: 0; }
+.fs-content-to { opacity: 1; }
+
+/* the first-open loader: Clawd bouncing on the start line, leaping to the goal
+   when the sheet is ready (sheet/clawd-hop.js); transform only */
+.fs .ts-hop { --lane: 220px; display: grid; justify-items: center; gap: 14px; }
+.fs .ts-hop-lane { position: relative; width: calc(var(--lane) + 44px); height: 64px; }
+.fs .ts-hop-lane::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+    background: repeating-linear-gradient(90deg, rgba(251,191,36,0.4) 0 8px, transparent 8px 14px);
+}
+.fs .ts-hop-goal { position: absolute; right: 6px; bottom: 4px; width: 3px; height: 34px; background: #cbd5e1; }
+.fs .ts-hop-goal i {
+    position: absolute; left: 3px; top: 0; width: 16px; height: 12px;
+    background: conic-gradient(#f8fafc 25%, #1e293b 0 50%, #f8fafc 0 75%, #1e293b 0) 0 0 / 8px 6px;
+}
+.fs .ts-hop-mover { position: absolute; left: 0; bottom: 4px; width: 36px; height: 12px; }
+.fs .ts-hop-body { display: block; width: 36px; height: 12px; transform-origin: 50% 100%; animation: fs-hop-bounce 0.42s cubic-bezier(0.3, 0, 0.5, 1) infinite alternate; }
+.fs .ts-hop-clawd { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.fs .ts-hop-clawd .b { fill: #d97757; }
+.fs .ts-hop-clawd .e { fill: #0b0716; }
+.fs .ts-hop-label { font: 600 12px var(--display); letter-spacing: 0.12em; color: var(--dim); text-transform: uppercase; }
+.fs .ts-hop.is-leaping .ts-hop-mover { transition: transform 0.6s cubic-bezier(0.3, 0.2, 0.5, 1); transform: translateX(var(--lane)); }
+.fs .ts-hop.is-leaping .ts-hop-body { animation: fs-hop-leap 0.6s ease-in-out forwards; }
+@keyframes fs-hop-bounce {
+    from { transform: translateY(0) scale(1.14, 0.84); }
+    30% { transform: translateY(-5px) scale(0.94, 1.08); }
+    to { transform: translateY(-16px) scale(1, 1); }
+}
+@keyframes fs-hop-leap {
+    from { transform: translateY(0) scale(1.14, 0.84); }
+    50% { transform: translateY(-42px) scale(0.96, 1.06); }
+    to { transform: translateY(0) scale(1.1, 0.9); }
+}
+@media (prefers-reduced-motion: reduce) { .fs .ts-hop-body, .fs .ts-hop.is-leaping .ts-hop-body { animation: none; } }
+.fs-frame-enter, .fs-frame-leave { transition: opacity 0.2s ease; }
+.fs-frame-enter .fs .sheet, .fs-frame-leave .fs .sheet { transition: transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.2s ease; }
+.fs-frame-from { opacity: 0; }
+.fs-frame-from .fs .sheet { transform: scale(0.96) translateY(10px); }
+.fs-frame-to { opacity: 1; }
+.fs .meter-panel.is-loading > * { animation: fs-shimmer 0.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .fs-frame-enter, .fs-frame-leave, .fs-frame-enter .fs .sheet, .fs-frame-leave .fs .sheet { transition: none; } }
+.fs .side.bymodel.is-loading > :not(h3) { animation: fs-shimmer 0.9s ease-in-out infinite; }
+
+/* app addition: square avatars, softened */
+.fs .face, .fs .mate { border-radius: 5px; }
+.fs .face > img, .fs .mate > img { border-radius: inherit; }
+
+/* app addition: a tall Profile tab scrolls inside the sheet instead of running
+   past its bottom edge — the grid row was sized by its content, so neither
+   column was ever constrained enough to scroll */
+.fs .sheet-body { grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+.fs .sheet-body > * { min-height: 0; }
+.fs .sheet-body > .fighter { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.35) transparent; }

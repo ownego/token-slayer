@@ -1,6 +1,6 @@
 import { TIMINGS } from '@battlefield/config.js';
 import { AnimState } from '@battlefield/constants.js';
-import { heelToLocal } from '@battlefield/shared/heel.js';
+import { heelWorldOffset } from '@battlefield/shared/heel.js';
 import { nextBurst } from '@battlefield/shared/sparks.js';
 
 /** Manages charge rings, trails, fire emitters, and activity bubbles for charging fighters. */
@@ -149,7 +149,7 @@ export class Charge {
     if (!heel) {
       return;
     }
-    const { dx, dy } = heelToLocal(heel, fighter.body?.scaleX ?? 1, facing);
+    const { dx, dy } = heelWorldOffset(heel, fighter);
     this.scene._sparkFacing = facing;
     this.scene._sparkPower = fighter.waypointMoving ? 1.35 : 1;
     const tints = Charge.sparkTints(Charge.chargeParticleColors(fighter.ftype));

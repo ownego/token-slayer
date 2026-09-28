@@ -3,6 +3,7 @@
 use App\Http\Middleware\AuthenticateHookToken;
 use App\Http\Middleware\AuthenticateIdeBearer;
 use App\Http\Middleware\EstablishIdeSession;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -24,6 +25,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             EstablishIdeSession::class,
         ]);
+
+        // The IDE's one-time `?_t=` session URL must sign the plugin in before
+        // a route's `auth` looks: without this, Laravel's priority sort runs
+        // the authenticator (listed by its AuthenticatesRequests contract) first and bounces the embed to the Slack login.
+        $middleware->prependToPriorityList(AuthenticatesRequests::class, EstablishIdeSession::class);
 
         // A Livewire request (a panel widget's background poll, not a real
         // page load) must not be sent through a real Socialite redirect: the

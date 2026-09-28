@@ -19,14 +19,19 @@
  * camera zoom is read from the same renderScale, and a canvas sized any
  * other way renders the world zoomed in around the boss.
  *
+ * Lite mode (render-mode.js — the browser draws WebGL on the CPU) passes
+ * `maxScale: 1`: the canvas stays at the layout's own size and the browser
+ * scales it up, since every extra pixel costs a CPU rasterizer dearly.
+ *
  * @param {number} availableCssWidth
  * @param {number} devicePixelRatio
  * @param {{logicalWidth: number, logicalHeight: number}} layout
+ * @param {{maxScale?: number}} [options]
  * @return {{width: number, height: number, renderScale: number}}
  */
-export function canvasSizeFor(availableCssWidth, devicePixelRatio, layout) {
+export function canvasSizeFor(availableCssWidth, devicePixelRatio, layout, { maxScale = 2.5 } = {}) {
   const available = availableCssWidth * (devicePixelRatio || 1);
-  const renderScale = Math.min(2.5, Math.max(1, available / layout.logicalWidth));
+  const renderScale = Math.min(maxScale, Math.max(1, available / layout.logicalWidth));
   return {
     width: Math.round(layout.logicalWidth * renderScale),
     height: Math.round(layout.logicalHeight * renderScale),

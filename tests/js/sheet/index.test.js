@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, test, vi } from 'vitest';
-import { agoTicker, clawdBuddyPanel, createSheetShell, fighterSheetShell } from '@battlefield/sheet/index.js';
+import { FINISH_RUN_MS, agoTicker, clawdBuddyPanel, createSheetShell, fighterSheetShell, sheetFrame } from '@battlefield/sheet/index.js';
 
 function buildDom() {
   document.body.innerHTML = `
@@ -95,11 +95,14 @@ test('equipTransition folds the .sheet child, not the shell\'s own overlay root'
   expect(sheet.classList.contains('folding')).toBe(true);
   expect(overlay.classList.contains('folding')).toBe(false);
 
+  const hidden = vi.fn();
+  window.addEventListener('fighter-sheet-hide', hidden);
   vi.advanceTimersByTime(350);
-  // stays folded while close() round-trips: un-folding here flashed the sheet back
-  // on screen until the server's re-render removed it
+  // stays folded while the frame plays its exit: un-folding here flashed the
+  // sheet back on screen on its way out
   expect(sheet.classList.contains('folding')).toBe(true);
-  expect(panel.$wire.close).toHaveBeenCalledTimes(1);
+  expect(hidden).toHaveBeenCalledTimes(1);
+  window.removeEventListener('fighter-sheet-hide', hidden);
 
   panel.destroy();
   vi.useRealTimers();
@@ -121,24 +124,22 @@ test('clawdBuddyPanel exposes combo and bestToday, updated via onComboChange', (
   panel.destroy();
 });
 
-test('switching tabs calls the component\'s open() method, never its same-named $open property', () => {
+test('switching tabs never goes through the component\'s same-named $open property', () => {
   const { root } = buildDom();
   const panel = fighterSheetShell(1);
   panel.$el = root;
   // Livewire's $wire exposes the public property `open` (a bool) under the
   // same name as the open() method, and $wire.call() resolves through that
   // same name — so the shell goes through open()'s own event listener.
-  panel.$wire = { open: true, call: vi.fn(), dispatchSelf: vi.fn(), close: vi.fn(), on: vi.fn() };
+  panel.$wire = { open: true, call: vi.fn(), dispatchSelf: vi.fn(), selectTab: vi.fn(), close: vi.fn(), on: vi.fn() };
   panel.init();
 
   root.querySelector('[data-tab="character"]').click();
   root.dispatchEvent(new CustomEvent('sheet-open-tab', { detail: { tab: 'profile' } }));
 
-  expect(panel.$wire.dispatchSelf.mock.calls).toEqual([
-    ['open-fighter-sheet', { tab: 'character' }],
-    ['open-fighter-sheet', { tab: 'profile' }],
-  ]);
+  expect(panel.$wire.selectTab.mock.calls).toEqual([['character'], ['profile']]);
   expect(panel.$wire.call).not.toHaveBeenCalled();
+  expect(panel.$wire.dispatchSelf).not.toHaveBeenCalled();
   panel.destroy();
 });
 
@@ -248,4 +249,100 @@ test('the last-hit stamp ticks in the coarse wording', () => {
 
   ticker.destroy();
   vi.useRealTimers();
+});
+
+const TABBED = `
+  <div role="tablist">
+    <button class="sheet-tab" data-tab="profile" aria-selected="true">Profile</button>
+    <button class="sheet-tab" data-tab="character" aria-selected="false">Character</button>
+  </div>
+  <section class="sheet"><div class="tab-panel is-active" id="tab-profile"></div><div class="tab-panel" id="tab-character"></div></section>`;
+
+test('switching tab happens at once in the page; the server only remembers it, never re-renders for it', () => {
+  const { shell } = mountShell(TABBED);
+  shell.$wire.selectTab = vi.fn();
+  shell.$wire.dispatchSelf = vi.fn();
+
+  document.querySelector('[data-tab="character"]').click();
+
+  expect(document.getElementById('tab-character').classList.contains('is-active')).toBe(true);
+  expect(document.getElementById('tab-profile').classList.contains('is-active')).toBe(false);
+  expect(document.querySelector('[data-tab="character"]').getAttribute('aria-selected')).toBe('true');
+  expect(shell.$wire.selectTab).toHaveBeenCalledWith('character');
+  expect(shell.$wire.dispatchSelf).not.toHaveBeenCalled();
+  shell.destroy();
+});
+
+test('closing plays the exit and keeps the loaded sheet, instead of waiting on the server to drop it', () => {
+  const { shell } = mountShell(TABBED);
+  const hidden = vi.fn();
+  window.addEventListener('fighter-sheet-hide', hidden);
+
+  shell.shell.close();
+
+  expect(hidden).toHaveBeenCalledTimes(1);
+  expect(shell.$wire.close).not.toHaveBeenCalled();
+  window.removeEventListener('fighter-sheet-hide', hidden);
+  shell.destroy();
+});
+
+test('reopening after an equip unfolds the sheet it folded on the way out', () => {
+  const { shell } = mountShell(TABBED);
+  document.querySelector('.sheet').classList.add('folding');
+
+  window.dispatchEvent(new CustomEvent('open-fighter-sheet', { detail: { tab: 'profile' } }));
+
+  expect(document.querySelector('.sheet').classList.contains('folding')).toBe(false);
+  shell.destroy();
+});
+
+function frameDom() {
+  document.body.innerHTML = '<div id="frame"><div class="ts-hop"><div class="ts-hop-lane"><span class="ts-hop-mover"><span class="ts-hop-body"><svg class="ts-hop-clawd"></svg></span></span></div></div></div>';
+  const frame = sheetFrame();
+  frame.$el = document.getElementById('frame');
+
+  return frame;
+}
+
+test('the first open shows Clawd bouncing until the sheet is ready, then it leaps to the goal before the sheet appears', () => {
+  vi.useFakeTimers();
+  const frame = frameDom();
+
+  frame.show();
+  expect(frame.loading).toBe(true);
+
+  frame.finish();
+  expect(document.querySelector('.ts-hop').classList.contains('is-leaping')).toBe(true);
+  expect(frame.loading).toBe(true); // still in the air
+  // a leap long enough to see, not a jump cut
+  expect(FINISH_RUN_MS).toBeGreaterThanOrEqual(600);
+
+  vi.advanceTimersByTime(FINISH_RUN_MS);
+  expect(frame.loading).toBe(false);
+  vi.useRealTimers();
+});
+
+test('a reopen shows the already-loaded sheet at once, no runner', () => {
+  vi.useFakeTimers();
+  const frame = frameDom();
+  frame.show();
+  frame.finish();
+  vi.advanceTimersByTime(FINISH_RUN_MS);
+  frame.hide();
+
+  frame.show();
+
+  expect(frame.loading).toBe(false);
+  vi.useRealTimers();
+});
+
+test('the sheet announces it is ready once its first render is up', () => {
+  const ready = vi.fn();
+  window.addEventListener('fighter-sheet-ready', ready);
+
+  const { shell } = mountShell('<section class="sheet"></section>');
+
+  expect(ready).toHaveBeenCalledTimes(1);
+  window.removeEventListener('fighter-sheet-ready', ready);
+  shell.destroy();
 });

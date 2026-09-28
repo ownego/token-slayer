@@ -27,18 +27,14 @@ test('battlefield with embed=ide hides chrome and includes the bridge script', f
     expect($response->getContent())->toContain('ide-bridge');
 });
 
-test('battlefield with embed=ide includes the bridge script for guests too, but omits the user-id meta', function () {
-    $response = $this->get('/battlefield?embed=ide')->assertOk();
-
-    expect($response->getContent())
-        ->toContain('data-ide-embed="true"')
-        ->toContain('ide-bridge')
-        ->toContain('content="guest"')
-        ->not->toContain('token-slayer-user-id');
+test('a guest opening the embed without the IDE\'s session URL is sent to log in', function () {
+    // the plugin always signs in through its one-time `?_t=` URL first
+    // (SessionUrlTest); the battlefield is no longer open to anyone
+    $this->get('/battlefield?embed=ide')->assertRedirect(route('slack.login'));
 });
 
 test('embed=ide strips X-Frame-Options and sets a webview-friendly frame-ancestors CSP', function () {
-    $response = $this->get('/battlefield?embed=ide')->assertOk();
+    $response = $this->actingAs(User::factory()->create())->get('/battlefield?embed=ide')->assertOk();
 
     expect($response->headers->get('X-Frame-Options'))->toBeNull();
     expect($response->headers->get('Content-Security-Policy'))
@@ -47,7 +43,7 @@ test('embed=ide strips X-Frame-Options and sets a webview-friendly frame-ancesto
 });
 
 test('non-embed requests do not inject the embed CSP', function () {
-    $response = $this->get('/battlefield')->assertOk();
+    $response = $this->actingAs(User::factory()->create())->get('/battlefield')->assertOk();
 
     $csp = $response->headers->get('Content-Security-Policy');
     expect($csp === null || ! str_contains($csp, 'vscode-webview'))->toBeTrue();

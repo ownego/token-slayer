@@ -23,12 +23,12 @@ test('proxies a slack avatar with CORS-friendly headers', function () {
         'avatar_url' => 'https://avatars.slack-edge.com/example.jpg',
     ]);
 
-    $response = $this->get(route('avatar', $user));
+    $response = $this->actingAs($user)->get(route('avatar', $user));
 
     $response->assertOk()
         ->assertHeader('Content-Type', 'image/jpeg')
         ->assertHeader('Access-Control-Allow-Origin', '*')
-        ->assertHeader('Cache-Control', 'max-age=604800, public');
+        ->assertHeader('Cache-Control', 'max-age=604800, private');
 
     expect($response->getContent())->toBe('FAKE_JPEG_BYTES');
 });
@@ -44,8 +44,8 @@ test('caches the upstream response so the second request does not refetch', func
         'avatar_url' => 'https://avatars.slack-edge.com/example.jpg',
     ]);
 
-    $this->get(route('avatar', $user))->assertOk();
-    $this->get(route('avatar', $user))->assertOk();
+    $this->actingAs($user)->get(route('avatar', $user))->assertOk();
+    $this->actingAs($user)->get(route('avatar', $user))->assertOk();
 
     Http::assertSentCount(1);
 });
@@ -53,7 +53,7 @@ test('caches the upstream response so the second request does not refetch', func
 test('returns 404 when the user has no avatar url', function () {
     $user = User::factory()->create(['avatar_url' => null]);
 
-    $this->get(route('avatar', $user))->assertNotFound();
+    $this->actingAs($user)->get(route('avatar', $user))->assertNotFound();
 });
 
 test('returns 404 when the upstream fetch fails', function () {
@@ -65,7 +65,7 @@ test('returns 404 when the upstream fetch fails', function () {
         'avatar_url' => 'https://avatars.slack-edge.com/missing.jpg',
     ]);
 
-    $this->get(route('avatar', $user))->assertNotFound();
+    $this->actingAs($user)->get(route('avatar', $user))->assertNotFound();
 });
 
 test('returns 404, not a 500, when the avatar host can\'t even be reached', function () {
@@ -81,7 +81,7 @@ test('returns 404, not a 500, when the avatar host can\'t even be reached', func
         'avatar_url' => 'https://avatars.example/unreachable.png',
     ]);
 
-    $this->get(route('avatar', $user))->assertNotFound();
+    $this->actingAs($user)->get(route('avatar', $user))->assertNotFound();
 });
 
 test('fetches Slack\'s 192px variant instead of the stored 512px original', function () {
@@ -89,7 +89,7 @@ test('fetches Slack\'s 192px variant instead of the stored 512px original', func
     Http::fake(['avatars.slack-edge.com/*' => Http::response('SMALL', 200, ['Content-Type' => 'image/png'])]);
     $user = User::factory()->create(['avatar_url' => 'https://avatars.slack-edge.com/2026-07-13/1156_4da0_512.png']);
 
-    $this->get(route('avatar', $user))->assertOk();
+    $this->actingAs($user)->get(route('avatar', $user))->assertOk();
 
     Http::assertSent(fn ($request) => $request->url() === 'https://avatars.slack-edge.com/2026-07-13/1156_4da0_192.png');
     Http::assertSentCount(1);
@@ -102,5 +102,5 @@ test('falls back to the stored URL when Slack has no 192px variant', function ()
     ]);
     $user = User::factory()->create(['avatar_url' => 'https://avatars.slack-edge.com/2026-07-13/1156_4da0_512.png']);
 
-    expect($this->get(route('avatar', $user))->assertOk()->getContent())->toBe('ORIGINAL');
+    expect($this->actingAs($user)->get(route('avatar', $user))->assertOk()->getContent())->toBe('ORIGINAL');
 });

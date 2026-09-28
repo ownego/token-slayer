@@ -73,6 +73,8 @@ export function createBuddy(panel, { onComboChange } = {}) {
   let walkT = null;
   let settleT = null;
   let pressed = false;
+  // a release that came while Clawd was mid-hop: it jumps once it lands
+  let jumpOnLanding = false;
   let celebrating = false;
   let combo = 0;
   let last = 0;
@@ -166,7 +168,7 @@ export function createBuddy(panel, { onComboChange } = {}) {
         spot = target;
         frame({ pose: face(dir), offset: 0, x: pos });
         mode = 'track';
-        done?.();
+        done ? done() : track();
 
         return;
       }
@@ -221,6 +223,13 @@ export function createBuddy(panel, { onComboChange } = {}) {
     }, 70);
   }
   function track() {
+    if (jumpOnLanding && mode !== 'move') {
+      jumpOnLanding = false;
+      act(SEQ.JUMP);
+      pop('boing!');
+
+      return;
+    }
     if (mode === 'action' || mode === 'move' || !hover) {
       return;
     }
@@ -310,10 +319,16 @@ export function createBuddy(panel, { onComboChange } = {}) {
     }
     spot === 1 ? home() : hopTo(1, home);
   });
-  // press on Clawd = crouch for a jump; release = jump
+  // press on Clawd = crouch for a jump; release = jump. The viewer wins over
+  // a hit's reaction (which it cuts short) — only a boss-kill celebration
+  // plays out — and a press mid-hop jumps once Clawd lands.
   on(el, 'pointerdown', e => {
-    if (mode === 'action' || mode === 'move') {
+    if (celebrating) {
       return;
+    }
+    if (mode === 'action') {
+      clearTimeout(el._t);
+      mode = 'track';
     }
     pressed = true;
     el.setPointerCapture?.(e.pointerId);
@@ -324,6 +339,11 @@ export function createBuddy(panel, { onComboChange } = {}) {
       return;
     }
     pressed = false;
+    if (mode === 'move') {
+      jumpOnLanding = true;
+
+      return;
+    }
     act(SEQ.JUMP);
     pop('boing!');
   });
@@ -355,6 +375,13 @@ export function createBuddy(panel, { onComboChange } = {}) {
       lapse = later(() => setCombo(0), COMBO_WINDOW_MS);
       restartClass(panel.querySelector('.combo'), 'bump');
       restartClass(panel.querySelector('.combo-bar > span'), 'drain');
+      // a hop toward the pointer or a press in progress is the viewer's: the
+      // hit only pops its number, never cuts them short
+      if (mode === 'move' || pressed) {
+        pop(`+${compact(damage)}`);
+
+        return;
+      }
       if (hover) {
         quick();
       } else {

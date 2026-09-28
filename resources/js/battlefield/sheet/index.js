@@ -1,4 +1,5 @@
 import { createBuddy } from './clawd-buddy.js';
+import { leap } from './clawd-hop.js';
 import { barHeights, compact, cooldownLabel, liveTokens, readout } from './hourly-bars.js';
 import { agoLabel, bestComboKey, coarseAgo, easeCount } from './sheet-ui.js';
 
@@ -12,6 +13,76 @@ const TAB_ORDER = ['profile', 'character'];
  * @type {string}
  */
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Shows one tab of the sheet in place: both panels are already rendered, so
+ * switching is only a class and an aria flip, never a server round trip.
+ *
+ * @param {HTMLElement} root The sheet's root.
+ * @param {string} tab `profile` or `character`.
+ * @return {void}
+ */
+export function switchTab(root, tab) {
+  root.querySelectorAll('.sheet-tab').forEach(button => {
+    button.setAttribute('aria-selected', button.dataset.tab === tab ? 'true' : 'false');
+  });
+  root.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('is-active', panel.id === `tab-${tab}`));
+}
+
+/**
+ * How long Clawd's leap to the goal takes once the sheet is ready, in ms,
+ * before the sheet itself appears (fighter-sheet.css's fs-hop-leap matches).
+ *
+ * @type {number}
+ */
+export const FINISH_RUN_MS = 700;
+
+/**
+ * The always-rendered frame around the sheet: shown the instant the nav asks
+ * for it. The first time, the viewer's fighter runs the loading bar until the
+ * sheet's first render is up, then runs the last stretch to the end before
+ * the sheet appears; after that a reopen shows the loaded sheet at once.
+ * Hidden with its exit transition on close.
+ *
+ * @return {object}
+ */
+export function sheetFrame() {
+  return {
+    shown: false,
+    loading: false,
+    loaded: false,
+    finishTimer: null,
+    /** @return {void} */
+    show() {
+      this.shown = true;
+      this.loading = !this.loaded;
+    },
+    /** @return {void} */
+    hide() {
+      this.shown = false;
+    },
+    /**
+     * The sheet is ready: Clawd leaps from the start line to the goal
+     * (sheet/clawd-hop.js), then the loader gives way to the sheet.
+     *
+     * @return {void}
+     */
+    finish() {
+      if (this.loaded) {
+        return;
+      }
+      this.loaded = true;
+      const hop = this.$el?.querySelector('.ts-hop');
+      if (hop) {
+        leap(hop);
+      }
+      clearTimeout(this.finishTimer);
+      this.finishTimer = setTimeout(() => {
+        this.loading = false;
+      }, FINISH_RUN_MS);
+    },
+  };
+}
 
 /**
  * Wires the sheet's own keyboard/focus behavior onto its root element: tab
@@ -132,18 +203,41 @@ export function fighterSheetShell(me) {
     cooldownTimer: null,
     init() {
       this.shell = createSheetShell(this.$el, {
-        onClose: () => this.$wire.close(),
-        // $wire.open (and $wire.call('open')) resolve to the public $open bool,
-        // never the open() method — reach it through its own event listener
-        onTab: tab => this.$wire.dispatchSelf('open-fighter-sheet', { tab }),
+        // the frame plays the exit; the loaded sheet stays for an instant reopen
+        onClose: () => window.dispatchEvent(new CustomEvent('fighter-sheet-hide')),
+        onTab: tab => this.showTab(tab),
       });
       this.shell.open(document.activeElement);
+      // the frame's loader runs its last stretch, then shows this sheet
+      window.dispatchEvent(new CustomEvent('fighter-sheet-ready'));
       this.attachHitListener();
       this.$wire.on('sheet-refresh-cooldown', ({ seconds }) => this.startCooldown(seconds));
       this.watchDamage();
       this.trackInput();
       this.$el.addEventListener('fighter-equipped', () => this.equipTransition());
-      this.$el.addEventListener('sheet-open-tab', event => this.$wire.dispatchSelf('open-fighter-sheet', { tab: event.detail.tab }));
+      this.$el.addEventListener('sheet-open-tab', event => this.showTab(event.detail.tab));
+      // a reopen shows this already-loaded sheet at once (the server
+      // refreshes it behind): unfold it if an equip folded it on the way out
+      this.onReopen = event => {
+        this.$el.querySelector('.sheet')?.classList.remove('folding');
+        this.$el.querySelector('.overlay')?.classList.remove('passthrough');
+        if (event.detail?.tab) {
+          this.showTab(event.detail.tab);
+        }
+        this.shell.open(document.activeElement);
+      };
+      window.addEventListener('open-fighter-sheet', this.onReopen);
+    },
+    /**
+     * Switches tab in the page at once and has the server remember it
+     * (renderless), so a later render keeps the same tab.
+     *
+     * @param {string} tab
+     * @return {void}
+     */
+    showTab(tab) {
+      switchTab(this.$el, tab);
+      this.$wire.selectTab?.(tab);
     },
     /**
      * Folds the sheet away, closes it, then pans the live battlefield
@@ -317,6 +411,7 @@ export function fighterSheetShell(me) {
       this.damageObserver?.disconnect();
       cancelAnimationFrame(this.countRaf);
       this.offInput?.();
+      window.removeEventListener('open-fighter-sheet', this.onReopen);
     },
   };
 }

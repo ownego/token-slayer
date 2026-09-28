@@ -5,6 +5,7 @@ import { bus } from './bus.js';
 import { snapshotState } from './snapshot.js';
 import { computeHudTop } from './hud-position.js';
 import { canvasSizeFor } from './render-scale.js';
+import { detectLite } from './render-mode.js';
 import { formatHp } from './format.js';
 import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
 import { avatarSrc } from './fighter/avatar-stack.js';
@@ -123,7 +124,28 @@ export function detectMode() {
  * @return {{width: number, height: number, renderScale: number}}
  */
 function canvasSizeForMount(mount, layout) {
-  return canvasSizeFor(mount?.clientWidth || window.innerWidth, window.devicePixelRatio, layout);
+  return canvasSizeFor(mount?.clientWidth || window.innerWidth, window.devicePixelRatio, layout, { maxScale: isLite() ? 1 : 2.5 });
+}
+
+/**
+ * Whether this page runs the battlefield in lite mode (render-mode.js),
+ * probed once per page.
+ *
+ * @type {?boolean}
+ */
+let liteMode = null;
+
+/**
+ * Lite mode for this page, probing the browser the first time it's asked.
+ *
+ * @return {boolean}
+ */
+function isLite() {
+  if (liteMode === null) {
+    liteMode = detectLite();
+  }
+
+  return liteMode;
 }
 
 function bootGame(mount, state, mode) {
@@ -142,12 +164,16 @@ function bootGame(mount, state, mode) {
   game.registry.set('initialState', state);
   game.registry.set('mode', mode);
   game.registry.set('renderScale', renderScale);
+  game.registry.set('lite', isLite());
+  // lite renders at the layout's own size: the browser scales it up, crisp
+  mount?.classList.toggle('bf-lite', isLite());
 
   game.events.once('ready', () => {
     subscribeEcho();
     const scene = game.scene.getScene(SCENE_KEY);
     window.__battlefield = {
       bus,
+      lite: isLite(),
       bindBus,
       game,
       scene,
@@ -199,7 +225,7 @@ function bootGame(mount, state, mode) {
       // dawn/dusk/night without waiting for the real time of day — never
       // exposed without the explicit ?sky-debug=1 query param.
       ...(new URLSearchParams(window.location.search).get('sky-debug') === '1'
-        ? { env: { setClock: minutes => scene.environment.setClock(minutes), flock: () => scene.environment.debug.flock(), shoot: () => scene.environment.debug.shoot() } }
+        ? { env: { setClock: minutes => scene.environment.setClock(minutes), flock: () => scene.environment.debug.flock(), shoot: () => scene.environment.debug.shoot(), clawd: kind => scene.environment.debug.clawd(kind) } }
         : {}),
     };
   });

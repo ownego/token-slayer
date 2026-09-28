@@ -28,6 +28,8 @@ describe('TextureKey', () => {
     expect(TextureKey.CLAWD_DEFAULT).toBe('clawd-default');
     expect(TextureKey.CLAWD_CROUCH).toBe('clawd-crouch');
     expect(TextureKey.CLAWD_ARMS).toBe('clawd-arms');
+    expect(TextureKey.CLAWD_LOOK_LEFT).toBe('clawd-look-left');
+    expect(TextureKey.CLAWD_LOOK_RIGHT).toBe('clawd-look-right');
     expect(TextureKey.MOTE_SOFT).toBe('mote-soft');
     expect(TextureKey.FIREBALL).toBe('fireball');
     expect(TextureKey.EXPLOSION).toBe('explosion');

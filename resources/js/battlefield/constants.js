@@ -13,6 +13,8 @@ export const TextureKey = {
   CLAWD_DEFAULT: 'clawd-default',
   CLAWD_CROUCH: 'clawd-crouch',
   CLAWD_ARMS: 'clawd-arms',
+  CLAWD_LOOK_LEFT: 'clawd-look-left',
+  CLAWD_LOOK_RIGHT: 'clawd-look-right',
   MOTE_SOFT: 'mote-soft',
 };
 
