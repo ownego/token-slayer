@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\MembershipStatus;
 use App\Models\Account;
 use App\Models\User;
 use App\Services\Profile\AccountQuotaCards;
@@ -38,4 +39,16 @@ test('each card carries its own probe error, if any', function () {
     $me->accounts()->attach($account);
 
     expect(app(AccountQuotaCards::class)->for($me)[0]['probe_error'])->toBe('token rejected');
+});
+
+test('an account the player only shows up on as untracked gets no card', function () {
+    // Untracked rows are materialized from any event on the account; only a
+    // membership an admin promoted to tracked belongs on the sheet.
+    $me = User::factory()->create();
+    $tracked = Account::factory()->create();
+    $untracked = Account::factory()->create();
+    $me->accounts()->attach($tracked, ['status' => MembershipStatus::Tracked->value]);
+    $me->accounts()->attach($untracked, ['status' => MembershipStatus::Untracked->value]);
+
+    expect(array_column(app(AccountQuotaCards::class)->for($me), 'account_id'))->toBe([$tracked->id]);
 });

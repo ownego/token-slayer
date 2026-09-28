@@ -509,3 +509,16 @@ test('a fresh reading draws the hatched estimate of where the quota lands by its
     Livewire::actingAs($user)->test(FighterSheet::class)->call('open', 'profile')
         ->assertSeeHtml('class="m-proj" style="left:42%;');
 });
+
+test('refresh re-probes only the accounts the sheet shows, never an untracked one', function () {
+    $me = User::factory()->create();
+    $me->accounts()->attach(Account::factory()->connected()->create(), ['status' => 'untracked']);
+    $probes = 0;
+    app()->instance(ProviderServiceFactory::class, fakeProberFactory(function () use (&$probes) {
+        $probes++;
+    }));
+
+    Livewire::actingAs($me)->test(FighterSheet::class)->call('open', 'profile')->call('refresh');
+
+    expect($probes)->toBe(0);
+});

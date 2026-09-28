@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\MembershipStatus;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\User;
@@ -71,5 +72,17 @@ test('a player cannot refresh an account they are not a member of', function () 
     }));
 
     expect(app(AccountRefresh::class)->execute($stranger, $account->id)['status'])->toBe('forbidden')
+        ->and($probes)->toBe(0);
+});
+
+test('an untracked account, hidden from the sheet, cannot be refreshed from it either', function () {
+    [$me, $account] = memberOfProbedAccount(42);
+    $me->accounts()->updateExistingPivot($account->id, ['status' => MembershipStatus::Untracked->value]);
+    $probes = 0;
+    app()->instance(ProviderServiceFactory::class, fakeProberFactory(function () use (&$probes) {
+        $probes++;
+    }));
+
+    expect(app(AccountRefresh::class)->execute($me, $account->id)['status'])->toBe('forbidden')
         ->and($probes)->toBe(0);
 });

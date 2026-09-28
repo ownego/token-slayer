@@ -28,7 +28,7 @@ class AccountQuotaCards
      */
     public function for(User $user): array
     {
-        $accountsById = $user->accounts()->get()->keyBy('id');
+        $accountsById = $user->trackedAccounts()->get()->keyBy('id');
 
         if ($accountsById->isEmpty()) {
             return [];

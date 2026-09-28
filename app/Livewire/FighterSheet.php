@@ -240,7 +240,7 @@ class FighterSheet extends Component
         $key = "fighter-sheet-refresh:{$user->id}";
 
         $ran = RateLimiter::attempt($key, 1, function () use ($refresher, $user): void {
-            $accounts = $user->accounts()->probeable()->get()->merge($user->accounts()->codexProbeable()->get());
+            $accounts = $user->trackedAccounts()->probeable()->get()->merge($user->trackedAccounts()->codexProbeable()->get());
             $refresher->refreshAccounts($accounts);
         }, 60);
 

@@ -42,7 +42,7 @@ final class AccountRefresh
      */
     public function execute(User $user, int $accountId): array
     {
-        $account = $user->accounts()->whereKey($accountId)->first();
+        $account = $user->trackedAccounts()->whereKey($accountId)->first();
 
         if ($account === null) {
             return ['status' => 'forbidden'];
