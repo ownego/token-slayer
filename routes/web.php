@@ -90,8 +90,13 @@ Route::get('/tracker.user.js', fn () => response(
     ['Content-Type' => 'text/javascript; charset=utf-8'],
 ))->name('userscript');
 
-Route::get('/battlefield', fn () => view('battlefield'))->name('battlefield');
+// Team pages are for the team only: a Slack login first. The IDE plugins
+// still get in — EstablishIdeSession (web group) signs their one-time
+// `?_t=` session URL in before this `auth` runs.
+Route::middleware('auth')->group(function (): void {
+    Route::get('/battlefield', fn () => view('battlefield'))->name('battlefield');
 
-Route::get('/avatars/{user}', AvatarProxyController::class)->name('avatar');
+    Route::get('/avatars/{user}', AvatarProxyController::class)->name('avatar');
 
-Route::get('/history', [HistoryController::class, 'index'])->name('history');
+    Route::get('/history', [HistoryController::class, 'index'])->name('history');
+});

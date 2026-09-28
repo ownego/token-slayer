@@ -51,7 +51,7 @@ test('signed URL token is single-use', function () {
     // Second hit, now in a fresh session (logged out), should not establish.
     auth()->logout();
     $this->get('/battlefield?embed=ide&_t='.$plain)
-        ->assertOk(); // page itself is public, but no session was set
+        ->assertRedirect(route('slack.login')); // no session was set, and the page needs one
     expect(auth()->id())->toBeNull();
 });
 

@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Http;
 /**
  * Serves a player's Slack avatar from our own origin, so canvases can read it
  * (CORS) and Slack is hit about once a week per player, not once per viewer.
+ * Signed-in viewers only, and cached privately: a shared cache (Cloudflare)
+ * holding it would hand it to anyone.
  */
 class AvatarProxyController extends Controller
 {
@@ -58,7 +60,7 @@ class AvatarProxyController extends Controller
 
         return response($payload['body'], 200, [
             'Content-Type' => $payload['contentType'],
-            'Cache-Control' => 'public, max-age='.self::CACHE_SECONDS,
+            'Cache-Control' => 'private, max-age='.self::CACHE_SECONDS,
             'Access-Control-Allow-Origin' => '*',
         ]);
     }

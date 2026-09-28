@@ -20,7 +20,8 @@ use Symfony\Component\HttpFoundation\Response;
  *    directive that whitelists the VSCode webview origins.
  *
  * Invalid/expired one-shot tokens silently no-op (the request still
- * proceeds so public routes like /battlefield remain reachable).
+ * proceeds; a route behind `auth` then sends the visitor to the Slack
+ * login).
  */
 class EstablishIdeSession
 {
