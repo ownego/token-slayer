@@ -13,6 +13,7 @@ use App\Services\ProviderServiceFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Livewire\Attributes\Renderless;
 use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
@@ -533,4 +534,35 @@ test('account members show their real avatar and the character they play, not ju
     Livewire::actingAs($me)->test(FighterSheet::class)->call('open', 'profile')
         ->assertSeeHtml('<img src="'.e($mate->avatarProxyUrl()).'"')
         ->assertSeeHtml('data-char="werebear"');
+});
+
+test('the sheet frame and a skeleton are there before it is ever opened, so a click shows it at once', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->assertSeeHtml('x-data="sheetFrame()"')
+        ->assertSeeHtml('class="fs fs-skel"');
+});
+
+test('switching tab is only remembered by the server, never re-rendered for', function () {
+    // both panels are already in the page; a render here reran every aggregate
+    $component = Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->call('selectTab', 'character')
+        ->assertSet('tab', 'character')
+        ->call('selectTab', 'nonsense')
+        ->assertSet('tab', 'character');
+
+    $method = new ReflectionMethod(FighterSheet::class, 'selectTab');
+    expect($method->getAttributes(Renderless::class))->not->toBeEmpty();
+});
+
+test('the damage numbers show a loading state while a new period is fetched', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('wire:target="setPeriod,applyRange"');
+});
+
+test('the By-model rows show a loading state while a new period is fetched', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('wire:target="setModelPeriod"');
 });

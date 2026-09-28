@@ -14,6 +14,42 @@ const TAB_ORDER = ['profile', 'character'];
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
+ * Shows one tab of the sheet in place: both panels are already rendered, so
+ * switching is only a class and an aria flip, never a server round trip.
+ *
+ * @param {HTMLElement} root The sheet's root.
+ * @param {string} tab `profile` or `character`.
+ * @return {void}
+ */
+export function switchTab(root, tab) {
+  root.querySelectorAll('.sheet-tab').forEach(button => {
+    button.setAttribute('aria-selected', button.dataset.tab === tab ? 'true' : 'false');
+  });
+  root.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('is-active', panel.id === `tab-${tab}`));
+}
+
+/**
+ * The always-rendered frame around the sheet: shown the instant the nav asks
+ * for it (a skeleton until the first render lands, the last-loaded sheet
+ * after that), and hidden with its exit transition on close.
+ *
+ * @return {object}
+ */
+export function sheetFrame() {
+  return {
+    shown: false,
+    /** @return {void} */
+    show() {
+      this.shown = true;
+    },
+    /** @return {void} */
+    hide() {
+      this.shown = false;
+    },
+  };
+}
+
+/**
  * Wires the sheet's own keyboard/focus behavior onto its root element: tab
  * click + Left/Right arrow keys switch the active tab, Escape closes it,
  * opening moves focus inside and traps Tab/Shift+Tab within it, and
@@ -132,10 +168,9 @@ export function fighterSheetShell(me) {
     cooldownTimer: null,
     init() {
       this.shell = createSheetShell(this.$el, {
-        onClose: () => this.$wire.close(),
-        // $wire.open (and $wire.call('open')) resolve to the public $open bool,
-        // never the open() method — reach it through its own event listener
-        onTab: tab => this.$wire.dispatchSelf('open-fighter-sheet', { tab }),
+        // the frame plays the exit; the loaded sheet stays for an instant reopen
+        onClose: () => window.dispatchEvent(new CustomEvent('fighter-sheet-hide')),
+        onTab: tab => this.showTab(tab),
       });
       this.shell.open(document.activeElement);
       this.attachHitListener();
@@ -143,7 +178,29 @@ export function fighterSheetShell(me) {
       this.watchDamage();
       this.trackInput();
       this.$el.addEventListener('fighter-equipped', () => this.equipTransition());
-      this.$el.addEventListener('sheet-open-tab', event => this.$wire.dispatchSelf('open-fighter-sheet', { tab: event.detail.tab }));
+      this.$el.addEventListener('sheet-open-tab', event => this.showTab(event.detail.tab));
+      // a reopen shows this already-loaded sheet at once (the server
+      // refreshes it behind): unfold it if an equip folded it on the way out
+      this.onReopen = event => {
+        this.$el.querySelector('.sheet')?.classList.remove('folding');
+        this.$el.querySelector('.overlay')?.classList.remove('passthrough');
+        if (event.detail?.tab) {
+          this.showTab(event.detail.tab);
+        }
+        this.shell.open(document.activeElement);
+      };
+      window.addEventListener('open-fighter-sheet', this.onReopen);
+    },
+    /**
+     * Switches tab in the page at once and has the server remember it
+     * (renderless), so a later render keeps the same tab.
+     *
+     * @param {string} tab
+     * @return {void}
+     */
+    showTab(tab) {
+      switchTab(this.$el, tab);
+      this.$wire.selectTab?.(tab);
     },
     /**
      * Folds the sheet away, closes it, then pans the live battlefield
@@ -317,6 +374,7 @@ export function fighterSheetShell(me) {
       this.damageObserver?.disconnect();
       cancelAnimationFrame(this.countRaf);
       this.offInput?.();
+      window.removeEventListener('open-fighter-sheet', this.onReopen);
     },
   };
 }

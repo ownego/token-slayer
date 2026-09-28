@@ -180,6 +180,15 @@ opened only by the nav's Profile button (`$dispatch('open-fighter-sheet', {tab})
 `#[On('open-fighter-sheet')] open($tab)`); there is no `?sheet=` link and no Loadout
 pill any more. It starts **closed** and runs no aggregate `events` query until
 opened — the header's attribution/hook chip is the one exception.
+It is wrapped in an always-rendered frame (`sheetFrame`, x-show + x-transition):
+the nav's `open-fighter-sheet` window event shows it at once — a skeleton
+(`fighter-sheet/skeleton.blade.php`) before the first render, the last-loaded
+sheet after that while the server refreshes it — and closing just plays the
+exit (`fighter-sheet-hide`), keeping the loaded sheet for the next open. Tabs
+switch in the page (`switchTab`; both panels are rendered) and the server only
+remembers the tab through the renderless `selectTab()`; a period pick lights its
+tab at once and the damage panel shimmers (`wire:loading` on `setPeriod`) until
+the new numbers land.
 
 - **Backend** (`app/Services/Profile/`): `Period` (hour/today/week/month/year/all,
   calendar windows from the display timezone's midnight/Monday/1st) backs

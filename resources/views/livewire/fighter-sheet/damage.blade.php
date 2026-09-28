@@ -34,7 +34,7 @@
     @error('to')
         <p class="range-error" aria-live="polite" style="margin:6px 0 0;color:var(--blood);font-size:12px">{{ $message }}</p>
     @enderror
-    <div class="meter-panel">
+    <div class="meter-panel" wire:loading.class="is-loading" wire:target="setPeriod,applyRange">
         <div class="meter-top">
             <span class="dmg-wrap"><span class="dmg" id="dmg" data-value="{{ $damage['mine'] }}">{{ CompactNumber::format($damage['mine']) }}</span></span>
             <span class="dmg-label"><span class="live-dot"></span>damage dealt</span>

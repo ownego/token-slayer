@@ -1,6 +1,23 @@
 <div>
     @include('livewire.fighter-sheet.attribution')
 
+    {{-- Always in the page: shows the moment the nav asks for the sheet (a
+         skeleton before the first render, the last-loaded sheet after that)
+         and plays its own enter/exit instead of popping in and out with the
+         server's round trip. --}}
+    <div
+        x-data="sheetFrame()"
+        x-show="shown"
+        x-cloak
+        @open-fighter-sheet.window="show()"
+        @fighter-sheet-hide.window="hide()"
+        x-transition:enter="fs-frame-enter"
+        x-transition:enter-start="fs-frame-from"
+        x-transition:enter-end="fs-frame-to"
+        x-transition:leave="fs-frame-leave"
+        x-transition:leave-start="fs-frame-to"
+        x-transition:leave-end="fs-frame-from"
+    >
     @if ($open)
         {{-- Markup ported from the approved mockup (docs/superpowers/mockups/
              2026-09-27-battlefield-redesign/fighter-sheet.html); its CSS lives
@@ -36,7 +53,10 @@
                 </section>
             </div>
         </div>
+    @else
+        @include('livewire.fighter-sheet.skeleton')
     @endif
+    </div>
 
     {{-- Outside the @if: Equip's Undo toast must outlive the sheet, which
          folds away onto the battlefield before the swap persists. --}}

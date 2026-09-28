@@ -45,6 +45,10 @@ export function periodTabs(current) {
       } catch {
         // storage unavailable: the pick still applies for this visit
       }
+      // light the picked tab now; the numbers follow when the server answers
+      (this.$root ?? this.$el).querySelectorAll('.periods > .period').forEach(tab => {
+        tab.setAttribute('aria-selected', tab.dataset.p === period ? 'true' : 'false');
+      });
       this.$wire.setPeriod(period);
       this.more = false;
     },
@@ -121,6 +125,18 @@ export function modelPicker(options, current) {
      * @return {void}
      */
     choose(period) {
+      // relabel now; the rows follow when the server answers
+      const root = this.$root ?? this.$el;
+      root?.querySelectorAll('[role="option"]').forEach(option => {
+        const on = option.dataset.p === period;
+        option.setAttribute('aria-selected', on ? 'true' : 'false');
+        if (on) {
+          const label = root.querySelector('#model-meta');
+          if (label) {
+            label.textContent = option.textContent;
+          }
+        }
+      });
       this.$wire.setModelPeriod(period);
       this.open = false;
     },

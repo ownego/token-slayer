@@ -1220,3 +1220,28 @@
 .fs .face > img, .fs .mate > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .fs .mchar { display: inline-block; position: relative; width: 18px; height: 18px; overflow: hidden; vertical-align: middle; margin: 0 4px; }
 .fs .mchar > i { position: absolute; width: 100px; height: 100px; transform-origin: 0 0; image-rendering: pixelated; background-repeat: no-repeat; }
+
+/* app addition: the sheet frame's enter/exit and the first-open skeleton */
+.fs-frame-enter, .fs-frame-leave { transition: opacity 0.2s ease; }
+.fs-frame-enter .fs .sheet, .fs-frame-leave .fs .sheet { transition: transform 0.22s cubic-bezier(.2,.8,.2,1), opacity 0.2s ease; }
+.fs-frame-from { opacity: 0; }
+.fs-frame-from .fs .sheet { transform: scale(0.96) translateY(10px); }
+.fs-frame-to { opacity: 1; }
+.fs .skel-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 14px; padding: 16px; }
+.fs .skel-col { display: flex; flex-direction: column; gap: 12px; }
+.fs .skel { display: block; border-radius: 4px; background: linear-gradient(90deg, rgba(148,163,184,0.08), rgba(148,163,184,0.18), rgba(148,163,184,0.08)); background-size: 200% 100%; animation: fs-skel-sweep 1.2s linear infinite; }
+@keyframes fs-skel-sweep { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.fs .meter-panel.is-loading > * { animation: fs-shimmer 0.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .fs .skel { animation: none; } .fs-frame-enter, .fs-frame-leave, .fs-frame-enter .fs .sheet, .fs-frame-leave .fs .sheet { transition: none; } }
+.fs .side.bymodel.is-loading > :not(h3) { animation: fs-shimmer 0.9s ease-in-out infinite; }
+
+/* app addition: square avatars, softened */
+.fs .face, .fs .mate { border-radius: 5px; }
+.fs .face > img, .fs .mate > img { border-radius: inherit; }
+
+/* app addition: a tall Profile tab scrolls inside the sheet instead of running
+   past its bottom edge — the grid row was sized by its content, so neither
+   column was ever constrained enough to scroll */
+.fs .sheet-body { grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+.fs .sheet-body > * { min-height: 0; }
+.fs .sheet-body > .fighter { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.35) transparent; }

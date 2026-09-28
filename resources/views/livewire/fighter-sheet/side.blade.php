@@ -52,7 +52,7 @@
             <div class="spark-axis"><span>yesterday</span><span>now</span></div>
         </div>
 
-        <div class="side bymodel">
+        <div class="side bymodel" wire:loading.class="is-loading" wire:target="setModelPeriod">
             <h3>@include('livewire.fighter-sheet.icon', ['name' => 'model'])By model <span class="mpick" id="mpick" x-data="modelPicker(@js(array_keys($modelPeriods)), @js($modelPeriod))" :class="{ open }" @click.outside="open = false">
                 <button type="button" class="mpick-btn" id="mpick-btn" aria-haspopup="listbox" :aria-expanded="open.toString()" aria-label="By model period" @click="toggle(!open)" @keydown="keys($event)"><span id="model-meta">{{ $modelPeriods[$modelPeriod] ?? ucfirst($modelPeriod) }}</span><span class="chev">▼</span></button>
                 <span class="mpick-menu" role="listbox" id="mpick-menu" tabindex="-1">
