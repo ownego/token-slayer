@@ -51,7 +51,7 @@ test('slack callback stores the Slack display name in display_name', function ()
 
     bindSlackProvider(fakeSlackUser(['name' => 'Nguyễn Hoàng Sơn']));
 
-    $this->get('/auth/slack/callback')->assertRedirect('/profile');
+    $this->get('/auth/slack/callback')->assertRedirect('/setup');
 
     $user = User::sole();
     expect($user->slack_user_id)->toBe('U123')
@@ -78,7 +78,7 @@ test('slack callback falls back to the real name when display name is empty', fu
 
     bindSlackProvider(fakeSlackUser(['name' => 'Nguyễn Hoàng Sơn']));
 
-    $this->get('/auth/slack/callback')->assertRedirect('/profile');
+    $this->get('/auth/slack/callback')->assertRedirect('/setup');
 
     expect(User::sole()->display_name)->toBe('Nguyễn Hoàng Sơn');
 });
@@ -116,7 +116,7 @@ test('slack callback falls back to the real name when users.info fails', functio
 
     bindSlackProvider(fakeSlackUser(['name' => 'Real Name']));
 
-    $this->get('/auth/slack/callback')->assertRedirect('/profile');
+    $this->get('/auth/slack/callback')->assertRedirect('/setup');
 
     expect(User::sole()->display_name)->toBe('Real Name');
 });

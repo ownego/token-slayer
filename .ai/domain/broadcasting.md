@@ -20,7 +20,7 @@ All events are `ShouldBroadcastNow` on the public `battlefield` channel. Handler
 
 | PHP class = `broadcastAs` | Dispatched from | Payload keys | `BusEvent` → handler |
 |---|---|---|---|
-| `HitDealt` | `EventController` (Stop, tokens > 0) | `user_id, slack_handle, avatar_url, damage, boss_id, boss_hp_after, boss_max_hp, model, flair, flair_duration_ms, flair_color` | `HIT` `'hit'` → `fighter.handleHit` |
+| `HitDealt` | `EventController` (Stop, tokens > 0) | `user_id, slack_handle, avatar_url, damage, boss_id, boss_hp_after, boss_max_hp, model, flair, flair_duration_ms, flair_color, input_tokens, cache_creation_input_tokens, cache_read_input_tokens` | `HIT` `'hit'` → `fighter.handleHit` |
 | `BossKilled` | `EventController`, once per boss killed in the chain | `boss_number, boss_name, boss_id, killer_user_id, killer_slack_handle, killer_avatar_url` | `BOSS_KILLED` `'boss-killed'` → `boss.handleBossKilled` |
 | `BossSpawned` | `EventController`, once after any kill | `boss_id, boss_number, boss_name, max_hp, fighters[] {user_id, character}` | `BOSS_SPAWNED` `'boss-spawned'` → `boss.handleBossSpawned` |
 | `FighterJoined` | `EventController` (SessionStart) | `user_id, slack_handle, display_name, avatar_url, character, position` | `FIGHTER_JOINED` `'fighter-joined'` → `fighter.handleFighterJoined` |
@@ -28,7 +28,7 @@ All events are `ShouldBroadcastNow` on the public `battlefield` channel. Handler
 | `FighterChargeCleared` | `EventController` (Stop with 0 tokens) | `user_id` | `FIGHTER_CHARGE_CLEARED` `'fighter-charge-cleared'` → `charge.handleChargeCleared` |
 | `FighterIdled` | `fighters:sweep-idle` command (every minute, users past `game.idle_minutes`) | `user_id` | `FIGHTER_IDLED` `'fighter-idled'` → `fighter.handleIdled` + `minions.despawnAll` |
 | `FighterMoved` | `Livewire\Battlefield::move` (user drags own fighter) | `user_id, x, y` | `FIGHTER_MOVED` `'fighter-moved'` → `fighter.handleFighterMoved` |
-| `FighterCharacterChanged` | `Livewire\CharacterSelect` | `user_id, character` | `CHARACTER_CHANGED` `'character-changed'` → `fighter.updateCharacters([payload])` |
+| `FighterCharacterChanged` | `Livewire\FighterSheet::equip()` (Character tab; the old `Livewire\CharacterSelect` was removed in the battlefield-redesign PR chain) | `user_id, character` | `CHARACTER_CHANGED` `'character-changed'` → `fighter.updateCharacters([payload])` |
 | `FighterAgentCountChanged` | `EventController` (subagent dispatch/activity), `fighters:sweep-idle` | `user_id, count, seq` | `FIGHTER_AGENT_COUNT_CHANGED` `'fighter-agent-count-changed'` → `minions.handleAgentCountChanged` |
 | `FighterAgentToolUsed` | `EventController` (pre/post-tool-use with `agent_id`, hook v7) | `user_id, agent_id, busy` | `FIGHTER_AGENT_TOOL_USED` `'fighter-agent-tool-used'` → `minions.handleAgentToolUsed` |
 
@@ -44,6 +44,7 @@ Not broadcast: `AccountTokenRejected` is a plain server-side event (listener `Se
 - `character` comes from `$user->characterForBoss($bossId)`. `position` comes from `FighterPositionCache::get()` (null when the user has never moved).
 - Shape is locked by `tests/Feature/Events/BroadcastShapeTest.php`. It includes one catch-all test asserting that every battlefield event is `ShouldBroadcastNow` on `battlefield` with a short `broadcastAs`, plus one test asserting `HitDealt`'s values are all scalars. New events add a case there.
 - `HitDealt` also carries `model`, `flair`, `flair_duration_ms` and `flair_color`, all **nullable**, because it is dispatched for cowork/claude-ai Stops where no model exists. The flair decision is **server-side** (`ModelFlairResolver`, reading the admin-curated `ai_models` table, matched by exact raw id, cached 60 s). `flair` is keyed on the model FAMILY, so the JS never learns which model ids are special, and enabling one is an admin toggle with no rebuild.
+- `HitDealt`'s `input_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens` (ints, default 0) feed the fighter sheet's live token ledger (`resources/js/battlefield/sheet/hourly-bars.js`'s `liveTokens`, via `sheet/index.js`'s `fighterSheetShell` listening on the shared bus's own `hit` event) — the exact same `TurnUsage` values already written to the `Event` row, not re-derived.
 - **`flair_duration_ms` has a client-side fallback.** `flair.js`'s `resolveFlairDuration(payloadDurationMs, TIMINGS.flairDurationMs)` falls back to `resources/js/battlefield/config/timings.js` when the value is missing or non-positive. A payload change here therefore does not require every client to be current.
 - **The flair badge is deliberately absent from `snapshotState()`.** It is a several-second effect; losing it on rotate is cheaper than threading timers through the snapshot. Its lifetime is owned by its own timer, never by the next hit.
 - `FighterAgentCountChanged.seq` is monotonic per user. The client drops any payload whose `seq` is older than one already applied, because Reverb gives no delivery-order guarantee.

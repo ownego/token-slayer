@@ -136,6 +136,25 @@ class SubagentCountCache
     }
 
     /**
+     * A snapshot busy/idle split for one user's live subagent presence, for
+     * the fighter sheet's Profile-tab mini-stage. "Busy" is every live
+     * presence key for this user right now (delegates to get(), which
+     * already handles the KEYS-prefix pitfall documented on
+     * ownKeyPortion()); "idle" is always 0 here — idle vs busy per-minion
+     * state is a cosmetic client-side notion driven by the live
+     * fighter-agent-count-changed/tool-use bus events (see minions.js), not
+     * something this cache tracks server-side. Callers seed the mini-stage
+     * from `busy` alone and let the bus keep it live.
+     *
+     * @param  int  $userId
+     * @return array{busy: int, idle: int}
+     */
+    public function countFor(int $userId): array
+    {
+        return ['busy' => $this->get($userId), 'idle' => 0];
+    }
+
+    /**
      * Bulk read for seeding the battlefield's boot payload (see
      * Battlefield::mount()).
      *

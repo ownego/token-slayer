@@ -126,4 +126,20 @@ return [
         'min_history_days' => (int) env('TOKEN_SLAYER_REBALANCE_MIN_HISTORY_DAYS', 7),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Battlefield sky site
+    |--------------------------------------------------------------------------
+    |
+    | Where the battlefield's living sky (sun/moon position, day/night colour)
+    | is computed for. The viewer's own clock drives the time; this only sets
+    | the place. Defaults to Hanoi.
+    |
+    */
+
+    'sky' => [
+        'lat' => (float) env('TOKEN_SLAYER_SKY_LAT', 21.03),
+        'lon' => (float) env('TOKEN_SLAYER_SKY_LON', 105.85),
+    ],
+
 ];

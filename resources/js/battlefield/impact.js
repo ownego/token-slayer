@@ -1,7 +1,32 @@
 import { TIMINGS } from '@battlefield/config.js';
-import { TextureKey } from '@battlefield/constants.js';
-import { formatHp } from '@battlefield/format.js';
-import { Boss } from '@battlefield/boss.js';
+import { BusEvent, TextureKey } from '@battlefield/constants.js';
+import { bus } from '@battlefield/bus.js';
+import { createHpCounter } from '@battlefield/shared/hp-counter.js';
+
+/**
+ * A tiny object pool: `take()` reuses a released item or calls `make()` for
+ * a fresh one, `release()` returns it for the next `take()`. Used for the
+ * floating damage-number Text objects — a burst of hits used to create and
+ * destroy one Phaser Text per hit.
+ *
+ * @template T
+ * @param {function(): T} make
+ * @return {{take: function(): T, release: function(T): void, size: function(): number}}
+ */
+export function createTextPool(make) {
+  const pool = [];
+  return {
+    take() {
+      return pool.pop() ?? make();
+    },
+    release(item) {
+      pool.push(item);
+    },
+    size() {
+      return pool.length;
+    },
+  };
+}
 
 /** Handles hit-impact visuals: explosion, boss/bat flinch, camera shake, damage popup, HP bar tween. */
 export class Impact {
@@ -10,6 +35,32 @@ export class Impact {
    */
   constructor(scene) {
     this.scene = scene;
+    // Floating damage numbers are reused instead of destroyed per hit — a
+    // burst of hits used to create/destroy one Phaser Text every time.
+    this.damagePool = createTextPool(() => scene.addSharpText(0, 0, '', {
+      fontFamily: 'monospace',
+      fontSize: '20px',
+    }).setVisible(false));
+    // One retargeted tween drives the HP bar/text — see hp-counter.js's own
+    // docblock for why a burst of hits must never stack more than one.
+    this.hp = createHpCounter({
+      initial: scene.bossState.currentHp,
+      startTween: ({ from, to, onUpdate }) => {
+        const box = { v: from };
+        return scene.tweens.add({
+          targets: box,
+          v: to,
+          duration: TIMINGS.hpBarMs,
+          ease: 'Quad.easeOut',
+          onUpdate: () => onUpdate(box.v),
+        });
+      },
+      // Ticks the DOM boss plate (hud/boss-plate.js) via the bus instead of
+      // drawing Phaser text/rectangles directly — the plate replaced them.
+      render: value => {
+        bus.emit(BusEvent.BOSS_HP_TICK, { hp: value, max: scene.bossState.maxHp });
+      },
+    });
   }
 
   /**
@@ -21,11 +72,12 @@ export class Impact {
    *   of the boss — the explosion/flinch/tint render there instead, and the
    *   boss itself is left untouched. The HP bar always still reflects the
    *   real boss HP regardless.
+   * @param {number|string|null} [userId=null] the hitter — styles the damage
+   *   popup as YOU (gold, larger) when it matches `scene.currentUserId`.
    * @return {void}
    */
-  apply(hpAfter, target = null) {
+  apply(hpAfter, target = null, userId = null) {
     const bossAnchor = this.scene.layout.boss.anchor;
-    const hpBar = this.scene.layout.hpBar;
     const impactX = target?.x ?? bossAnchor.x;
     const impactY = target?.y ?? bossAnchor.y;
 
@@ -55,22 +107,11 @@ export class Impact {
 
     const damage = Math.max(0, this.scene.bossState.currentHp - hpAfter);
     if (damage > 0) {
-      this._spawnDamagePopup(damage, impactX, impactY);
+      const isYou = userId != null && this.scene.currentUserId != null && Number(userId) === Number(this.scene.currentUserId);
+      this._spawnDamagePopup(damage, impactX, impactY, isYou);
     }
 
-    const max = this.scene.bossState.maxHp;
-    const counter = { v: this.scene.bossState.currentHp };
-    this.scene.tweens.add({
-      targets: counter,
-      v: hpAfter,
-      duration: TIMINGS.hpBarMs,
-      ease: 'Quad.easeOut',
-      onUpdate: () => {
-        this.scene.hpBarFill.setFillStyle(Boss.hpBarColor(counter.v, max));
-        this.scene.hpBarFill.width = Math.round(hpBar.width * (counter.v / max));
-        this.scene.hpText.setText(`${formatHp(counter.v)} / ${formatHp(max)}`);
-      },
-    });
+    this.hp.set(hpAfter);
     this.scene.bossState.currentHp = hpAfter;
   }
 
@@ -112,31 +153,39 @@ export class Impact {
   }
 
   /**
-   * Spawns a floating damage number above the given point.
+   * Spawns a floating damage number above the given point, from the pool
+   * (`this.damagePool`) instead of a fresh Text object. The current user's
+   * own hits stand out: larger, gold, thicker stroke.
    *
    * @param {number} damage
    * @param {number} x
    * @param {number} y
+   * @param {boolean} [isYou=false]
    * @return {void}
    */
-  _spawnDamagePopup(damage, x, y) {
+  _spawnDamagePopup(damage, x, y, isYou = false) {
     const jitter = (Math.random() - 0.5) * 60;
     const startX = x + jitter;
     const startY = y - 40;
-    const popup = this.scene.addSharpText(startX, startY, `-${damage.toLocaleString()}`, {
-      fontFamily: 'monospace',
-      fontSize: '20px',
-      color: '#fca5a5',
-      stroke: '#7f1d1d',
-      strokeThickness: 5,
-    });
+    const popup = this.damagePool.take();
+    popup
+      .setText(`-${damage.toLocaleString()}`)
+      .setColor(isYou ? '#fbbf24' : '#fca5a5')
+      .setStroke(isYou ? '#78350f' : '#7f1d1d', isYou ? 6 : 5)
+      .setScale(isYou ? 1.3 : 1)
+      .setPosition(startX, startY)
+      .setAlpha(1)
+      .setVisible(true);
     this.scene.tweens.add({
       targets: popup,
-      y: startY - 80,
+      y: startY - 44,
       alpha: 0,
-      duration: 900,
+      duration: 850,
       ease: 'Quad.easeOut',
-      onComplete: () => popup.destroy(),
+      onComplete: () => {
+        popup.setVisible(false);
+        this.damagePool.release(popup);
+      },
     });
   }
 }

@@ -1,11 +1,29 @@
 import Phaser from 'phaser';
 import { MINION_TYPES, MINION_CLASH_EFFECTS, TIMINGS } from '@battlefield/config.js';
 import { TextureKey } from '@battlefield/constants.js';
+import { setDepthIfChanged } from '@battlefield/shared/depth.js';
 import { randomWanderPoint } from './boss/bat-wander.js';
 import { homeSlotOffset, homeSlotAngle, isInFrontOfFighter } from './minion-layout.js';
 import { sampleTrail, pushTrailSample } from './minion-trail.js';
 import { computeZones, zoneFanOffset } from './minion-grouping.js';
 import { countSidesNear, pickAttackerSide, travelLanding, pickRandom, fidgetAttacks, flipToFace, flipToFaceAngle } from './minion-fight.js';
+
+/**
+ * The Clawd poof that plays before a minion appears: crouch-with-dust,
+ * arms-up ×3, a breath of default, arms-up ×2 — each frame 70ms. `'crouch'`
+ * is the default pose baked one row lower (`TextureKey.CLAWD_CROUCH`), not
+ * a separate `poseRects` pose.
+ *
+ * @type {Array<[string, string?]>}
+ */
+export const POOF_SEQUENCE = [
+  ['crouch', '·'], ['crouch', '~'],
+  ['arms-up'], ['arms-up'], ['arms-up'],
+  ['default'],
+  ['arms-up'], ['arms-up'],
+];
+const POOF_FRAME_MS = 70;
+const POOF_PUFF_COUNT = 10;
 
 /** Reference ink height (px) the badge/ring/clash-burst ratios below were tuned against — Demon_A/Blood Monster_A's native idle height. A type's own sprite scale comes from its own `charHeight` (config/companions.js) so every type renders at the same visual height; everything sized from "the minion's visual height" goes through this reference instead of a per-type value. */
 const BASE_CHAR_HEIGHT = 20;
@@ -486,7 +504,7 @@ export class Minions {
             const dy = targetY - minion.sprite.y;
             minion.sprite.setPosition(targetX, targetY);
             const minionDepth = isInFrontOfFighter(targetY, foot.y) ? MINION_DEPTH_FRONT : MINION_DEPTH_BACK;
-            minion.sprite.setDepth(minionDepth);
+            setDepthIfChanged(minion.sprite, minionDepth);
             if (Math.abs(dx) > 0.5) {
               minion.sprite.setFlipX(dx < 0);
             } else if (facingZone && !minion.pinned) {
@@ -689,44 +707,118 @@ export class Minions {
       toolRing: null,
     };
 
-    minion.summonTimer = this.scene.time.delayedCall(SUMMON_CIRCLE_LEAD_MS, () => {
-      if (!minion.sprite?.active) {
-        return;
-      }
-      minion.sprite.setAlpha(1);
-      minion.badge?.setAlpha(1);
-      const visualHeight = finalScale * type.charHeight;
-      const riseOffset = visualHeight * SUMMON_RISE_OFFSET_RATIO;
-      minion.sprite.setScale(0);
-      minion.sprite.y = spawnY + riseOffset;
-      const glow = minion.sprite.preFX?.addGlow(0xfbbf24, 0, 0, false, 0.15, 20);
-      if (glow) {
-        this.scene.tweens.add({ targets: glow, outerStrength: 3, duration: 220, ease: 'Quad.easeOut' });
-      }
-      this.scene.tweens.add({
-        targets: minion.sprite,
-        scale: finalScale,
-        y: spawnY,
-        duration: SUMMON_RISE_MS,
-        ease: 'Back.easeOut',
-        onComplete: () => {
-          minion.summoning = false;
-          if (glow) {
-            this.scene.tweens.add({
-              targets: glow,
-              outerStrength: 0,
-              duration: 260,
-              ease: 'Quad.easeIn',
-              onComplete: () => minion.sprite?.preFX?.remove(glow),
-            });
-          }
-        },
+    const beginRiseIn = () => {
+      minion.summonTimer = this.scene.time.delayedCall(SUMMON_CIRCLE_LEAD_MS, () => {
+        if (!minion.sprite?.active) {
+          return;
+        }
+        minion.sprite.setAlpha(1);
+        minion.badge?.setAlpha(1);
+        const visualHeight = finalScale * type.charHeight;
+        const riseOffset = visualHeight * SUMMON_RISE_OFFSET_RATIO;
+        minion.sprite.setScale(0);
+        minion.sprite.y = spawnY + riseOffset;
+        const glow = minion.sprite.preFX?.addGlow(0xfbbf24, 0, 0, false, 0.15, 20);
+        if (glow) {
+          this.scene.tweens.add({ targets: glow, outerStrength: 3, duration: 220, ease: 'Quad.easeOut' });
+        }
+        this.scene.tweens.add({
+          targets: minion.sprite,
+          scale: finalScale,
+          y: spawnY,
+          duration: SUMMON_RISE_MS,
+          ease: 'Back.easeOut',
+          onComplete: () => {
+            minion.summoning = false;
+            if (glow) {
+              this.scene.tweens.add({
+                targets: glow,
+                outerStrength: 0,
+                duration: 260,
+                ease: 'Quad.easeIn',
+                onComplete: () => minion.sprite?.preFX?.remove(glow),
+              });
+            }
+          },
+        });
       });
-    });
+    };
+
+    // Clawd pops in with the crouch-with-dust/arms-up poof before the
+    // minion itself rises — skipped entirely under reduced motion, which
+    // goes straight to the existing rise-in.
+    if (this.scene.reducedMotion) {
+      beginRiseIn();
+    } else {
+      this._playClawdPoof(spawnX, spawnY, this._minionScale(entry), beginRiseIn);
+    }
 
     this._scheduleFidget(minion);
     this._scheduleIdleWander(userId, minion);
     return minion;
+  }
+
+  /**
+   * Plays `POOF_SEQUENCE` (each frame `POOF_FRAME_MS`) at `(x, y)`, then a
+   * `POOF_PUFF_COUNT`-particle puff burst, then `onDone`.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @param {number} scale
+   * @param {function(): void} onDone
+   * @return {void}
+   */
+  _playClawdPoof(x, y, scale, onDone) {
+    let clawd = null;
+    let i = 0;
+    const step = () => {
+      if (i >= POOF_SEQUENCE.length) {
+        clawd?.destroy();
+        this._spawnPuffBurst(x, y);
+        onDone();
+        return;
+      }
+      const [pose, dust] = POOF_SEQUENCE[i];
+      const key = pose === 'crouch' ? TextureKey.CLAWD_CROUCH : pose === 'arms-up' ? TextureKey.CLAWD_ARMS : TextureKey.CLAWD_DEFAULT;
+      if (!clawd) {
+        clawd = this.scene.add.image(x, y, key).setDepth(MINION_DEPTH_FRONT).setScale(scale);
+      } else {
+        clawd.setTexture(key);
+      }
+      if (dust) {
+        const dx = dust === '·' ? -1 : 1;
+        const glyph = this.scene.addSharpText(x + dx * 10 * scale, y - 6 * scale, dust, {
+          fontFamily: 'monospace', fontSize: '12px', color: '#94a3b8',
+        }).setDepth(MINION_DEPTH_FRONT);
+        this.scene.time.delayedCall(POOF_FRAME_MS, () => glyph.destroy());
+      }
+      i++;
+      this.scene.time.delayedCall(POOF_FRAME_MS, step);
+    };
+    step();
+  }
+
+  /**
+   * A small burst of soft puffs at (x, y), finishing the Clawd poof.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @return {void}
+   */
+  _spawnPuffBurst(x, y) {
+    const emitter = this.scene.add.particles(x, y, TextureKey.PUFF, {
+      tint: 0xd1d5db,
+      scale: { start: 0.35, end: 0.05 },
+      alpha: { start: 0.7, end: 0 },
+      speed: { min: 20, max: 60 },
+      angle: { min: 0, max: 360 },
+      lifespan: { min: 220, max: 380 },
+      quantity: POOF_PUFF_COUNT,
+      blendMode: 'ADD',
+      emitting: false,
+    }).setDepth(MINION_DEPTH_FRONT);
+    emitter.explode(POOF_PUFF_COUNT);
+    this.scene.time.delayedCall(500, () => emitter.destroy());
   }
 
   /**
@@ -993,7 +1085,7 @@ export class Minions {
     const badgePx = visualHeight * MINION_BADGE_SIZE_RATIO;
     minion.badge.setPosition(point.x, point.y - visualHeight * MINION_BADGE_OFFSET_RATIO);
     minion.badge.setDisplaySize(badgePx, badgePx);
-    minion.badge.setDepth(minionDepth + 0.01);
+    setDepthIfChanged(minion.badge, minionDepth + 0.01);
   }
 
   /**
@@ -1023,7 +1115,7 @@ export class Minions {
     minion.toolRing.lineStyle(2, TOOL_RING_COLOR, 1);
     minion.toolRing.strokeCircle(0, 0, r);
     minion.toolRing.setPosition(point.x, badgeY);
-    minion.toolRing.setDepth(minionDepth + 0.02);
+    setDepthIfChanged(minion.toolRing, minionDepth + 0.02);
   }
 
   /**

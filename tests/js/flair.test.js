@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, test } from 'vitest';
 import {
   buildRingChars,
   clearFlair,
   createFlairState,
   darkenHex,
+  glyphState,
   hasFlairChanged,
   isFlairActive,
   resolveFlairDuration,
@@ -11,6 +12,32 @@ import {
   spotlightBoost,
   startFlair,
 } from '../../resources/js/battlefield/fighter/flair.js';
+
+describe('glyphState', () => {
+  test('front letters are lit and full size; back letters dim and small', () => {
+    const front = glyphState(Math.PI / 2, 0, 0, 0, { introStart: -1e9, outroLeft: 1e9 });
+    const back = glyphState(-Math.PI / 2, 0, 0, 0, { introStart: -1e9, outroLeft: 1e9 });
+    expect(front).toMatchObject({ front: true, alpha: 1 });
+    expect(back.front).toBe(false);
+    expect(back.alpha).toBeCloseTo(0.22);
+    expect(back.scale).toBeCloseTo(0.62);
+  });
+
+  test('intro flies letters out from the centre; outro drifts them up and fades', () => {
+    const opts = { introStart: 0, outroLeft: 1e9 };
+    expect(glyphState(Math.PI / 2, 0, 0, 0, opts).alpha).toBe(0);             // not started
+    expect(glyphState(Math.PI / 2, 0, 0, 400, opts).alpha).toBeCloseTo(1);    // arrived
+    const leaving = glyphState(Math.PI / 2, 0, 0, 1e6, { introStart: 0, outroLeft: 100 });
+    expect(leaving.alpha).toBeLessThan(0.5);
+    expect(leaving.y).toBeLessThan(glyphState(Math.PI / 2, 0, 0, 1e6, { introStart: 0, outroLeft: 1e9 }).y);
+  });
+
+  test('reduced motion: full alpha from the first frame, no wave', () => {
+    const state = glyphState(Math.PI / 2, 0, 0, 0, { introStart: 0, outroLeft: 1e9, reduced: true });
+    expect(state.alpha).toBe(1);
+    expect(state.wave).toBe(0);
+  });
+});
 
 describe('flair lifecycle', () => {
   it('is inactive until a flair starts', () => {

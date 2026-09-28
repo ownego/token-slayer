@@ -15,7 +15,7 @@ vi.mock('phaser', () => ({
   },
 }));
 
-import { Boss } from '@battlefield/boss.js';
+import { Boss, bossTextureKeys, queueBossLoad } from '@battlefield/boss.js';
 import { stunCooldownExpired } from '@battlefield/boss/stun.js';
 import { getDreadknightTurnStep, isDreadknight } from '@battlefield/boss/dreadknight.js';
 
@@ -146,5 +146,81 @@ describe('bossTypeFor', () => {
     const bt = Boss.bossTypeFor(9999);
     expect(bt).toBeDefined();
     expect(bt.key).toBeDefined();
+  });
+});
+
+describe('bossTextureKeys', () => {
+  test('returns just the bare key for a single-sheet boss', () => {
+    const bt = Boss.bossTypeFor(0); // boss-ghost — single `file`, no `animFiles`
+    expect(bt.animFiles).toBeUndefined();
+    expect(bossTextureKeys(bt)).toEqual([bt.key]);
+  });
+
+  test('returns one `<key>-<anim>` key per animation for a multi-file boss', () => {
+    const bt = Boss.bossTypeFor(2); // boss-abyssal-dreadknight — animFiles map
+    expect(bt.animFiles).toBeDefined();
+    const keys = bossTextureKeys(bt);
+    expect(keys).toEqual(Object.keys(bt.animFiles).map(anim => `${bt.key}-${anim}`));
+    expect(keys.length).toBe(Object.keys(bt.animFiles).length);
+  });
+});
+
+describe('queueBossLoad', () => {
+  /**
+   * Builds a duck-typed fake scene exposing only what `queueBossLoad`
+   * touches: `textures.exists` and `load.spritesheet`.
+   *
+   * @param {string[]} alreadyLoadedKeys
+   * @return {{ textures: { exists: Function }, load: { spritesheet: Function } }}
+   */
+  function fakeScene(alreadyLoadedKeys = []) {
+    return {
+      textures: { exists: vi.fn(key => alreadyLoadedKeys.includes(key)) },
+      load: { spritesheet: vi.fn() },
+    };
+  }
+
+  test('queues a spritesheet load for a single-sheet boss not yet in the Texture Manager', () => {
+    const bt = Boss.bossTypeFor(0); // boss-ghost
+    const scene = fakeScene();
+
+    queueBossLoad(scene, bt);
+
+    expect(scene.load.spritesheet).toHaveBeenCalledTimes(1);
+    expect(scene.load.spritesheet).toHaveBeenCalledWith(bt.key, bt.file, { frameWidth: bt.frameWidth, frameHeight: bt.frameHeight });
+  });
+
+  test('is a no-op for a single-sheet boss whose key already exists', () => {
+    const bt = Boss.bossTypeFor(0);
+    const scene = fakeScene([bt.key]);
+
+    queueBossLoad(scene, bt);
+
+    expect(scene.load.spritesheet).not.toHaveBeenCalled();
+  });
+
+  test('queues a spritesheet load per missing animation for a multi-file boss', () => {
+    const bt = Boss.bossTypeFor(2); // boss-abyssal-dreadknight
+    const scene = fakeScene();
+
+    queueBossLoad(scene, bt);
+
+    const anims = Object.entries(bt.animFiles);
+    expect(scene.load.spritesheet).toHaveBeenCalledTimes(anims.length);
+    for (const [anim, info] of anims) {
+      expect(scene.load.spritesheet).toHaveBeenCalledWith(`${bt.key}-${anim}`, info.file, { frameWidth: info.frameWidth, frameHeight: info.frameHeight });
+    }
+  });
+
+  test('skips only the animations already loaded for a multi-file boss, queuing the rest', () => {
+    const bt = Boss.bossTypeFor(2);
+    const anims = Object.keys(bt.animFiles);
+    const alreadyLoaded = `${bt.key}-${anims[0]}`;
+    const scene = fakeScene([alreadyLoaded]);
+
+    queueBossLoad(scene, bt);
+
+    expect(scene.load.spritesheet).toHaveBeenCalledTimes(anims.length - 1);
+    expect(scene.load.spritesheet).not.toHaveBeenCalledWith(alreadyLoaded, expect.anything(), expect.anything());
   });
 });

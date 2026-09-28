@@ -13,6 +13,14 @@ use Illuminate\Support\Facades\Cache;
 final class CacheKeys
 {
     /**
+     * Character-value → teammate-list grouping key, invalidated on every
+     * FighterCharacterChanged broadcast (see ClearCharacterRoommatesCache).
+     *
+     * @var string
+     */
+    public const string CHARACTER_ROOMMATES = 'profile:character-roommates';
+
+    /**
      * Global damage-totals aggregate key.
      *
      * @var string

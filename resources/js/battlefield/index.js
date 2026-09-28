@@ -8,7 +8,21 @@ import { canvasSizeFor } from './render-scale.js';
 import { formatHp } from './format.js';
 import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
 import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
+import { loadoutLayout, fitScale } from './character-preview/modal-fit.js';
+import { thumbGeometry, scrollTopForThumb } from './character-preview/scroll-thumb.js';
 import { BusEvent, SCENE_KEY, WORLD_ZOOM } from './constants.js';
+import { bindBus } from './shared/bus-bindings.js';
+import { keepHudOnCanvas } from './hud/sync.js';
+import { createBossPlate } from './hud/boss-plate.js';
+import { createFeedView } from './hud/feed-view.js';
+import { domToWorld } from './shared/hud-zones.js';
+import { boardHitHandler, createBoardRenderer, createBoardView } from './hud/board-view.js';
+import { onSceneReady } from './shared/scene-ready.js';
+import { revealHud } from './hud/reveal.js';
+
+// A small fixed palette for the TOP DAMAGE board's avatar swatch, shown
+// behind the real /avatars/{id} image (and left visible if that 404s).
+const BOARD_AVATAR_COLORS = ['#f97316', '#0ea5e9', '#22c55e', '#a855f7', '#ec4899', '#eab308'];
 
 const ECHO_EVENT_MAP = {
   HitDealt:        BusEvent.HIT,
@@ -133,6 +147,7 @@ function bootGame(mount, state, mode) {
     const scene = game.scene.getScene(SCENE_KEY);
     window.__battlefield = {
       bus,
+      bindBus,
       game,
       scene,
       get mode() { return game.registry.get('mode'); },
@@ -157,7 +172,34 @@ function bootGame(mount, state, mode) {
       drawFighterPreview,
       drawFighterFrame,
       createCharacterPreview: createPreviewGame,
+      loadoutLayout,
+      fitScale,
+      thumbGeometry,
+      scrollTopForThumb,
       destroyCharacterPreview: destroyPreviewGame,
+      // Called by battlefieldHud (hud/index.js) every 500ms and after the
+      // portrait board sheet's .open toggle, with getBoundingClientRect()
+      // rects for .bf-team/.bf-plate/.bf-board/.bf-herald (the feed is
+      // excluded — its lines are pointer-events:none and never obstruct a
+      // click). Converts to world space and hands them to the scene, which
+      // move-geometry.js's isValidMoveTarget/planRoute read so click-to-move
+      // rejects a target under a HUD panel; an already-standing fighter is
+      // never auto-repositioned when a zone appears over it.
+      setHudZones(rects) {
+        const canvasRect = game.canvas.getBoundingClientRect();
+        const worldWidth = LAYOUTS[game.registry.get('mode')].logicalWidth;
+        scene._zones = rects.map(r => domToWorld(r, canvasRect, worldWidth));
+      },
+      // The fighter sheet's equip transition: pans/zooms the camera to the
+      // viewer's own fighter, then eases back. No-ops when the fighter
+      // isn't currently on the field (see camera-focus.js's focusPlan).
+      focusFighter: userId => scene.focusFighter(userId),
+      // Staging-only manual clock override for verifying the living sky at
+      // dawn/dusk/night without waiting for the real time of day — never
+      // exposed without the explicit ?sky-debug=1 query param.
+      ...(new URLSearchParams(window.location.search).get('sky-debug') === '1'
+        ? { env: { setClock: minutes => scene.environment.setClock(minutes), flock: () => scene.environment.debug.flock(), shoot: () => scene.environment.debug.shoot() } }
+        : {}),
     };
   });
 
@@ -183,6 +225,105 @@ export function bootBattlefield(mount, state) {
   let currentGame = bootGame(mount, currentState, currentMode);
   let pending = null;
   let destroyed = false;
+
+  // Once per game: applyModeChange() below restarts the scene on this same
+  // game rather than rebooting a new one, and keepHudOnCanvas's own listener
+  // on game.scale already re-syncs across that restart — a second call here
+  // per rotation would stack listeners instead of replacing one.
+  const hudEl = document.getElementById('bf-hud');
+  const unsubscribeHud = hudEl ? keepHudOnCanvas(currentGame, mount, hudEl) : null;
+
+  // Boss plate: created once per game, seeded from the boot payload's boss
+  // (currentHp may be below max — a reload mid-fight — so it renders that
+  // reading directly, no crack cascade), then kept in sync by BOSS_HP_TICK
+  // (impact.js's counter render) and BOSS_SPAWNED; hit() only reads its
+  // damage to decide whether to shake.
+  const plateEl = document.querySelector('.bf-plate');
+  const bossPlate = plateEl ? createBossPlate(plateEl) : null;
+  if (bossPlate && currentState.boss) {
+    bossPlate.spawn(currentState.boss.name, currentState.boss.number, currentState.boss.maxHp, currentState.boss.currentHp);
+  }
+  // Boss-spawned visuals (plate refill, board reset) are gated the same
+  // way ceremony.js gates the boss swap itself — EventController dispatches
+  // BossKilled and BossSpawned in the same request, so without this the
+  // plate/board would jump to the new boss while the kill ceremony is still
+  // showing the old one's death.
+  const holdForCeremony = fn => {
+    const scene = currentGame.scene.getScene(SCENE_KEY);
+    if (scene?.spawnGate) {
+      scene.spawnGate.hold(fn);
+    } else {
+      fn();
+    }
+  };
+  const unbindPlate = bossPlate
+    ? bindBus(bus, {
+        [BusEvent.BOSS_SPAWNED]: p => holdForCeremony(() => bossPlate.spawn(p.boss_name, p.boss_number, p.max_hp)),
+        [BusEvent.BOSS_HP_TICK]: p => bossPlate.set(p.hp, p.max),
+        [BusEvent.HIT]: p => bossPlate.hit(Number(p?.damage) || 0),
+      })
+    : null;
+
+  // TOP DAMAGE board: rankBoard over scene.damageTotals (the single
+  // per-boss source, now that the Phaser leaderboard is gone) drives the
+  // keyed DOM view on every hit and on a fresh spawn.
+  const boardEl = document.querySelector('.bf-board');
+  const boardView = boardEl ? createBoardView(boardEl, {
+    avatar: id => `<img src="/avatars/${id}" alt="" loading="lazy" onerror="this.remove()">`,
+    color: id => BOARD_AVATAR_COLORS[Math.abs(Number(id) || 0) % BOARD_AVATAR_COLORS.length],
+    name: id => {
+      const scene = currentGame.scene.getScene(SCENE_KEY);
+      return scene?.fighters?.get(id)?.handleText || `#${id}`;
+    },
+    isYou: id => Number(id) === Number(currentState.currentUserId),
+    handles: currentState.leaderboard ?? [],
+  }) : null;
+  const renderBoard = boardView
+    ? createBoardRenderer(() => currentGame.scene.getScene(SCENE_KEY), boardView)
+    : null;
+  // the scene is created after this returns (Phaser preloads first): render
+  // once it exists, and after every rotate-restart, not just now
+  const stopBoardSeed = boardView ? onSceneReady(currentGame, SCENE_KEY, renderBoard) : () => {};
+
+  // The HUD waits for the field: hidden until the scene first exists, then
+  // it slides in panel by panel while the boss's HP bar fills from empty and
+  // the team's numbers count up.
+  let introduced = false;
+  const stopIntro = onSceneReady(currentGame, SCENE_KEY, () => {
+    if (introduced || !hudEl) {
+      return;
+    }
+    introduced = true;
+    revealHud(hudEl);
+    bossPlate?.intro();
+    hudEl.dispatchEvent(new CustomEvent('bf-hud-intro'));
+  });
+  const unbindBoard = boardView
+    ? bindBus(bus, {
+        [BusEvent.HIT]: boardHitHandler(boardView, renderBoard),
+        [BusEvent.BOSS_SPAWNED]: () => holdForCeremony(() => { renderBoard.reset(); renderBoard(); }),
+      })
+    : null;
+
+  // Activity feed: "join" and "subagent" lines only — kills/spawns go to the
+  // herald instead (wired in hud/index.js's battlefieldHud, which owns the
+  // reactive `herald` state the blade binds to).
+  const feedEl = document.querySelector('.bf-feed');
+  const feedView = feedEl ? createFeedView(feedEl) : null;
+  const lastAgentCount = new Map(); // user_id -> last known subagent count
+  const unbindFeed = feedView
+    ? bindBus(bus, {
+        [BusEvent.FIGHTER_JOINED]: p => feedView.push('join', p.slack_handle ?? p.display_name ?? 'Someone'),
+        [BusEvent.FIGHTER_AGENT_COUNT_CHANGED]: p => {
+          const prev = lastAgentCount.get(p.user_id) ?? 0;
+          lastAgentCount.set(p.user_id, p.count);
+          if (p.count > prev) {
+            const scene = currentGame.scene.getScene(SCENE_KEY);
+            feedView.push('subagent', scene?.fighters?.get(p.user_id)?.handleText ?? 'Someone');
+          }
+        },
+      })
+    : null;
 
   const applyModeChange = (next) => {
     currentMode = next;
@@ -239,7 +380,17 @@ export function bootBattlefield(mount, state) {
     window.removeEventListener('orientationchange', onOrientationChange);
   };
 
-  currentGame.events.once('destroy', () => { _cleanupResize?.(); });
+  currentGame.events.once('destroy', () => {
+    _cleanupResize?.();
+    unsubscribeHud?.();
+    unbindPlate?.();
+    unbindBoard?.();
+    stopBoardSeed();
+    stopIntro();
+    boardView?.destroy();
+    unbindFeed?.();
+    feedView?.destroy();
+  });
 
   return currentGame;
 }

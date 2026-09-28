@@ -17,12 +17,18 @@ export function snapshotState(currentState, scene) {
       maxHp: scene.bossState.maxHp,
     };
   }
-  if (scene.leaderboard) {
-    next.leaderboard = scene.leaderboard.getRanked().map(([userId, damage, handle]) => ({
-      userId,
-      damage,
-      handle,
-    }));
+  // The Phaser leaderboard this used to read scene.leaderboard.getRanked()
+  // from is gone; scene.damageTotals (every hit, not just ones with a live
+  // fighter — see fighter/index.js's handleHit) is the single per-boss
+  // source both this snapshot and the DOM HUD board seed from.
+  if (scene.damageTotals?.size > 0) {
+    next.leaderboard = [...scene.damageTotals]
+      .sort((a, b) => b[1] - a[1])
+      .map(([userId, damage]) => ({
+        userId,
+        damage,
+        handle: scene.fighters?.get(userId)?.handleText ?? null,
+      }));
   }
   next.currentUserId = scene.currentUserId ?? currentState.currentUserId ?? null;
   if (scene.fighters?.size > 0) {

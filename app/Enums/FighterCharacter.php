@@ -36,4 +36,24 @@ enum FighterCharacter: string
 
         return $cases[($userId + (int) $bossId) % count($cases)];
     }
+
+    /**
+     * The fighting style this character attacks with — mirrors
+     * `attackType` in resources/js/battlefield/config/fighters.js's
+     * FIGHTER_TYPES 1:1; `tests/Unit/Enums/FighterCharacterAttackTypeTest.php`
+     * locks the two in sync.
+     *
+     * @return string one of 'slash'|'blast'|'shuriken'|'blade'|'arrow'
+     */
+    public function attackType(): string
+    {
+        return match ($this) {
+            self::Soldier, self::Swordsman, self::Axeman, self::Orc, self::Werewolf => 'slash',
+            self::Knight, self::ArmoredOrc, self::ArmoredSkeleton, self::GreatswordSkeleton,
+            self::KnightTemplar, self::Lancer => 'blade',
+            self::EliteOrc, self::Slime, self::Werebear, self::Wizard, self::Priest => 'blast',
+            self::Skeleton => 'shuriken',
+            self::Archer, self::OrcRider, self::SkeletonArcher => 'arrow',
+        };
+    }
 }

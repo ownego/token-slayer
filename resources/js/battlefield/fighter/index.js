@@ -3,31 +3,38 @@ import { FIGHTER_TYPES, TIMINGS } from '@battlefield/config.js';
 import { computeFighterPositions, damageScaleMultiplier, fighterDisplayConfig } from '@battlefield/layout.js';
 import { AnimState, AttackType, TextureKey } from '@battlefield/constants.js';
 import { Boss } from '@battlefield/boss.js';
+import { setDepthIfChanged } from '@battlefield/shared/depth.js';
 import { moveOrigin, planRoute } from '@battlefield/move-geometry.js';
 import { resolveFighterPlacement } from '@battlefield/fighter-placement.js';
 import { driftedPositions } from '@battlefield/resync.js';
+import { findHeel } from '@battlefield/shared/heel.js';
+import { glyphKey } from '@battlefield/shared/flair-glyphs.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture, makePermanentFallbackAvatarTexture } from './avatar.js';
-import { FLAIR_FONT_FAMILY, FLAIR_FONT_WEIGHT, ensureFlairFont, isFlairFontReady } from './flair-font.js';
+import { ensureFlairFont, isFlairFontReady } from './flair-font.js';
+import { NAME_DEPTH, NAME_FONT_PX, NAME_STYLE, YOU_NAME_COLOR, youRingSparks } from './name-ring.js';
+import { avatarCenterY } from './avatar-stack.js';
 import {
   buildRingChars,
   clearFlair,
   createFlairState,
-  darkenHex,
+  glyphState,
   hasFlairChanged,
   isFlairActive,
   resolveFlairDuration,
   spinMultiplier,
-  spotlightBoost,
   startFlair,
 } from './flair.js';
 
 // Tiny RPG sprite geometry constants — do not change without re-measuring the atlas.
 const SPRITE_CHAR_HEIGHT = 18;
 const SPRITE_HALF_FRAME  = 50;
-const SPRITE_CHAR_TOP    = 38;
 const SPRITE_CHAR_BOT    = 56;
 
 const HANDLE_MAX_CHARS = 12;
+// The name under the feet: plain outlined text (no pill), above the YOU ring
+// — see ./name-ring.js.
+const NAME_PLATE_FONT_PX = NAME_FONT_PX;
+const NAME_PLATE_STYLE = NAME_STYLE;
 
 // Matches boss/stun.js's own orbiting-star front depth (112) rather than
 // picking a fresh number: that effect has the exact same requirement (an
@@ -41,14 +48,15 @@ const HANDLE_MAX_CHARS = 12;
 // positioned at the boss anchor alongside the projectile/impact depths.
 // 112 clears all of those with margin while staying below the UI-tier
 // overlays (activity bubble 100-101, tooltip 300-301 in bubble.js, the
-// post-kill MVP card 200-202 in leaderboard/mvp.js) that should always
-// render on top of any in-world character effect regardless.
+// kill ceremony's card at depth 200-201 in scene.js's showKillCard) that
+// should always render on top of any in-world character effect regardless.
 const FLAIR_RING_FRONT_DEPTH = 112;
 
-// Ring glyph comet trail: how many echo dots per glyph, and the phase gap
-// (radians) between each one and the glyph proper.
-const FLAIR_TRAIL_LENGTH = 3;
-const FLAIR_TRAIL_GAP = 0.05;
+// Ring glyph ghost: one dim afterimage per glyph, a fixed phase behind it
+// (a single Image, not the old 3-dot Circle trail — cheaper, and the
+// baked-texture glyphs read fine with a single soft echo).
+const FLAIR_GHOST_PHASE_GAP = 0.09;
+const FLAIR_GHOST_ALPHA = 0.28;
 
 // Everything about the flair is sized as a ratio of the fighter's own
 // displaySize, so it stays in proportion as fighters grow with damage.
@@ -66,30 +74,47 @@ const FLAIR_RING_RY_RATIO = 0.47;
 const FLAIR_FONT_RATIO = 0.28;
 const FLAIR_RING_CHAR_STEP = 0.26;
 
-// Glow radius (px) for a ring glyph on the near and far arc. These are also
-// the padding reserved around every glowing Text in the flair: a Phaser Text
-// canvas is sized to its glyph bounds and a shadow blur renders OUTSIDE those
-// bounds, so without padding the halo is clipped away entirely -- the style
-// reads blur 18 while the screen shows none (verified live: a 13px glyph had
-// 10x17 bounds in a 20x34 texture, leaving nowhere for the blur to land).
-// That clipping is why the soft ambient light the approved design has around
-// the character was missing here while the preview showed it.
-const FLAIR_GLOW_BLUR_FRONT = 18;
-const FLAIR_GLOW_BLUR_BACK = 6;
 const FLAIR_SPARKLE_GLOW_BLUR = 12;
 
-// Burst geometry, same reasoning -- these were absolute pixel values, so a
-// damage-grown fighter got a proportionally shrinking burst.
-const FLAIR_SPOKE_LONG_RATIO = 1.65;
-const FLAIR_SPOKE_SHORT_RATIO = 0.85;
-// Where each ray starts, measured out from the burst origin -- the design
-// leaves a small gap so the rays radiate from around the core flare instead
-// of all converging into one solid blob at its centre.
-const FLAIR_SPOKE_INNER_RATIO = 0.13;
-const FLAIR_SPOKE_COUNT = 12;
-const FLAIR_SPOKE_LIFE_MS = 420;
-const FLAIR_CORE_RADIUS_RATIO = 0.12;
-const FLAIR_FLASH_RADIUS_RATIO = 0.18;
+// The new, smaller burst (replacing the old 95px grey disc + 12 pink
+// spokes): a soft glow, a thin expanding ring, a handful of streaks, and a
+// single ✦ pop — all sized off the fighter's own displaySize so it stays in
+// proportion as fighters grow with damage.
+const FLAIR_BURST_GLOW_MS = 260;
+const FLAIR_BURST_RING_MS = 380;
+const FLAIR_BURST_RING_RADIUS_RATIO = 1.1;
+const FLAIR_BURST_STREAK_COUNT = 8;
+
+/**
+ * Reads a fighter type's idle frame 0 alpha channel once and caches its
+ * heel (via `findHeel`) directly on the shared `ftype` config object —
+ * every fighter of that type reuses the same heel forever, no per-instance
+ * work. A cache miss draws the frame into an offscreen canvas (the same
+ * `atlas.getSourceImage()`/`cutX`/`cutY` approach `fighter/preview.js`
+ * already uses to read the atlas without a second image request) and reads
+ * its pixels back with `getImageData`.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {{key: string, heel?: {x:number,y:number}}} ftype
+ * @return {void}
+ */
+function cacheHeel(scene, ftype) {
+  if (ftype.heel) {
+    return;
+  }
+  const frame = scene.textures.getFrame(TextureKey.FIGHTERS, `${ftype.key}-idle-0`);
+  if (!frame) {
+    return;
+  }
+  const { cutX, cutY, cutWidth, cutHeight, source } = frame;
+  const canvas = document.createElement('canvas');
+  canvas.width = cutWidth;
+  canvas.height = cutHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(source.image, cutX, cutY, cutWidth, cutHeight, 0, 0, cutWidth, cutHeight);
+  const { data } = ctx.getImageData(0, 0, cutWidth, cutHeight);
+  ftype.heel = findHeel(data);
+}
 
 /** @param {string} handle @param {number} maxChars @return {string} */
 function truncateHandle(handle, maxChars = HANDLE_MAX_CHARS) {
@@ -99,10 +124,6 @@ function truncateHandle(handle, maxChars = HANDLE_MAX_CHARS) {
   return handle.slice(0, maxChars - 1) + '…';
 }
 
-/** @param {number} displaySize @return {number} */
-function handleFontPx(displaySize) {
-  return Math.max(10, Math.round(displaySize * 0.25));
-}
 
 /** Returns logical avatar pixel size from fighter display size. @param {number} displaySize @return {number} */
 export function avatarPx(displaySize) {
@@ -162,6 +183,7 @@ export class Fighter {
         layout: L,
         bossType,
         fsize: config.displaySize * damageScale,
+        zones: this.scene._zones ?? [],
       };
       // Peeked, not yet consumed — a fighter whose saved position turns out
       // invalid (resolveFighterPlacement falls back to grid) still needs a
@@ -230,6 +252,7 @@ export class Fighter {
       layout: this.scene.layout,
       bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
       fsize: config.displaySize * damageScale,
+      zones: this.scene._zones ?? [],
     });
     this.addFighter(fighter, pos, config);
 
@@ -332,11 +355,16 @@ export class Fighter {
    * characterForBoss() is deterministic per (user, boss), so every existing
    * fighter needs this when the boss changes — not just newly-joined ones,
    * which already get their correct character from handleFighterJoined.
+   * With `animate` (a player equipping a new character from the fighter
+   * sheet) the swap plays out as the approved mockup shows it: the old
+   * fighter dies, a summon circle opens and the new one rises; a boss
+   * change re-skins the whole field at once instead.
    *
    * @param {Array<{user_id: number|string, character: string}>} roster
+   * @param {{animate?: boolean}} [options]
    * @return {void}
    */
-  updateCharacters(roster) {
+  updateCharacters(roster, { animate = false } = {}) {
     for (const { user_id: userId, character } of roster ?? []) {
       const entry = this.scene.fighters.get(userId);
       if (!entry || !character || entry.ftype?.key === character) {
@@ -346,13 +374,57 @@ export class Fighter {
       if (!ftype) {
         continue;
       }
-      entry.ftype = ftype;
-      entry.animState = AnimState.IDLE;
-      entry.body.setTexture(TextureKey.FIGHTERS, `${ftype.key}-idle-0`);
-      const idleAnim = this.scene.anims.get(`${ftype.key}-idle`);
-      if (idleAnim?.frames?.length) {
-        entry.body.play(`${ftype.key}-idle`);
+      const oldKey = entry.ftype?.key;
+      if (animate && !this.scene.reducedMotion && oldKey && this.scene.anims.exists(`${oldKey}-death`)) {
+        this._swapCharacter(entry, ftype);
+      } else {
+        this._applyCharacter(entry, ftype);
       }
+    }
+  }
+
+  /**
+   * Plays the old character's death, then opens a summon circle and plays
+   * the new character rising (its reversed-death summon) before idling.
+   *
+   * @param {object} entry A scene.fighters entry.
+   * @param {object} ftype The new FIGHTER_TYPES entry.
+   * @return {void}
+   */
+  _swapCharacter(entry, ftype) {
+    entry.body.play(`${entry.ftype.key}-death`);
+    entry.body.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (this.scene.isShuttingDown) {
+        return;
+      }
+      this.scene.necromancer?.spawnSummonCircle(entry.pos.x, entry.pos.y);
+      entry.ftype = ftype;
+      entry.body.setTexture(TextureKey.FIGHTERS, `${ftype.key}-death-0`);
+      entry.body.play(`${ftype.key}-summon`);
+      entry.body.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+        if (!this.scene.isShuttingDown) {
+          this._applyCharacter(entry, ftype);
+        }
+      });
+    });
+  }
+
+  /**
+   * Shows a fighter as the given character, idling.
+   *
+   * @param {object} entry A scene.fighters entry.
+   * @param {object} ftype The FIGHTER_TYPES entry.
+   * @return {void}
+   */
+  _applyCharacter(entry, ftype) {
+    entry.ftype = ftype;
+    // the avatar follows the new body's own head height
+    entry.head?.setY(Math.round(avatarCenterY(ftype.key, (entry.baseSize ?? 48) / SPRITE_CHAR_HEIGHT)));
+    entry.animState = AnimState.IDLE;
+    entry.body.setTexture(TextureKey.FIGHTERS, `${ftype.key}-idle-0`);
+    const idleAnim = this.scene.anims.get(`${ftype.key}-idle`);
+    if (idleAnim?.frames?.length) {
+      entry.body.play(`${ftype.key}-idle`);
     }
   }
 
@@ -374,13 +446,63 @@ export class Fighter {
     // Scale so the visible character (18px of the 100px frame) fills `size` logical px
     const scale     = size / SPRITE_CHAR_HEIGHT;
     const legH      = Math.round((SPRITE_CHAR_BOT - SPRITE_HALF_FRAME) * scale);
-    const avatarY   = -Math.round((SPRITE_HALF_FRAME - SPRITE_CHAR_TOP) * scale) - 38;
+    const avatarY   = Math.round(avatarCenterY(ftype.key, scale)); // per fighter, from its own head (avatar-stack.js)
     const avSize    = avatarPx(size);
-    const fontPx    = handleFontPx(size);
-    const maxChars  = Math.max(8, Math.round(size * 0.22));
     const displayName = fighter.handle || fighter.slack_handle || fighter.display_name || '';
 
     const container = this.scene.add.container(pos.x, pos.y).setDepth(2);
+
+    // YOU ring under the viewer's own fighter — added first so it sits behind
+    // the body: a soft glow, the gold ellipse with a fainter inner line, and a
+    // few sparks orbiting it (brighter on the near side).
+    const isYou = Number(fighter.id) === Number(this.scene.currentUserId);
+    if (isYou) {
+      const ringW = size * 1.15;
+      const ringH = ringW * 0.32;
+      const glow = this.scene.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
+      glow.fillStyle(0xfbbf24, 0.16);
+      glow.fillEllipse(0, legH, ringW * 1.35, ringH * 1.6);
+      const youRing = this.scene.add.graphics();
+      youRing.fillStyle(0xfbbf24, 0.1);
+      youRing.fillEllipse(0, legH, ringW, ringH);
+      youRing.lineStyle(2, 0xfbbf24, 1);
+      youRing.strokeEllipse(0, legH, ringW, ringH);
+      youRing.lineStyle(1, 0xfde68a, 0.55);
+      youRing.strokeEllipse(0, legH, ringW * 0.72, ringH * 0.72);
+      container.add([glow, youRing]);
+      this.scene.tweens.add({
+        targets: [youRing, glow],
+        scaleX: 1.06,
+        scaleY: 1.06,
+        alpha: 0.65,
+        duration: TIMINGS.chargeRingPulseMs,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+      if (!this.scene.reducedMotion) {
+        const sparks = this.scene.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
+        container.add(sparks);
+        const orbit = this.scene.tweens.addCounter({
+          from: 0,
+          to: 1,
+          duration: 1000,
+          repeat: -1,
+          onUpdate: () => {
+            if (!sparks.active) {
+              orbit.stop();
+
+              return;
+            }
+            sparks.clear();
+            for (const p of youRingSparks(this.scene.time.now, 4, ringW, ringH)) {
+              sparks.fillStyle(0xfff3c4, p.alpha);
+              sparks.fillRect(p.x - 1.5, legH + p.y - 1.5, 3, 3);
+            }
+          },
+        });
+      }
+    }
 
     // Body sprite — starts in idle animation (waiting state)
     const body = this.scene.add.sprite(0, 0, TextureKey.FIGHTERS, `${ftype.key}-idle-0`).setScale(scale);
@@ -388,6 +510,7 @@ export class Fighter {
     if (idleAnim?.frames?.length) {
       body.play(ftype.key + '-idle');
     }
+    cacheHeel(this.scene, ftype);
     container.add(body);
     const avatarUrl = fighter.id ? `/avatars/${fighter.id}?v=${Date.now()}` : null;
     const initialKey = this.scene.textures.exists(`fighter-${fighter.id}`)
@@ -399,14 +522,14 @@ export class Fighter {
     head.on('pointerout', () => this.scene.bubble?.hideFighterTooltip?.(fighter.id));
     container.add(head);
 
-    // Handle label (world-space)
+    // Name plate — a dark pill under the feet, matching the DOM HUD's own
+    // look (see NAME_PLATE_STYLE); the old yellow handle text above the
+    // avatar is gone.
     const handle = options.showHandle === false
       ? null
-      : this.scene.addSharpText(pos.x, pos.y + legH + fontPx, truncateHandle(displayName, maxChars), {
-          fontFamily: 'monospace',
-          fontSize: `${fontPx}px`,
-          color: '#fbbf24',
-        });
+      : this.scene.addSharpText(pos.x, pos.y + legH + NAME_PLATE_FONT_PX, truncateHandle(displayName), NAME_PLATE_STYLE)
+        .setDepth(NAME_DEPTH)
+        .setColor(isYou ? YOU_NAME_COLOR : NAME_PLATE_STYLE.color);
 
     this.scene.fighters.set(fighter.id, {
       id: fighter.id,
@@ -554,12 +677,11 @@ export class Fighter {
 
       if (entry.handle) {
         this.scene.tweens.killTweensOf(entry.handle);
-        const scale  = entry.sprite.scaleX;
-        const fontPx = handleFontPx(entry.displaySize);
+        const scale = entry.sprite.scaleX;
         this.scene.tweens.add({
           targets: entry.handle,
           x: target.x,
-          y: target.y + entry.legH * scale + fontPx,
+          y: target.y + entry.legH * scale + NAME_PLATE_FONT_PX,
           duration,
           ease: 'Linear',
         });
@@ -689,12 +811,14 @@ export class Fighter {
 
   /**
    * Creates the orbiting ring of glyphs (the model's name, repeated
-   * marquee-style — see flair.js's buildRingChars) and starts the per-tick
-   * updater that keeps it circling the fighter for the rest of the flair's
-   * lifetime. World-space Text objects rather than children of
-   * `fighter.sprite`, matching boss/stun.js's orbiting-star precedent:
-   * a container renders all its children at one depth, but half the ring
-   * must render BEHIND the fighter and half in FRONT of it each frame.
+   * marquee-style — see flair.js's buildRingChars) from the shared glyph
+   * cache (`shared/flair-glyphs.js`'s `createGlyphCache`, baked once per
+   * unique char/color/size onto `this.scene.flairGlyphCache`) instead of a
+   * fresh Phaser Text per glyph per flair — the ~20-Text-object burst that
+   * used to freeze the frame for 125-155ms. World-space Images rather than
+   * children of `fighter.sprite`, matching boss/stun.js's orbiting-star
+   * precedent: a container renders all its children at one depth, but half
+   * the ring must render BEHIND the fighter and half in FRONT of it.
    *
    * @param {object} fighter
    * @return {void}
@@ -707,41 +831,30 @@ export class Fighter {
     const label = fighter.flairState.flair.toUpperCase();
     const size = fighter.displaySize ?? 45;
     const fontPx = Math.max(9, Math.round(FLAIR_FONT_RATIO * size));
-    const deep = darkenHex(fighter.flairColor, 0.65);
-    const colorInt = Phaser.Display.Color.HexStringToColor(fighter.flairColor).color;
+    const cache = this.scene.flairGlyphCache;
+
+    // Drives flair.js's glyphState intro ramp: fixed at the ring's own
+    // creation time, never re-set by a same-flair refresh (hasFlairChanged
+    // gates whether this method even runs again).
+    fighter.flairIntroStart = this.scene.time.now;
 
     // Tighter than flair.js's own default step: at this ring's radius the
     // default left visible gaps between letters, so the name read as
     // scattered characters rather than one flowing word.
-    fighter.flairRing = buildRingChars(label, FLAIR_RING_CHAR_STEP).map(({ ch, phase }) => ({
-      ch,
-      phase,
-      // null so the very first updateFlairRing tick always sets an initial
-      // shadow (see the toggle logic there for why this isn't set here).
-      glowBack: null,
-      // addSharpText (not plain scene.add.text): the resolution-doubled
-      // render this helper applies is what every other piece of battlefield
-      // text uses to stay crisp -- a bare add.text here rendered visibly
-      // blurrier than the rest of the scene.
-      // padding is what makes the glow visible at all: a Text's canvas is
-      // sized to its glyph bounds, and a shadow blur renders OUTSIDE those
-      // bounds, so without room reserved for it the halo is clipped away
-      // entirely -- the style reads blur 18 while the screen shows none
-      // (verified live: a 13px glyph had a 10x17 bounds and a 20x34
-      // texture, leaving nowhere for an 18px blur to land).
-      text: this.scene.addSharpText(0, 0, ch, {
-        fontFamily: FLAIR_FONT_FAMILY, fontStyle: FLAIR_FONT_WEIGHT,
-        fontSize: `${fontPx}px`, color: fighter.flairColor,
-        stroke: deep, strokeThickness: 2,
-        padding: { x: FLAIR_GLOW_BLUR_FRONT, y: FLAIR_GLOW_BLUR_FRONT },
-      }),
-      // A short comet trail of fading echo dots behind each glyph -- sells
-      // continuous orbit motion rather than a label that merely teleports
-      // between frames. Circles (not Text), so trailing them costs only
-      // cheap position/alpha updates, same as the main glyphs.
-      trail: Array.from({ length: FLAIR_TRAIL_LENGTH }, () =>
-        this.scene.add.circle(0, 0, Math.max(1.5, 0.055 * size), colorInt, 1)),
-    }));
+    fighter.flairRing = buildRingChars(label, FLAIR_RING_CHAR_STEP).map(({ ch, phase }, index) => {
+      const drawable = ch.trim().length > 0;
+      const key = drawable ? cache.get(ch, fighter.flairColor, fontPx) : null;
+      return {
+        ch,
+        phase,
+        index,
+        image: drawable ? this.scene.add.image(0, 0, key) : null,
+        // A single dim afterimage per glyph (not the old 3-dot Circle
+        // trail) — cheap, and the baked-texture glyphs already read as a
+        // continuous ring without needing more than one echo.
+        ghost: drawable ? this.scene.add.image(0, 0, key).setAlpha(FLAIR_GHOST_ALPHA) : null,
+      };
+    });
 
     // A handful of independently-twinkling sparkles orbiting slightly wider
     // than the name ring -- present in the approved design but missing from
@@ -765,32 +878,43 @@ export class Fighter {
       callback: () => this.updateFlairRing(fighter),
     });
 
-    // A Phaser Text bakes its glyphs the moment it is created, so a ring
-    // built during the very first page load -- before the webfont has
-    // finished downloading -- would render in the monospace fallback for its
-    // whole life. Re-applying the family once the face lands forces the
-    // re-rasterize; the identity check makes sure a ring that has since been
-    // replaced or torn down is left alone.
+    // A texture baked before the page's Pixelify Sans <link> has finished
+    // downloading rasterizes in the browser's fallback face and never
+    // re-draws itself. Re-baking simply means clearing the stale canvas
+    // texture so the cache's own get() recreates it once the font lands;
+    // the identity check makes sure a ring that has since been replaced or
+    // torn down is left alone.
     if (!isFlairFontReady()) {
       const built = fighter.flairRing;
       ensureFlairFont().then(() => {
         if (fighter.flairRing !== built) {
           return;
         }
-        built.forEach(({ text }) => text.active && text.setFontFamily(FLAIR_FONT_FAMILY));
+        for (const entry of built) {
+          if (!entry.image) {
+            continue;
+          }
+          const key = glyphKey(entry.ch, fighter.flairColor, fontPx);
+          if (this.scene.textures.exists(key)) {
+            this.scene.textures.remove(key);
+          }
+          const freshKey = cache.get(entry.ch, fighter.flairColor, fontPx);
+          entry.image.setTexture(freshKey);
+          entry.ghost.setTexture(freshKey);
+        }
       });
     }
   }
 
   /**
    * Per-tick position/depth/scale update for one fighter's orbit ring and
-   * its sparkles. Advances the shared orbit angle by real elapsed time (not
-   * a fixed step), sped up by {@see spinMultiplier} right after a
-   * triggering hit, and places each glyph on an ellipse around the fighter:
-   * the near/front arc (sinA >= 0) renders full-size in front of the
-   * sprite, brightened further by {@see spotlightBoost} as it sweeps
-   * through the closest point; the far arc renders smaller and dimmer
-   * behind it.
+   * its sparkles, via flair.js's `glyphState` — advances the shared orbit
+   * angle by real elapsed time (not a fixed step), sped up by
+   * {@see spinMultiplier} right after a triggering hit, and places each
+   * glyph on an ellipse around the fighter. The ghost is evaluated at the
+   * same angle minus a small fixed lag, so it reads as trailing the real
+   * glyph through the same front/back/intro/outro states rather than
+   * merely being a static dim copy.
    *
    * The front depth ({@see FLAIR_RING_FRONT_DEPTH} — see its own comment
    * for the full reasoning) keeps the ring/name visible above every combat
@@ -818,43 +942,31 @@ export class Fighter {
     const headOffY = -Math.round(0.15 * size);
     const cx = fighter.sprite.x;
     const cy = fighter.sprite.y + headOffY;
+    const opts = {
+      introStart: fighter.flairIntroStart,
+      // Live remaining time, not a value snapshotted once — glyphState's
+      // outro drift only starts inside its own last ~700ms.
+      outroLeft: fighter.flairState.expiresAt - now,
+      reduced: this.scene.reducedMotion,
+    };
 
     fighter.flairRing.forEach(entry => {
-      const { text, phase, trail } = entry;
-      const a = fighter.flairAngle + phase;
-      const sinA = Math.sin(a);
-      const back = sinA < 0;
-      const boost = back ? 0 : spotlightBoost(a);
-      text.setPosition(cx + Math.cos(a) * rx, cy + sinA * ry);
-      text.setDepth(back ? 1 : FLAIR_RING_FRONT_DEPTH);
-      text.setScale((back ? 0.7 : 1) * (1 + 0.4 * boost));
-      text.setAlpha(back ? 0.55 : 1);
-
-      // Glow only re-set on an ACTUAL front/back transition (roughly twice
-      // per lap), not every tick -- Text.setShadow* unconditionally
-      // re-rasterizes the glyph's texture, so calling it 60 times a second
-      // per glyph would be a real, avoidable cost. This still gives a
-      // strong, visibly-different glow between the near and far arc, just
-      // not one that continuously varies within the front arc itself the
-      // way the (cheap, plain-canvas) preview's does.
-      if (entry.glowBack !== back) {
-        entry.glowBack = back;
-        text.setShadow(0, 0, fighter.flairColor, back ? FLAIR_GLOW_BLUR_BACK : FLAIR_GLOW_BLUR_FRONT, false, true);
+      if (!entry.image) {
+        return;
       }
+      const state = glyphState(fighter.flairAngle, entry.phase, entry.index, now, opts);
+      const px = cx + state.x * rx;
+      const py = cy + state.y * ry + state.wave;
+      entry.image.setPosition(px, py);
+      entry.image.setScale(state.scale);
+      entry.image.setAlpha(state.alpha);
+      setDepthIfChanged(entry.image, state.front ? FLAIR_RING_FRONT_DEPTH : 1);
 
-      // Each echo dot lags the glyph by its own small phase offset and is
-      // styled by ITS OWN current side, not the main glyph's -- a dot can
-      // legitimately be a step behind on the other side of the front/back
-      // boundary right as the glyph crosses it.
-      trail.forEach((dot, i) => {
-        const trailAngle = fighter.flairAngle + phase - (i + 1) * FLAIR_TRAIL_GAP;
-        const trailSinA = Math.sin(trailAngle);
-        const trailBack = trailSinA < 0;
-        dot.setPosition(cx + Math.cos(trailAngle) * rx, cy + trailSinA * ry);
-        dot.setDepth(trailBack ? 1 : FLAIR_RING_FRONT_DEPTH);
-        dot.setScale(trailBack ? 0.8 : 1);
-        dot.setAlpha((1 - (i + 1) / (FLAIR_TRAIL_LENGTH + 1)) * (trailBack ? 0.2 : 0.35));
-      });
+      const ghostState = glyphState(fighter.flairAngle - FLAIR_GHOST_PHASE_GAP, entry.phase, entry.index, now, opts);
+      entry.ghost.setPosition(cx + ghostState.x * rx, cy + ghostState.y * ry + ghostState.wave);
+      entry.ghost.setScale(ghostState.scale);
+      entry.ghost.setAlpha(ghostState.alpha * FLAIR_GHOST_ALPHA);
+      setDepthIfChanged(entry.ghost, ghostState.front ? FLAIR_RING_FRONT_DEPTH : 1);
     });
 
     const sparkleRx = rx * 1.22;
@@ -870,7 +982,7 @@ export class Fighter {
 
   /**
    * Tears down one fighter's orbit ring: stops its ticker and destroys every
-   * glyph. Safe to call when no ring is active.
+   * glyph and its ghost. Safe to call when no ring is active.
    *
    * @param {object} fighter
    * @return {void}
@@ -878,9 +990,9 @@ export class Fighter {
   stopFlairRing(fighter) {
     fighter.flairRingTicker?.remove();
     fighter.flairRingTicker = null;
-    fighter.flairRing?.forEach(({ text, trail }) => {
-      if (text.scene) text.destroy();
-      trail.forEach(dot => { if (dot.scene) dot.destroy(); });
+    fighter.flairRing?.forEach(({ image, ghost }) => {
+      if (image?.scene) image.destroy();
+      if (ghost?.scene) ghost.destroy();
     });
     fighter.flairRing = null;
     fighter.flairSparkles?.forEach(({ text }) => { if (text.scene) text.destroy(); });
@@ -888,16 +1000,13 @@ export class Fighter {
   }
 
   /**
-   * One-shot "toả ra" burst that plays alongside every triggering flair hit:
-   * two staggered shockwave rings and upward sparkles from the fighter's
-   * feet, plus a bright core flash and a starburst of spokes at chest
-   * height — both additively blended so they read as stacking light rather
-   * than a flat color wash. Purely decorative and self-cleaning — nothing
-   * here is tracked on `fighter` beyond a `flairBurstAt` timestamp, used only
-   * to skip re-bursting when a hit lands while the previous burst (≤850ms) is
-   * still animating — realistic hit cadence is seconds apart, so this only
-   * guards a pathological run of hits from stacking unbounded Graphics/
-   * particle objects, and never affects the orbit ring itself.
+   * One-shot burst that plays alongside every triggering flair hit: a soft
+   * ADD-blended glow, a thin ring expanding to ~50px, a handful of short
+   * streaks, and a single ✦ pop — replacing the old 95px grey disc + 12
+   * pink spokes with something smaller and cleaner. Purely decorative and
+   * self-cleaning — nothing here is tracked on `fighter` beyond a
+   * `flairBurstAt` timestamp, used only to skip re-bursting when a hit
+   * lands while the previous burst (≤300ms) is still animating.
    *
    * @param {object} fighter
    * @return {void}
@@ -908,202 +1017,63 @@ export class Fighter {
       return;
     }
     fighter.flairBurstAt = now;
+    if (this.scene.reducedMotion || !fighter.pos) {
+      return;
+    }
 
     const color = fighter.flairColor;
     const colorInt = Phaser.Display.Color.HexStringToColor(color).color;
-    const footY = Math.round((fighter.baseSize ?? 48) / 2.2);
-    const ringRadius = Math.max(10, Math.round((fighter.baseSize ?? 48) * 0.22));
+    const size = fighter.displaySize ?? 45;
+    const footY = Math.round(size / 2.2);
+    const x = fighter.pos.x;
+    const y = fighter.pos.y - footY;
 
-    [0, 100].forEach(delayMs => {
-      this.scene.time.delayedCall(delayMs, () => {
-        if (!fighter.sprite?.scene) {
-          return;
-        }
-        const ring = this.scene.add.graphics();
-        ring.lineStyle(2, colorInt, 0.9);
-        ring.strokeCircle(0, 0, ringRadius);
-        ring.setPosition(0, footY);
-        fighter.sprite.add(ring);
+    const glow = this.scene.add.image(x, y, TextureKey.SOFTGLOW).setBlendMode(Phaser.BlendModes.ADD).setTint(colorInt).setScale(0.3).setAlpha(0.9).setDepth(1);
+    this.scene.tweens.add({
+      targets: glow, scale: 1.05, alpha: 0, duration: FLAIR_BURST_GLOW_MS, ease: 'Cubic.easeOut',
+      onComplete: () => glow.destroy(),
+    });
+
+    const ringRadius = Math.max(10, FLAIR_BURST_RING_RADIUS_RATIO * size);
+    const ring = this.scene.add.graphics().setBlendMode(Phaser.BlendModes.ADD).setDepth(1);
+    const ringState = { p: 0 };
+    this.scene.tweens.add({
+      targets: ringState, p: 1, duration: FLAIR_BURST_RING_MS, ease: 'Cubic.easeOut',
+      onUpdate: () => {
+        ring.clear();
+        ring.lineStyle(2 - ringState.p, colorInt, 1 - ringState.p);
+        ring.strokeCircle(x, y, 6 + ringState.p * (ringRadius - 6));
+      },
+      onComplete: () => ring.destroy(),
+    });
+
+    const streaks = this.scene.add.particles(x, y, TextureKey.SPARK_STREAK, {
+      angle: { min: 0, max: 360 },
+      speed: { min: 90, max: 140 },
+      scale: { start: 0.9, end: 0.2 },
+      alpha: { start: 1, end: 0 },
+      lifespan: { min: 200, max: 320 },
+      tint: colorInt,
+      blendMode: 'ADD',
+      emitting: false,
+    }).setDepth(1);
+    streaks.explode(FLAIR_BURST_STREAK_COUNT);
+    this.scene.time.delayedCall(400, () => { if (streaks.scene) streaks.destroy(); });
+
+    const pop = this.scene.addSharpText(x, y, '✦', { fontFamily: 'monospace', fontSize: '18px', color }).setDepth(1).setScale(0.4).setAlpha(0);
+    this.scene.tweens.add({
+      targets: pop, scale: 1.3, alpha: 1, duration: 120, ease: 'Back.easeOut',
+      onComplete: () => {
         this.scene.tweens.add({
-          targets: ring,
-          scaleX: 2,
-          scaleY: 2,
-          alpha: 0,
-          duration: 600,
-          ease: 'Sine.easeOut',
-          onComplete: () => { if (ring.scene) ring.destroy(); },
+          targets: pop, alpha: 0, scale: 0.9, duration: 220, ease: 'Quad.easeIn',
+          onComplete: () => pop.destroy(),
         });
-      });
+      },
     });
-
-    if (!fighter.pos) {
-      return;
-    }
-    const emitter = this.scene.add.particles(fighter.pos.x, fighter.pos.y + footY, TextureKey.SPARK, {
-      tint: { onEmit: () => colorInt },
-      scale: { start: 0.6, end: 0 },
-      alpha: { start: 0.9, end: 0 },
-      speedX: { min: -30, max: 30 },
-      speedY: { min: -90, max: -40 },
-      lifespan: { min: 500, max: 750 },
-      blendMode: Phaser.BlendModes.ADD,
-    });
-    // Matches charge.js's feet-level emitters, which explicitly layer at
-    // depth 1 (below the fighter container's depth 2) rather than the
-    // default depth 0.
-    emitter.setDepth(1);
-    emitter.explode(8);
-    this.scene.time.delayedCall(850, () => { if (emitter.scene) emitter.destroy(); });
-
-    this.burstCorePop(fighter, colorInt, footY);
-    this.burstSpokes(fighter, colorInt, footY);
-    this.burstFlash(fighter, colorInt, footY);
 
     // A light shake, matching the existing convention (impact.js,
-    // boss/stun.js both shake the main camera on a hit/stun). The approved
-    // design's screen flash is a whole-viewport effect; on the shared,
-    // multi-fighter battlefield that would fire for every teammate's Fable
-    // hit and flash the WHOLE room's screen each time, which is disruptive
-    // in a way it never was in the single-fighter preview -- kept as a
-    // localized burstFlash() instead (see below), with just a light shake
-    // standing in for the screen-wide "impact" cue.
+    // boss/stun.js both shake the main camera on a hit/stun).
     this.scene.cameras.main.shake(160, 0.003);
-  }
-
-  /**
-   * A bright white-to-color flash at chest height, additively blended so it
-   * reads as a hot flare rather than a flat colored disc.
-   *
-   * @param {object} fighter
-   * @param {number} colorInt
-   * @param {number} footY
-   * @return {void}
-   */
-  burstCorePop(fighter, colorInt, footY) {
-    const radius = Math.max(3, FLAIR_CORE_RADIUS_RATIO * (fighter.displaySize ?? 45));
-    const core = this.scene.add.circle(fighter.pos.x, fighter.pos.y - footY, radius, 0xffffff, 1);
-    core.setBlendMode(Phaser.BlendModes.ADD);
-    core.setDepth(1); // behind the character, matching the approved artifact design
-    this.scene.tweens.add({
-      targets: core,
-      scale: 7,
-      alpha: 0,
-      duration: 260,
-      ease: 'Cubic.easeOut',
-      onUpdate: tween => core.setFillStyle(tween.progress > 0.35 ? colorInt : 0xffffff),
-      onComplete: () => core.destroy(),
-    });
-  }
-
-  /**
-   * A big, soft ambient wash around the fighter, standing in for the
-   * approved design's whole-canvas screen flash (see the comment in
-   * burstFlair() for why this is scoped local rather than camera-wide).
-   * Distinct from {@see burstCorePop} by being much larger and dimmer --
-   * a bloom, not a tight flare.
-   *
-   * @param {object} fighter
-   * @param {number} colorInt
-   * @param {number} footY
-   * @return {void}
-   */
-  burstFlash(fighter, colorInt, footY) {
-    const radius = Math.max(5, FLAIR_FLASH_RADIUS_RATIO * (fighter.displaySize ?? 45));
-    const flash = this.scene.add.circle(fighter.pos.x, fighter.pos.y - footY, radius, 0xffffff, 0.35);
-    flash.setBlendMode(Phaser.BlendModes.ADD);
-    flash.setDepth(1); // behind the character, matching the approved artifact design
-    this.scene.tweens.add({
-      targets: flash,
-      scale: 12,
-      alpha: 0,
-      duration: 320,
-      ease: 'Cubic.easeOut',
-      onUpdate: tween => flash.setFillStyle(tween.progress > 0.3 ? colorInt : 0xffffff),
-      onComplete: () => flash.destroy(),
-    });
-  }
-
-  /**
-   * A starburst of spokes shooting outward from chest height on trigger —
-   * alternating long/short lengths with a little angular jitter reads as an
-   * irregular explosion rather than a mechanical "sun". Additively blended,
-   * one shared Graphics object redrawn each tween tick rather than N
-   * separate Graphics/Tween pairs per spoke.
-   *
-   * @param {object} fighter
-   * @param {number} colorInt
-   * @param {number} footY
-   * @return {void}
-   */
-  burstSpokes(fighter, colorInt, footY) {
-    const originX = fighter.pos.x;
-    const originY = fighter.pos.y - footY;
-    const size = fighter.displaySize ?? 45;
-    const longLen = FLAIR_SPOKE_LONG_RATIO * size;
-    const shortLen = FLAIR_SPOKE_SHORT_RATIO * size;
-    const inner = FLAIR_SPOKE_INNER_RATIO * size;
-    const spokes = Array.from({ length: FLAIR_SPOKE_COUNT }, (_, i) => {
-      const a = (i / FLAIR_SPOKE_COUNT) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.11, 0.11);
-      const long = i % 3 === 0;
-      return {
-        cos: Math.cos(a),
-        sin: Math.sin(a),
-        len: (long ? longLen : shortLen) * Phaser.Math.FloatBetween(0.85, 1.15),
-        halfWidth: long ? 2.2 : 1.1,
-      };
-    });
-
-    const g = this.scene.add.graphics();
-    g.setBlendMode(Phaser.BlendModes.ADD);
-    g.setDepth(1); // behind the character, matching the approved artifact design
-
-    const draw = (growth, fade) => {
-      g.clear();
-      spokes.forEach(({ cos, sin, len, halfWidth }) => {
-        const tipLen = Math.max(inner + 1, len * growth);
-        const baseX = originX + cos * inner;
-        const baseY = originY + sin * inner;
-        // A filled triangle, not a stroked line: the design's rays taper to
-        // a point and fade out along their own length via a canvas linear
-        // gradient, which Phaser's Graphics has no equivalent for. Geometry
-        // carries the taper instead -- a wide base collapsing to a single
-        // tip vertex -- and a shorter, brighter white triangle stacked over
-        // the same base reproduces the white-hot -> family-color falloff
-        // additively. A uniform-width lineBetween read as a blunt spoke.
-        const perpX = -sin * halfWidth;
-        const perpY = cos * halfWidth;
-        g.fillStyle(colorInt, fade);
-        g.fillTriangle(
-          baseX + perpX, baseY + perpY,
-          baseX - perpX, baseY - perpY,
-          originX + cos * tipLen, originY + sin * tipLen,
-        );
-        g.fillStyle(0xffffff, fade * 0.85);
-        g.fillTriangle(
-          baseX + perpX * 0.7, baseY + perpY * 0.7,
-          baseX - perpX * 0.7, baseY - perpY * 0.7,
-          originX + cos * (inner + (tipLen - inner) * 0.32),
-          originY + sin * (inner + (tipLen - inner) * 0.32),
-        );
-      });
-    };
-
-    // One tween over the whole life instead of grow-then-fade back to back:
-    // the design holds the rays at full brightness for a beat after they
-    // finish extending, and only then fades them.
-    const state = { p: 0 };
-    this.scene.tweens.add({
-      targets: state,
-      p: 1,
-      duration: FLAIR_SPOKE_LIFE_MS,
-      ease: 'Linear',
-      onUpdate: () => {
-        const growth = Math.min(1, state.p / 0.35);
-        const fade = state.p < 0.55 ? 1 : Math.max(0, 1 - (state.p - 0.55) / 0.45);
-        draw(Phaser.Math.Easing.Cubic.Out(growth), fade);
-      },
-      onComplete: () => g.destroy(),
-    });
   }
 
   /**
@@ -1199,15 +1169,11 @@ export class Fighter {
       }
 
       const scale   = entry.sprite.scaleX;
-      const fontPx  = handleFontPx(newSize);
-      const maxChrs = Math.max(8, Math.round(newSize * 0.22));
-      const handleY = target.y + entry.legH * scale + fontPx;
+      const handleY = target.y + entry.legH * scale + NAME_PLATE_FONT_PX;
       if (config.showHandle && !entry.handle) {
-        entry.handle = this.scene.addSharpText(target.x, handleY, truncateHandle(entry.handleText, maxChrs), {
-          fontFamily: 'monospace',
-          fontSize: `${fontPx}px`,
-          color: '#fbbf24',
-        });
+        entry.handle = this.scene.addSharpText(target.x, handleY, truncateHandle(entry.handleText), NAME_PLATE_STYLE)
+          .setDepth(NAME_DEPTH)
+          .setColor(Number(entry.id) === Number(this.scene.currentUserId) ? YOU_NAME_COLOR : NAME_PLATE_STYLE.color);
       } else if (!config.showHandle && entry.handle) {
         entry.handle.destroy();
         entry.handle = null;
@@ -1359,19 +1325,33 @@ export class Fighter {
     this.scene.lastKnownBossHp = payload.boss_hp_after;
 
     const isKillShot = (payload.boss_hp_after ?? 1) <= 0;
-    if (payload.damage > 0 && fighter) {
+    // Counts toward the boss totals (and the HUD board they feed) for every
+    // hitter, not only ones with a fighter currently on the field — the
+    // visual grow/rescale below still needs a real sprite, so it stays
+    // gated on `fighter`.
+    if (payload.damage > 0) {
       const prev = this.scene.damageTotals.get(payload.user_id) ?? 0;
       this.scene.damageTotals.set(payload.user_id, prev + payload.damage);
-      // Update the canonical rest scale now so the attack animation about to
-      // run settles onto it; the visual grow tween itself stays delayed.
-      fighter.damageScale = damageScaleMultiplier(prev + payload.damage, this.scene.bossState?.maxHp);
-      this.scene.time.delayedCall(isKillShot ? 720 : 120, () => {
-        this.rescaleFighterByDamage(payload.user_id);
-      });
+      if (fighter) {
+        // Update the canonical rest scale now so the attack animation about to
+        // run settles onto it; the visual grow tween itself stays delayed.
+        fighter.damageScale = damageScaleMultiplier(prev + payload.damage, this.scene.bossState?.maxHp);
+        this.scene.time.delayedCall(isKillShot ? 720 : 120, () => {
+          this.rescaleFighterByDamage(payload.user_id);
+        });
+      }
     }
     const onImpact = () => {
-      this.scene.leaderboard?.onHit(payload.user_id, payload.damage, payload.slack_handle);
-      this.scene.impact.apply(payload.boss_hp_after, hitTarget);
+      // A hit for the boss that just replaced the one the kill ceremony is
+      // still counting down for — bossState (above) already moved on, but
+      // its visuals (damage number, plate drop) wait for the ceremony too,
+      // or they'd land on the old boss's death scene.
+      const showImpact = () => this.scene.impact.apply(payload.boss_hp_after, hitTarget, payload.user_id);
+      if (this.scene.spawnGate) {
+        this.scene.spawnGate.hold(showImpact);
+      } else {
+        showImpact();
+      }
       if (this.scene.hoveredUserId === payload.user_id) {
         this.scene.bubble?.showFighterTooltip?.(payload.user_id);
       }

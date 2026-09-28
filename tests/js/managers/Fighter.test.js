@@ -151,4 +151,85 @@ describe('handleHit', () => {
 
     expect(entry.pos).toEqual({ x: 650, y: 460 });
   });
+
+  // The HUD board (hud/board-view.js, via rankBoard) reads scene.damageTotals
+  // directly now that the Phaser leaderboard is gone — a hitter with no
+  // fighter currently on the field (e.g. joined via hook mid-fight before
+  // their sprite spawned) must still count, or the board silently disagrees
+  // with the real damage dealt.
+  test('a hit from someone without a fighter on the field still counts toward the boss totals', () => {
+    const scene = {
+      layout: LAYOUTS.landscape,
+      bossState: { number: 0, currentHp: 1000, maxHp: 1000 },
+      fighters: new Map(),
+      charges: new Map(),
+      damageTotals: new Map(),
+      time: { now: 0, delayedCall() {} },
+      tweens: { killTweensOf() {}, add(cfg) { return cfg; } },
+    };
+
+    new Fighter(scene).handleHit({ user_id: 99, damage: 500, boss_hp_after: 500 });
+
+    expect(scene.damageTotals.get(99)).toBe(500);
+  });
+});
+
+describe('updateCharacters', () => {
+  // The fighter sheet's equip lands on the field the way the approved
+  // mockup shows it: the old fighter dies, a summon circle opens, the new
+  // one rises — not a silent texture swap.
+  const makeSwapScene = ({ reducedMotion = false } = {}) => {
+    const onceHandlers = [];
+    const body = {
+      play: vi.fn(),
+      setTexture: vi.fn(),
+      once: vi.fn((event, cb) => onceHandlers.push(cb)),
+    };
+    const entry = { id: 1, ftype: { key: 'soldier' }, pos: { x: 100, y: 200 }, body, animState: 'idle' };
+    const scene = {
+      fighters: new Map([[1, entry]]),
+      anims: { exists: () => true, get: () => ({ frames: [1, 2, 3] }) },
+      necromancer: { spawnSummonCircle: vi.fn() },
+      reducedMotion,
+      isShuttingDown: false,
+    };
+
+    return { scene, entry, body, finishAnim: () => onceHandlers.shift()?.() };
+  };
+
+  test('plays the old fighter\'s death, then a summon circle and the new fighter rising, then idle', () => {
+    const { scene, entry, body, finishAnim } = makeSwapScene();
+    const fighter = new Fighter(scene);
+
+    fighter.updateCharacters([{ user_id: 1, character: 'wizard' }], { animate: true });
+    expect(body.play).toHaveBeenLastCalledWith('soldier-death');
+    expect(body.setTexture).not.toHaveBeenCalled();
+
+    finishAnim();
+    expect(scene.necromancer.spawnSummonCircle).toHaveBeenCalledWith(100, 200);
+    expect(entry.ftype.key).toBe('wizard');
+    expect(body.play).toHaveBeenLastCalledWith('wizard-summon');
+
+    finishAnim();
+    expect(body.play).toHaveBeenLastCalledWith('wizard-idle');
+  });
+
+  test('swaps at once under reduced motion', () => {
+    const { scene, entry, body } = makeSwapScene({ reducedMotion: true });
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard' }], { animate: true });
+
+    expect(entry.ftype.key).toBe('wizard');
+    expect(body.play).toHaveBeenLastCalledWith('wizard-idle');
+    expect(scene.necromancer.spawnSummonCircle).not.toHaveBeenCalled();
+  });
+
+  test('a boss change re-skins the whole field at once, without a death/summon per fighter', () => {
+    const { scene, entry, body } = makeSwapScene();
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard' }]);
+
+    expect(entry.ftype.key).toBe('wizard');
+    expect(body.play).toHaveBeenLastCalledWith('wizard-idle');
+  });
 });

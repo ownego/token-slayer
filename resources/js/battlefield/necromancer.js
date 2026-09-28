@@ -227,7 +227,7 @@ export class Necromancer {
   _pickSummonSpot(targetX, targetY) {
     const L = this.scene.layout;
     const bossType = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
-    const ctx = { layout: L, bossType, fsize: SUMMON_SPOT_FSIZE };
+    const ctx = { layout: L, bossType, fsize: SUMMON_SPOT_FSIZE, zones: this.scene._zones ?? [] };
     // Appear on whichever side points back toward screen-center, so the
     // Necromancer favors open middle space over crowding a screen edge.
     const preferLeft = targetX > L.logicalWidth / 2;

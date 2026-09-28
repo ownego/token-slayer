@@ -7,7 +7,7 @@ The deep operational guide is the `battlefield` skill (`.claude/skills/battlefie
 1. **Snapshot round-trip.** `snapshotState()` output must stay shape-compatible with the `data-battlefield-state` boot payload (built in `resources/views/livewire/battlefield.blade.php` from `App\Livewire\Battlefield`; shape in the `battlefield` skill). On an orientation flip `index.js`'s `applyModeChange` snapshots the scene, resizes the same `Phaser.Game`, and `scene.restart()`s it with the snapshot as `initialState` — `create()` runs again from scratch, so any state not captured in the snapshot is silently lost on rotate.
 2. **Teardown symmetry.** Everything created via `scene.add.*`, tweens, timers, and `bus.on` must be released in `shutdown`. Leaks only surface after long sessions.
 3. **Sprite sheets.** Fighter sheets are `frameWidth: 100`. Never upscale (a Real-ESRGAN attempt produced broken 19200×3200 sheets). Boss sheets carry their own per-type frame data in `resources/js/battlefield/config/bosses.js`.
-4. **Boss cycle.** `Boss.bossTypeFor(number)` = `BOSS_TYPES[number % BOSS_TYPES.length]` — reordering or inserting into `BOSS_TYPES` changes which visual each boss number gets (including the one currently up), nothing else — the server knows only the boss `number`.
+4. **Boss cycle.** `Boss.bossTypeFor(number)` = `BOSS_TYPES[number % BOSS_TYPES.length]` — reordering or inserting into `BOSS_TYPES` changes which visual each boss number gets (including the one currently up), nothing else — the server knows only the boss `number`. Every boss sheet must fit a 4096px GPU texture (locked by `tests/js/boss-assets.test.js`, which scans every PNG under `public/assets/battlefield/bosses`) — re-pack a sheet into more, narrower rows rather than adding a wider one; Phaser numbers spritesheet frames row-major, so re-flowing the same frame order at a new column count keeps every `idleStart`/`moveStart`/`attackStart`/`hurtStart` index valid without touching `bosses.js`. Only the active and one-ahead boss types are ever loaded — `Boss.preloadNextType(number)` queues the type after `number` in the background, and `handleBossSpawned` defers building the new sprite until `_awaitBossTypeReady` confirms every texture key exists, so a spawn never shows the previous type's sprite under the new key.
 5. **Key discipline.** Fighters/charges are keyed by `user_id` from broadcast payloads — keep key types consistent (number vs string never collide-match).
 6. **Layout.** Two separate logical spaces: landscape 960×540, portrait 540×960. Positions that cross the wire are normalized fractions of the sender's logical space; receiver-side clamping lives in `move-geometry.js`.
 7. **Fighter size depends on headcount, by design.** `fighterDisplayConfig(count, mode)` (`layout.js`) steps `displaySize` down as more fighters join (landscape: 45px ≤14, 36px ≤28, 27px beyond; portrait: 54px ≤8, 45px beyond) so a crowded roster doesn't overflow the canvas. On top of that, `damageScaleMultiplier(damage, maxHp)` adds up to another ×1.4 for a fighter whose cumulative damage share against the current boss's `maxHp` is high. A near-empty battlefield showing oversized fighters is this combination working as intended, not a bug.
@@ -48,6 +48,199 @@ Ambient actors are neither a **fighter** (player-controlled, keyed by `user_id`)
   - **Per-agent "using a tool right now" ring (hook v7).** `FighterAgentToolUsed {user_id, agent_id, busy}` (from `PreToolUse`/`PostToolUse` fired *inside* a subagent — see `.ai/domain/token-tracking.md`) drives a pulsing cyan ring on the ONE minion sprite assigned to that `agent_id` — same visual language as `Charge.createChargingRing`, deliberately reused rather than invented ("vòng và nhấp nháy như user"). Minions are otherwise anonymous (spawn/despawn is still purely count-based, unchanged); `minion.assignedAgentId` is a lightweight layer on top: `handleAgentToolUsed` assigns an `agent_id` to the first still-`null`-assigned minion the first time it goes busy, frees it the moment that `agent_id` goes idle again. Not identity-keyed spawn/despawn — accurate for the common case (dispatched count ≤ `MINION_MAX_VISIBLE`); beyond the cap, a busy `agent_id` with nothing free to claim just gets no ring, same existing limitation the count itself already has. The ring itself (`_showToolRing`/`_positionToolRing`/`_dismissToolRing`) is `clear()`+redrawn every frame (not just repositioned) since its radius tracks the minion's own current badge size, unlike the fighter-side ring which is drawn once and left to auto-follow as a container child. A hook older than v7 never sends `agent_id` on these two events, so this stays permanently inert for that client — no error, no missing feature warning, it just never lights up.
   - **Teardown asymmetry from the old container-child design:** since nothing else owns these sprites now, `despawnAll()` (fighter leaving) must `.destroy()` each minion sprite (and its badge, its tool ring if any) itself; `destroy()` (scene shutdown) still only clears timers/tweens, since Phaser's own scene teardown destroys the display list.
 
+## Shared modules
+
+`resources/js/battlefield/shared/*.js` are pure, Phaser-free modules with no dependency on the battle scene itself — the battle scene (`scene.js`), the DOM HUD (PR 2), and the character-preview mini-game (`character-preview/`, PR 5) all consume the same modules rather than each growing its own copy of this geometry/timing logic. As of this PR:
+
+- `hp-counter.js` — one retargeted tween per HP bar instead of stacking a new tween per hit.
+- `depth.js` — skips a depth write (and Phaser's display-list re-sort) when the value hasn't changed.
+- `bus-bindings.js` — binds an event-bus handler map and returns one idempotent `unbind()`; used by both the scene's teardown and the blade's Alpine components.
+- `flair-glyphs.js` — bakes each unique flair-ring glyph (char × colour × px) into a texture once instead of building canvas `Text` objects per flair.
+- `heel.js` — finds a fighter's rear heel from its idle frame's raw pixels, for anchoring ground effects (sparks, footprints).
+- `sparks.js` — grinding-spark emission timing/angle shared by any moving-fighter effect.
+- `sky.js` — real-astronomy sun/moon position and sky colour for a given place and time.
+- `clawd.js` — the Claude Code mascot's poses/sequences and its pointer-reactive step logic.
+- `feed-merge.js` — folds a burst of activity-feed events into readable, de-duplicated lines.
+- `hud-zones.js` — keeps fighters clear of DOM HUD panels and apart from each other.
+- `board.js` — ranks the damage board and reports rank changes/overtakes.
+
+See `resources/js/battlefield/CLAUDE.md`'s Key Files and Test Files tables for each module's exact API and test coverage.
+
+## HUD (DOM, not Phaser)
+
+The battle HUD — team damage, boss plate, TOP DAMAGE board, activity feed,
+herald strip — is a real DOM grid (`#bf-hud`/`#bf-hud-in`,
+`resources/css/battlefield-hud.css`) that sits exactly on the canvas
+(`hud/sync.js`'s `keepHudOnCanvas`), not Phaser-drawn text/rectangles. Three
+container-query tiers (wide landscape, portrait, short landscape) reflow the
+grid without any JS. Each panel has its own controller:
+
+- `hud/index.js`'s `battlefieldHud` Alpine component owns the team panel,
+  the viewer's own row, the portrait board-sheet toggle, and the herald
+  strip (kill/spawn announcements, 4.5s).
+- `hud/boss-plate.js`'s `createBossPlate`, `hud/board-view.js`'s
+  `createBoardView`, and `hud/feed-view.js`'s `createFeedView` are
+  imperative DOM controllers (keyed elements, FLIP/crack/shake animations,
+  timers) — wired once per game in `index.js`'s `bootBattlefield`, not
+  through Alpine, since Alpine's own reactivity isn't a good fit for this
+  much manual animation.
+
+The TOP DAMAGE board's rank list no longer lives in Phaser at all — the
+old `leaderboard/index.js` panel, rows, and DOOM fires were removed in
+PR 2 (`scene.js` stopped constructing a `Leaderboard` instance); `rankBoard`
+over `scene.damageTotals` is the single source both the board and the
+boot/snapshot payload's `leaderboard` field derive from. The `leaderboard/`
+directory itself (and `leaderboard.js`'s barrel) is deleted in PR 3
+(Task 24): `boss/index.js`'s `handleBossKilled` calls `ceremony.js`'s
+`runCeremony` instead of the old `Leaderboard.showMvpCard` — slow-mo +
+shake, the killer's card ("<handle> slew <BOSS> #N", not a leaderboard),
+then a 3-2-1 count before the next boss. `createSpawnGate` holds a
+`BOSS_SPAWNED` (and the new boss's first hits' visuals — damage number,
+plate drop) that arrives mid-ceremony, since `EventController` dispatches
+`BossKilled` and `BossSpawned` in the same request; the DOM board and
+plate's own `BOSS_SPAWNED` bindings (`index.js`'s `bootBattlefield`) are
+gated through the same `scene.spawnGate` so they don't jump to the new
+boss while the ceremony is still showing the old one's death.
+
+Live HUD panel rects (`window.__battlefield.setHudZones`, pushed by
+`battlefieldHud` every 500ms and on the board sheet's `.open` toggle,
+converted to world space by `shared/hud-zones.js`'s `domToWorld`) block
+click-to-move targets (`move-geometry.js`'s `ctx.zones`, replacing the old
+hardcoded LEADERBOARD/DAMAGE_HUD rect constants) — a player simply can't
+click a spot under a panel. An already-standing fighter is never
+auto-repositioned when a zone appears over it: `shared/hud-zones.js`'s
+`footprint`/`resolveSpacing` (and the `spacing.js` module that fed them)
+were tried for exactly that in this PR and reverted at the user's request —
+pushing an already-placed/clicked fighter off its own spot silently
+overrides what the player asked for.
+
+## Living sky & arena dressing
+
+The old flat `BG_COLOR` rectangle + static radial vignette are gone —
+`environment/index.js`'s `createEnvironment(scene, {layout, sky})` builds a
+real-astronomy sky instead, wired into `scene.js` where the old rectangle
+and vignette used to be, and ticked from `update()` (`this.environment.tick
+(time, delta / 1000)`) alongside every other per-frame manager:
+
+- `environment/sky-layer.js`'s `skyFrame(date, site, box)` is the pure,
+  tested seam: given an instant and the `{lat, lon}` site (from the boot
+  payload's `sky` field, `config('token_slayer.sky')`, defaulting to
+  Hanoi), it returns the sun/moon's on-screen position and visibility plus
+  the night/twilight/day/warm coefficients everything else derives its
+  colour from. `shared/sky.js`'s `sunPosition`/`moonPosition`/`moonPhase`/
+  `skyColorsAt`/`ambientAt`/`skyXY` do the actual astronomy; `skyFrame` is
+  the Phaser-agnostic layer above them that the environment consumes.
+- The Phaser side (`environment/index.js`) bakes canvas textures for the
+  sky gradient, the star field, the moon's phase, three cloud shapes, and
+  two ridge silhouettes — every one sized to the current `layout` (so a
+  scene restart on orientation change removes and rebakes them at the new
+  box via a `fresh(key)` helper) and redrawn only when the sun's quantized
+  elevation/minute or the moon's phase step actually changes (`update`'s
+  `key`/`lastKey` gate), not every frame. `tick(time, dt)` (called at most
+  once every 20s of real time for the heavy `update`) animates cloud
+  drift, star/window twinkle, brazier flicker, mote wander, and rolls the
+  dice for an occasional shooting star (night) or bird flock (day).
+  `scene.reducedMotion` collapses all of that to a static snapshot — no
+  drift, twinkle, flicker, wander, shooting star, or bird flock.
+- `environment/dressing.js`'s `dressingLayout({width, height, horizonY})`
+  (pure, tested) places the two braziers, the distant keep, the dust/
+  firefly band, and the bird flight band from the world box alone — same
+  "derive from the box, never hardcode a coordinate" rule the rest of the
+  battlefield already follows. The keep is drawn straight into the far
+  ridge's own canvas texture (solid white, like the ridge silhouette
+  itself) so it always takes the exact same per-minute tint as the ridge
+  around it, rather than needing its own separate re-tint every update.
+- `?sky-debug=1` on the battlefield URL exposes `window.__battlefield.env.
+  setClock(minutesOfDay)` in the console — forces today's date to that
+  time-of-day for one redraw, for verifying dawn/dusk/night on staging
+  without waiting for the real clock. One-shot: the next scheduled `tick()`
+  redraw (≤20s later) reads the real clock again. Never exposed without
+  the query param.
+
+## Fighter sheet (Profile / Character)
+
+`App\Livewire\FighterSheet` (`resources/views/livewire/fighter-sheet.blade.php` +
+partials) replaced the old separate `CharacterSelect`/`Profile` components —
+embedded in `battlefield.blade.php`, opened via the shared `#[On('open-fighter-sheet')]`
+listener (dispatched by the nav's Profile/Loadout pills) or `?sheet=profile|character`
+on load. It starts **closed** and computes nothing (no aggregate `events` query) until
+`open($tab)` is called — the header's own attribution/hook chip is the one exception,
+a single indexed lookup shown even while closed.
+
+- **Backend** (`app/Services/Profile/`): `Period` (hour/today/week/month/year/all,
+  calendar windows starting at the display timezone's midnight/Monday/1st) backs
+  `DamageByPeriod`, `DamageByModel`, `HourlyDamage` (bucketed in PHP, never
+  `DATE()`/`strftime` — the staging sqlite timestamp trap), `BossKillCount`,
+  `AccountQuotaCards` (see `.ai/domain/accounts.md`), `AccountAlerts` (derives the
+  alert banner's critical/warning/CLI-outdated lines from data `AccountQuotaCards`/
+  `attributionStatus()` already computed — no queries of its own; dismiss ids are
+  per-account-per-alert-type), `CharacterRoommates` (equipped-character → teammate
+  list, cached an hour under `CacheKeys::CHARACTER_ROOMMATES`, invalidated eagerly by
+  `App\Listeners\ClearCharacterRoommatesCache` on every `FighterCharacterChanged`
+  broadcast rather than waiting out the TTL).
+- **Profile tab** (`resources/views/livewire/fighter-sheet/{header,alerts,tokens,damage,side,accounts,legacy-stats}.blade.php`):
+  a boss-kills chip and CLI-update pill in the header, a dismissible alerts banner,
+  period tabs + a validated custom range (capped at a year), a rate-limited refresh
+  (`sheet/index.js`'s `fighterSheetShell` Alpine component drives the cooldown UI off
+  the `sheet-refresh-cooldown` browser event), a `wire:ignore`'d hourly bar chart
+  (`sheet/hourly-bars.js`'s pure `barHeights`/`readout`) with a static "yesterday/now"
+  axis, a live token ledger (`liveTokens`, fed by the shared event bus's own `hit`
+  events — see `.ai/domain/broadcasting.md`'s `HitDealt` token fields), a mini-stage
+  showing the viewer's own live minion count (`SubagentCountCache::countFor()` at
+  render time, kept live by the same `fighter-agent-count-changed` bus event the
+  real battlefield already listens to — no new broadcast), By-model rows that show
+  a quota-style percent bar when an account's own `model_limits` reports that model
+  (falling back to the plain share% row otherwise), and `legacy-stats.blade.php`
+  (ported from the old Profile page: rolling-window totals, richer attribution
+  phrasing, the "My account" usage-by-account block with quota bars — kept as a
+  distinct section from the period-tab damage above, not merged). Full account
+  cards (`accounts.blade.php`) render `AccountQuotaCards`' 5h/7d meters (or a Codex
+  account's own `codex_windows` in their place), per-model quota rows, and a members
+  table with real per-member damage/events/last-seen (`AccountMemberActivity`,
+  wrapping `AccountMemberStatusQuery` with an `events` aggregate scoped to today per
+  account — replaces the old email-only placeholder). The Clawd buddy panel also
+  shows a `×N combo` counter + decay bar and "best combo today" (`createBuddy`'s
+  `onComboChange` callback, Task 7; `bestToday` is client-side only, reset on reload).
+- **Character tab** (`resources/views/livewire/fighter-sheet/character.blade.php`):
+  roster grid, moves strip, Equip button, `character-preview/modal-fit.js`'s
+  `loadoutLayout`/`fitScale` split↔stacked responsive card, filter chips by attack
+  type (`FighterCharacter::attackType()`, mirroring `resources/js/battlefield/config/fighters.js`'s
+  `FIGHTER_TYPES` 1:1; `sheet/character-tab.js`'s pure `filterRoster(roster, attackType)`
+  drives the roster grid), and a teammate-avatar cluster per roster slot
+  (`CharacterRoommates`, passed into the Alpine component as its own constructor
+  arg). The Character tab's own Alpine component, `characterTabPanel`
+  (`sheet/character-tab.js`), is registered via `Alpine.data()` from `resources/js/app.js`
+  — **not** an inline `<script>` in `character.blade.php` — because this tab's markup
+  only ever enters the DOM via a Livewire morph (the sheet starts closed, and
+  Character isn't the default tab either), and a browser never executes a `<script>`
+  tag inserted that way; only Alpine's own component registry resolves regardless of
+  when the DOM appears (a bug caught live on staging as `characterTabPanel is not
+  defined`, same root cause class as the `battlefieldHud`/`fighterSheetShell`
+  components elsewhere in this file). Lifecycle is Alpine's own `init()`/`destroy()`
+  (the tab's own `@if` mounts/unmounts the whole subtree). `wire:ignore`'d so an
+  unrelated re-render never tears down the live Phaser preview. Equipping folds the
+  sheet (`.sheet.folding`, `fighterSheetShell`'s `equipTransition()`) then pans the
+  live battlefield camera to the viewer's own fighter (`window.__battlefield.focusFighter`,
+  `shared/camera-focus.js`'s pure `focusPlan` — `null` for a fighter not currently on
+  the field, so the caller no-ops instead of animating toward `undefined`) — reusing
+  the real canvas rather than a second fake field.
+- **Character-preview stage** (`character-preview/game.js`/`scene.js`) now sizes from
+  its mount element (`Scale.FIT` + a `ResizeObserver`, `stageScale`/`avatarFor` pure
+  and tested) instead of a fixed 260px, and shares the live battlefield's own look:
+  a fixed 17:30-local sky-tinted backdrop (`environment/sky-layer.js`'s `skyFrame`),
+  an avatar bubble at battlefield proportions, and real heel-tracked grinding sparks
+  (`shared/heel.js` + `shared/sparks.js`) during the walk skill.
+- **Clawd buddy** (`sheet/clawd-buddy.js`, `sheet/index.js`'s `clawdBuddyPanel`): a
+  DOM/SVG stick figure (not Phaser) on the Profile tab, not the Character tab. Tracks
+  the pointer across 3×2 zones (`shared/clawd.js`'s `zoneOf`+`clawdStep` decide
+  look/hop/somersault — the same pure functions the crew-icon minions already use),
+  reacts to the viewer's own `hit`/`boss-killed` bus events with a jump/celebrate +
+  a floating pop, and spins dizzy on a fast pointer shake. `spotsFor(cols)` (pure,
+  tested) places its three standing spots from the panel's own width, same
+  derive-from-the-box rule as everything else in this file.
+- **`/profile` redirect:** `routes/web.php` sends `/profile` straight to
+  `route('battlefield', ['sheet' => 'profile'])` — the old standalone page is gone.
+
 ## Testability
 
-Pure logic (movement geometry, layout math, minion decisions, config shape) is extracted into plain modules and covered by Vitest in `tests/js/` (mapping and the fake-scene manager-test pattern: `resources/js/battlefield/CLAUDE.md` Testing Pattern). Rendering and feel are verified on staging.
+Pure logic (movement geometry, layout math, minion decisions, config shape, the fighter sheet's own hourly-bars/clawd-buddy/character-preview-stage math) is extracted into plain modules and covered by Vitest in `tests/js/` (mapping and the fake-scene manager-test pattern: `resources/js/battlefield/CLAUDE.md` Testing Pattern). Rendering and feel are verified on staging.

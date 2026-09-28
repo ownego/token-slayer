@@ -51,3 +51,19 @@ describe('chargeParticleColors', () => {
     expect(Charge.chargeParticleColors({ chargeColors: GOLD })).toEqual(GOLD);
   });
 });
+
+describe('sparkTints', () => {
+  test("spark tints come from the fighter's own charge palette plus white-hot, never hard-coded green", () => {
+    const tints = Charge.sparkTints([0x111111, 0x222222, 0x333333, 0x444444, 0x555555]);
+    expect(tints).toContain(0xffffff);
+    expect(tints).toContain(0x555555);
+    expect(tints).not.toContain(0x4ade80);
+  });
+});
+
+describe('particle emitters removed', () => {
+  test('a charging fighter no longer owns its own particle emitters', () => {
+    expect(Charge.prototype.spawnChargeFireEmitters).toBeUndefined();
+    expect(Charge.prototype.createChargingTrail).toBeUndefined();
+  });
+});

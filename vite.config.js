@@ -7,7 +7,7 @@ import path from 'path';
 export default defineConfig({
     plugins: [
         laravel({
-            input: ['resources/css/app.css', 'resources/js/app.js', 'resources/js/ide-bridge.js'],
+            input: ['resources/css/app.css', 'resources/css/battlefield-hud.css', 'resources/css/fighter-sheet.css', 'resources/js/app.js', 'resources/js/ide-bridge.js'],
             refresh: true,
             fonts: [
                 bunny('Instrument Sans', {

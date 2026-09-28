@@ -1,6 +1,7 @@
-import Phaser from 'phaser';
 import { TIMINGS } from '@battlefield/config.js';
-import { AnimState, TextureKey } from '@battlefield/constants.js';
+import { AnimState } from '@battlefield/constants.js';
+import { heelToLocal } from '@battlefield/shared/heel.js';
+import { nextBurst } from '@battlefield/shared/sparks.js';
 
 /** Manages charge rings, trails, fire emitters, and activity bubbles for charging fighters. */
 export class Charge {
@@ -19,6 +20,19 @@ export class Charge {
    */
   static chargeParticleColors(ftype) {
     return ftype?.chargeColors ?? [0x991100, 0xcc3300, 0xdd6600, 0xee9900, 0xffbb00];
+  }
+
+  /**
+   * Returns the tint weighting for a fighter's heel sparks: white-hot,
+   * twice the brightest charge colour, then the two next-brightest —
+   * never the old hard-coded green trail tints.
+   *
+   * @param {number[]} chargeColors 5 hex ints, dimmest to brightest
+   * @return {number[]}
+   */
+  static sparkTints(chargeColors) {
+    const [, , c2, c3, c4] = chargeColors;
+    return [0xffffff, c4, c4, c3, c2];
   }
 
   /**
@@ -60,12 +74,7 @@ export class Charge {
       fighter.body.setFlipX(fighter.pos.x > this.scene.layout.boss.anchor.x);
       fighter.body.play(fighter.ftype.key + '-walk');
     }
-    const localFootY = Math.round(fighter.displaySize / 3);
-    const { fireEmitter, fireEmbers } = this.spawnChargeFireEmitters(fighter.ftype, 0, localFootY, fighter.displaySize);
-    fighter.sprite.addAt(fireEmbers, 0);
-    fighter.sprite.addAt(fireEmitter, 0);
-    const ring  = this.createChargingRing(fighter);
-    const trail = this.createChargingTrail(fighter);
+    const ring = this.createChargingRing(fighter);
     fighter.sprite.addAt(ring, 0);
     const avSize = fighter.avatarSize ?? Math.round(fighter.displaySize * 0.85);
     const breath = fighter.head ? this.scene.tweens.add({
@@ -77,7 +86,7 @@ export class Charge {
       repeat: -1,
       ease: 'Sine.easeInOut',
     }) : null;
-    const entry = { ring, trail, fireEmitter, fireEmbers, breath, bubble: null, activity: payload.activity ?? '' };
+    const entry = { ring, breath, bubble: null, activity: payload.activity ?? '', sparks: { wait: 0 } };
     if (this.scene.bubble?.fightersAllowBubbles?.()) {
       this.scene.bubble.updateActivityBubble(entry, fighter, payload.activity);
     }
@@ -112,70 +121,42 @@ export class Charge {
   }
 
   /**
-   * Creates the speed-trail particle emitter for a charging fighter.
+   * Emits a burst of grinding sparks off a charging fighter's rear heel,
+   * called every frame from `scene.update()` for each currently-charging
+   * fighter. Reduced motion (`scene.reducedMotion`, read once at boot):
+   * no sparks at all — the charging ring alone stays the "charging" cue.
    *
    * @param {object} fighter
-   * @return {Phaser.GameObjects.Particles.ParticleEmitter}
+   * @param {number} dt seconds since the last frame
+   * @param {function(): number} [rnd] 0..1, injectable for tests
+   * @return {void}
    */
-  createChargingTrail(fighter) {
-    const charBot    = Math.round(fighter.displaySize / 3);
-    const towardBoss = fighter.pos.x <= this.scene.layout.boss.anchor.x ? 1 : -1;
-    const emitX      = fighter.pos.x - towardBoss * Math.round(fighter.displaySize * 0.18);
-    const emitY      = fighter.pos.y + charBot - Math.round(fighter.displaySize * 0.12);
-    const emitter    = this.scene.add.particles(emitX, emitY, TextureKey.SPARK, {
-      tint:      { onEmit: () => Phaser.Math.RND.pick([0x4ade80, 0x86efac, 0xa3e635, 0xffffff]) },
-      scale:     { start: 0.5, end: 0 },
-      alpha:     { start: 0.65, end: 0 },
-      speedX:    { min: -towardBoss * 80, max: -towardBoss * 20 },
-      speedY:    { min: -10, max: 22 },
-      lifespan:  { min: 130, max: 230 },
-      frequency: 45,
-      quantity:  2,
-      blendMode: Phaser.BlendModes.ADD,
-    });
-    emitter.setDepth(1);
-    return emitter;
-  }
-
-  /**
-   * Creates the fire and ember particle emitters used inside the fighter's container.
-   *
-   * @param {object} ftype  fighter type config object (has .key string)
-   * @param {number} localX  x offset inside container
-   * @param {number} localFootY  y offset inside container
-   * @param {number} displaySize  logical display size in px
-   * @return {{ fireEmitter: Phaser.GameObjects.Particles.ParticleEmitter, fireEmbers: Phaser.GameObjects.Particles.ParticleEmitter }}
-   */
-  spawnChargeFireEmitters(ftype, localX, localFootY, displaySize) {
-    const fireColors = Charge.chargeParticleColors(ftype);
-    const ps = displaySize * 0.018;
-    const fireEmitter = this.scene.add.particles(localX, localFootY, TextureKey.SPARK, {
-      tint:      { onEmit: () => Phaser.Math.RND.pick(fireColors) },
-      rotate:    { min: 0, max: 360 },
-      scale:     { start: ps, end: 0 },
-      alpha:     { start: 0.55, end: 0 },
-      speedX:    { min: -180, max: 180 },
-      speedY:    { min: -90, max: 20 },
-      lifespan:  { min: 280, max: 480 },
-      frequency: 22,
-      quantity:  3,
-      gravityY:  80,
-      blendMode: Phaser.BlendModes.ADD,
-    });
-    const fireEmbers = this.scene.add.particles(localX, localFootY, TextureKey.SPARK, {
-      tint:      { onEmit: () => Phaser.Math.RND.pick(fireColors) },
-      rotate:    { min: 0, max: 360 },
-      scale:     { start: ps * 0.5, end: 0 },
-      alpha:     { start: 0.4, end: 0 },
-      speedX:    { min: -240, max: 240 },
-      speedY:    { min: -60, max: 30 },
-      lifespan:  { min: 200, max: 400 },
-      frequency: 28,
-      quantity:  2,
-      gravityY:  60,
-      blendMode: Phaser.BlendModes.ADD,
-    });
-    return { fireEmitter, fireEmbers };
+  emitFor(fighter, dt, rnd = Math.random) {
+    if (this.scene.reducedMotion) {
+      return;
+    }
+    const entry = this.scene.charges.get(fighter.id);
+    if (!entry?.sparks || !this.scene.sparks) {
+      return;
+    }
+    const burst = nextBurst({ wait: entry.sparks.wait, moving: fighter.waypointMoving }, dt, rnd);
+    entry.sparks.wait = burst.wait;
+    if (!burst.count) {
+      return;
+    }
+    const facing = fighter.body?.flipX ? -1 : 1;
+    const heel = fighter.ftype?.heel;
+    if (!heel) {
+      return;
+    }
+    const { dx, dy } = heelToLocal(heel, fighter.body?.scaleX ?? 1, facing);
+    this.scene._sparkFacing = facing;
+    this.scene._sparkPower = fighter.waypointMoving ? 1.35 : 1;
+    const tints = Charge.sparkTints(Charge.chargeParticleColors(fighter.ftype));
+    for (let i = 0; i < burst.count; i++) {
+      this.scene._sparkTint = tints[Math.floor(rnd() * tints.length)];
+      this.scene.sparks.emitParticleAt(fighter.sprite.x + dx, fighter.sprite.y + dy);
+    }
   }
 
   /**
@@ -206,18 +187,6 @@ export class Charge {
         duration: 200,
         onComplete: () => { if (ring.scene) ring.destroy(); },
       });
-    }
-    if (entry.trail?.scene) {
-      entry.trail.stop();
-      this.scene.time.delayedCall(250, () => { if (entry.trail?.scene) entry.trail.destroy(); });
-    }
-    if (entry.fireEmitter?.scene) {
-      entry.fireEmitter.stop();
-      this.scene.time.delayedCall(500, () => { if (entry.fireEmitter?.scene) entry.fireEmitter.destroy(); });
-    }
-    if (entry.fireEmbers?.scene) {
-      entry.fireEmbers.stop();
-      this.scene.time.delayedCall(500, () => { if (entry.fireEmbers?.scene) entry.fireEmbers.destroy(); });
     }
     if (entry.bubble) {
       entry.bubble.destroy();

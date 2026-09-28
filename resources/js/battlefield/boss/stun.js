@@ -1,3 +1,5 @@
+import { setDepthIfChanged } from '@battlefield/shared/depth.js';
+
 /**
  * Returns true when the stun cooldown has expired and a new stun can be applied.
  *
@@ -71,7 +73,7 @@ export function applyStunEffect(scene, entry) {
         const a = baseAngle + star.phase;
         const sinA = Math.sin(a);
         star.text.setPosition(cx + Math.cos(a) * rx, cy + sinA * ry);
-        star.text.setDepth(sinA < 0 ? 112 : 1);
+        setDepthIfChanged(star.text, sinA < 0 ? 112 : 1);
         star.text.setScale(sinA < 0 ? 1 : 0.65);
         star.text.setAlpha(alpha);
       }

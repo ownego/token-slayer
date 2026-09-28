@@ -207,6 +207,18 @@ test('HitDealt carries a nullable model, flair, flair duration, and flair color'
         ->and($fable['flair_color'])->toBe('#a855f7');
 });
 
+test('HitDealt carries the hit\'s input and cache tokens as ints, zero when unknown', function () {
+    $user = User::factory()->create();
+    $boss = Boss::factory()->create(['number' => 1]);
+
+    expect((new HitDealt($user, 100, $boss))->broadcastWith())
+        ->toMatchArray(['input_tokens' => 0, 'cache_creation_input_tokens' => 0, 'cache_read_input_tokens' => 0]);
+
+    $full = (new HitDealt($user, 100, $boss, inputTokens: 12, cacheCreationInputTokens: 340, cacheReadInputTokens: 5600))->broadcastWith();
+
+    expect($full)->toMatchArray(['input_tokens' => 12, 'cache_creation_input_tokens' => 340, 'cache_read_input_tokens' => 5600]);
+});
+
 test('HitDealt sends only scalars, per the payload rule', function () {
     $user = User::factory()->create();
     $boss = Boss::factory()->create(['number' => 1]);

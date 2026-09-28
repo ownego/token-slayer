@@ -5,8 +5,15 @@ export const SCENE_KEY = 'battlefield';
 export const TextureKey = {
   FIGHTERS:  'fighters',
   SPARK:     'spark',
+  SPARK_STREAK: 'spark-streak',
   FIREBALL:  'fireball',
   EXPLOSION: 'explosion',
+  PUFF: 'puff',
+  SOFTGLOW: 'softglow',
+  CLAWD_DEFAULT: 'clawd-default',
+  CLAWD_CROUCH: 'clawd-crouch',
+  CLAWD_ARMS: 'clawd-arms',
+  MOTE_SOFT: 'mote-soft',
 };
 
 /** Bus event identifiers shared between scene wiring and Echo listener. */
@@ -23,6 +30,10 @@ export const BusEvent = {
   CHARACTER_CHANGED: 'character-changed',
   FIGHTER_AGENT_COUNT_CHANGED: 'fighter-agent-count-changed',
   FIGHTER_AGENT_TOOL_USED: 'fighter-agent-tool-used',
+  // Local-only (never Echo-sourced): Impact's HP counter tween ticks this
+  // on every retargeted-tween frame so the DOM boss plate (hud/boss-plate.js)
+  // stays in sync without Impact drawing Phaser text itself.
+  BOSS_HP_TICK: 'boss-hp-tick',
 };
 
 /** Animation state identifiers shared across scene and managers. */

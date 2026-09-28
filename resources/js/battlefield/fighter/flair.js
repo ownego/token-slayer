@@ -127,6 +127,83 @@ export function spotlightBoost(angle) {
 }
 
 /**
+ * Clamps `v` to [0, 1].
+ * @param {number} v
+ * @return {number}
+ */
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
+}
+
+/**
+ * Standard "ease-out back" curve: overshoots past 1 before settling, giving
+ * the intro fly-in its little snap. Returns exactly 0 at t=0 and 1 at t=1.
+ * @param {number} t 0..1
+ * @return {number}
+ */
+function backEaseOut(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  const p = t - 1;
+  return 1 + c3 * p * p * p + c1 * p * p;
+}
+
+/**
+ * One flair glyph's position/scale/alpha at `now`, for unit ring radii (the
+ * caller multiplies `x`/`y` by its own `rx`/`ry` and adds its own center).
+ * The front arc (`sin(angle + phase) > 0`) is full-size and lit, brightened
+ * further by {@see spotlightBoost} as it sweeps the near point; the back
+ * arc is dim and small. `wave` is a small front-only bob the caller may add
+ * to its own screen-space y — it is not folded into `y` itself, which is
+ * purely the orbit position (plus the intro/outro motion below).
+ *
+ * Intro: each letter flies out from the ring's centre on a back-eased 0..1
+ * ramp staggered by 22ms per index (a marquee sweep, not everything arriving
+ * at once), reaching its full orbit position at `introStart + index*22 +
+ * 380`ms. Outro: each letter drifts further out and fades over the 500ms
+ * before `outroLeft` reaches 0, staggered 12ms per index the same way. Under
+ * `reduced`, both are skipped entirely — full alpha and position from frame
+ * one, no wave.
+ *
+ * @param {number} angle the ring's current shared orbit angle, radians
+ * @param {number} phase this glyph's fixed offset around the ring, radians
+ * @param {number} index this glyph's 0-based position in the ring (staggers intro/outro)
+ * @param {number} now current time, ms (same clock as `introStart`/`outroLeft`)
+ * @param {{introStart: number, outroLeft: number, reduced?: boolean}} opts
+ * @return {{x: number, y: number, scale: number, alpha: number, front: boolean, wave: number}}
+ */
+export function glyphState(angle, phase, index, now, { introStart, outroLeft, reduced = false }) {
+  const a = angle + phase;
+  const sinA = Math.sin(a);
+  const front = sinA > 0;
+  const boost = front ? spotlightBoost(a) : 0;
+  const scale = front ? 1 + 0.45 * boost : 0.62;
+  const baseAlpha = front ? 1 : 0.22;
+
+  if (reduced) {
+    return { x: Math.cos(a), y: sinA, scale, alpha: baseAlpha, front, wave: 0 };
+  }
+
+  const k = clamp01((now - introStart - index * 22) / 380);
+  const kEase = backEaseOut(k);
+  const lo = clamp01((700 - outroLeft - index * 12) / 500);
+  const wave = front ? Math.sin(now / 170 + index * 0.85) * 2.2 : 0;
+
+  return {
+    x: Math.cos(a) * kEase,
+    // The mockup's "18" is an absolute-pixel drift at its own fixed ring
+    // radius; scaled here into a fraction of the unit radius so the
+    // caller's rx/ry multiply lands at a comparable size regardless of the
+    // fighter's own display size.
+    y: sinA * kEase - lo * 0.18,
+    scale,
+    alpha: baseAlpha * k * (1 - lo),
+    front,
+    wave,
+  };
+}
+
+/**
  * Whether the fighter's orbit ring needs to be rebuilt: either it doesn't
  * exist yet, or the model/color actually changed since it was created. A
  * repeat hit that refreshes the SAME flair must not rebuild it — that would
