@@ -236,9 +236,12 @@ Tests that lock config — update them in the same change: `config.test.js` (ros
 | `tests/js/hud/board-view.test.js` | boardEffects — rank-change roll direction, new-leader-once, climb + who it passed, collapsed rows past the limit never roll |
 | `tests/js/hud/board-hit.test.js` | a first hit gets its row and a compact `+N` even though the scene counts the damage after the HUD hears it |
 | `tests/js/hud/team-flash.test.js` | a hit flashes all three team totals |
+| `tests/js/hud/hit-chips.test.js` | hitChips — a few shards per hit, more for a bigger one, capped at 8; they spray from the bar's live edge; the first hit after the load intro re-cracks no segment already lost |
+| `tests/js/hud/hud-css.test.js` | no HUD panel uses `backdrop-filter` over the canvas; no bare global `.flash` rule in app.css (it faded the Team totals out for good) |
 | `tests/js/hud/team.test.js` | teamReducer — hit folds into every window + the board; youRow — damage/share/ordinal rank, zero-damage no-NaN dash; msUntilLocalMidnight — countdown to the next Asia/Ho_Chi_Minh midnight |
 | `tests/js/snapshot.test.js` | snapshotState — boss/leaderboard/fighters, character, damageTotals, charging, currentUserId, normalized position, agentCount, the sky site survives a round-trip |
-| `tests/js/environment/sky-layer.test.js` | skyFrame — sun visible/high at noon and no stars, sun hidden and stars at full strength at midnight, a warm twilight weight at dusk |
+| `tests/js/environment/meteor.test.js` | meteorPlan/meteorFrame — a fast slanted fall across the upper sky, trail stretching behind the head then burning out |
+| `tests/js/environment/sky-layer.test.js` | skyFrame — sun visible/high at noon and no stars, sun hidden and stars at full strength at midnight, a warm twilight weight at dusk; moonDisplay — risen moon at its real place but never below the ridge peek, slides clear of a HUD zone (whole pixels), peeks over the ridge after sunset before moonrise, hidden by day |
 | `tests/js/environment/dressing.test.js` | dressingLayout — brazier/mote placement derives from the world box in both landscape and portrait |
 | `tests/js/constants.test.js` | Full BusEvent / TextureKey lists, SCENE_KEY — update when adding an event/texture key |
 | `tests/js/config.test.js` | FIGHTER_TYPES schema + exact key order (= PHP `FighterCharacter`) + atlas frames; BOSS_TYPES files/frame grids/looping idle+move; BAT/NECROMANCER strips; MINION_TYPES: exactly 5, strips on disk, one frame size per type, attacks one-shot with hitFrame/travel inside the strip, reaction ≥ 1800ms; LAYOUTS companion zones |
@@ -270,6 +273,7 @@ Tests that lock config — update them in the same change: `config.test.js` (ros
 | `tests/js/sheet/sprite-strip.test.js` | moves — hotbar order and attack names by type, summon = reversed death; frameIn scale/centre; pretty; chargePalette from the fighter config; faceColor stable per user |
 | `tests/js/sheet/mini-stage.test.js` | minionSpots — one per busy subagent alternating sides, none at zero, capped |
 | `tests/js/sheet/character-stage.test.js` | mountCharacterStage — 20 slots with YOU on the equipped one, teammate faces, pick → Equip persists via `equip(key)` and dispatches `fighter-equipped` after 900ms, style chip filters and recounts |
+| `tests/js/sheet/stage-sparks.test.js` | sparkPoint — sparks leave just above the back heel, fallback behind the body centre; sparkField stops its per-frame loop while hidden and draws in a small box around the heel |
 | `tests/js/sheet/sheet-ui.test.js` | probeLabel, easeCount, agoLabel, crew busy/idle reducer, per-day best-combo key, rovingIndex |
 | `tests/js/sheet/account-card.test.js` | accountCard — changed/failed/cooldown outcomes, meters re-rendered, minute countdown |
 | `tests/js/sheet/pickers.test.js` | periodTabs — arrow roving picks, More opens on Enter and closes on Escape with focus back, remembered period, keys inside the date inputs ignored; modelPicker keyboard |

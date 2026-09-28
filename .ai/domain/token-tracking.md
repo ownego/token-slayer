@@ -59,7 +59,7 @@ When changing the registered-event list, the re-registration loop must strip our
 | 6 | 2026-09-11 | Transcript parsed only on Stop/SubagentStop; `transcript_path` no longer sent; adds `input_tokens`/`cache_creation_input_tokens`/`cache_read_input_tokens` (stored, never added to damage) | `TurnUsage::fromPayload` |
 | 7 | 2026-09-24 | `agent_id` added to whitelist; `PostToolUse` registered again | `resolveAgentId()`, `FighterAgentToolUsed` |
 
-`client_version` (the CLI wheel's release tag, from a repo this project does not publish) and `hook_version` (owned here) are **independent**. A hook-only change bumps `hook_version` only. Both are written to `~/.config/{namespace}/version` and `hook-version`, and both are sent on every event. The outdated-hook nudge (`HookVersionStatus`) shows on the battlefield, the profile page and the Filament topbar.
+`client_version` (the CLI wheel's release tag, from a repo this project does not publish) and `hook_version` (owned here) are **independent**. A hook-only change bumps `hook_version` only. Both are written to `~/.config/{namespace}/version` and `hook-version`, and both are sent on every event. The outdated-hook nudge (`HookVersionStatus`) shows on the battlefield, the fighter sheet's header (the Profile button) and the Filament topbar.
 
 ## Token resolution for Stop events
 

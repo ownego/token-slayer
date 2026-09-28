@@ -160,86 +160,57 @@ and vignette used to be, and ticked from `update()` (`this.environment.tick
 ## Fighter sheet (Profile / Character)
 
 `App\Livewire\FighterSheet` (`resources/views/livewire/fighter-sheet.blade.php` +
-partials) replaced the old separate `CharacterSelect`/`Profile` components —
-embedded in `battlefield.blade.php`, opened via the shared `#[On('open-fighter-sheet')]`
-listener (dispatched by the nav's Profile/Loadout pills) or `?sheet=profile|character`
-on load. It starts **closed** and computes nothing (no aggregate `events` query) until
-`open($tab)` is called — the header's own attribution/hook chip is the one exception,
-a single indexed lookup shown even while closed.
+`fighter-sheet/*` partials) replaced the old `CharacterSelect`/`Profile` components
+and the `/profile` page (the route is gone, not redirected). Its markup and CSS
+(`resources/css/fighter-sheet.css`, every rule scoped under `.fs`, keyframes `fs-`)
+are a **verbatim port of the approved mockup**
+`docs/superpowers/mockups/2026-09-27-battlefield-redesign/fighter-sheet.html` (local
+only) — port its behaviour, don't re-derive it. Embedded in `battlefield.blade.php`,
+opened only by the nav's Profile button (`$dispatch('open-fighter-sheet', {tab})` →
+`#[On('open-fighter-sheet')] open($tab)`); there is no `?sheet=` link and no Loadout
+pill any more. It starts **closed** and runs no aggregate `events` query until
+opened — the header's attribution/hook chip is the one exception.
 
 - **Backend** (`app/Services/Profile/`): `Period` (hour/today/week/month/year/all,
-  calendar windows starting at the display timezone's midnight/Monday/1st) backs
-  `DamageByPeriod`, `DamageByModel`, `HourlyDamage` (bucketed in PHP, never
-  `DATE()`/`strftime` — the staging sqlite timestamp trap), `BossKillCount`,
-  `AccountQuotaCards` (see `.ai/domain/accounts.md`), `AccountAlerts` (derives the
-  alert banner's critical/warning/CLI-outdated lines from data `AccountQuotaCards`/
-  `attributionStatus()` already computed — no queries of its own; dismiss ids are
-  per-account-per-alert-type), `CharacterRoommates` (equipped-character → teammate
-  list, cached an hour under `CacheKeys::CHARACTER_ROOMMATES`, invalidated eagerly by
-  `App\Listeners\ClearCharacterRoommatesCache` on every `FighterCharacterChanged`
-  broadcast rather than waiting out the TTL).
-- **Profile tab** (`resources/views/livewire/fighter-sheet/{header,alerts,tokens,damage,side,accounts,legacy-stats}.blade.php`):
-  a boss-kills chip and CLI-update pill in the header, a dismissible alerts banner,
-  period tabs + a validated custom range (capped at a year), a rate-limited refresh
-  (`sheet/index.js`'s `fighterSheetShell` Alpine component drives the cooldown UI off
-  the `sheet-refresh-cooldown` browser event), a `wire:ignore`'d hourly bar chart
-  (`sheet/hourly-bars.js`'s pure `barHeights`/`readout`) with a static "yesterday/now"
-  axis, a live token ledger (`liveTokens`, fed by the shared event bus's own `hit`
-  events — see `.ai/domain/broadcasting.md`'s `HitDealt` token fields), a mini-stage
-  showing the viewer's own live minion count (`SubagentCountCache::countFor()` at
-  render time, kept live by the same `fighter-agent-count-changed` bus event the
-  real battlefield already listens to — no new broadcast), By-model rows that show
-  a quota-style percent bar when an account's own `model_limits` reports that model
-  (falling back to the plain share% row otherwise), and `legacy-stats.blade.php`
-  (ported from the old Profile page: rolling-window totals, richer attribution
-  phrasing, the "My account" usage-by-account block with quota bars — kept as a
-  distinct section from the period-tab damage above, not merged). Full account
-  cards (`accounts.blade.php`) render `AccountQuotaCards`' 5h/7d meters (or a Codex
-  account's own `codex_windows` in their place), per-model quota rows, and a members
-  table with real per-member damage/events/last-seen (`AccountMemberActivity`,
-  wrapping `AccountMemberStatusQuery` with an `events` aggregate scoped to today per
-  account — replaces the old email-only placeholder). The Clawd buddy panel also
-  shows a `×N combo` counter + decay bar and "best combo today" (`createBuddy`'s
-  `onComboChange` callback, Task 7; `bestToday` is client-side only, reset on reload).
-- **Character tab** (`resources/views/livewire/fighter-sheet/character.blade.php`):
-  roster grid, moves strip, Equip button, `character-preview/modal-fit.js`'s
-  `loadoutLayout`/`fitScale` split↔stacked responsive card, filter chips by attack
-  type (`FighterCharacter::attackType()`, mirroring `resources/js/battlefield/config/fighters.js`'s
-  `FIGHTER_TYPES` 1:1; `sheet/character-tab.js`'s pure `filterRoster(roster, attackType)`
-  drives the roster grid), and a teammate-avatar cluster per roster slot
-  (`CharacterRoommates`, passed into the Alpine component as its own constructor
-  arg). The Character tab's own Alpine component, `characterTabPanel`
-  (`sheet/character-tab.js`), is registered via `Alpine.data()` from `resources/js/app.js`
-  — **not** an inline `<script>` in `character.blade.php` — because this tab's markup
-  only ever enters the DOM via a Livewire morph (the sheet starts closed, and
-  Character isn't the default tab either), and a browser never executes a `<script>`
-  tag inserted that way; only Alpine's own component registry resolves regardless of
-  when the DOM appears (a bug caught live on staging as `characterTabPanel is not
-  defined`, same root cause class as the `battlefieldHud`/`fighterSheetShell`
-  components elsewhere in this file). Lifecycle is Alpine's own `init()`/`destroy()`
-  (the tab's own `@if` mounts/unmounts the whole subtree). `wire:ignore`'d so an
-  unrelated re-render never tears down the live Phaser preview. Equipping folds the
-  sheet (`.sheet.folding`, `fighterSheetShell`'s `equipTransition()`) then pans the
-  live battlefield camera to the viewer's own fighter (`window.__battlefield.focusFighter`,
-  `shared/camera-focus.js`'s pure `focusPlan` — `null` for a fighter not currently on
-  the field, so the caller no-ops instead of animating toward `undefined`) — reusing
-  the real canvas rather than a second fake field.
-- **Character-preview stage** (`character-preview/game.js`/`scene.js`) now sizes from
-  its mount element (`Scale.FIT` + a `ResizeObserver`, `stageScale`/`avatarFor` pure
-  and tested) instead of a fixed 260px, and shares the live battlefield's own look:
-  a fixed 17:30-local sky-tinted backdrop (`environment/sky-layer.js`'s `skyFrame`),
-  an avatar bubble at battlefield proportions, and real heel-tracked grinding sparks
-  (`shared/heel.js` + `shared/sparks.js`) during the walk skill.
-- **Clawd buddy** (`sheet/clawd-buddy.js`, `sheet/index.js`'s `clawdBuddyPanel`): a
-  DOM/SVG stick figure (not Phaser) on the Profile tab, not the Character tab. Tracks
-  the pointer across 3×2 zones (`shared/clawd.js`'s `zoneOf`+`clawdStep` decide
-  look/hop/somersault — the same pure functions the crew-icon minions already use),
-  reacts to the viewer's own `hit`/`boss-killed` bus events with a jump/celebrate +
-  a floating pop, and spins dizzy on a fast pointer shake. `spotsFor(cols)` (pure,
-  tested) places its three standing spots from the panel's own width, same
-  derive-from-the-box rule as everything else in this file.
-- **`/profile` redirect:** `routes/web.php` sends `/profile` straight to
-  `route('battlefield', ['sheet' => 'profile'])` — the old standalone page is gone.
+  calendar windows from the display timezone's midnight/Monday/1st) backs
+  `DamageByPeriod`, `PeriodStats` (the rest of the damage panel), `DamageByModel`,
+  `HourlyDamage` (bucketed in PHP, never `DATE()`/`strftime` — the staging sqlite
+  timestamp trap), `BossKillCount`; `AccountQuotaCards` → `AccountCardSummaries`
+  (one card per account, see `accounts.md`), `AccountRefresh` (a card's own ↻),
+  `AccountAlerts` (alert lines derived from data already computed — no queries of
+  its own), `AccountMemberActivity` (members table), `CharacterRoommates`
+  (equipped-character → teammates, cached under `CacheKeys::CHARACTER_ROOMMATES`,
+  cleared by `ClearCharacterRoommatesCache` on every `FighterCharacterChanged`).
+  Display helpers in `app/Support/`: `CompactNumber` ("1.26M", "780K" — the JS twin
+  is `sheet/hourly-bars.js`'s `compact`), `SheetFormat` (the mockup's wording),
+  `TopRows` (first rows as-is, the rest folded into one "+N"). A brand-new user
+  gets the mockup's `newbie` state.
+- **Profile tab** (`header`, `alerts`, `damage`, `tokens`, `side`, `accounts`,
+  `legacy-stats` — now only the "All users" block — `empty`, `icon`,
+  `attribution`): kills chip, CLI pill (yellow, `data-cmd="tok update"` on hover,
+  ↑ when the client is behind `CachedLatestVersion`), period tabs + custom range,
+  damage with an eased live count-up and "+N" on the viewer's own hits, hourly
+  chart, tokens, model rows with quota estimates, account cards, the Clawd buddy
+  with combos, and a mini-stage with one minion per live subagent. The JS for each
+  lives in `resources/js/battlefield/sheet/` (see that directory's rows in
+  `resources/js/battlefield/CLAUDE.md`).
+- **Character tab** (`character.blade.php`, `sheet/character-stage.js`'s
+  `characterStage` → `mountCharacterStage`): the mockup's CSS sprite-strip roster
+  (20 slots, filter chips by `FighterCharacter::attackType()`, teammate faces),
+  summon/attack/death stage FX, a 1–9 hotbar, Equip with an undo toast. After
+  900ms the sheet folds and closes and the camera pushes in on the viewer's fighter
+  (`window.__battlefield.focusFighter`, `shared/camera-focus.js`); at 2200ms
+  `$wire.equip(key)` persists it and every client's field plays the death →
+  summon swap in view. The `$wire` is captured at init because the sheet is gone
+  by then, and the toast host sits outside the sheet's `@if`. The old Phaser
+  `character-preview/` app is no longer mounted.
+- **Alpine components** (`fighterSheetShell`, `characterStage`, `miniStage`,
+  `accountCard`, `periodTabs`, …) are all registered from `resources/js/app.js`:
+  the sheet's markup only enters the DOM through a Livewire morph, and a browser
+  never executes a `<script>` inserted that way. Two Livewire gotchas: never call
+  `$wire.open(...)` (it collides with the `$open` property — use
+  `$wire.dispatchSelf('open-fighter-sheet', {tab})`), and capture `this.$wire.$id`
+  then use `window.Livewire.find(id)` when calling back after the element is gone.
 
 ## Testability
 

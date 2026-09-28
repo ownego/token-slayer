@@ -21,7 +21,7 @@ Co-Authored-By: <current Claude model> <noreply@anthropic.com>
 | Scope | Covers |
 |---|---|
 | `battlefield` | Phaser game (`resources/js/battlefield/**`), sprites, battlefield Livewire |
-| `character-select`, `character-preview` | Character picker page / preview canvas |
+| `battlefield` also covers the fighter sheet | `FighterSheet` (Profile/Character tabs) — the old `character-select`/`character-preview`/`profile` scopes are historical: those components and `/profile` were removed |
 | `api` | `EventController` ingestion, IDE/state endpoints (`routes/api.php`) |
 | `hooks` | Install scripts, hook template, cowork watcher, userscript (history also has `hook` and `install`; use `hooks`) |
 | `events` | `events` ledger / model tracking (`ModelUsageParser`, `events.model`) |
@@ -30,7 +30,7 @@ Co-Authored-By: <current Claude model> <noreply@anthropic.com>
 | `provisioning` | Device grants, `/api/provisioned/*`, `AccountProvisioningService` |
 | `attribution` | `AccountResolver`, unrecognized/backfill |
 | `admin`, `filament`, `analytics` | Filament panel, resources, analytics widgets/queries |
-| `setup`, `profile`, `guide` | The respective pages (`/setup`, `/profile`, `/guide`) |
+| `setup`, `guide` | The respective pages (`/setup`, `/guide`) |
 | `config` | `config/*.php` changes on their own (e.g. a hook_version bump) |
 | `broadcast` | Cross-cutting PHP↔JS broadcast contract |
 | `jetbrains` (and `vscode` by analogy) | `extensions/*` IDE plugins |
