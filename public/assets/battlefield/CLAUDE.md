@@ -23,7 +23,10 @@ bosses/skeleton.png           32×32,   scale 4   (?v=100)
 bosses/slime.png              32×32,   scale 4   (?v=100)
 bosses/minotaur-chierit.png   288×160, scale 1   idle/move/attack ranges
 bosses/demon-slime-chierit.png 288×160, scale 1, pixelArt:false   idle/move/attack/hurt/death ranges
+bosses/thanos.png             128×128, scale 1.5 (?v=100)  5×5 grid, 7 blank cells — ThaNode, `fixedName`, not in the rotation
 ```
+A sheet may leave cells blank (`thanos.png` fills only 18 of 25). Phaser indexes the full grid row-major regardless, so each range has to stop before the blank tail of its row — `config.test.js` pins the blank set for that sheet.
+
 **Per-state folder** — one strip per anim (`animFiles`), texture key `<bossKey>-<anim>`:
 ```
 bosses/flying-demon-xzany/    81×71, scale 2, float — idle, move(flying.png), attack, hurt, death

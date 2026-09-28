@@ -22,7 +22,7 @@ All events are `ShouldBroadcastNow` on the public `battlefield` channel. Handler
 |---|---|---|---|
 | `HitDealt` | `EventController` (Stop, tokens > 0) | `user_id, slack_handle, avatar_url, damage, boss_id, boss_hp_after, boss_max_hp, model, flair, flair_duration_ms, flair_color, input_tokens, cache_creation_input_tokens, cache_read_input_tokens` | `HIT` `'hit'` → `fighter.handleHit` |
 | `BossKilled` | `EventController`, once per boss killed in the chain | `boss_number, boss_name, boss_id, killer_user_id, killer_slack_handle, killer_avatar_url` | `BOSS_KILLED` `'boss-killed'` → `boss.handleBossKilled` |
-| `BossSpawned` | `EventController`, once after any kill | `boss_id, boss_number, boss_name, max_hp, fighters[] {user_id, character}` | `BOSS_SPAWNED` `'boss-spawned'` → `boss.handleBossSpawned` |
+| `BossSpawned` | `EventController`, once after any kill | `boss_id, boss_number, boss_name, max_hp, fighters[] {user_id, character}` (+ per-boss script keys, below) | `BOSS_SPAWNED` `'boss-spawned'` → `boss.handleBossSpawned` |
 | `FighterJoined` | `EventController` (SessionStart) | `user_id, slack_handle, display_name, avatar_url, character, position` | `FIGHTER_JOINED` `'fighter-joined'` → `fighter.handleFighterJoined` |
 | `FighterCharging` | `EventController` (prompt / pre-invocation / pre-tool-use; post-hit label for Stop-only providers) | `user_id, slack_handle, avatar_url, character, activity, position` | `FIGHTER_CHARGING` `'fighter-charging'` → `charge.handleCharging` |
 | `FighterChargeCleared` | `EventController` (Stop with 0 tokens) | `user_id` | `FIGHTER_CHARGE_CLEARED` `'fighter-charge-cleared'` → `charge.handleChargeCleared` |
@@ -31,6 +31,8 @@ All events are `ShouldBroadcastNow` on the public `battlefield` channel. Handler
 | `FighterCharacterChanged` | `Livewire\FighterSheet::equip()` (Character tab; the old `Livewire\CharacterSelect` was removed in the battlefield-redesign PR chain) | `user_id, character` | `CHARACTER_CHANGED` `'character-changed'` → `fighter.updateCharacters([payload])` |
 | `FighterAgentCountChanged` | `EventController` (subagent dispatch/activity), `fighters:sweep-idle` | `user_id, count, seq` | `FIGHTER_AGENT_COUNT_CHANGED` `'fighter-agent-count-changed'` → `minions.handleAgentCountChanged` |
 | `FighterAgentToolUsed` | `EventController` (pre/post-tool-use with `agent_id`, hook v7) | `user_id, agent_id, busy` | `FIGHTER_AGENT_TOOL_USED` `'fighter-agent-tool-used'` → `minions.handleAgentToolUsed` |
+
+`BossSpawned` additionally carries whatever `BossCharacter::of($boss)?->scriptState($boss)` returns (the character is recognized by `boss_name`) for the boss's client-side script — today `stones` and `stone_schedule` (remaining ticks as one comma-joined UTC string, empty once capped) for ThaNode; the keys are **absent**, not null, for a scriptless boss. The engine never reads them by name: the boss's script translates the payload through its `readState(payload)` hook (`boss/scripts/thanos.js`), so an older client, or a boss with no script, simply shows no sockets.
 
 Not broadcast: `AccountTokenRejected` is a plain server-side event (listener `SendReauthAlert` → Slack). `BusEvent.POSITIONS_RESYNCED` is client-only: it is emitted from a Livewire `battlefield-resynced` dispatch after an Echo reconnect, never from Reverb.
 
