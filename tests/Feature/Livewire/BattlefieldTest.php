@@ -372,3 +372,13 @@ test('the boot payload gives each fighter the versioned avatar URL, so the brows
     Livewire::test(Battlefield::class)
         ->assertSeeHtml(e(json_encode($fighter->avatarProxyUrl())));
 });
+
+test('the arena loader is the viewer\'s own fighter running along the loading bar', function () {
+    Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
+    $this->actingAs(User::factory()->create(['equipped_character' => 'werebear']));
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('x-data="runnerSprite()" data-char="werebear"')
+        // the scene's preload progress still drives the bar by this id
+        ->assertSeeHtml('id="bf-loader-bar"');
+});

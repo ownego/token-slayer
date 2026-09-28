@@ -107,3 +107,46 @@
     src: url('/fonts/chakra-petch-700-latin.woff2') format('woff2');
 }
 
+/* The game-style loader (resources/views/partials/runner.blade.php): the
+   viewer's own fighter running along a striped gold bar, kicking sparks off
+   its heel (runner.js). Only transform and opacity move, so the compositor
+   keeps it smooth while Phaser blocks the main thread loading the arena.
+   Progress is --p (0..1): the cover slides off the fill, the runner rides its
+   edge; --lane is the bar's inner width. */
+.ts-runner { --lane: 236px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.ts-runner-lane { position: relative; margin-top: 46px; }
+.ts-runner-track { position: relative; width: var(--lane); height: 10px; padding: 2px; overflow: hidden; background: #0b1220; box-shadow: 0 0 0 2px #334155, 0 0 0 4px #0b1220, inset 0 2px 0 rgba(0, 0, 0, 0.5); }
+.ts-runner-fill { position: absolute; inset: 2px; overflow: hidden; background: #f59e0b; box-shadow: 0 0 8px rgba(251, 191, 36, 0.55), inset 0 2px 0 rgba(255, 247, 214, 0.55), inset 0 -2px 0 rgba(180, 83, 9, 0.6); }
+.ts-runner-fill::before { content: ''; position: absolute; top: 0; bottom: 0; left: -14px; right: 0; background: repeating-linear-gradient(-45deg, #fbbf24 0 5px, #f59e0b 5px 10px); animation: ts-runner-march 0.5s linear infinite; }
+.ts-runner-cover { position: absolute; inset: 2px; background: #0b1220; transform: translateX(calc(var(--p) * 100%)); transition: transform 0.6s linear; will-change: transform; }
+.ts-runner-cover::before { content: ''; position: absolute; top: -2px; bottom: -2px; left: -1px; width: 3px; background: #fff7d6; box-shadow: 0 0 10px 3px rgba(253, 230, 138, 0.8); }
+.ts-runner-body { position: absolute; left: -18px; bottom: 11px; width: 40px; height: 40px; transform: translateX(calc(var(--p) * var(--lane))); transition: transform 0.6s linear; will-change: transform; }
+.ts-runner-clip { position: absolute; width: 100px; height: 100px; overflow: hidden; transform-origin: 0 0; }
+.ts-runner-strip { position: absolute; left: 0; top: 0; height: 100px; background-repeat: no-repeat; background-size: 100% 100%; image-rendering: pixelated; will-change: transform; }
+.ts-runner-sparks { position: absolute; width: 0; height: 0; }
+.ts-runner-sparks b { position: absolute; left: 0; top: -2px; width: 3px; height: 2px; background: var(--c3, #fbbf24); box-shadow: 0 0 4px var(--c2, #fde68a); opacity: 0; will-change: transform, opacity; }
+.ts-runner-sparks b:nth-child(1) { animation: ts-spark-a 0.42s linear infinite; }
+.ts-runner-sparks b:nth-child(2) { animation: ts-spark-b 0.5s linear 0.07s infinite; background: #fff; }
+.ts-runner-sparks b:nth-child(3) { animation: ts-spark-c 0.46s linear 0.14s infinite; }
+.ts-runner-sparks b:nth-child(4) { animation: ts-spark-a 0.52s linear 0.21s infinite; background: var(--c4, #f59e0b); }
+.ts-runner-sparks b:nth-child(5) { animation: ts-spark-b 0.44s linear 0.28s infinite; background: var(--c4, #f59e0b); }
+.ts-runner-sparks b:nth-child(6) { animation: ts-spark-c 0.48s linear 0.35s infinite; background: #fff; }
+.ts-runner-label { font: 12px 'Pixelify Sans', ui-monospace, monospace; color: #94a3b8; letter-spacing: 0.08em; animation: ts-runner-blink 1s steps(2) infinite; }
+/* no real progress to show: creep fast then ever slower towards 90%, never
+   looping back (a lap from full to empty teleported the runner) */
+.ts-runner.is-lapping .ts-runner-cover { animation: ts-runner-creep-cover 16s cubic-bezier(0.2, 0.55, 0.35, 1) forwards; }
+.ts-runner.is-lapping .ts-runner-body { animation: ts-runner-creep-body 16s cubic-bezier(0.2, 0.55, 0.35, 1) forwards; }
+/* the finishing sprint (sheetFrame.finish): quicker steps to the line */
+.ts-runner.is-sprinting .ts-runner-strip { animation-duration: 0.45s !important; }
+@keyframes ts-runner-march { to { transform: translateX(14px); } }
+@keyframes ts-runner-creep-cover { from { transform: translateX(0); } to { transform: translateX(90%); } }
+@keyframes ts-runner-creep-body { from { transform: translateX(0); } to { transform: translateX(calc(0.9 * 236px)); } }
+@keyframes ts-spark-a { 0% { opacity: 1; transform: translate(0, 0) rotate(-20deg); } 55% { opacity: 1; transform: translate(-16px, -9px) rotate(-20deg); } 100% { opacity: 0; transform: translate(-24px, 4px) rotate(30deg); } }
+@keyframes ts-spark-b { 0% { opacity: 1; transform: translate(0, 0) rotate(-35deg); } 50% { opacity: 1; transform: translate(-12px, -13px) rotate(-35deg); } 100% { opacity: 0; transform: translate(-19px, 1px) rotate(20deg); } }
+@keyframes ts-spark-c { 0% { opacity: 1; transform: translate(0, 0) rotate(-8deg); } 60% { opacity: 1; transform: translate(-20px, -5px) rotate(-8deg); } 100% { opacity: 0; transform: translate(-28px, 6px) rotate(40deg); } }
+@keyframes ts-runner-blink { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+    .ts-runner-fill::before, .ts-runner-sparks b, .ts-runner-label { animation: none; }
+    .ts-runner.is-lapping .ts-runner-cover { animation: none; transform: translateX(60%); }
+    .ts-runner.is-lapping .ts-runner-body { animation: none; transform: translateX(calc(0.6 * 236px)); }
+}

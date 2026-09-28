@@ -536,10 +536,12 @@ test('account members show their real avatar and the character they play, not ju
         ->assertSeeHtml('data-char="werebear"');
 });
 
-test('the sheet frame and a skeleton are there before it is ever opened, so a click shows it at once', function () {
-    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+test('the sheet frame and its loader are there before it is ever opened, so a click shows it at once', function () {
+    // the loader is the viewer's own fighter running, not a grey skeleton
+    Livewire::actingAs(User::factory()->create(['equipped_character' => 'wizard']))->test(FighterSheet::class)
         ->assertSeeHtml('x-data="sheetFrame()"')
-        ->assertSeeHtml('class="fs fs-skel"');
+        ->assertSeeHtml('class="fs fs-skel"')
+        ->assertSeeHtml('x-data="runnerSprite()" data-char="wizard"');
 });
 
 test('switching tab is only remembered by the server, never re-rendered for', function () {
@@ -565,4 +567,37 @@ test('the By-model rows show a loading state while a new period is fetched', fun
     Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
         ->call('open', 'profile')
         ->assertSeeHtml('wire:target="setModelPeriod"');
+});
+
+test('an opened sheet keeps its loader in the page until the runner has finished, then shows the sheet', function () {
+    // the loader must outlive the first render, or the render's morph swaps it
+    // out mid-run
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('class="fs fs-skel"')
+        ->assertSeeHtml('@fighter-sheet-ready.window="finish()"')
+        ->assertSeeHtml('x-show="!loading"');
+});
+
+test('a render never strips the runner the page painted into the loader', function () {
+    // the sprite and its sparks canvas are added in the page; without
+    // wire:ignore the first render's morph removed them mid-run
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('wire:ignore x-data="runnerSprite()"');
+});
+
+test('no render can touch the loader while the runner sprints to the end', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('<div x-show="loading" wire:ignore>');
+});
+
+test('a render never re-cloaks the open frame', function () {
+    // the frame ships x-cloak for the first paint; a morph that re-added it
+    // hid the whole open sheet for a beat on every render (and froze the
+    // loader's finishing sprint)
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('x-data="sheetFrame()"'."\n".'        wire:ignore.self');
 });

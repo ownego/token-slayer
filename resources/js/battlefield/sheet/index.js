@@ -29,22 +29,79 @@ export function switchTab(root, tab) {
 }
 
 /**
+ * How long the runner takes to run the rest of the bar once the sheet is
+ * ready, in ms, before the sheet itself appears.
+ *
+ * @type {number}
+ */
+export const FINISH_RUN_MS = 700;
+
+/**
  * The always-rendered frame around the sheet: shown the instant the nav asks
- * for it (a skeleton until the first render lands, the last-loaded sheet
- * after that), and hidden with its exit transition on close.
+ * for it. The first time, the viewer's fighter runs the loading bar until the
+ * sheet's first render is up, then runs the last stretch to the end before
+ * the sheet appears; after that a reopen shows the loaded sheet at once.
+ * Hidden with its exit transition on close.
  *
  * @return {object}
  */
 export function sheetFrame() {
   return {
     shown: false,
+    loading: false,
+    loaded: false,
+    finishTimer: null,
     /** @return {void} */
     show() {
       this.shown = true;
+      this.loading = !this.loaded;
     },
     /** @return {void} */
     hide() {
       this.shown = false;
+    },
+    /**
+     * The sheet is ready: the fill runs from wherever its lap is to the end,
+     * then the loader gives way to the sheet.
+     *
+     * @return {void}
+     */
+    finish() {
+      if (this.loaded) {
+        return;
+      }
+      this.loaded = true;
+      const runner = this.$el?.querySelector('.ts-runner');
+      if (runner) {
+        // a sprint from wherever the creep is: freeze the cover and the
+        // runner where they are, then slide both to the end at an even pace
+        // (transform only, so the compositor runs it) with quicker steps
+        const cover = runner.querySelector('.ts-runner-cover');
+        const body = runner.querySelector('.ts-runner-body');
+        [cover, body].forEach(part => {
+          if (!part) {
+            return;
+          }
+          const now = getComputedStyle(part).transform;
+          part.style.animation = 'none';
+          part.style.transform = now && now !== 'none' ? now : '';
+        });
+        void runner.offsetWidth;
+        const sprint = `transform ${FINISH_RUN_MS}ms cubic-bezier(.35, 0, .65, 1)`;
+        if (cover) {
+          cover.style.transition = sprint;
+          cover.style.transform = 'translateX(100%)';
+        }
+        if (body) {
+          body.style.transition = sprint;
+          body.style.transform = 'translateX(var(--lane))';
+        }
+        runner.classList.add('is-sprinting');
+      }
+      clearTimeout(this.finishTimer);
+      this.finishTimer = setTimeout(() => {
+        this.loading = false;
+      }, FINISH_RUN_MS);
     },
   };
 }
@@ -173,6 +230,8 @@ export function fighterSheetShell(me) {
         onTab: tab => this.showTab(tab),
       });
       this.shell.open(document.activeElement);
+      // the frame's loader runs its last stretch, then shows this sheet
+      window.dispatchEvent(new CustomEvent('fighter-sheet-ready'));
       this.attachHitListener();
       this.$wire.on('sheet-refresh-cooldown', ({ seconds }) => this.startCooldown(seconds));
       this.watchDamage();

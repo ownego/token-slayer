@@ -1,6 +1,7 @@
 import './echo';
 import { battlefieldHud } from './battlefield/hud/index.js';
 import { agoTicker, clawdBuddyPanel, fighterSheetShell, sheetFrame, sparkChart } from './battlefield/sheet/index.js';
+import { runnerSprite } from './battlefield/sheet/runner.js';
 import { accountCard } from './battlefield/sheet/account-card.js';
 import { modelPicker, periodTabs } from './battlefield/sheet/pickers.js';
 import { miniStage } from './battlefield/sheet/mini-stage.js';
@@ -20,6 +21,7 @@ document.addEventListener('alpine:init', () => {
   window.Alpine.data('battlefieldHud', battlefieldHud);
   window.Alpine.data('fighterSheetShell', fighterSheetShell);
   window.Alpine.data('sheetFrame', sheetFrame);
+  window.Alpine.data('runnerSprite', runnerSprite);
   window.Alpine.data('sparkChart', sparkChart);
   window.Alpine.data('agoTicker', agoTicker);
   window.Alpine.data('accountCard', accountCard);

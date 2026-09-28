@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, test, vi } from 'vitest';
-import { agoTicker, clawdBuddyPanel, createSheetShell, fighterSheetShell } from '@battlefield/sheet/index.js';
+import { FINISH_RUN_MS, agoTicker, clawdBuddyPanel, createSheetShell, fighterSheetShell, sheetFrame } from '@battlefield/sheet/index.js';
 
 function buildDom() {
   document.body.innerHTML = `
@@ -293,5 +293,59 @@ test('reopening after an equip unfolds the sheet it folded on the way out', () =
   window.dispatchEvent(new CustomEvent('open-fighter-sheet', { detail: { tab: 'profile' } }));
 
   expect(document.querySelector('.sheet').classList.contains('folding')).toBe(false);
+  shell.destroy();
+});
+
+function frameDom() {
+  document.body.innerHTML = '<div id="frame"><div class="ts-runner is-lapping"><div class="ts-runner-lane"><div class="ts-runner-track"><div class="ts-runner-cover"></div></div><span class="ts-runner-body"></span></div></div></div>';
+  const frame = sheetFrame();
+  frame.$el = document.getElementById('frame');
+
+  return frame;
+}
+
+test('the first open shows the runner until the sheet is ready, then it runs to the end before the sheet appears', () => {
+  vi.useFakeTimers();
+  const frame = frameDom();
+
+  frame.show();
+  expect(frame.loading).toBe(true);
+
+  frame.finish();
+  // the cover slides off and the runner reaches the end of the bar
+  expect(document.querySelector('.ts-runner-cover').style.transform).toBe('translateX(100%)');
+  expect(document.querySelector('.ts-runner-body').style.transform).toBe('translateX(var(--lane))');
+  expect(frame.loading).toBe(true); // still running the last stretch
+  // a sprint to the line, long enough to see, not a jump
+  expect(FINISH_RUN_MS).toBeGreaterThanOrEqual(600);
+  expect(document.querySelector('.ts-runner').classList.contains('is-sprinting')).toBe(true);
+
+  vi.advanceTimersByTime(FINISH_RUN_MS);
+  expect(frame.loading).toBe(false);
+  vi.useRealTimers();
+});
+
+test('a reopen shows the already-loaded sheet at once, no runner', () => {
+  vi.useFakeTimers();
+  const frame = frameDom();
+  frame.show();
+  frame.finish();
+  vi.advanceTimersByTime(FINISH_RUN_MS);
+  frame.hide();
+
+  frame.show();
+
+  expect(frame.loading).toBe(false);
+  vi.useRealTimers();
+});
+
+test('the sheet announces it is ready once its first render is up', () => {
+  const ready = vi.fn();
+  window.addEventListener('fighter-sheet-ready', ready);
+
+  const { shell } = mountShell('<section class="sheet"></section>');
+
+  expect(ready).toHaveBeenCalledTimes(1);
+  window.removeEventListener('fighter-sheet-ready', ready);
   shell.destroy();
 });

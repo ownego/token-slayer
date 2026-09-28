@@ -21,6 +21,7 @@ import { SPARK_EMITTER, sparkAngle } from './shared/sparks.js';
 import { createSpawnGate } from './ceremony.js';
 import { createEnvironment } from './environment/index.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture } from './fighter/avatar.js';
+import { setRunnerProgress } from '@battlefield/sheet/runner.js';
 
 /** Phaser scene coordinator — wires all battlefield managers and handles the Phaser lifecycle. */
 export class BattlefieldScene extends Phaser.Scene {
@@ -65,7 +66,8 @@ export class BattlefieldScene extends Phaser.Scene {
       this.load.spritesheet(TextureKey.EXPLOSION, '/assets/battlefield/fx/explosion.png', { frameWidth: 32, frameHeight: 32 });
     const loaderBar = document.getElementById('bf-loader-bar');
     const loader    = document.getElementById('bf-loader');
-    this.load.on('progress', v => { if (loaderBar) loaderBar.style.width = Math.round(v * 100) + '%'; });
+    // the loader's runner rides the real preload progress (partials/runner.blade.php)
+    this.load.on('progress', v => setRunnerProgress(loaderBar, v));
     // `once`, not `on`: Boss.preloadNextType()/_awaitBossTypeReady() call
     // load.start() for a background boss type on every kill, which also
     // fires this loader's 'complete' event. The body below (pixel-art
