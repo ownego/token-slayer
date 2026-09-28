@@ -64,3 +64,27 @@ export function youRingSparks(t, count, w, h) {
     return { x: Math.cos(a) * (w / 2), y, alpha: 0.55 + 0.45 * Math.sin(a) };
   });
 }
+
+/**
+ * Redraws a name once its webfont has loaded. A Phaser Text rasterizes the
+ * moment it is created and never again on its own, so a name made before
+ * "Pixelify Sans" arrived (a reload that bypasses the cache) would keep the
+ * fallback face for good. A name made with the font already there, or
+ * destroyed meanwhile, is left alone.
+ *
+ * @param {{active: boolean, style: {update: function(boolean): void}}} text The name.
+ * @param {?{check: function(string): boolean, load: function(string): Promise}} fonts `document.fonts`.
+ * @return {Promise<void>}
+ */
+export function refreshNameWhenFontLoads(text, fonts = globalThis.document?.fonts) {
+  const spec = `${NAME_FONT_PX}px ${NAME_STYLE.fontFamily}`;
+  if (!fonts?.load || fonts.check?.(spec)) {
+    return Promise.resolve();
+  }
+
+  return fonts.load(spec).then(() => {
+    if (text.active) {
+      text.style.update(true);
+    }
+  }, () => {});
+}
