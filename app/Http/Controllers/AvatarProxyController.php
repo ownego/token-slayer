@@ -47,7 +47,7 @@ class AvatarProxyController extends Controller
         // Keyed by the Slack URL (a new avatar is fetched at once) and the
         // size, so the 512px bodies cached before this change are not reused.
         $payload = Cache::remember(
-            "avatar:{$user->id}:".self::FETCH_SIZE.":".sha1($user->avatar_url),
+            "avatar:{$user->id}:".self::FETCH_SIZE.':'.sha1($user->avatar_url),
             now()->addSeconds(self::CACHE_SECONDS),
             fn (): ?array => $this->fetch($this->sized($user->avatar_url)) ?? $this->fetch($user->avatar_url),
         );
