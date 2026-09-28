@@ -10,7 +10,7 @@
     </div>
     <div class="me">
         {{-- The real avatar over the initial; a user with no avatar keeps the initial. --}}
-        <span class="av">@auth<img src="{{ route('avatar', auth()->user()) }}" alt="" onerror="this.remove()">@endauth{{ substr(auth()->user()?->name ?? '?', 0, 1) }}</span>
+        <span class="av">@if (auth()->user()?->avatarProxyUrl())<img src="{{ auth()->user()->avatarProxyUrl() }}" alt="" onerror="this.remove()">@endif{{ substr(auth()->user()?->name ?? '?', 0, 1) }}</span>
         <div>
             <div class="me-l">YOU · ON THIS BOSS</div>
             <div class="me-v">

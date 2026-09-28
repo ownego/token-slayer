@@ -336,7 +336,7 @@ test('the Team Damage panel shows the viewer\'s own avatar, not just an initial'
     $this->actingAs($user);
 
     Livewire::test(Battlefield::class)
-        ->assertSeeHtml('<img src="'.route('avatar', $user).'" alt="" onerror="this.remove()">');
+        ->assertSeeHtml('<img src="'.e($user->avatarProxyUrl()).'" alt="" onerror="this.remove()">');
 });
 
 test('the Team Damage panel is one panel, not a panel drawn inside another (double border and padding)', function () {
@@ -363,4 +363,12 @@ test('battlefield boot payload has no script keys for a generic monster', functi
     Livewire::actingAs(User::factory()->create())
         ->test(Battlefield::class)
         ->assertDontSeeHtml('&quot;script&quot;');
+});
+
+test('the boot payload gives each fighter the versioned avatar URL, so the browser can cache it', function () {
+    Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
+    $fighter = User::factory()->create(['last_event_at' => now()->subMinute(), 'avatar_url' => 'https://avatars.slack-edge.com/a_512.png']);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml(e(json_encode($fighter->avatarProxyUrl())));
 });

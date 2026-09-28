@@ -148,7 +148,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
 
   // ---- roster ----
   const grid = $$('roster-grid');
-  const mateFace = (mate, cls = 'mate') => `<span class="${cls}" style="background:${faceColor(mate.user_id)}" title="${escapeHtml(mate.handle)}">${escapeHtml(mate.handle.charAt(0).toUpperCase())}</span>`;
+  // the real avatar over the initial; the initial stays underneath if the image fails
+  const mateFace = (mate, cls = 'mate') => `<span class="${cls}" style="background:${faceColor(mate.user_id)}" title="${escapeHtml(mate.handle)}">${escapeHtml(mate.handle.charAt(0).toUpperCase())}${mate.avatar ? `<img src="${escapeHtml(mate.avatar)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
   ROSTER.forEach(c => {
     const b = document.createElement('button');
     b.className = 'slot';

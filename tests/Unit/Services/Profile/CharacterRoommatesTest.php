@@ -39,3 +39,12 @@ test('caches the grouping under the registered key', function () {
 
     expect(Cache::has(CacheKeys::CHARACTER_ROOMMATES))->toBeTrue();
 });
+
+test('each teammate carries their real avatar URL, so the roster shows faces, not initials', function () {
+    Cache::flush();
+    $mate = User::factory()->create(['equipped_character' => 'wizard', 'avatar_url' => 'https://avatars.slack-edge.com/m_512.png']);
+
+    $roommates = app(CharacterRoommates::class)->for();
+
+    expect($roommates['wizard'][0]['avatar'])->toBe($mate->avatarProxyUrl());
+});

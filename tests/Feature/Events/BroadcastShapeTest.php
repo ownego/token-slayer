@@ -260,3 +260,15 @@ test('FighterAgentCountChanged broadcasts on the battlefield channel with expect
             'seq' => 7,
         ]);
 });
+
+test('every broadcast avatar is the versioned proxy URL, never the raw 512px Slack image', function () {
+    // The raw URL makes the browser download Slack's ~600 KB original for a
+    // 30px head; the proxy serves the 192px variant, cached for a week.
+    $user = User::factory()->create(['avatar_url' => 'https://avatars.slack-edge.com/a_512.png']);
+    $boss = Boss::factory()->create();
+
+    expect((new HitDealt($user, 1, $boss))->broadcastWith()['avatar_url'])->toBe($user->avatarProxyUrl())
+        ->and((new FighterCharging($user))->broadcastWith()['avatar_url'])->toBe($user->avatarProxyUrl())
+        ->and((new FighterJoined($user, $boss))->broadcastWith()['avatar_url'])->toBe($user->avatarProxyUrl())
+        ->and((new BossKilled($boss, $user))->broadcastWith()['killer_avatar_url'])->toBe($user->avatarProxyUrl());
+});

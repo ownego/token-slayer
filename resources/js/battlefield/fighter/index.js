@@ -12,7 +12,7 @@ import { glyphKey } from '@battlefield/shared/flair-glyphs.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture, makePermanentFallbackAvatarTexture } from './avatar.js';
 import { ensureFlairFont, isFlairFontReady } from './flair-font.js';
 import { NAME_DEPTH, NAME_FONT_PX, NAME_STYLE, YOU_NAME_COLOR, refreshNameWhenFontLoads, youRingSparks } from './name-ring.js';
-import { avatarCenterY } from './avatar-stack.js';
+import { avatarCenterY, avatarSrc } from './avatar-stack.js';
 import {
   buildRingChars,
   clearFlair,
@@ -227,6 +227,7 @@ export class Fighter {
       handle: payload.slack_handle,
       display_name: payload.display_name ?? null,
       character: payload.character ?? null,
+      avatarUrl: payload.avatar_url ?? null,
     };
 
     const count = this.scene.fighters.size + 1;
@@ -512,7 +513,7 @@ export class Fighter {
     }
     cacheHeel(this.scene, ftype);
     container.add(body);
-    const avatarUrl = fighter.id ? `/avatars/${fighter.id}?v=${Date.now()}` : null;
+    const avatarUrl = avatarSrc(fighter);
     const initialKey = this.scene.textures.exists(`fighter-${fighter.id}`)
       ? `fighter-${fighter.id}`
       : makeFallbackAvatarTexture(this.scene, fighter);

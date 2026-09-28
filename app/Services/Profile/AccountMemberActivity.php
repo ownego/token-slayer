@@ -31,7 +31,7 @@ class AccountMemberActivity
      * their real last-active timestamp.
      *
      * @param  Account  $account
-     * @return array<int, array{user_id: int, handle: string, status: string, damage_today: int, events_today: int, last_seen_at: ?CarbonImmutable}>
+     * @return array<int, array{user_id: int, handle: string, avatar: ?string, character: ?string, status: string, damage_today: int, events_today: int, last_seen_at: ?CarbonImmutable}>
      */
     public function for(Account $account): array
     {

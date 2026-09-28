@@ -39,7 +39,7 @@
             'fighters' => $fighters->map(fn ($f) => [
                 'id' => $f->id,
                 'handle' => $f->displayHandle(),
-                'avatarUrl' => route('avatar', $f),
+                'avatarUrl' => $f->avatarProxyUrl(),
                 'character' => $f->characterForBoss($boss->id),
                 'charging' => $this->chargingByUser[$f->id] ?? null,
                 'position' => $this->positionsByUser[$f->id] ?? null,

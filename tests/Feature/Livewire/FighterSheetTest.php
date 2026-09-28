@@ -522,3 +522,15 @@ test('refresh re-probes only the accounts the sheet shows, never an untracked on
 
     expect($probes)->toBe(0);
 });
+
+test('account members show their real avatar and the character they play, not just an initial', function () {
+    $me = User::factory()->create();
+    $mate = User::factory()->create(['equipped_character' => 'werebear', 'avatar_url' => 'https://avatars.slack-edge.com/w_512.png']);
+    $account = Account::factory()->connected()->create();
+    $me->accounts()->attach($account);
+    $account->users()->attach($mate);
+
+    Livewire::actingAs($me)->test(FighterSheet::class)->call('open', 'profile')
+        ->assertSeeHtml('<img src="'.e($mate->avatarProxyUrl()).'"')
+        ->assertSeeHtml('data-char="werebear"');
+});

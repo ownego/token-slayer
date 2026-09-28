@@ -149,3 +149,11 @@ test('the roster tooltip goes away on click and when the tab is torn down, inste
   cleanup = [];
   expect(tip.classList.contains('show')).toBe(false);
 });
+
+test('a teammate on a fighter shows their real avatar over the initial', () => {
+  mount({ roommates: { wizard: [{ user_id: 3, handle: 'linhpt', avatar: '/avatars/3?v=abc' }] } });
+
+  const face = document.querySelector('.slot[data-key="wizard"] .mates .mate');
+  expect(face.querySelector('img')?.getAttribute('src')).toBe('/avatars/3?v=abc');
+  expect(face.textContent).toBe('L');
+});

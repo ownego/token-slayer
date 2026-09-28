@@ -1214,3 +1214,9 @@
 .fs .sheet { background: linear-gradient(180deg, rgb(14,24,44), rgb(7,12,24)); }
 /* the shield's ink sits in the top of its glyph box: nudge it onto the word's midline */
 .fs .btn-equip .icon-wiggle { position: relative; top: 0.12em; }
+
+/* app addition: real avatars over the initials, and a member's character badge */
+.fs .face, .fs .mate { position: relative; overflow: hidden; }
+.fs .face > img, .fs .mate > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fs .mchar { display: inline-block; position: relative; width: 18px; height: 18px; overflow: hidden; vertical-align: middle; margin: 0 4px; }
+.fs .mchar > i { position: absolute; width: 100px; height: 100px; transform-origin: 0 0; image-rendering: pixelated; background-repeat: no-repeat; }

@@ -47,7 +47,7 @@
                 <span class="fx-circle" id="fx-circle"></span>
                 <span class="fx-burst" id="fx-burst"></span>
                 <span class="show-sprite" id="show-sprite"></span>
-                <span class="stage-avatar" id="stage-avatar" title="{{ auth()->user()->displayHandle() }}"><img class="av-img" src="{{ route('avatar', auth()->user()) }}" alt="" onerror="this.remove()"><span class="av-face">{{ Str::upper(Str::substr(auth()->user()->displayHandle(), 0, 1)) }}</span></span>
+                <span class="stage-avatar" id="stage-avatar" title="{{ auth()->user()->displayHandle() }}"><img class="av-img" src="{{ auth()->user()->avatarProxyUrl() }}" alt="" onerror="this.remove()"><span class="av-face">{{ Str::upper(Str::substr(auth()->user()->displayHandle(), 0, 1)) }}</span></span>
                 <span class="show-effect" id="show-effect"></span>
                 <span class="boss" id="boss"></span>
                 <span class="hit-spark" id="hit-spark"></span>

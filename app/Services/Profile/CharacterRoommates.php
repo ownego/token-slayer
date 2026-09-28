@@ -22,18 +22,19 @@ class CharacterRoommates
     /**
      * Every character currently equipped by anyone, grouped by its key.
      *
-     * @return array<string, array<int, array{user_id: int, handle: string}>>
+     * @return array<string, array<int, array{user_id: int, handle: string, avatar: ?string}>>
      */
     public function for(): array
     {
         return Cache::remember(CacheKeys::CHARACTER_ROOMMATES, now()->addHour(), function (): array {
             return User::query()
                 ->whereNotNull('equipped_character')
-                ->get(['id', 'equipped_character', 'slack_handle', 'display_name', 'name'])
+                ->get(['id', 'equipped_character', 'slack_handle', 'display_name', 'name', 'avatar_url'])
                 ->groupBy(fn (User $user): string => $user->equipped_character->value)
                 ->map(fn ($users): array => $users->map(fn (User $u): array => [
                     'user_id' => $u->id,
                     'handle' => $u->displayHandle(),
+                    'avatar' => $u->avatarProxyUrl(),
                 ])->all())
                 ->all();
         });
