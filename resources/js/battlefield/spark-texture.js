@@ -138,9 +138,10 @@ function bakeClawdPose(scene, key, pose, rowOffset = 0) {
 }
 
 /**
- * Ensures the three Clawd pose textures used by the minion poof exist:
- * `clawd-default`, `clawd-crouch` (the default pose baked one row lower),
- * `clawd-arms` (arms-up).
+ * Ensures the Clawd pose textures exist: `clawd-default`, `clawd-crouch`
+ * (the default pose baked one row lower), `clawd-arms` (arms-up) for the
+ * minion poof, and `clawd-look-left`/`clawd-look-right` for the sky's
+ * Clawd cameos (environment/clawd-cameo.js).
  *
  * @param {Phaser.Scene} scene
  * @return {void}
@@ -149,6 +150,8 @@ export function ensureClawdTextures(scene) {
   bakeClawdPose(scene, TextureKey.CLAWD_DEFAULT, 'default');
   bakeClawdPose(scene, TextureKey.CLAWD_CROUCH, 'default', 1);
   bakeClawdPose(scene, TextureKey.CLAWD_ARMS, 'arms-up');
+  bakeClawdPose(scene, TextureKey.CLAWD_LOOK_LEFT, 'look-left');
+  bakeClawdPose(scene, TextureKey.CLAWD_LOOK_RIGHT, 'look-right');
 }
 
 /**

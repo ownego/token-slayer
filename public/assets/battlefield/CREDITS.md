@@ -171,3 +171,7 @@ Original artwork, no external license.
 | `explosion.png` | 128×32 | 4 | 32×32 | impact burst |
 | `big-explosion.png` | 576×64 | 9 | 64×64 | boss-killed flash |
 | `player-shoot-hit.png` | 64×16 | 4 | 16×16 | charge ring fallback |
+
+## Sky landmarks (code, no asset files)
+
+The windmill sails, the OpenAI-knot flowers, the Antigravity arch, the Cursor banner and Gemini sparkle are the tools' own marks, rasterized at runtime from the SVG paths in `resources/js/battlefield/environment/logo-paths.js`. The paths come from [`@lobehub/icons-static-svg`](https://github.com/lobehub/lobe-icons) 1.95.1 (MIT). The marks are trademarks of Anthropic, OpenAI, Anysphere and Google and appear here only as scenery in this internal tool.

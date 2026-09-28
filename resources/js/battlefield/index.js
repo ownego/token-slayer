@@ -199,7 +199,7 @@ function bootGame(mount, state, mode) {
       // dawn/dusk/night without waiting for the real time of day — never
       // exposed without the explicit ?sky-debug=1 query param.
       ...(new URLSearchParams(window.location.search).get('sky-debug') === '1'
-        ? { env: { setClock: minutes => scene.environment.setClock(minutes), flock: () => scene.environment.debug.flock(), shoot: () => scene.environment.debug.shoot() } }
+        ? { env: { setClock: minutes => scene.environment.setClock(minutes), flock: () => scene.environment.debug.flock(), shoot: () => scene.environment.debug.shoot(), clawd: kind => scene.environment.debug.clawd(kind) } }
         : {}),
     };
   });
