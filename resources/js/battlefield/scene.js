@@ -50,8 +50,7 @@ export class BattlefieldScene extends Phaser.Scene {
     // only the active boss type loads up front. Boss.preloadNextType()
     // queues the type after it in the background once create() runs, and
     // handleBossSpawned() keeps that one-ahead window going on every kill.
-    const bootBossNumber = this.game.registry.get('initialState')?.boss?.number ?? 0;
-    queueBossLoad(this, Boss.bossTypeFor(bootBossNumber));
+    queueBossLoad(this, Boss.bossTypeOf(this.game.registry.get('initialState')?.boss));
     for (const companion of [BAT_CONFIG, NECROMANCER_CONFIG, ...MINION_TYPES, ...MINION_CLASH_EFFECTS]) {
       for (const [anim, info] of Object.entries(companion.animFiles)) {
         const texKey = `${companion.key}-${anim}`;
@@ -271,6 +270,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this._tornDown = true;
     this.isShuttingDown = true;
     this._unbindBus?.();
+    this.boss?.destroy?.();
     this.minions?.destroy?.();
     this.environment?.destroy?.();
     this.tooltip = null;

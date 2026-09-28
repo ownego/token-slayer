@@ -174,7 +174,7 @@ export class Fighter {
       config.perRow,
       config.rowSpacing,
     );
-    const bossType = Boss.bossTypeFor(this.scene.bossState?.number ?? 0);
+    const bossType = Boss.bossTypeOf(this.scene.bossState);
     const damageByUser = new Map(state.damageTotals ?? []);
     let gridIdx = 0;
     state.fighters.forEach((f) => {
@@ -250,7 +250,7 @@ export class Fighter {
     );
     const { pos, isCustom } = resolveFighterPlacement(payload.position, positions[positions.length - 1], {
       layout: this.scene.layout,
-      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      bossType: Boss.bossTypeOf(this.scene.bossState),
       fsize: config.displaySize * damageScale,
       zones: this.scene._zones ?? [],
     });
@@ -602,7 +602,7 @@ export class Fighter {
     };
     const ctx = {
       layout: this.scene.layout,
-      bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+      bossType: Boss.bossTypeOf(this.scene.bossState),
       fsize: entry.displaySize * (entry.damageScale ?? 1),
     };
     const origin = moveOrigin(entry.sprite, entry.pos, ctx);
@@ -1289,7 +1289,7 @@ export class Fighter {
       // make this attack return there and strand every later move on it.
       fighter.pos = moveOrigin(fighter.sprite, fighter.pos, {
         layout: this.scene.layout,
-        bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
+        bossType: Boss.bossTypeOf(this.scene.bossState),
         fsize: fighter.displaySize * (fighter.damageScale ?? 1),
       });
       fighter.waypointMoving = false;

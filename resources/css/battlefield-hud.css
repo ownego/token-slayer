@@ -191,3 +191,13 @@
 .bf-plate .hpbar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(0,0,0,.6) calc(10% - 2px) 10%); }
 .bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fdba74 0%, #f97316 25%, #c2410c 72%, #7c2d12 100%); }
 .bf-plate .hpbar .hp-t { font-size: 13px; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; }
+
+/* ThaNode's Infinity Stone sockets: a row appended under the HP bar by
+   resources/js/battlefield/boss/scripts/thanos.js (absent for every other boss).
+   .on lights a stone; .pop is added once, when its arrival animation ends. */
+.bf-plate .bf-stones { display: flex; justify-content: center; gap: 8px; margin-top: 6px; }
+.bf-plate .bf-stones .stone { width: 12px; height: 12px; rotate: 45deg; background: #0d1426; border: 1px solid #3b4a6e; box-shadow: 0 0 0 1px #000; }
+.bf-plate .bf-stones .stone.on { background: var(--stone); border-color: color-mix(in srgb, var(--stone), #fff 45%); box-shadow: 0 0 0 1px #000, 0 0 8px var(--stone); }
+.bf-plate .bf-stones .stone.pop { animation: bf-stone-pop .45s cubic-bezier(.2,1.6,.4,1); }
+@keyframes bf-stone-pop { 0% { scale: 0; } 60% { scale: 1.6; } 100% { scale: 1; } }
+@media (prefers-reduced-motion: reduce) { .bf-plate .bf-stones .stone.pop { animation: none; } }
