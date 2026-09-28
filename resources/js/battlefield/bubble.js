@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { activityFit, bubbleCenterY, wrapActivity } from './bubble-y.js';
+import { ACTIVITY_LINES, activityFit, bubbleCenterY, wrapActivity } from './bubble-y.js';
 import { fighterDisplayConfig } from '@battlefield/layout.js';
 import { rankBoard } from '@battlefield/shared/board.js';
 
@@ -81,8 +81,8 @@ export class Bubble {
    * @return {{ height: function(): number, destroy: Function, setActivity: Function, moveTo: Function, tweenTo: Function, setVisible: Function }}
    */
   createActivityBubble(x, y, activity, fontPx = 14, maxChars = ACTIVITY_MAX_CHARS) {
-    // compact whatever the fighter's size: up to two lines, wrapped at words
-    const text = this.scene.addSharpText(x, y, wrapActivity(activity, maxChars, 2), {
+    // compact whatever the fighter's size: one line, cut with an ellipsis
+    const text = this.scene.addSharpText(x, y, wrapActivity(activity, maxChars, ACTIVITY_LINES), {
       fontFamily: 'monospace',
       fontSize: `${fontPx}px`,
       color: '#f1f5f9',
@@ -102,7 +102,7 @@ export class Bubble {
         bg.destroy();
       },
       setActivity: newActivity => {
-        text.setText(wrapActivity(newActivity, maxChars, 2));
+        text.setText(wrapActivity(newActivity, maxChars, ACTIVITY_LINES));
         bg.setSize(text.width + 8, text.height + 4);
       },
       moveTo: (newX, newY) => {

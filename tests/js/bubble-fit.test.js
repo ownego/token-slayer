@@ -9,12 +9,16 @@ test('the action bubble stays compact however big the fighter has grown', () => 
   expect(small.fontPx).toBeGreaterThanOrEqual(10);
 });
 
-test('a long action wraps onto at most two lines at word breaks, then ends in an ellipsis', () => {
-  const lines = wrapActivity('Running php artisan test --compact tests/Feature/Livewire/FighterSheetTest.php', 18, 2).split('\n');
-  expect(lines).toHaveLength(2);
-  lines.forEach(l => expect(l.length).toBeLessThanOrEqual(18));
-  expect(lines[0]).toBe('Running php');
-  expect(lines[1].endsWith('…')).toBe(true);
+test('the action bubble is one line, never wrapped onto a second', () => {
+  expect(activityFit(40).maxLines).toBe(1);
+  expect(activityFit(140).maxLines).toBe(1);
+});
+
+test('a long action is cut to one line at a word break and ends in an ellipsis', () => {
+  const out = wrapActivity('Running php artisan test --compact tests/Feature/Livewire/FighterSheetTest.php', 24, 1);
+  expect(out).not.toContain('\n');
+  expect(out.length).toBeLessThanOrEqual(24);
+  expect(out.endsWith('…')).toBe(true);
 });
 
 test('a short action stays on one line untouched', () => {
