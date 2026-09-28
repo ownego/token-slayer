@@ -32,7 +32,9 @@
         <div
             x-data="fighterSheetShell({{ auth()->id() }})"
             x-show="!loading"
-            x-transition.opacity.duration.200ms
+            x-transition:enter="fs-content-enter"
+            x-transition:enter-start="fs-content-from"
+            x-transition:enter-end="fs-content-to"
             class="fs {{ $newbie ? 'newbie' : '' }}"
         >
             <div class="overlay">

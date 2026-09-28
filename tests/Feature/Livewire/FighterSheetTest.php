@@ -537,11 +537,11 @@ test('account members show their real avatar and the character they play, not ju
 });
 
 test('the sheet frame and its loader are there before it is ever opened, so a click shows it at once', function () {
-    // the loader is the viewer's own fighter running, not a grey skeleton
-    Livewire::actingAs(User::factory()->create(['equipped_character' => 'wizard']))->test(FighterSheet::class)
+    // the loader is Clawd bouncing on the start line, not a grey skeleton
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
         ->assertSeeHtml('x-data="sheetFrame()"')
         ->assertSeeHtml('class="fs fs-skel"')
-        ->assertSeeHtml('x-data="runnerSprite()" data-char="wizard"');
+        ->assertSeeHtml('x-data="clawdHop()"');
 });
 
 test('switching tab is only remembered by the server, never re-rendered for', function () {
@@ -579,12 +579,12 @@ test('an opened sheet keeps its loader in the page until the runner has finished
         ->assertSeeHtml('x-show="!loading"');
 });
 
-test('a render never strips the runner the page painted into the loader', function () {
-    // the sprite and its sparks canvas are added in the page; without
-    // wire:ignore the first render's morph removed them mid-run
+test('a render never strips the Clawd the page drew into the loader', function () {
+    // Clawd is drawn into the svg in the page; without wire:ignore the first
+    // render's morph emptied it mid-bounce
     Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
         ->call('open', 'profile')
-        ->assertSeeHtml('wire:ignore x-data="runnerSprite()"');
+        ->assertSeeHtml('wire:ignore x-data="clawdHop()"');
 });
 
 test('no render can touch the loader while the runner sprints to the end', function () {
@@ -600,4 +600,22 @@ test('a render never re-cloaks the open frame', function () {
     Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
         ->call('open', 'profile')
         ->assertSeeHtml('x-data="sheetFrame()"'."\n".'        wire:ignore.self');
+});
+
+test('a render never snaps the period ink back to the first tab mid-slide', function () {
+    // the ink is placed by inline style from the page; a morph that synced
+    // its attributes to the server's bare span dropped it back to the left
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('<span class="period-ink" wire:ignore aria-hidden="true"></span>');
+});
+
+test('the loaded sheet takes the loader\'s exact place: its fade never puts a transform on it', function () {
+    // x-transition.opacity leaves a transform on the element while it runs,
+    // which re-anchors the fixed overlay inside to that box: the sheet sat
+    // 7x24px off for 200ms, then jumped into place
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('x-transition:enter="fs-content-enter"')
+        ->assertDontSeeHtml('x-transition.opacity.duration.200ms');
 });

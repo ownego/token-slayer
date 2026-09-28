@@ -19,6 +19,7 @@
     @keydown.escape="if (more) { $event.stopPropagation(); escape() }"
 >
     <div class="periods" role="tablist">
+        <span class="period-ink" wire:ignore aria-hidden="true"></span>
         @foreach (['hour' => 'This hour', 'today' => 'Today', 'week' => 'This week', 'month' => 'This month', 'all' => 'All time'] as $value => $label)
             <button class="period" role="tab" type="button" data-p="{{ $value }}" aria-selected="{{ $period === $value ? 'true' : 'false' }}" tabindex="{{ $period === $value ? '0' : '-1' }}" @click="pick('{{ $value }}')" @keydown="nav($event)">{{ $label }}</button>
         @endforeach

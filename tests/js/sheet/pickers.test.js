@@ -109,3 +109,27 @@ test('choosing a By-model period relabels the picker at once, before the server 
   expect(document.querySelector('[data-p="today"]').getAttribute('aria-selected')).toBe('false');
   expect(picker.$wire.setModelPeriod).toHaveBeenCalledWith('week');
 });
+
+/**
+ * Gives each period tab a layout box (jsdom has none) so the ink can be measured.
+ */
+function lay(el, left, width) {
+  Object.defineProperty(el, 'offsetLeft', { configurable: true, value: left });
+  Object.defineProperty(el, 'offsetWidth', { configurable: true, value: width });
+}
+
+test('picking a period slides the ink under the new tab at its width, by transform', () => {
+  const tabs = mountTabs('today');
+  document.querySelector('.periods').insertAdjacentHTML('afterbegin', '<span class="period-ink"></span>');
+  document.querySelectorAll('.periods > .period').forEach((tab, i) => lay(tab, i * 100, 80 + i));
+  document.querySelector('[data-p="today"]').setAttribute('aria-selected', 'true');
+  tabs.init();
+
+  const ink = document.querySelector('.period-ink');
+  expect(ink.style.transform).toBe('translateX(100px)');
+
+  tabs.pick('month');
+  expect(ink.style.transform).toBe('translateX(300px)');
+  expect(ink.style.width).toBe('83px');
+  expect(ink.classList.contains('ready')).toBe(true);
+});

@@ -1,4 +1,5 @@
 import { createBuddy } from './clawd-buddy.js';
+import { leap } from './clawd-hop.js';
 import { barHeights, compact, cooldownLabel, liveTokens, readout } from './hourly-bars.js';
 import { agoLabel, bestComboKey, coarseAgo, easeCount } from './sheet-ui.js';
 
@@ -29,8 +30,8 @@ export function switchTab(root, tab) {
 }
 
 /**
- * How long the runner takes to run the rest of the bar once the sheet is
- * ready, in ms, before the sheet itself appears.
+ * How long Clawd's leap to the goal takes once the sheet is ready, in ms,
+ * before the sheet itself appears (fighter-sheet.css's fs-hop-leap matches).
  *
  * @type {number}
  */
@@ -61,8 +62,8 @@ export function sheetFrame() {
       this.shown = false;
     },
     /**
-     * The sheet is ready: the fill runs from wherever its lap is to the end,
-     * then the loader gives way to the sheet.
+     * The sheet is ready: Clawd leaps from the start line to the goal
+     * (sheet/clawd-hop.js), then the loader gives way to the sheet.
      *
      * @return {void}
      */
@@ -71,32 +72,9 @@ export function sheetFrame() {
         return;
       }
       this.loaded = true;
-      const runner = this.$el?.querySelector('.ts-runner');
-      if (runner) {
-        // a sprint from wherever the creep is: freeze the cover and the
-        // runner where they are, then slide both to the end at an even pace
-        // (transform only, so the compositor runs it) with quicker steps
-        const cover = runner.querySelector('.ts-runner-cover');
-        const body = runner.querySelector('.ts-runner-body');
-        [cover, body].forEach(part => {
-          if (!part) {
-            return;
-          }
-          const now = getComputedStyle(part).transform;
-          part.style.animation = 'none';
-          part.style.transform = now && now !== 'none' ? now : '';
-        });
-        void runner.offsetWidth;
-        const sprint = `transform ${FINISH_RUN_MS}ms cubic-bezier(.35, 0, .65, 1)`;
-        if (cover) {
-          cover.style.transition = sprint;
-          cover.style.transform = 'translateX(100%)';
-        }
-        if (body) {
-          body.style.transition = sprint;
-          body.style.transform = 'translateX(var(--lane))';
-        }
-        runner.classList.add('is-sprinting');
+      const hop = this.$el?.querySelector('.ts-hop');
+      if (hop) {
+        leap(hop);
       }
       clearTimeout(this.finishTimer);
       this.finishTimer = setTimeout(() => {

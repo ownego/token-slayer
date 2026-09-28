@@ -32,6 +32,37 @@ export function periodTabs(current) {
       if (saved && saved !== 'custom' && saved !== current) {
         this.$wire.setPeriod(saved);
       }
+      // the ink sits under the selected tab from the start, without sliding
+      // in; it re-measures when the tabs' size changes (webfont, the tab shown)
+      this.slide();
+      if (typeof ResizeObserver !== 'undefined') {
+        const periods = this.$el.querySelector('.periods');
+        if (periods) {
+          new ResizeObserver(() => this.slide()).observe(periods);
+        }
+      }
+      requestAnimationFrame(() => this.$el.querySelector('.period-ink')?.classList.add('ready'));
+    },
+    /**
+     * Moves the ink (the selected tab's lit background) under the selected
+     * tab, by transform so the slide stays smooth; `.ready` turns its
+     * transition on.
+     *
+     * @param {boolean} [animate] slide rather than jump there.
+     * @return {void}
+     */
+    slide(animate = false) {
+      const root = this.$root ?? this.$el;
+      const ink = root.querySelector('.period-ink');
+      const tab = root.querySelector('.periods > .period[aria-selected="true"]');
+      if (!ink || !tab || !tab.offsetWidth) {
+        return;
+      }
+      if (animate) {
+        ink.classList.add('ready');
+      }
+      ink.style.transform = `translateX(${tab.offsetLeft}px)`;
+      ink.style.width = `${tab.offsetWidth}px`;
     },
     /**
      * Switches to a period and remembers it.
@@ -49,6 +80,7 @@ export function periodTabs(current) {
       (this.$root ?? this.$el).querySelectorAll('.periods > .period').forEach(tab => {
         tab.setAttribute('aria-selected', tab.dataset.p === period ? 'true' : 'false');
       });
+      this.slide(true);
       this.$wire.setPeriod(period);
       this.more = false;
     },

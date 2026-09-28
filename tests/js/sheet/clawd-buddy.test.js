@@ -86,3 +86,50 @@ test('a hit after the combo window restarts the streak at 1, not 0-then-1 as two
   buddy.destroy();
   vi.useRealTimers();
 });
+
+/**
+ * The column Clawd stands at: its leftmost body cell is the second row's `▝`
+ * quarter, half a column into the pose; 2 svg units per column.
+ */
+function drawnAt(panel) {
+  const xs = [...panel.querySelectorAll('svg rect.b')].map(r => Number(r.getAttribute('x')));
+  return Math.min(...xs) / 2 - 0.5;
+}
+
+test('a press on Clawd while it reacts to a hit still makes it jump', () => {
+  // with you or your agents working, hits keep Clawd reacting; a press was ignored the whole time
+  vi.useFakeTimers();
+  const panel = document.getElementById('panel');
+  const buddy = createBuddy(panel);
+  vi.advanceTimersByTime(2000);
+
+  buddy.onHit(100);
+  const clawd = panel.querySelector('.clawd');
+  clawd.dispatchEvent(new Event('pointerdown'));
+  clawd.dispatchEvent(new Event('pointerup'));
+
+  expect(panel.textContent).toContain('boing!');
+  buddy.destroy();
+  vi.useRealTimers();
+});
+
+test('hits arriving while Clawd hops toward the pointer never stop it getting there', () => {
+  // each hit used to cancel the hop mid-way and restart it after the reaction,
+  // so under a stream of hits Clawd crept, or never arrived
+  vi.useFakeTimers();
+  const panel = document.getElementById('panel');
+  const buddy = createBuddy(panel);
+  vi.advanceTimersByTime(2000);
+
+  const at = x => Object.assign(new Event('pointerenter'), { clientX: x, clientY: 50 });
+  panel.dispatchEvent(at(500)); // the right-hand third
+  for (let t = 0; t < 1500; t += 150) {
+    vi.advanceTimersByTime(150);
+    buddy.onHit(100);
+  }
+  vi.advanceTimersByTime(300);
+
+  expect(drawnAt(panel)).toBe(12); // spotsFor(21)'s right spot
+  buddy.destroy();
+  vi.useRealTimers();
+});

@@ -297,14 +297,14 @@ test('reopening after an equip unfolds the sheet it folded on the way out', () =
 });
 
 function frameDom() {
-  document.body.innerHTML = '<div id="frame"><div class="ts-runner is-lapping"><div class="ts-runner-lane"><div class="ts-runner-track"><div class="ts-runner-cover"></div></div><span class="ts-runner-body"></span></div></div></div>';
+  document.body.innerHTML = '<div id="frame"><div class="ts-hop"><div class="ts-hop-lane"><span class="ts-hop-mover"><span class="ts-hop-body"><svg class="ts-hop-clawd"></svg></span></span></div></div></div>';
   const frame = sheetFrame();
   frame.$el = document.getElementById('frame');
 
   return frame;
 }
 
-test('the first open shows the runner until the sheet is ready, then it runs to the end before the sheet appears', () => {
+test('the first open shows Clawd bouncing until the sheet is ready, then it leaps to the goal before the sheet appears', () => {
   vi.useFakeTimers();
   const frame = frameDom();
 
@@ -312,13 +312,10 @@ test('the first open shows the runner until the sheet is ready, then it runs to 
   expect(frame.loading).toBe(true);
 
   frame.finish();
-  // the cover slides off and the runner reaches the end of the bar
-  expect(document.querySelector('.ts-runner-cover').style.transform).toBe('translateX(100%)');
-  expect(document.querySelector('.ts-runner-body').style.transform).toBe('translateX(var(--lane))');
-  expect(frame.loading).toBe(true); // still running the last stretch
-  // a sprint to the line, long enough to see, not a jump
+  expect(document.querySelector('.ts-hop').classList.contains('is-leaping')).toBe(true);
+  expect(frame.loading).toBe(true); // still in the air
+  // a leap long enough to see, not a jump cut
   expect(FINISH_RUN_MS).toBeGreaterThanOrEqual(600);
-  expect(document.querySelector('.ts-runner').classList.contains('is-sprinting')).toBe(true);
 
   vi.advanceTimersByTime(FINISH_RUN_MS);
   expect(frame.loading).toBe(false);
