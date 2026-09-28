@@ -1,11 +1,13 @@
 // Which of ThaNode's stones this viewer has already watched arrive, so the
 // per-stone animation plays once per stone per browser: on the first visible
 // moment after the stone lands — straight away when the tab is open, or when
-// the viewer comes back to it. Remembered per boss number in localStorage (a
-// per-viewer convenience, never shared state); an in-memory copy keeps it
-// working for the page's lifetime when storage throws.
+// the viewer comes back to it. localStorage holds a single {boss, seen} record
+// for the current ThaNode only (a per-viewer convenience, never shared state):
+// a later ThaNode has another boss number, so it starts from nothing seen and
+// overwrites the record, leaving nothing behind per past boss. An in-memory
+// copy keeps it working for the page's lifetime when storage throws.
 
-const KEY_PREFIX = 'ts:stones-seen:';
+const KEY = 'ts:stones-seen';
 
 /**
  * The ordinals (1-based) of every stone earned since the viewer last looked,
@@ -35,9 +37,12 @@ export function createSeenStore(storage) {
   const read = (bossNumber) => {
     let stored = 0;
     try {
-      stored = Number.parseInt(storage?.getItem(KEY_PREFIX + bossNumber) ?? '0', 10) || 0;
+      const record = JSON.parse(storage?.getItem(KEY) ?? 'null');
+      if (record?.boss === bossNumber && Number.isInteger(record.seen)) {
+        stored = record.seen;
+      }
     } catch {
-      stored = 0;
+      stored = 0; // storage throws, or a garbage value that isn't JSON
     }
     return Math.max(stored, memory.get(bossNumber) ?? 0);
   };
@@ -56,7 +61,7 @@ export function createSeenStore(storage) {
       const next = Math.max(read(bossNumber), count);
       memory.set(bossNumber, next);
       try {
-        storage?.setItem(KEY_PREFIX + bossNumber, String(next));
+        storage?.setItem(KEY, JSON.stringify({ boss: bossNumber, seen: next }));
       } catch {
         // private window / blocked site data: the in-memory copy still holds
       }

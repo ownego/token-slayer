@@ -52,6 +52,24 @@ describe('createSeenStore', () => {
     expect(store.read(12)).toBe(4);
   });
 
+  test('a later ThaNode plays every stone again, whatever the last one reached', () => {
+    const storage = fakeStorage();
+    createSeenStore(storage).write(57, 6);
+    const next = createSeenStore(storage);
+
+    expect(unseenOrdinals(next.read(65), 1)).toEqual([1]);
+  });
+
+  test('keeps a single record, so past bosses leave nothing behind in storage', () => {
+    const storage = fakeStorage();
+    const store = createSeenStore(storage);
+    store.write(57, 6);
+    store.write(65, 2);
+
+    expect(storage.data.size).toBe(1);
+    expect(createSeenStore(storage).read(65)).toBe(2);
+  });
+
   test('keeps working in memory when storage throws (private window, blocked site data)', () => {
     const store = createSeenStore(throwingStorage);
     store.write(12, 2);
@@ -61,7 +79,7 @@ describe('createSeenStore', () => {
 
   test('ignores a garbage stored value', () => {
     const storage = fakeStorage();
-    storage.setItem('ts:stones-seen:12', 'banana');
+    storage.setItem('ts:stones-seen', 'banana');
 
     expect(createSeenStore(storage).read(12)).toBe(0);
   });
