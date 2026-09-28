@@ -28,17 +28,20 @@ class DamageByModel
             $query->where('created_at', '>=', $start);
         }
 
+        // Grouped on the bare column: Postgres does not treat COALESCE(model, ?)
+        // in SELECT and GROUP BY as one expression once each binds its own
+        // parameter (sqlite accepts it, so only prod broke). NULL is its own group.
         $rows = $query
-            ->selectRaw('COALESCE(model, ?) as model, SUM(tokens) as damage', ['unknown'])
-            ->groupByRaw('COALESCE(model, ?)', ['unknown'])
+            ->selectRaw('model, SUM(tokens) as damage')
+            ->groupBy('model')
             ->orderByDesc('damage')
             ->get();
 
         $total = (int) $rows->sum('damage');
 
         return $rows->map(fn ($row) => [
-            'model' => $row->model,
-            'family' => ModelFamily::fromModelId($row->model === 'unknown' ? null : $row->model)?->value,
+            'model' => $row->model ?? 'unknown',
+            'family' => ModelFamily::fromModelId($row->model)?->value,
             'damage' => (int) $row->damage,
             'share' => $total > 0 ? round(((int) $row->damage) / $total, 4) : 0.0,
         ])->all();
