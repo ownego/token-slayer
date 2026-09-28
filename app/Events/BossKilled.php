@@ -39,7 +39,7 @@ class BossKilled implements ShouldBroadcastNow
             'boss_id' => $this->boss->id,
             'killer_user_id' => $this->killer->id,
             'killer_slack_handle' => $this->killer->displayHandle(),
-            'killer_avatar_url' => $this->killer->avatar_url,
+            'killer_avatar_url' => $this->killer->avatarProxyUrl(),
         ];
     }
 }

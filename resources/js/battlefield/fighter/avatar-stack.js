@@ -24,3 +24,20 @@ export function avatarCenterY(key, scale) {
 
   return -(50 - headTop) * scale - BODY_PX * scale * (38 / 48);
 }
+
+/**
+ * The URL a fighter's avatar loads from: the versioned proxy URL the server
+ * sent (`User::avatarProxyUrl()`, cached a week, `?v=` changing with the
+ * Slack image), else the bare proxy route. Never a per-load cache buster,
+ * which re-downloaded every head on every reload.
+ *
+ * @param {{id?: number|string, avatarUrl?: ?string}} fighter
+ * @return {?string}
+ */
+export function avatarSrc(fighter) {
+  if (fighter.avatarUrl) {
+    return fighter.avatarUrl;
+  }
+
+  return fighter.id ? `/avatars/${fighter.id}` : null;
+}

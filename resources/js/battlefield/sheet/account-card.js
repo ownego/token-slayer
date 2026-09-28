@@ -3,6 +3,7 @@
 // the stamp shows what moved ("42% → 45%") or "failed", and a success holds
 // the button for a minute with a countdown on it.
 import { probeLabel } from './sheet-ui.js';
+import { BY_KEY, frameIn, paint } from './sprite-strip.js';
 
 /**
  * Seconds a successful check holds the card's refresh button.
@@ -25,6 +26,24 @@ export function accountCard(accountId) {
     stampClass: '',
     left: 0,
     timer: null,
+    /**
+     * Paints a member's character badge (`data-char`) with that fighter's
+     * idle sprite, framed small. Called from the badge's own x-init; the
+     * badge is wire:ignore'd so a re-render never strips the paint.
+     *
+     * @param {HTMLElement} el The `.mchar` badge.
+     * @return {void}
+     */
+    paintChar(el) {
+      const key = el.dataset.char;
+      if (!BY_KEY[key] || el.querySelector('i')) {
+        return;
+      }
+      const sprite = document.createElement('i');
+      el.appendChild(sprite);
+      paint(sprite, key, 'idle');
+      frameIn(sprite, key, { maxW: 16, maxH: 16 });
+    },
     /**
      * Re-probes this account and shows the outcome in place.
      *

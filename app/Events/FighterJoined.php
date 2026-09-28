@@ -43,7 +43,7 @@ class FighterJoined implements ShouldBroadcastNow
             'user_id' => $this->user->id,
             'slack_handle' => $this->user->displayHandle(),
             'display_name' => $this->user->display_name,
-            'avatar_url' => route('avatar', $this->user),
+            'avatar_url' => $this->user->avatarProxyUrl(),
             'character' => $this->user->characterForBoss($this->boss?->id),
             'position' => app(FighterPositionCache::class)->get($this->user->id),
         ];

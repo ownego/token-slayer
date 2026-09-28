@@ -7,6 +7,7 @@ import { computeHudTop } from './hud-position.js';
 import { canvasSizeFor } from './render-scale.js';
 import { formatHp } from './format.js';
 import { drawFighterPreview, drawFighterFrame } from './fighter/preview.js';
+import { avatarSrc } from './fighter/avatar-stack.js';
 import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
 import { loadoutLayout, fitScale } from './character-preview/modal-fit.js';
 import { thumbGeometry, scrollTopForThumb } from './character-preview/scroll-thumb.js';
@@ -269,7 +270,7 @@ export function bootBattlefield(mount, state) {
   // keyed DOM view on every hit and on a fresh spawn.
   const boardEl = document.querySelector('.bf-board');
   const boardView = boardEl ? createBoardView(boardEl, {
-    avatar: id => `<img src="/avatars/${id}" alt="" loading="lazy" onerror="this.remove()">`,
+    avatar: id => `<img src="${avatarSrc(currentGame.scene.getScene(SCENE_KEY)?.fighters?.get(id) ?? { id })}" alt="" loading="lazy" onerror="this.remove()">`,
     color: id => BOARD_AVATAR_COLORS[Math.abs(Number(id) || 0) % BOARD_AVATAR_COLORS.length],
     name: id => {
       const scene = currentGame.scene.getScene(SCENE_KEY);

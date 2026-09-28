@@ -47,3 +47,20 @@ test('a cooldown answer counts down what the server says is left', async () => {
 
   expect(c.left).toBe(41);
 });
+
+test('a member\'s character badge is painted with that fighter\'s own idle sprite', () => {
+  const el = document.createElement('span');
+  el.dataset.char = 'werebear';
+
+  accountCard(7).paintChar(el);
+
+  expect(el.querySelector('i').style.backgroundImage).toContain('url(');
+});
+
+test('an unknown character key leaves the badge blank instead of throwing', () => {
+  const el = document.createElement('span');
+  el.dataset.char = 'no-such-fighter';
+
+  expect(() => accountCard(7).paintChar(el)).not.toThrow();
+  expect(el.querySelector('i')).toBeNull();
+});

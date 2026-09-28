@@ -44,7 +44,7 @@ class FighterCharging implements ShouldBroadcastNow
         return [
             'user_id' => $this->user->id,
             'slack_handle' => $this->user->displayHandle(),
-            'avatar_url' => $this->user->avatar_url,
+            'avatar_url' => $this->user->avatarProxyUrl(),
             'character' => $this->user->characterForBoss($this->boss?->id),
             'activity' => $this->activity,
             'position' => app(FighterPositionCache::class)->get($this->user->id),

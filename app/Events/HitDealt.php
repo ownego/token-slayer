@@ -64,7 +64,7 @@ class HitDealt implements ShouldBroadcastNow
         return [
             'user_id' => $this->user->id,
             'slack_handle' => $this->user->displayHandle(),
-            'avatar_url' => $this->user->avatar_url,
+            'avatar_url' => $this->user->avatarProxyUrl(),
             'damage' => $this->damage,
             'boss_id' => $this->boss->id,
             'boss_hp_after' => $this->boss->current_hp,

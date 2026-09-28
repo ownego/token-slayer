@@ -43,3 +43,14 @@ it('includes untracked members too when $includeUntracked is true', function () 
         $untracked->id => 'untracked',
     ]);
 });
+
+test('each member carries their avatar and the character they play, for the sheet\'s members table', function () {
+    $account = Account::factory()->create();
+    $member = User::factory()->create(['equipped_character' => 'werebear', 'avatar_url' => 'https://avatars.slack-edge.com/w_512.png']);
+    $account->users()->attach($member, ['status' => MembershipStatus::Tracked->value]);
+
+    $row = collect(app(AccountMemberStatusQuery::class)->get($account))->firstWhere('user_id', $member->id);
+
+    expect($row['avatar'])->toBe($member->avatarProxyUrl())
+        ->and($row['character'])->toBe('werebear');
+});

@@ -19,7 +19,7 @@ final class AccountMemberStatusQuery
     /**
      * @param  Account  $account  the account to list members for
      * @param  bool  $includeUntracked  whether to also include Untracked members (default: hidden)
-     * @return array<int, array{user_id: int, handle: string, status: string}>
+     * @return array<int, array{user_id: int, handle: string, avatar: ?string, character: ?string, status: string}>
      */
     public function get(Account $account, bool $includeUntracked = false): array
     {
@@ -37,6 +37,8 @@ final class AccountMemberStatusQuery
             ->map(fn ($user): array => [
                 'user_id' => $user->id,
                 'handle' => $user->displayHandle(),
+                'avatar' => $user->avatarProxyUrl(),
+                'character' => $user->equipped_character?->value,
                 'status' => $user->pivot->status->value,
             ])
             ->all();

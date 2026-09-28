@@ -104,6 +104,22 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The URL every page shows this player's avatar through: our cached proxy,
+     * with `?v=` taken from the Slack image, so the week-long browser cache
+     * picks up a changed avatar at once. Null when the player has none.
+     *
+     * @return string|null
+     */
+    public function avatarProxyUrl(): ?string
+    {
+        if (! $this->avatar_url) {
+            return null;
+        }
+
+        return route('avatar', ['user' => $this, 'v' => substr(sha1($this->avatar_url), 0, 10)]);
+    }
+
+    /**
      * The physical machines this user has been provisioned on.
      *
      * @return HasMany<Device, $this>
