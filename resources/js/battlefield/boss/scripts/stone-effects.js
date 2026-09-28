@@ -3,6 +3,7 @@
 // about a second, draws only its own short-lived objects above the boss and
 // removes every one of them when it ends. Nothing here imports Phaser: the
 // scene's own factories are used, so a stub scene can drive it in tests.
+import { TextureKey } from '@battlefield/constants.js';
 import { STONE_COLORS, STONE_NAMES } from './thanos-stones.js';
 
 const DEPTH = 6; // just above the boss sprite (5)
@@ -50,11 +51,11 @@ function sweep(scene, duration, draw, ease = 'Sine.easeInOut') {
 async function power(scene, at, color, keep) {
   const rings = [0, 160].map((delay) => ({
     delay,
-    ring: keep(scene.add.circle(at.x, at.y, 12, color, 0).setStrokeStyle(4, color, 1).setDepth(DEPTH).setScale(0.2)),
+    ring: keep(scene.add.circle(at.x, at.y, 14, color, 0).setStrokeStyle(5, color, 1).setDepth(DEPTH).setScale(0.2)),
   }));
-  scene.cameras.main.shake(160, 0.004);
+  scene.cameras.main.shake(200, 0.006);
   await Promise.all(rings.map(({ ring, delay }) => tween(scene, {
-    targets: ring, scale: 5, alpha: 0, delay, duration: 750, ease: 'Cubic.easeOut',
+    targets: ring, scale: 7, alpha: 0, delay, duration: 750, ease: 'Cubic.easeOut',
   })));
 }
 
@@ -71,15 +72,15 @@ async function space(scene, at, color, keep) {
   const outer = keep(scene.add.rectangle(at.x, at.y, 30, 30, color, 0.15).setStrokeStyle(2, color, 1).setDepth(DEPTH).setScale(0));
   const inner = keep(scene.add.rectangle(at.x, at.y, 16, 16, color, 0).setStrokeStyle(2, 0xbfdbfe, 1).setDepth(DEPTH).setScale(0));
   await Promise.all([
-    tween(scene, { targets: outer, scale: 2.2, angle: 135, duration: 450, ease: 'Back.easeOut' }),
-    tween(scene, { targets: inner, scale: 2.2, angle: -135, duration: 450, ease: 'Back.easeOut' }),
+    tween(scene, { targets: outer, scale: 3, angle: 135, duration: 450, ease: 'Back.easeOut' }),
+    tween(scene, { targets: inner, scale: 3, angle: -135, duration: 450, ease: 'Back.easeOut' }),
   ]);
   await Promise.all([
     tween(scene, { targets: outer, scale: 0, angle: 270, duration: 380, ease: 'Cubic.easeIn' }),
     tween(scene, { targets: inner, scale: 0, angle: -270, duration: 380, ease: 'Cubic.easeIn' }),
   ]);
   const flash = keep(scene.add.circle(at.x, at.y, 10, 0xffffff, 0.9).setDepth(DEPTH));
-  await tween(scene, { targets: flash, scale: 2.5, alpha: 0, duration: 220 });
+  await tween(scene, { targets: flash, scale: 4, alpha: 0, duration: 260 });
 }
 
 /**
@@ -92,9 +93,9 @@ async function space(scene, at, color, keep) {
  * @return {Promise<void>}
  */
 async function reality(scene, at, color, keep) {
-  const shards = Array.from({ length: 10 }, (_, i) => {
-    const angle = (i / 10) * Math.PI * 2;
-    const radius = 40 + Math.random() * 30;
+  const shards = Array.from({ length: 14 }, (_, i) => {
+    const angle = (i / 14) * Math.PI * 2;
+    const radius = 55 + Math.random() * 40;
     return {
       shard: keep(scene.add.rectangle(at.x, at.y, 6, 6, i % 3 === 0 ? 0xfca5a5 : color, 1).setDepth(DEPTH)),
       x: at.x + Math.cos(angle) * radius,
@@ -126,9 +127,9 @@ async function soul(scene, at, color, keep) {
   const glow = keep(scene.add.circle(at.x, at.y + 30, 12, color, 0.3).setDepth(DEPTH));
   let lastEmber = 0;
   await sweep(scene, 1000, (t) => {
-    const radius = 45 * (1 - t * 0.6);
+    const radius = 60 * (1 - t * 0.6);
     const x = at.x + Math.cos(t * Math.PI * 4) * radius;
-    const y = at.y + 30 - t * 90;
+    const y = at.y + 30 - t * 110;
     wisp.x = glow.x = x;
     wisp.y = glow.y = y;
     if (t - lastEmber > 0.08) {
@@ -150,7 +151,7 @@ async function soul(scene, at, color, keep) {
  * @return {Promise<void>}
  */
 async function time(scene, at, color, keep) {
-  const radius = 34;
+  const radius = 44;
   const dial = keep(scene.add.graphics().setDepth(DEPTH));
   const top = -Math.PI / 2;
   await sweep(scene, 900, (t) => {
@@ -185,10 +186,10 @@ async function mind(scene, at, color, keep) {
   await sweep(scene, 800, (t) => {
     rays.clear();
     rays.lineStyle(3, color, 1 - t);
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2 + t * 0.6;
-      const inner = 12 + t * 40;
-      const outer = 20 + t * 70;
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2 + t * 0.6;
+      const inner = 14 + t * 55;
+      const outer = 24 + t * 95;
       rays.lineBetween(at.x + Math.cos(angle) * inner, at.y + Math.sin(angle) * inner, at.x + Math.cos(angle) * outer, at.y + Math.sin(angle) * outer);
     }
     core.setScale(Math.sin(t * Math.PI) * 1.5);
@@ -236,30 +237,107 @@ export async function playStoneEffect(scene, ordinal, at, live = new Set(), sign
     return;
   }
   const color = STONE_COLORS[ordinal - 1];
+  await runTracked(scene, live, signal, async (keep) => {
+    const caption = keep(scene.addSharpText(at.x, at.y - 80, `${name.toUpperCase()} STONE`, captionStyle(color, 18))
+      .setDepth(DEPTH).setAlpha(0).setScale(0.6));
+    scene.tweens.add({ targets: caption, alpha: 1, scale: 1, y: at.y - 92, duration: 280, ease: 'Back.easeOut' });
+    bloom(scene, at, color, keep, 4);
+    // Additive: every effect shape brightens what's under it, so it glows on the night sky too.
+    await effect(scene, at, color, (obj) => keep(obj).setBlendMode('ADD'));
+    await tween(scene, { targets: caption, alpha: 0, y: at.y - 108, duration: 260, ease: 'Quad.easeIn' });
+  });
+}
+
+/**
+ * The finale when the sixth stone lands: all six colours orbit the boss and
+ * collapse into it, then a gold burst, a shockwave and a heavier shake under
+ * "GAUNTLET COMPLETE".
+ *
+ * @param {Phaser.Scene} scene
+ * @param {{x: number, y: number}} at
+ * @param {Set<object>} [live]
+ * @param {AbortSignal} [signal]
+ * @return {Promise<void>}
+ */
+export async function playGauntletComplete(scene, at, live = new Set(), signal = undefined) {
+  const gold = 0xfbbf24;
+  await runTracked(scene, live, signal, async (keep) => {
+    const orbs = STONE_COLORS.map((color) => keep(scene.add.circle(at.x, at.y, 7, color, 1).setDepth(DEPTH).setBlendMode('ADD')));
+    await sweep(scene, 1100, (t) => {
+      const radius = 90 * (1 - t);
+      orbs.forEach((orb, i) => {
+        const angle = (i / orbs.length) * Math.PI * 2 + t * Math.PI * 3;
+        orb.x = at.x + Math.cos(angle) * radius;
+        orb.y = at.y + Math.sin(angle) * radius * 0.6;
+      });
+    }, 'Cubic.easeIn');
+    const caption = keep(scene.addSharpText(at.x, at.y - 96, 'GAUNTLET COMPLETE', captionStyle(gold, 24))
+      .setDepth(DEPTH).setAlpha(0).setScale(0.5));
+    scene.cameras.main.shake(380, 0.01);
+    bloom(scene, at, gold, keep, 7);
+    const wave = keep(scene.add.circle(at.x, at.y, 16, gold, 0).setStrokeStyle(6, gold, 1).setDepth(DEPTH).setBlendMode('ADD'));
+    await Promise.all([
+      tween(scene, { targets: orbs, scale: 0, alpha: 0, duration: 200 }),
+      tween(scene, { targets: wave, scale: 9, alpha: 0, duration: 900, ease: 'Cubic.easeOut' }),
+      tween(scene, { targets: caption, alpha: 1, scale: 1, duration: 320, ease: 'Back.easeOut' }),
+    ]);
+    await tween(scene, { targets: caption, alpha: 0, delay: 900, duration: 400 });
+  });
+}
+
+/**
+ * Text style for a floating stone caption.
+ *
+ * @param {number} color
+ * @param {number} px
+ * @return {object}
+ */
+function captionStyle(color, px) {
+  return {
+    fontFamily: 'monospace',
+    fontSize: `${px}px`,
+    fontStyle: 'bold',
+    color: `#${color.toString(16).padStart(6, '0')}`,
+    stroke: '#0f172a',
+    strokeThickness: 5,
+  };
+}
+
+/**
+ * A soft additive glow that swells and fades behind an effect; not awaited.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {{x: number, y: number}} at
+ * @param {number} color
+ * @param {function(object): object} keep
+ * @param {number} size Peak scale of the 64px glow texture.
+ * @return {void}
+ */
+function bloom(scene, at, color, keep, size) {
+  const glow = keep(scene.add.image(at.x, at.y, TextureKey.SOFTGLOW)
+    .setTint(color).setBlendMode('ADD').setDepth(DEPTH - 0.5).setScale(0).setAlpha(0.95));
+  scene.tweens.add({ targets: glow, scale: size, alpha: 0, duration: 1000, ease: 'Cubic.easeOut' });
+}
+
+/**
+ * Runs an animation body that registers everything it draws through `keep`,
+ * settles early when `signal` aborts, and always destroys what it drew.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {Set<object>} live
+ * @param {AbortSignal|undefined} signal
+ * @param {function(function(object): object): Promise<void>} body
+ * @return {Promise<void>}
+ */
+async function runTracked(scene, live, signal, body) {
   const made = [];
   const keep = (obj) => {
     made.push(obj);
     live.add(obj);
     return obj;
   };
-
-  const caption = keep(scene.addSharpText(at.x, at.y - 70, `${name.toUpperCase()} STONE`, {
-    fontFamily: 'monospace',
-    fontSize: '14px',
-    color: `#${color.toString(16).padStart(6, '0')}`,
-    stroke: '#0f172a',
-    strokeThickness: 4,
-  }).setDepth(DEPTH).setAlpha(0));
-  scene.tweens.add({ targets: caption, alpha: 1, y: at.y - 80, duration: 250, ease: 'Quad.easeOut' });
-
   try {
-    await Promise.race([
-      (async () => {
-        await effect(scene, at, color, keep);
-        await tween(scene, { targets: caption, alpha: 0, y: at.y - 95, duration: 250, ease: 'Quad.easeIn' });
-      })(),
-      whenAborted(signal),
-    ]);
+    await Promise.race([body(keep), whenAborted(signal)]);
   } finally {
     for (const obj of made) {
       scene.tweens.killTweensOf(obj);

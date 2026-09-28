@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { STONE_EFFECTS, playStoneEffect } from '@battlefield/boss/scripts/stone-effects.js';
+import { STONE_EFFECTS, playGauntletComplete, playStoneEffect } from '@battlefield/boss/scripts/stone-effects.js';
 import { STONE_COLORS, STONE_MAX, STONE_NAMES } from '@battlefield/boss/scripts/thanos-stones.js';
 
 // A just-enough Phaser scene: every game object records its own destroy(),
@@ -7,6 +7,7 @@ import { STONE_COLORS, STONE_MAX, STONE_NAMES } from '@battlefield/boss/scripts/
 // we can check it cleaned up after itself.
 function fakeScene() {
   const created = [];
+  const images = [];
   const obj = () => {
     const o = {
       destroyed: false,
@@ -33,8 +34,9 @@ function fakeScene() {
   };
   return {
     created,
+    images,
     reducedMotion: false,
-    add: { circle: obj, rectangle: obj, graphics: obj, star: obj },
+    add: { circle: obj, rectangle: obj, graphics: obj, star: obj, image: () => { const o = obj(); images.push(o); return o; } },
     addSharpText: obj,
     tweens: { add: runTween, addCounter: runTween, killTweensOf() {} },
     cameras: { main: { shake() {} } },
@@ -64,6 +66,21 @@ describe('stone effects', () => {
     controller.abort();
     await done;
 
+    expect(scene.created.every((o) => o.destroyed)).toBe(true);
+  });
+
+  test.each(STONE_NAMES.map((name, i) => [name, i + 1]))('the %s Stone blooms a glow in its colour behind the effect', async (_name, ordinal) => {
+    const scene = fakeScene();
+    await playStoneEffect(scene, ordinal, { x: 100, y: 100 });
+
+    expect(scene.images.length).toBeGreaterThan(0);
+  });
+
+  test('completing the gauntlet plays its own finale and cleans up after it', async () => {
+    const scene = fakeScene();
+    await playGauntletComplete(scene, { x: 100, y: 100 });
+
+    expect(scene.created.length).toBeGreaterThan(0);
     expect(scene.created.every((o) => o.destroyed)).toBe(true);
   });
 

@@ -200,4 +200,17 @@
 .bf-plate .bf-stones .stone.on { background: var(--stone); border-color: color-mix(in srgb, var(--stone), #fff 45%); box-shadow: 0 0 0 1px #000, 0 0 8px var(--stone); }
 .bf-plate .bf-stones .stone.pop { animation: bf-stone-pop .45s cubic-bezier(.2,1.6,.4,1); }
 @keyframes bf-stone-pop { 0% { scale: 0; } 60% { scale: 1.6; } 100% { scale: 1; } }
-@media (prefers-reduced-motion: reduce) { .bf-plate .bf-stones .stone.pop { animation: none; } }
+.bf-plate .bf-stones .stone { position: relative; }
+.bf-plate .bf-stones .stone.pop::after { content: ''; position: absolute; inset: -3px; border: 2px solid var(--stone); animation: bf-stone-ring .6s ease-out forwards; }
+@keyframes bf-stone-ring { from { opacity: 1; scale: 1; } to { opacity: 0; scale: 3.2; } }
+/* all six held: the row shimmers; .complete adds a one-time left-to-right flash when the sixth lands */
+.bf-plate .bf-stones.full .stone.on { animation: bf-stone-shimmer 2.4s ease-in-out infinite; }
+@keyframes bf-stone-shimmer { 50% { box-shadow: 0 0 0 1px #000, 0 0 16px 2px var(--stone); } }
+.bf-plate .bf-stones.complete .stone.on { animation: bf-stone-flash .5s ease-out calc(var(--i, 0) * 90ms) 2, bf-stone-shimmer 2.4s ease-in-out 1.2s infinite; }
+.bf-plate .bf-stones .stone:nth-child(2) { --i: 1; } .bf-plate .bf-stones .stone:nth-child(3) { --i: 2; } .bf-plate .bf-stones .stone:nth-child(4) { --i: 3; }
+.bf-plate .bf-stones .stone:nth-child(5) { --i: 4; } .bf-plate .bf-stones .stone:nth-child(6) { --i: 5; }
+@keyframes bf-stone-flash { 50% { scale: 1.5; filter: brightness(2); } }
+/* the gem flying from the boss into its socket, and the screen-edge glow (thanos.js / stone-flight.js) */
+.bf-stone-flight { position: fixed; left: 0; top: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px; z-index: 60; pointer-events: none; background: var(--stone); box-shadow: 0 0 14px 5px var(--stone), inset 0 0 3px #fff; }
+.bf-stone-pulse { position: absolute; inset: 0; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 24px color-mix(in srgb, var(--stone), transparent 35%); }
+@media (prefers-reduced-motion: reduce) { .bf-plate .bf-stones .stone.pop, .bf-plate .bf-stones .stone.pop::after, .bf-plate .bf-stones.full .stone.on { animation: none; } }

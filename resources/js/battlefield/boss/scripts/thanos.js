@@ -7,11 +7,13 @@
 //
 // A stone the viewer has not watched arrive yet (stone-seen.js) stays dark
 // until the tab is visible, then plays its own animation over the boss
-// (stone-effects.js) and lights its socket — so a viewer returning to the tab
-// sees each stone that landed while they were away, one after another.
+// (stone-effects.js), flies up into its socket on the plate (stone-flight.js)
+// and lights it — so a viewer returning to the tab sees each stone that landed
+// while they were away, one after another. The sixth adds a gauntlet finale.
 import { advanceStones, STONE_COLORS, STONE_MAX, STONE_NAMES } from './thanos-stones.js';
 import { browserStorage, createSeenStore, unseenOrdinals } from './stone-seen.js';
-import { playStoneEffect } from './stone-effects.js';
+import { playGauntletComplete, playStoneEffect } from './stone-effects.js';
+import { flyGem, pulseEdges, worldToScreen } from './stone-flight.js';
 
 const TICK_MS = 60_000;
 // Lets the HUD's own load intro (the plate sliding in, the HP bar filling) finish first.
@@ -119,6 +121,7 @@ export const thanosScript = {
   paint(bossState, handle) {
     const lit = Math.min(bossState.script?.stones ?? 0, handle.seen.read(bossState.number ?? 0));
     handle.gems.forEach((gem, i) => gem.classList.toggle('on', i < lit));
+    handle.row?.classList.toggle('full', lit >= STONE_MAX);
   },
 
   /**
@@ -145,22 +148,53 @@ export const thanosScript = {
         if (handle.disposed) {
           return;
         }
+        const gem = handle.gems[ordinal - 1];
         if (!scene.reducedMotion) {
+          const color = gem?.style.getPropertyValue('--stone') || '#fff';
+          pulseEdges(document.getElementById('bf-hud'), color);
           await playStoneEffect(scene, ordinal, this.anchor(scene), handle.live, handle.abort.signal);
+          if (handle.disposed) {
+            return;
+          }
+          await this.flyToSocket(scene, gem, color);
         }
         if (handle.disposed) {
           return;
         }
         handle.seen.write(bossNumber, ordinal);
-        const gem = handle.gems[ordinal - 1];
         gem?.classList.add('on', 'pop');
         gem?.addEventListener('animationend', () => gem.classList.remove('pop'), { once: true });
+        if (ordinal === STONE_MAX) {
+          handle.row?.classList.add('full', 'complete');
+          if (!scene.reducedMotion) {
+            await playGauntletComplete(scene, this.anchor(scene), handle.live, handle.abort.signal);
+          }
+        }
       }
     } finally {
       handle.playing = false;
     }
     // a tick may have landed another stone mid-sequence
     this.reveal(scene, bossState, handle);
+  },
+
+  /**
+   * Flies the gem from the boss on the canvas up into its socket on the plate.
+   * No-op when there is no socket to land in (the plate isn't on the page).
+   *
+   * @param {Phaser.Scene} scene
+   * @param {HTMLElement|undefined} gem The socket.
+   * @param {string} color CSS colour.
+   * @return {Promise<void>}
+   */
+  async flyToSocket(scene, gem, color) {
+    const canvas = scene.game?.canvas;
+    if (!gem || !canvas) {
+      return;
+    }
+    const from = worldToScreen(this.anchor(scene), scene.cameras.main.worldView, canvas.getBoundingClientRect());
+    const socket = gem.getBoundingClientRect();
+    await flyGem(from, { x: socket.left + socket.width / 2, y: socket.top + socket.height / 2 }, color);
   },
 
   /**
