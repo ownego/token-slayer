@@ -150,3 +150,7 @@
     .ts-runner.is-lapping .ts-runner-cover { animation: none; transform: translateX(60%); }
     .ts-runner.is-lapping .ts-runner-body { animation: none; transform: translateX(calc(0.6 * 236px)); }
 }
+
+/* lite mode (resources/js/battlefield/render-mode.js): the canvas renders at
+   the layout's own size and the browser scales it up — crisp, not smeared */
+#battlefield-mount.bf-lite canvas { image-rendering: pixelated; }

@@ -7,6 +7,7 @@ import { dressingLayout } from './dressing.js';
 import { cameoFrame, hopPlan, nextCameoDelay, peekPlan, pickCameoKind, pickRideCloud, dancePlan, rideCloudY } from './clawd-cameo.js';
 import { bannerPixels, bloomPixels, flowerBed, islandPixels, landmarkLayout, pixelate, stemPixels, windmillPixels } from './landmarks.js';
 import { LOGOS } from './logo-paths.js';
+import { bakeInto, bakeRuns, floatLive, runBounds } from './bake-runs.js';
 import { BIRD_FRAMES, castlePixels, cloudBank, cloudPixels, flockLayout, hillProfile, meteorFrame, meteorPlan, mountainProfile, mountainShader, nextSkyEvent, treePixels } from './pixel-art.js';
 
 /**
@@ -136,10 +137,15 @@ const CLAWD_POSE_TEXTURE = {
  * unchanged in landscape and portrait.
  *
  * @param {Phaser.Scene} scene
- * @param {{layout: object, sky: {lat: number, lon: number}|null|undefined}} options
+ * Lite mode (render-mode.js — the browser draws WebGL on the CPU) keeps the
+ * same scene but bakes every still piece into a few images (bake-runs.js),
+ * re-baked when the sky's colours move, and animates only what moves on its
+ * own: Clawd, the sails, the sun and moon, birds, shooting stars, fire.
+ *
+ * @param {{layout: object, sky: {lat: number, lon: number}|null|undefined, lite?: boolean}} options
  * @return {{update: function(Date, boolean=): void, tick: function(number, number): void, destroy: function(): void, horizonY: number}}
  */
-export function createEnvironment(scene, { layout, sky }) {
+export function createEnvironment(scene, { layout, sky, lite = false }) {
   const W = layout.logicalWidth;
   const H = layout.logicalHeight;
   const HZ = horizonYFor(layout);
@@ -443,6 +449,8 @@ export function createEnvironment(scene, { layout, sky }) {
     g.fillStyle(0x3b3f52, 1); g.fillRect(bx - 5 * u, by - 3 * u, 10 * u, 3 * u);
     g.fillStyle(0x2a2d3c, 1); g.fillRect(bx - 4 * u, by, 8 * u, u);
     g.fillStyle(0x23252f, 1); g.fillRect(bx - u, by + u, 2 * u, 7 * u); g.fillRect(bx - 3 * u, by + 8 * u, 6 * u, u);
+    // a Graphics has no getBounds: lite mode's bake (bake-runs.js) reads this
+    g.bakeBounds = { x: bx - 5 * u, y: by - 3 * u, right: bx + 5 * u, bottom: by + 9 * u };
     const glow = scene.add.image(bx, by - 4 * u, TextureKey.SOFTGLOW).setTint(0xff9a3c).setBlendMode('ADD');
     const fire = scene.add.particles(bx, by - 3 * u, TextureKey.MOTE_SOFT, {
       lifespan: { min: 380, max: 700 }, speedY: { min: -19 * u, max: -9 * u }, speedX: { min: -6, max: 6 },
@@ -634,6 +642,13 @@ export function createEnvironment(scene, { layout, sky }) {
     env.night = frame.night;
     env.day = frame.day;
     env.dusk = frame.twilight;
+    // lite: re-bake when the colours moved — at most every 5 minutes, since a
+    // bake costs about one full-mode frame on a CPU rasterizer
+    if (env.bakes && (force || (env.lastKey !== env.bakedKey && Date.now() - env.bakedAt > 300000))) {
+      env.bakedKey = env.lastKey;
+      env.bakedAt = Date.now();
+      bake();
+    }
   }
 
   /**
@@ -656,16 +671,15 @@ export function createEnvironment(scene, { layout, sky }) {
       moonT = time;
       placeMoon();
     }
-    const dark = Math.max(env.night, env.dusk || 0);
     if (scene.reducedMotion) {
-      env.twinkles.forEach(t => t.o.setAlpha(env.night));
-      env.braziers.forEach(b => b.glow.setAlpha(0.35 + 0.55 * dark).setScale((W / 220) * (1 + dark) * (b.u / 3)));
-      env.windows.forEach(w => w.setAlpha(env.night * 0.85));
-      env.windowGlows.forEach(g => g.setAlpha(env.night * 0.5));
-      env.torches.forEach(t => t.setAlpha(Math.max(env.night, env.dusk || 0) * 0.8));
-      env.motes.forEach(m => m.o.setFillStyle(dark > 0.5 ? 0xd9ff7a : 0xfff3c4).setAlpha(dark > 0.2 ? dark * 0.7 : (env.day || 0) * 0.3));
+      stillLights();
       return;
     }
+    if (lite) {
+      animateEvents(time, dt);
+      return;
+    }
+    const dark = Math.max(env.night, env.dusk || 0);
     env.clouds.forEach(c => {
       c.o.x += c.sp * dt;
       if (c.o.x - c.o.displayWidth / 2 > W) {
@@ -691,11 +705,8 @@ export function createEnvironment(scene, { layout, sky }) {
       m.o.setFillStyle(dark > 0.5 ? 0xd9ff7a : 0xfff3c4)
         .setAlpha(dark > 0.2 ? dark * blink * 0.95 : (env.day || 0) * 0.35 * (0.5 + 0.5 * blink));
     });
-    // Birds by day and at dusk, a shooting star at night: each on its own
-    // schedule (nextSkyEvent), the first one soon after the page loads.
-    // Landmarks: the sails turn, the pennant waves, the island bobs, the
-    // Gemini sparkle breathes after dark.
-    env.sails.rotation += 0.7 * dt;
+    // Landmarks: the flowers sway, the island bobs, the Gemini sparkle
+    // breathes after dark.
     env.flowers.forEach(fl => {
       const sway = Math.sin(time / 900 + fl.phase) * 0.08;
       fl.stem.setRotation(sway);
@@ -706,7 +717,37 @@ export function createEnvironment(scene, { layout, sky }) {
     env.antigravity.y = env.antigravityY + Math.sin(time / 1400) * 4 + Math.sin(time / 700) * 3 - 3;
     env.gemini.setScale(Math.max(1, Math.round(W / 800)) * (0.85 + 0.15 * Math.sin(time / 600)));
     env.geminiGlow.setAlpha(env.night * (0.35 + 0.2 * Math.sin(time / 600)));
-    // Clawd: now and then peeks over the ridge, hops along behind it, or sits on a cloud
+    animateEvents(time, dt);
+  }
+
+  /**
+   * The still lighting for the current sky state: star field, braziers,
+   * castle windows and torches, dust/fireflies, each at its steady level —
+   * what reduced motion shows, and what lite mode bakes.
+   *
+   * @return {void}
+   */
+  function stillLights() {
+    const dark = Math.max(env.night, env.dusk || 0);
+    env.twinkles.forEach(t => t.o.setAlpha(env.night));
+    env.braziers.forEach(b => b.glow.setAlpha(0.35 + 0.55 * dark).setScale((W / 220) * (1 + dark) * (b.u / 3)));
+    env.windows.forEach(w => w.setAlpha(env.night * 0.85));
+    env.windowGlows.forEach(g => g.setAlpha(env.night * 0.5));
+    env.torches.forEach(t => t.setAlpha(Math.max(env.night, env.dusk || 0) * 0.8));
+    env.motes.forEach(m => m.o.setFillStyle(dark > 0.5 ? 0xd9ff7a : 0xfff3c4).setAlpha(dark > 0.2 ? dark * 0.7 : (env.day || 0) * 0.3));
+  }
+
+  /**
+   * What moves in both full and lite mode: the windmill's sails, Clawd (its
+   * cameos behind the mountains and its dance on the clouds), and the
+   * occasional bird flock by day or shooting star at night.
+   *
+   * @param {number} time scene.time.now, ms
+   * @param {number} dt seconds since the last frame
+   * @return {void}
+   */
+  function animateEvents(time, dt) {
+    env.sails.rotation += 0.7 * dt;
     if (!nextCameoAt) {
       nextCameoAt = time + nextCameoDelay(true, Math.random);
     }
@@ -718,6 +759,8 @@ export function createEnvironment(scene, { layout, sky }) {
       playCameo(time);
     }
     rideCloud(time);
+    // Birds by day and at dusk, a shooting star at night: each on its own
+    // schedule (nextSkyEvent), the first one soon after the page loads.
     if (!nextFlockAt) {
       nextFlockAt = time + nextSkyEvent(true, Math.random);
       nextShootAt = time + nextSkyEvent(true, Math.random);
@@ -855,6 +898,46 @@ export function createEnvironment(scene, { layout, sky }) {
   /** Debug hook (staging's ?sky-debug=1): sky events on demand. */
   const debug = { flock: flyFlock, shoot: shootStar, clawd: kind => startCameo(kind ?? 'peek', scene.time.now) };
 
+  /**
+   * Lite mode: splits the layer into still runs and live pieces
+   * (bake-runs.js) and gives each still run one render texture, cropped to
+   * what it covers and placed where the run was in the draw order. Dust is
+   * dropped: it only ever drifts.
+   *
+   * @return {void}
+   */
+  function setupBakes() {
+    const live = new Set([
+      env.moonGlow, env.moon, env.sunGlow, env.sun, env.shoot, env.shootHead,
+      env.clawdCloud, env.clawdRidge, env.sails, ...env.birds, ...env.braziers.map(b => b.fire),
+    ]);
+    const dust = new Set(env.motes.map(m => m.o));
+    dust.forEach(o => o.setVisible(false));
+    // the brazier fires go up on top of everything, so the glows, the floor
+    // and the vignette all bake into one run instead of three
+    const order = floatLive(env.layer.list.filter(o => !dust.has(o)), env.braziers.map(b => b.fire), []);
+    order.forEach(o => env.layer.bringToTop(o));
+    const items = order;
+    env.bakes = bakeRuns(items, o => live.has(o)).filter(run => !run.live).map(run => {
+      const { x: x0, y: y0, w, h } = runBounds(run.items, { width: W, height: H });
+      const rt = scene.add.renderTexture(x0, y0, w, h).setOrigin(0);
+      env.layer.addAt(rt, env.layer.getIndex(run.items[0]));
+      run.items.forEach(o => o.setVisible(false));
+      return { rt, items: run.items, x0, y0 };
+    });
+  }
+
+  /**
+   * Lite mode: redraws every still run into its render texture, with the
+   * sky's current colours and steady lights.
+   *
+   * @return {void}
+   */
+  function bake() {
+    stillLights();
+    env.bakes.forEach(({ rt, items, x0, y0 }) => bakeInto(rt, items, x0, y0));
+  }
+
   /** Tears down the environment's own layer (and every child it owns). */
   function destroy() {
     env.layer.destroy();
@@ -875,6 +958,9 @@ export function createEnvironment(scene, { layout, sky }) {
     update(d, true);
   }
 
+  if (lite) {
+    setupBakes();
+  }
   update(new Date(), true);
 
   return { update, tick, destroy, setClock, debug, horizonY: HZ };

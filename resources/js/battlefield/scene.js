@@ -141,7 +141,7 @@ export class BattlefieldScene extends Phaser.Scene {
     // image: a real-astronomy sky (sun/moon, colour-graded gradient,
     // clouds, stars) that also tints the ridges/floor it draws, plus its
     // own vignette baked the same way the old one was.
-    this.environment = createEnvironment(this, { layout: L, sky: this.game.registry.get('initialState')?.sky });
+    this.environment = createEnvironment(this, { layout: L, sky: this.game.registry.get('initialState')?.sky, lite: !!this.game.registry.get('lite') });
 
     // Read once at boot: heel sparks (Charge.emitFor) are skipped entirely
     // when the viewer asked the OS for reduced motion — the charging ring
