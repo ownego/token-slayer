@@ -11,7 +11,7 @@ import { findHeel } from '@battlefield/shared/heel.js';
 import { glyphKey } from '@battlefield/shared/flair-glyphs.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture, makePermanentFallbackAvatarTexture } from './avatar.js';
 import { ensureFlairFont, isFlairFontReady } from './flair-font.js';
-import { NAME_DEPTH, NAME_FONT_PX, NAME_STYLE, YOU_NAME_COLOR, youRingSparks } from './name-ring.js';
+import { NAME_DEPTH, NAME_FONT_PX, NAME_STYLE, YOU_NAME_COLOR, refreshNameWhenFontLoads, youRingSparks } from './name-ring.js';
 import { avatarCenterY } from './avatar-stack.js';
 import {
   buildRingChars,
@@ -530,6 +530,9 @@ export class Fighter {
       : this.scene.addSharpText(pos.x, pos.y + legH + NAME_PLATE_FONT_PX, truncateHandle(displayName), NAME_PLATE_STYLE)
         .setDepth(NAME_DEPTH)
         .setColor(isYou ? YOU_NAME_COLOR : NAME_PLATE_STYLE.color);
+    if (handle) {
+      refreshNameWhenFontLoads(handle);
+    }
 
     this.scene.fighters.set(fighter.id, {
       id: fighter.id,
@@ -1174,6 +1177,7 @@ export class Fighter {
         entry.handle = this.scene.addSharpText(target.x, handleY, truncateHandle(entry.handleText), NAME_PLATE_STYLE)
           .setDepth(NAME_DEPTH)
           .setColor(Number(entry.id) === Number(this.scene.currentUserId) ? YOU_NAME_COLOR : NAME_PLATE_STYLE.color);
+        refreshNameWhenFontLoads(entry.handle);
       } else if (!config.showHandle && entry.handle) {
         entry.handle.destroy();
         entry.handle = null;
