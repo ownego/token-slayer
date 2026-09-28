@@ -233,3 +233,26 @@ describe('updateCharacters', () => {
     expect(body.play).toHaveBeenLastCalledWith('wizard-idle');
   });
 });
+
+describe('changing character while charging', () => {
+  test('the charging ring moves with the avatar to the new fighter\'s head height', async () => {
+    const { FIGHTER_TYPES } = await import('@battlefield/config.js');
+    const settable = y => ({ y, setY(v) { this.y = v; return this; } });
+    const ring = settable(-40);
+    const entry = {
+      id: 7,
+      baseSize: 48,
+      head: settable(-40),
+      body: { setTexture() {}, play() {} },
+    };
+    const scene = { charges: new Map([[7, { ring }]]), anims: { get: () => null } };
+    const fighter = new Fighter(scene);
+    // two fighters whose heads sit at different heights
+    const [a, b] = FIGHTER_TYPES.filter((t, i, all) => all.findIndex(o => o.key !== t.key) >= 0).slice(0, 2);
+
+    fighter._applyCharacter(entry, a);
+    fighter._applyCharacter(entry, b);
+
+    expect(ring.y).toBe(entry.head.y);
+  });
+});
