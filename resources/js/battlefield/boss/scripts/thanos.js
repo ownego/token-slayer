@@ -11,7 +11,7 @@
 // and lights it — so a viewer returning to the tab sees each stone that landed
 // while they were away, one after another. The sixth adds a gauntlet finale.
 import { advanceStones, STONE_COLORS, STONE_MAX, STONE_NAMES } from './thanos-stones.js';
-import { browserStorage, createSeenStore, unseenOrdinals } from './stone-seen.js';
+import { pageSeenStore, unseenOrdinals } from './stone-seen.js';
 import { playGauntletComplete, playStoneEffect } from './stone-effects.js';
 import { flyGem, pulseEdges, worldToScreen } from './stone-flight.js';
 
@@ -68,7 +68,7 @@ export const thanosScript = {
   create(scene, bossState) {
     const handle = {
       ...buildSockets(document.querySelector('.bf-plate')),
-      seen: createSeenStore(browserStorage()),
+      seen: pageSeenStore(),
       live: new Set(),
       abort: new AbortController(),
       playing: false,
@@ -76,6 +76,7 @@ export const thanosScript = {
       ticker: null,
       firstReveal: null,
       onVisibility: null,
+      onStorage: null,
     };
     this.tick(bossState);
     this.paint(bossState, handle);
@@ -85,6 +86,7 @@ export const thanosScript = {
       loop: true,
       callback: () => {
         this.tick(bossState);
+        this.paint(bossState, handle);
         this.reveal(scene, bossState, handle);
       },
     });
@@ -94,10 +96,15 @@ export const thanosScript = {
     handle.onVisibility = () => {
       if (!document.hidden) {
         this.tick(bossState);
+        this.paint(bossState, handle);
         this.reveal(scene, bossState, handle);
       }
     };
     document.addEventListener('visibilitychange', handle.onVisibility);
+    // Another tab that watched a stone arrive has already recorded it as seen,
+    // so this tab has nothing left to reveal; repaint to light it here too.
+    handle.onStorage = () => this.paint(bossState, handle);
+    window.addEventListener('storage', handle.onStorage);
     return handle;
   },
 
@@ -162,8 +169,12 @@ export const thanosScript = {
           return;
         }
         handle.seen.write(bossNumber, ordinal);
-        gem?.classList.add('on', 'pop');
-        gem?.addEventListener('animationend', () => gem.classList.remove('pop'), { once: true });
+        gem?.classList.add('on');
+        if (!scene.reducedMotion) {
+          // Reduced motion disables the pop animation, so its animationend would never clear the ring.
+          gem?.classList.add('pop');
+          gem?.addEventListener('animationend', () => gem.classList.remove('pop'), { once: true });
+        }
         if (ordinal === STONE_MAX) {
           handle.row?.classList.add('full', 'complete');
           if (!scene.reducedMotion) {
@@ -213,7 +224,7 @@ export const thanosScript = {
   },
 
   /**
-   * Releases the ticker, the visibility listener, any animation mid-flight and
+   * Releases the ticker, the visibility and storage listeners, any animation mid-flight and
    * the socket row — called on boss death and scene shutdown.
    *
    * @param {Phaser.Scene} scene
@@ -229,6 +240,7 @@ export const thanosScript = {
     handle.ticker?.remove(false);
     handle.firstReveal?.remove(false);
     document.removeEventListener('visibilitychange', handle.onVisibility);
+    window.removeEventListener('storage', handle.onStorage);
     for (const obj of handle.live) {
       scene.tweens.killTweensOf(obj);
       obj.destroy();

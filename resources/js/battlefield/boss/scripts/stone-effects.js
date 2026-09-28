@@ -237,14 +237,14 @@ export async function playStoneEffect(scene, ordinal, at, live = new Set(), sign
     return;
   }
   const color = STONE_COLORS[ordinal - 1];
-  await runTracked(scene, live, signal, async (keep) => {
-    const caption = keep(scene.addSharpText(at.x, at.y - 80, `${name.toUpperCase()} STONE`, captionStyle(color, 18))
+  await runTracked(scene, live, signal, async (keep, s) => {
+    const caption = keep(s.addSharpText(at.x, at.y - 80, `${name.toUpperCase()} STONE`, captionStyle(color, 18))
       .setDepth(DEPTH).setAlpha(0).setScale(0.6));
-    scene.tweens.add({ targets: caption, alpha: 1, scale: 1, y: at.y - 92, duration: 280, ease: 'Back.easeOut' });
-    bloom(scene, at, color, keep, 4);
+    s.tweens.add({ targets: caption, alpha: 1, scale: 1, y: at.y - 92, duration: 280, ease: 'Back.easeOut' });
+    bloom(s, at, color, keep, 4);
     // Additive: every effect shape brightens what's under it, so it glows on the night sky too.
-    await effect(scene, at, color, (obj) => keep(obj).setBlendMode('ADD'));
-    await tween(scene, { targets: caption, alpha: 0, y: at.y - 108, duration: 260, ease: 'Quad.easeIn' });
+    await effect(s, at, color, (obj) => keep(obj).setBlendMode('ADD'));
+    await tween(s, { targets: caption, alpha: 0, y: at.y - 108, duration: 260, ease: 'Quad.easeIn' });
   });
 }
 
@@ -261,9 +261,9 @@ export async function playStoneEffect(scene, ordinal, at, live = new Set(), sign
  */
 export async function playGauntletComplete(scene, at, live = new Set(), signal = undefined) {
   const gold = 0xfbbf24;
-  await runTracked(scene, live, signal, async (keep) => {
-    const orbs = STONE_COLORS.map((color) => keep(scene.add.circle(at.x, at.y, 7, color, 1).setDepth(DEPTH).setBlendMode('ADD')));
-    await sweep(scene, 1100, (t) => {
+  await runTracked(scene, live, signal, async (keep, s) => {
+    const orbs = STONE_COLORS.map((color) => keep(s.add.circle(at.x, at.y, 7, color, 1).setDepth(DEPTH).setBlendMode('ADD')));
+    await sweep(s, 1100, (t) => {
       const radius = 90 * (1 - t);
       orbs.forEach((orb, i) => {
         const angle = (i / orbs.length) * Math.PI * 2 + t * Math.PI * 3;
@@ -271,17 +271,17 @@ export async function playGauntletComplete(scene, at, live = new Set(), signal =
         orb.y = at.y + Math.sin(angle) * radius * 0.6;
       });
     }, 'Cubic.easeIn');
-    const caption = keep(scene.addSharpText(at.x, at.y - 96, 'GAUNTLET COMPLETE', captionStyle(gold, 24))
+    const caption = keep(s.addSharpText(at.x, at.y - 96, 'GAUNTLET COMPLETE', captionStyle(gold, 24))
       .setDepth(DEPTH).setAlpha(0).setScale(0.5));
-    scene.cameras.main.shake(380, 0.01);
-    bloom(scene, at, gold, keep, 7);
-    const wave = keep(scene.add.circle(at.x, at.y, 16, gold, 0).setStrokeStyle(6, gold, 1).setDepth(DEPTH).setBlendMode('ADD'));
+    s.cameras.main.shake(380, 0.01);
+    bloom(s, at, gold, keep, 7);
+    const wave = keep(s.add.circle(at.x, at.y, 16, gold, 0).setStrokeStyle(6, gold, 1).setDepth(DEPTH).setBlendMode('ADD'));
     await Promise.all([
-      tween(scene, { targets: orbs, scale: 0, alpha: 0, duration: 200 }),
-      tween(scene, { targets: wave, scale: 9, alpha: 0, duration: 900, ease: 'Cubic.easeOut' }),
-      tween(scene, { targets: caption, alpha: 1, scale: 1, duration: 320, ease: 'Back.easeOut' }),
+      tween(s, { targets: orbs, scale: 0, alpha: 0, duration: 200 }),
+      tween(s, { targets: wave, scale: 9, alpha: 0, duration: 900, ease: 'Cubic.easeOut' }),
+      tween(s, { targets: caption, alpha: 1, scale: 1, duration: 320, ease: 'Back.easeOut' }),
     ]);
-    await tween(scene, { targets: caption, alpha: 0, delay: 900, duration: 400 });
+    await tween(s, { targets: caption, alpha: 0, delay: 900, duration: 400 });
   });
 }
 
@@ -323,22 +323,62 @@ function bloom(scene, at, color, keep, size) {
  * Runs an animation body that registers everything it draws through `keep`,
  * settles early when `signal` aborts, and always destroys what it drew.
  *
+ * The body draws through a tracked view of the scene: every tween and counter
+ * it starts is recorded and removed at the end, because settling early only
+ * stops the awaiting — a counter would otherwise keep driving its draw
+ * callback, and a tween Phaser still completes would resume the body. Once
+ * over, `keep` destroys anything new at once and camera shakes are dropped,
+ * so a resumed body can neither leak objects nor play over the kill ceremony.
+ *
  * @param {Phaser.Scene} scene
  * @param {Set<object>} live
  * @param {AbortSignal|undefined} signal
- * @param {function(function(object): object): Promise<void>} body
+ * @param {function(function(object): object, Phaser.Scene): Promise<void>} body
  * @return {Promise<void>}
  */
 async function runTracked(scene, live, signal, body) {
   const made = [];
+  const started = [];
+  let over = false;
   const keep = (obj) => {
+    if (over) {
+      obj.destroy();
+      return obj;
+    }
     made.push(obj);
     live.add(obj);
     return obj;
   };
+  const track = (tw) => {
+    if (over) {
+      tw?.remove?.();
+    } else {
+      started.push(tw);
+    }
+    return tw;
+  };
+  const tracked = Object.create(scene);
+  tracked.tweens = {
+    add: (config) => track(scene.tweens.add(config)),
+    addCounter: (config) => track(scene.tweens.addCounter(config)),
+    killTweensOf: (target) => scene.tweens.killTweensOf(target),
+  };
+  tracked.cameras = {
+    main: {
+      shake: (...args) => {
+        if (!over) {
+          scene.cameras.main.shake(...args);
+        }
+      },
+    },
+  };
   try {
-    await Promise.race([body(keep), whenAborted(signal)]);
+    await Promise.race([body(keep, tracked), whenAborted(signal)]);
   } finally {
+    over = true;
+    for (const tw of started) {
+      tw?.remove?.();
+    }
     for (const obj of made) {
       scene.tweens.killTweensOf(obj);
       obj.destroy();

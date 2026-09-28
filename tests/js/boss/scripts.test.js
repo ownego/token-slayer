@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { scriptFor } from '@battlefield/boss/scripts/index.js';
+import { scriptFor, scriptToRun } from '@battlefield/boss/scripts/index.js';
 import { BOSS_TYPES } from '@battlefield/config.js';
 
 describe('boss script registry', () => {
@@ -37,3 +37,20 @@ describe('boss script registry', () => {
     }
   });
 });
+
+describe('scriptToRun', () => {
+  test('runs the thanos script for a live ThaNode that carries its state', () => {
+    expect(scriptToRun('boss-thanos', { script: { stones: 1 } })).toBe(scriptFor('boss-thanos'));
+  });
+
+  test('does not run it for a killed ThaNode, whose state the kill cleared', () => {
+    // A rotate during the kill ceremony reboots the scene from a snapshot of
+    // the dead boss; its sockets and ticker must not come back.
+    expect(scriptToRun('boss-thanos', { name: 'ThaNode' })).toBeNull();
+  });
+
+  test('is null for a boss with no script', () => {
+    expect(scriptToRun('boss-ghost', {})).toBeNull();
+  });
+});
+

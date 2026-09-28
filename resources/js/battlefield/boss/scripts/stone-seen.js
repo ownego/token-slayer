@@ -81,3 +81,18 @@ export function browserStorage() {
     return null;
   }
 }
+
+let pageStore = null;
+
+/**
+ * The page's one seen-count store. A scene restart (rotate, resize-mode
+ * switch) re-runs the script's create(), so a store made there would lose
+ * its in-memory copy each time and replay every stone where storage is blocked.
+ *
+ * @return {{read: function(number): number, write: function(number, number): void}}
+ */
+export function pageSeenStore() {
+  pageStore ??= createSeenStore(browserStorage());
+  return pageStore;
+}
+

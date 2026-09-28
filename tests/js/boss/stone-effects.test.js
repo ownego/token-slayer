@@ -94,4 +94,38 @@ describe('stone effects', () => {
   test('stone names and colours line up one to one', () => {
     expect(STONE_NAMES).toHaveLength(STONE_COLORS.length);
   });
+
+  test('an effect aborted mid-flight stops its counters and never draws or shakes afterwards', async () => {
+    const scene = fakeScene();
+    const pending = [];
+    let shakes = 0;
+    const hold = (cfg) => {
+      const handle = { cfg, removed: false, remove() { this.removed = true; } };
+      pending.push(handle);
+      return handle;
+    };
+    scene.tweens.add = hold;
+    scene.tweens.addCounter = hold;
+    scene.cameras.main.shake = () => { shakes++; };
+    const live = new Set();
+    const controller = new AbortController();
+
+    const done = playGauntletComplete(scene, { x: 0, y: 0 }, live, controller.signal);
+    shakes = 0;
+    controller.abort();
+    await done;
+
+    expect(pending.every((t) => t.removed)).toBe(true);
+    // A tween Phaser still delivered after the abort must not bring the body back to life.
+    for (const t of [...pending]) {
+      t.cfg.onUpdate?.({ getValue: () => 1 });
+      t.cfg.onComplete?.();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(shakes).toBe(0);
+    expect(live.size).toBe(0);
+    expect(scene.created.every((o) => o.destroyed)).toBe(true);
+  });
 });
+

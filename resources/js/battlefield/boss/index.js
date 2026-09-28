@@ -5,7 +5,7 @@ import { runCeremony } from '@battlefield/ceremony.js';
 import { applyStunEffect } from './stun.js';
 import { isDreadknight, startDreadknightPatrol } from './dreadknight.js';
 import { BatSwarm } from './bats.js';
-import { scriptFor } from './scripts/index.js';
+import { scriptFor, scriptToRun } from './scripts/index.js';
 import { bossTypeForNumber, bossTypeOf } from './boss-type.js';
 
 /**
@@ -160,7 +160,7 @@ export class Boss {
    */
   _startScript(bossKey) {
     this._stopScript();
-    const def = scriptFor(bossKey);
+    const def = scriptToRun(bossKey, this.scene.bossState);
     if (!def) return;
     this.script = { def, handle: def.create?.(this.scene, this.scene.bossState) ?? null };
   }
@@ -664,6 +664,8 @@ export class Boss {
     this.scene.charge?.clearAllCharges?.();
     this.scene.batSwarm?.destroy();
     this._stopScript();
+    // The dead boss's script state must not ride a snapshot into a restarted scene.
+    if (this.scene.bossState) delete this.scene.bossState.script;
     if (this.scene.bossSprite) {
       this.scene.tweens.killTweensOf(this.scene.bossSprite);
       const bt = Boss.bossTypeOf(this.scene.bossState);

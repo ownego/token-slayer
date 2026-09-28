@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { advanceStones, STONE_COLORS, STONE_MAX } from '@battlefield/boss/scripts/thanos-stones.js';
 
@@ -47,3 +48,11 @@ describe('advanceStones', () => {
 test('paints exactly one colour per stone up to the cap', () => {
   expect(STONE_COLORS).toHaveLength(STONE_MAX);
 });
+
+test('the cap matches the server\'s config(\'game.stones.max\')', () => {
+  const config = readFileSync(new URL('../../../config/game.php', import.meta.url), 'utf8');
+  const stones = config.slice(config.indexOf("'stones' =>"));
+
+  expect(Number(stones.match(/'max'\s*=>\s*(\d+)/)?.[1])).toBe(STONE_MAX);
+});
+

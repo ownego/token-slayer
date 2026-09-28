@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { createSeenStore, unseenOrdinals } from '@battlefield/boss/scripts/stone-seen.js';
+import { createSeenStore, pageSeenStore, unseenOrdinals } from '@battlefield/boss/scripts/stone-seen.js';
 
 function fakeStorage() {
   const data = new Map();
@@ -82,5 +82,14 @@ describe('createSeenStore', () => {
     storage.setItem('ts:stones-seen', 'banana');
 
     expect(createSeenStore(storage).read(12)).toBe(0);
+  });
+});
+
+describe('pageSeenStore', () => {
+  test('is one store for the whole page, so a restart without storage keeps what was seen', () => {
+    pageSeenStore().write(61, 3);
+
+    expect(pageSeenStore()).toBe(pageSeenStore());
+    expect(pageSeenStore().read(61)).toBe(3);
   });
 });

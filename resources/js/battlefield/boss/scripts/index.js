@@ -20,5 +20,23 @@ export function scriptFor(bossKey) {
   return (bossKey && registry[bossKey]) || null;
 }
 
+/**
+ * The script to start for a boss, or null. A scripted boss whose state is
+ * gone does not start: the engine clears bossState.script on a kill, so a
+ * scene restarted from a snapshot during the kill ceremony (a rotate) does
+ * not bring the dead boss's script back.
+ *
+ * @param {string|undefined} bossKey A BOSS_TYPES key.
+ * @param {{script?: object}|null|undefined} bossState
+ * @return {object|null}
+ */
+export function scriptToRun(bossKey, bossState) {
+  const def = scriptFor(bossKey);
+  if (!def || (def.readState && !bossState?.script)) {
+    return null;
+  }
+  return def;
+}
+
 // Exposed so config.test.js can check every key is a real BOSS_TYPES key.
 scriptFor.registry = registry;
