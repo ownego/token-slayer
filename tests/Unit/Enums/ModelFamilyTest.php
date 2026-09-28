@@ -32,3 +32,11 @@ test('every family carries a label and a colour', function (ModelFamily $family)
     expect($family->getLabel())->not->toBeEmpty()
         ->and($family->getColor())->not->toBeEmpty();
 })->with(ModelFamily::cases());
+
+test('each family has one fixed chart hex, shared by the admin chart and the fighter sheet', function () {
+    expect(ModelFamily::Fable->hex())->toBe('#d97706')
+        ->and(ModelFamily::Opus->hex())->toBe('#7c3aed')
+        ->and(ModelFamily::Sonnet->hex())->toBe('#059669')
+        ->and(ModelFamily::Haiku->hex())->toBe('#6b7280')
+        ->and(ModelFamily::Gpt->hex())->toBe('#2563eb');
+});

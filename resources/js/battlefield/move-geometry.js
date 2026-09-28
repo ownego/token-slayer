@@ -1,17 +1,7 @@
+import { activityFit } from '@battlefield/bubble-y.js';
+import { horizonYFor } from '@battlefield/layout.js';
 const SPRITE_CHAR_HEIGHT = 18;
-// Local constant mirroring bubble.js's ACTIVITY_MAX_CHARS export.
 // Kept separate to avoid transitive Phaser import into this pure module; must sync if bubble.js value changes.
-const ACTIVITY_MAX_CHARS = 18;
-
-const DAMAGE_HUD_LEFT = 12;
-const DAMAGE_HUD_Y = 5;
-const DAMAGE_HUD_W = 176;
-const DAMAGE_HUD_H = 130;
-
-const LEADERBOARD_PAD = 4;
-const LEADERBOARD_TOP = 5;
-const LEADERBOARD_W = 240;
-const LEADERBOARD_H = 160;
 
 /**
  * Returns a fighter's vertical extent from feet to the top of its action
@@ -53,6 +43,16 @@ function fighterHalfWidthPx(fsize) {
 }
 
 /**
+ * Returns how far below a fighter's position its feet are, in logical px.
+ *
+ * @param {number} fsize
+ * @return {number}
+ */
+function footOffsetPx(fsize) {
+  return Math.round(6 * (fsize / SPRITE_CHAR_HEIGHT));
+}
+
+/**
  * Returns the fighter's vertical extent from center to the bottom of its
  * handle label, in logical px, for sizing the bottom edge margin. Mirrors
  * fighter/index.js's legH ((SPRITE_CHAR_BOT - SPRITE_HALF_FRAME) * scale =
@@ -62,25 +62,27 @@ function fighterHalfWidthPx(fsize) {
  * @return {number}
  */
 function fighterDownReachPx(fsize) {
-  const scale = fsize / SPRITE_CHAR_HEIGHT;
-  const legH = Math.round(6 * scale);
+  const legH = footOffsetPx(fsize);
   const fontPx = Math.max(10, Math.round(fsize * 0.25));
   return legH + fontPx + Math.round(fontPx / 2) + 10;
 }
 
 /**
  * Returns true if (px, py) is a valid move target in logical pixels, given
- * the layout, boss geometry, and fighter size in ctx. Checks edge padding,
- * the boss/HP-bar column, the TOP DAMAGE leaderboard panel, and the top-left
- * Damage HUD panel.
+ * the layout, boss geometry, fighter size, and the live HUD zones in ctx.
+ * Checks edge padding, the boss/HP-bar column, and every HUD zone (the DOM
+ * panels' own rects, converted to world space by `shared/hud-zones.js`'s
+ * `domToWorld` — the old hardcoded LEADERBOARD and DAMAGE_HUD rect constants
+ * are gone now that the panels are real DOM elements, not fixed Phaser
+ * positions).
  *
  * @param {number} px
  * @param {number} py
- * @param {{layout: object, bossType: object, fsize: number}} ctx
+ * @param {{layout: object, bossType: object, fsize: number, zones?: {l:number,r:number,t:number,b:number}[]}} ctx
  * @return {boolean}
  */
 export function isValidMoveTarget(px, py, ctx) {
-  const { layout: L, bossType, fsize } = ctx;
+  const { layout: L, bossType, fsize, zones = [] } = ctx;
   const fighterH = fighterReachPx(fsize);
 
   // Edge padding — grows with the fighter's own footprint (avatar width,
@@ -90,6 +92,9 @@ export function isValidMoveTarget(px, py, ctx) {
   const downReach  = Math.max(L.logicalHeight * 0.03, fighterDownReachPx(fsize));
   if (px < halfW || px > L.logicalWidth - halfW) return false;
   if (py < L.logicalHeight * 0.03 || py > L.logicalHeight - downReach) return false;
+
+  // Feet stay on the ground: never above the line at the mountains' foot.
+  if (py + footOffsetPx(fsize) < horizonYFor(L)) return false;
 
   // 1. Action bubble must stay on-screen — prevents going so high it disappears
   if (py < fighterH + L.logicalHeight * 0.02) return false;
@@ -111,40 +116,20 @@ export function isValidMoveTarget(px, py, ctx) {
     return false;
   }
 
-  // 4. Leaderboard: fixed top-right in both orientations. Neither avatar nor
-  //    action bubble may overlap the panel.
-  const fontPx      = Math.max(9, Math.round(fsize * 0.22));
-  const bubbleHalfW = Math.ceil(ACTIVITY_MAX_CHARS * fontPx * 0.6 / 2) + 12;
-  const lbLeft = L.logicalWidth - LEADERBOARD_PAD - LEADERBOARD_W;
-  if (px > lbLeft - bubbleHalfW && px < lbLeft + LEADERBOARD_W + bubbleHalfW &&
-      py - fighterH < LEADERBOARD_TOP + LEADERBOARD_H && py > LEADERBOARD_TOP) {
-    return false;
-  }
-
-  // 5. Damage HUD: fixed top-left in both orientations.
-  if (px > DAMAGE_HUD_LEFT - bubbleHalfW && px < DAMAGE_HUD_LEFT + DAMAGE_HUD_W + bubbleHalfW &&
-      py - fighterH < DAMAGE_HUD_Y + DAMAGE_HUD_H && py > DAMAGE_HUD_Y) {
-    return false;
+  // 4. Live HUD zones: whatever DOM panels currently occupy screen space,
+  //    in world coordinates. Neither avatar nor action bubble may overlap.
+  // the action bubble's own sizing (bubble-y.js's activityFit), so this zone
+  // clearance and the real bubble never drift apart
+  const { fontPx, maxChars } = activityFit(fsize);
+  const bubbleHalfW = Math.ceil(maxChars * fontPx * 0.6 / 2) + 12;
+  for (const z of zones) {
+    if (px > z.l - bubbleHalfW && px < z.r + bubbleHalfW &&
+        py - fighterH < z.b && py > z.t) {
+      return false;
+    }
   }
 
   return true;
-}
-
-/**
- * Returns true if (px, py) lands directly on the drawn TOP DAMAGE leaderboard
- * panel (exact rect, no fighter-reach padding). Used to make clicking the
- * panel a no-op, the same way clicking the DOM Damage HUD is a no-op because
- * that element absorbs the click before it reaches the canvas.
- *
- * @param {number} px
- * @param {number} py
- * @param {object} layout
- * @return {boolean}
- */
-export function isInsideLeaderboardPanel(px, py, layout) {
-  const left = layout.logicalWidth - LEADERBOARD_PAD - LEADERBOARD_W;
-  return px >= left && px <= left + LEADERBOARD_W &&
-    py >= LEADERBOARD_TOP && py <= LEADERBOARD_TOP + LEADERBOARD_H;
 }
 
 /**
@@ -219,7 +204,7 @@ export function snapToValidTarget(px, py, ctx) {
   const { layout: L, fsize } = ctx;
   const halfW     = Math.max(L.logicalWidth * 0.03, fighterHalfWidthPx(fsize));
   const downReach = Math.max(L.logicalHeight * 0.03, fighterDownReachPx(fsize));
-  const topMin    = Math.max(L.logicalHeight * 0.03, fighterReachPx(fsize) + L.logicalHeight * 0.02);
+  const topMin    = Math.max(L.logicalHeight * 0.03, fighterReachPx(fsize) + L.logicalHeight * 0.02, horizonYFor(L) - footOffsetPx(fsize));
   const cx = Math.min(Math.max(px, halfW), L.logicalWidth - halfW);
   const cy = Math.min(Math.max(py, topMin), L.logicalHeight - downReach);
   if (isValidMoveTarget(cx, cy, ctx)) {

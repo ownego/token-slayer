@@ -4,6 +4,7 @@ use App\Enums\AccountPlan;
 use App\Enums\CodexPlan;
 use App\Enums\Provider;
 use App\Models\Account;
+use App\Models\AccountUsageSnapshot;
 use App\Models\CodexCredential;
 use App\Services\Analytics\QuotaGaugesQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,4 +28,15 @@ it('reports the provider and correct CodexPlan for a Codex account, not the Clau
 
     expect($row['provider'])->toBe(Provider::Codex)
         ->and($row['plan'])->toBe(CodexPlan::Team);
+});
+
+it('reports when the account was last probed, or null when never', function (): void {
+    $probed = Account::factory()->create();
+    $never = Account::factory()->create();
+    AccountUsageSnapshot::factory()->for($probed)->create(['created_at' => now()->subMinutes(4)]);
+
+    $rows = collect(app(QuotaGaugesQuery::class)->get())->keyBy('account_id');
+
+    expect($rows[$probed->id]['probed_at']->diffInMinutes(now()))->toBeGreaterThanOrEqual(3.9)
+        ->and($rows[$never->id]['probed_at'])->toBeNull();
 });

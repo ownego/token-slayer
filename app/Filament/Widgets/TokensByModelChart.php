@@ -30,36 +30,12 @@ class TokensByModelChart extends ChartWidget
     private const int CONTRIBUTORS = 5;
 
     /**
-     * Colour used for a model id the family enum does not recognise. Fixed
-     * rather than assigned by position, so a new model appearing does not
-     * reshuffle every other bar's colour.
-     *
-     * @var string
-     */
-    private const string UNMAPPED_COLOR = '#6b7280';
-
-    /**
      * Colour used for a bar with no family: events carrying no model at all,
      * and ids whose line the enum does not recognise yet.
      *
      * @var string
      */
     private const string UNKNOWN_COLOR = '#9ca3af';
-
-    /**
-     * Model family to bar colour. Keyed on the family, not on the bar's own
-     * label, so every version of one line shares a colour — Opus 4.8 and
-     * Opus 5 are two bars the eye still reads as one line.
-     *
-     * @var array<string, string>
-     */
-    private const array FAMILY_COLORS = [
-        ModelFamily::Fable->value => '#d97706',
-        ModelFamily::Opus->value => '#7c3aed',
-        ModelFamily::Sonnet->value => '#059669',
-        ModelFamily::Haiku->value => '#6b7280',
-        ModelFamily::Gpt->value => '#2563eb',
-    ];
 
     /**
      * The heading shown above the chart.
@@ -266,6 +242,6 @@ class TokensByModelChart extends ChartWidget
             return self::UNKNOWN_COLOR;
         }
 
-        return self::FAMILY_COLORS[$family->value] ?? self::UNMAPPED_COLOR;
+        return $family->hex();
     }
 }

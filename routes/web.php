@@ -18,8 +18,6 @@ Route::get('/', function () {
 Route::get('/auth/slack', [SlackController::class, 'redirect'])->name('slack.login');
 Route::get('/auth/slack/callback', [SlackController::class, 'callback']);
 
-Route::get('/profile', fn () => view('profile'))->middleware('auth')->name('profile');
-
 Route::get('/guide', fn () => view('guide', [
     'namespace' => config('app.hook_namespace'),
 ]))->middleware('auth')->name('guide');

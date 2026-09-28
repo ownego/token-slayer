@@ -95,7 +95,8 @@ test('guide shows the shared account nav with guide active', function () {
 
     $this->get('/guide')
         ->assertOk()
-        ->assertSee('href="'.route('profile').'"', escape: false)
+        ->assertSee('href="'.route('battlefield').'"', escape: false)
+        ->assertSee('href="'.route('filament.admin.pages.dashboard').'"', escape: false)
         ->assertSee('href="'.route('setup').'"', escape: false)
         ->assertSee('href="'.route('guide').'"', escape: false);
 });

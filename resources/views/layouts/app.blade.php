@@ -8,6 +8,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ config('app.name') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    {{-- Page-specific stylesheets/fonts (e.g. the battlefield HUD's Pixelify Sans/Silkscreen link) --}}
+    @stack('styles')
     @if ($embed)
         @auth
             <meta name="token-slayer-user-id" content="{{ auth()->id() }}">

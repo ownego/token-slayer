@@ -120,4 +120,22 @@ enum ModelFamily: string implements HasColor, HasLabel
             self::Gpt => 'info',
         };
     }
+
+    /**
+     * The family's chart colour as a hex, fixed per family so every chart
+     * (the admin tokens-by-model chart, the fighter sheet's By-model rows)
+     * paints one line the same colour.
+     *
+     * @return string
+     */
+    public function hex(): string
+    {
+        return match ($this) {
+            self::Fable => '#d97706',
+            self::Opus => '#7c3aed',
+            self::Sonnet => '#059669',
+            self::Haiku => '#6b7280',
+            self::Gpt => '#2563eb',
+        };
+    }
 }

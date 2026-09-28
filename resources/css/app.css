@@ -83,17 +83,8 @@
     75% { transform: translateX(6px); }
 }
 
-@keyframes flash {
-    0% { opacity: 1; }
-    100% { opacity: 0; }
-}
-
 .shake {
     animation: shake 200ms ease;
-}
-
-.flash {
-    animation: flash 600ms ease-out forwards;
 }
 
 .projectile {
@@ -103,19 +94,6 @@
     z-index: 20;
     transition: transform 300ms ease-in;
     will-change: transform;
-}
-
-/* Portrait-only overlay (leaderboard button on mobile).
-   md:hidden hides it on ≥768px screens, but in portrait mode the
-   in-canvas leaderboard doesn't render at all, so we need to show
-   the overlay regardless of breakpoint in portrait orientation. */
-.bf-portrait-only {
-    display: none;
-}
-@media (orientation: portrait) {
-    .bf-portrait-only {
-        display: block;
-    }
 }
 
 /* The model-flair orbit ring's face (see resources/js/battlefield/fighter/
@@ -128,3 +106,4 @@
     font-display: swap;
     src: url('/fonts/chakra-petch-700-latin.woff2') format('woff2');
 }
+

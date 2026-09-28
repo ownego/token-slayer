@@ -145,7 +145,7 @@ class SlackController extends Controller
             ]);
 
             session()->put('hook_token_plain', $plainToken);
-            $defaultRoute = 'profile';
+            $defaultRoute = 'setup';
         } else {
             $existing->update($attributes);
             $user = $existing;

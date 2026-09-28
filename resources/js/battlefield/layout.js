@@ -8,6 +8,18 @@
  * @param {number} [rowSpacing=27]
  * @return {Array<{x: number, y: number}>}
  */
+/**
+ * Returns the y of the line at the foot of the mountains, where the sky
+ * backdrop meets the floor: the environment draws the horizon there, and
+ * move-geometry.js keeps every fighter's feet on or below it.
+ *
+ * @param {{hpBar: {y: number}}} layout A `LAYOUTS` entry.
+ * @return {number}
+ */
+export function horizonYFor(layout) {
+  return Math.round(layout.hpBar.y * 0.62);
+}
+
 export function computeFighterPositions(count, [minX, maxX], topY, perRow = 14, rowSpacing = 27) {
   if (count === 0) {
     return [];

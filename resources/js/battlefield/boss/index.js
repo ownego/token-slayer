@@ -1,11 +1,48 @@
 import Phaser from 'phaser';
 import { BOSS_TYPES, TIMINGS } from '@battlefield/config.js';
 import { BossPhase, DreadknightAttack } from '@battlefield/constants.js';
-import { formatHp } from '@battlefield/format.js';
-import { Leaderboard } from '@battlefield/leaderboard.js';
+import { runCeremony } from '@battlefield/ceremony.js';
 import { applyStunEffect } from './stun.js';
 import { isDreadknight, startDreadknightPatrol } from './dreadknight.js';
 import { BatSwarm } from './bats.js';
+
+/**
+ * Returns every texture key backing a boss type's sprite sheet(s) — one key
+ * for a single-sheet boss (`bossType.key`), one per animation for a
+ * multi-file boss (`<key>-<anim>`). Used both to queue a load and to check
+ * whether a type is already fully loaded.
+ *
+ * @param {object} bossType
+ * @return {string[]}
+ */
+export function bossTextureKeys(bossType) {
+  return bossType.animFiles
+    ? Object.keys(bossType.animFiles).map(anim => `${bossType.key}-${anim}`)
+    : [bossType.key];
+}
+
+/**
+ * Queues a `load.spritesheet` for every texture key of a boss type that
+ * doesn't already exist in the Texture Manager. Phaser's own loader dedupes
+ * a key already queued or in flight, so calling this again for a type mid
+ * background-load is a safe no-op.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {object} bossType
+ * @return {void}
+ */
+export function queueBossLoad(scene, bossType) {
+  if (bossType.animFiles) {
+    for (const [anim, info] of Object.entries(bossType.animFiles)) {
+      const texKey = `${bossType.key}-${anim}`;
+      if (!scene.textures.exists(texKey)) {
+        scene.load.spritesheet(texKey, info.file, { frameWidth: info.frameWidth, frameHeight: info.frameHeight });
+      }
+    }
+  } else if (!scene.textures.exists(bossType.key)) {
+    scene.load.spritesheet(bossType.key, bossType.file, { frameWidth: bossType.frameWidth, frameHeight: bossType.frameHeight });
+  }
+}
 
 /** Manages boss patrol cycle, attacks, HP bar updates, and spawn/kill events. */
 export class Boss {
@@ -86,41 +123,81 @@ export class Boss {
     this.scene.batSwarm = new BatSwarm(this.scene);
     this.scene.batSwarm.spawn(state.boss.maxHp, state.boss.currentHp);
 
-    this.scene.bossNameText = this.scene.addSharpText(L.boss.name.x, L.boss.name.y, Boss.bossLabel(state.boss), {
-      fontFamily: 'monospace',
-      fontSize: '28px',
-      color: '#ffffff',
-      stroke: '#0f172a',
-      strokeThickness: 8,
-    }).setDepth(5);
+    // The boss name + HP bar/text used to be drawn on the canvas here; the
+    // DOM boss plate (hud/boss-plate.js, wired in index.js's bootBattlefield)
+    // replaces them now, driven by this.scene.impact.hp's counter via the
+    // BOSS_HP_TICK bus event and the BOSS_SPAWNED echo event.
 
-    this.scene.hpBarBg = this.scene.add
-      .rectangle(L.hpBar.x, L.hpBar.y, L.hpBar.width, L.hpBar.height, 0x334155)
-      .setOrigin(0.5);
+    // Only the current boss type is preloaded (see scene.js's preload()); the
+    // rest of the roster is loaded lazily. Queue the type after this one now
+    // so a kill soon after page load already has its art ready.
+    this.preloadNextType(state.boss.number);
+  }
 
-    this.scene.hpBarFill = this.scene.add
-      .rectangle(
-        L.hpBar.x - L.hpBar.width / 2,
-        L.hpBar.y,
-        Math.round(L.hpBar.width * (state.boss.currentHp / state.boss.maxHp)),
-        L.hpBar.height,
-        Boss.hpBarColor(state.boss.currentHp, state.boss.maxHp)
-      )
-      .setOrigin(0, 0.5);
+  /**
+   * Queues a background load for the boss type after the given boss number,
+   * so its assets are ready before that boss's own spawn. Called once from
+   * `create()` for the boot boss, and again from `handleBossSpawned` for the
+   * type after every newly spawned boss.
+   *
+   * @param {number} currentNumber
+   * @return {void}
+   */
+  preloadNextType(currentNumber) {
+    queueBossLoad(this.scene, Boss.bossTypeFor(currentNumber + 1));
+    if (!this.scene.load.isLoading()) {
+      this.scene.load.start();
+    }
+  }
 
-    this.scene.hpBarBorder = this.scene.add
-      .rectangle(L.hpBar.x, L.hpBar.y, L.hpBar.width, L.hpBar.height)
-      .setOrigin(0.5)
-      .setFillStyle()
-      .setStrokeStyle(1, 0x94a3b8, 1);
+  /**
+   * Applies the NEAREST filter to a boss type's textures once they exist.
+   * Skips any key not yet loaded so a lazy-loaded type still mid-flight
+   * never filters the shared `__MISSING` placeholder texture.
+   *
+   * @param {object} bossType
+   * @return {void}
+   */
+  _applyBossFilter(bossType) {
+    if (bossType.pixelArt === false) return;
+    for (const key of bossTextureKeys(bossType)) {
+      if (this.scene.textures.exists(key)) {
+        this.scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+    }
+  }
 
-    this.scene.hpText = this.scene.addSharpText(L.hpBar.x, L.hpBar.y + 24, `${formatHp(state.boss.currentHp)} / ${formatHp(state.boss.maxHp)}`, {
-      fontFamily: 'monospace',
-      fontSize: '22px',
-      color: '#ffffff',
-      stroke: '#0f172a',
-      strokeThickness: 6,
-    }, 3);
+  /**
+   * Invokes `onReady` once every texture key of the given boss type exists,
+   * queuing its load first if any key is still missing. This is what keeps a
+   * spawn from ever showing the previous boss's sprite under the new type's
+   * key: the caller waits here instead of building the sprite immediately.
+   *
+   * @param {object} bossType
+   * @param {Function} onReady
+   * @return {void}
+   */
+  _awaitBossTypeReady(bossType, onReady) {
+    const missing = bossTextureKeys(bossType).filter(key => !this.scene.textures.exists(key));
+    if (missing.length === 0) {
+      this._applyBossFilter(bossType);
+      onReady();
+      return;
+    }
+    let remaining = missing.length;
+    for (const key of missing) {
+      this.scene.load.once(`filecomplete-spritesheet-${key}`, () => {
+        remaining--;
+        if (remaining === 0) {
+          this._applyBossFilter(bossType);
+          onReady();
+        }
+      });
+    }
+    queueBossLoad(this.scene, bossType);
+    if (!this.scene.load.isLoading()) {
+      this.scene.load.start();
+    }
   }
 
   /**
@@ -402,33 +479,17 @@ export class Boss {
   }
 
   /**
-   * Handles a boss-spawned event: swaps the sprite, resets HP bar and leaderboard.
+   * Builds the new boss's sprite (spawn-drop-in or fall-from-top-then-bounce,
+   * whichever anim exists) and starts its patrol. Split out of
+   * `handleBossSpawned` so it can be deferred until the type's textures are
+   * actually loaded (see `_awaitBossTypeReady`).
    *
-   * @param {{ boss_number: number, max_hp: number, boss_name?: string, fighters?: Array<{user_id: number|string, character: string}> }} payload
+   * @param {object} bt boss type config, from `Boss.bossTypeFor`
+   * @param {{ boss_number: number, max_hp: number, boss_name?: string }} payload
    * @return {void}
    */
-  handleBossSpawned(payload) {
-    if (!payload || payload.boss_number == null || payload.max_hp == null) {
-      return;
-    }
-    this.bossLastAttackAt = 0;
-    this.bossPatrolPhase = BossPhase.MOVE;
-    this.bossIdleRepeatListener = null;
-    this.scene.charge?.clearAllCharges?.();
-    this.scene.batSwarm?.destroy();
-    this.scene.batSwarm = new BatSwarm(this.scene);
-    this.scene.batSwarm.spawn(payload.max_hp, payload.max_hp);
+  _spawnNewBossSprite(bt, payload) {
     const L = this.scene.layout;
-    const oldSprite = this.scene.bossSprite;
-    this.scene.tweens.killTweensOf(oldSprite);
-    this.scene.tweens.add({
-      targets: oldSprite,
-      alpha: 0,
-      duration: 200,
-      onComplete: () => oldSprite.destroy(),
-    });
-
-    const bt = Boss.bossTypeFor(payload.boss_number);
     const typeKey = bt.key;
     const texKey = bt.animFiles ? `${typeKey}-idle` : typeKey;
     const idleKey = this.ensureBossIdleAnim(typeKey);
@@ -468,6 +529,41 @@ export class Boss {
         onComplete: () => this.startBossPatrol(),
       });
     }
+  }
+
+  /**
+   * Handles a boss-spawned event: swaps the sprite, resets HP bar and leaderboard.
+   *
+   * Only the current and next boss types are ever preloaded (see
+   * `preloadNextType`/scene.js's `preload()`), so the newly spawned type's
+   * textures may still be mid-flight here. The boss sprite itself is built
+   * once `_awaitBossTypeReady` confirms every texture key exists — this
+   * never shows the previous type's sprite under the new boss's key — while
+   * every other reset (HP bar, leaderboard, fighter re-skin) still happens
+   * immediately since none of it depends on the boss's own texture.
+   *
+   * @param {{ boss_number: number, max_hp: number, boss_name?: string, fighters?: Array<{user_id: number|string, character: string}> }} payload
+   * @return {void}
+   */
+  handleBossSpawned(payload) {
+    if (!payload || payload.boss_number == null || payload.max_hp == null) {
+      return;
+    }
+    this.bossLastAttackAt = 0;
+    this.bossPatrolPhase = BossPhase.MOVE;
+    this.bossIdleRepeatListener = null;
+    this.scene.charge?.clearAllCharges?.();
+    this.scene.batSwarm?.destroy();
+    this.scene.batSwarm = new BatSwarm(this.scene);
+    this.scene.batSwarm.spawn(payload.max_hp, payload.max_hp);
+    const oldSprite = this.scene.bossSprite;
+    this.scene.tweens.killTweensOf(oldSprite);
+    this.scene.tweens.add({
+      targets: oldSprite,
+      alpha: 0,
+      duration: 200,
+      onComplete: () => oldSprite.destroy(),
+    });
 
     this.scene.bossState = {
       currentHp: payload.max_hp,
@@ -476,10 +572,10 @@ export class Boss {
       name: payload.boss_name,
     };
     this.scene.lastKnownBossHp = payload.max_hp;
-    this.scene.bossNameText.setText(Boss.bossLabel(this.scene.bossState));
-    this.scene.hpBarFill.width = L.hpBar.width;
-    this.scene.hpBarFill.setFillStyle(0x22c55e);
-    this.scene.hpText.setText(`${formatHp(payload.max_hp)} / ${formatHp(payload.max_hp)}`);
+    // reset(), not set(): a respawn must not tween up from the dead boss's 0.
+    // The DOM plate's own name/number reset is driven by the BOSS_SPAWNED
+    // bus event (index.js's bootBattlefield), not from here.
+    this.scene.impact.hp.reset(payload.max_hp);
     this.scene.leaderboard?.reset();
     this.scene.damageTotals.clear();
     for (const [, f] of this.scene.fighters.entries()) {
@@ -490,6 +586,14 @@ export class Boss {
     // needs re-skinning to the new boss's assignment, otherwise they keep
     // showing the previous boss's character until the page is reloaded.
     this.scene.fighter.updateCharacters(payload.fighters);
+
+    const bt = Boss.bossTypeFor(payload.boss_number);
+    this._awaitBossTypeReady(bt, () => {
+      if (this.scene.isShuttingDown) return;
+      this._spawnNewBossSprite(bt, payload);
+    });
+    // Keep one type ahead in the background for the kill after this one.
+    this.preloadNextType(payload.boss_number);
   }
 
   /**
@@ -529,15 +633,20 @@ export class Boss {
       }
       this.scene.cameras.main.flash(400, 255, 255, 255);
     }
-    if (this.scene.leaderboard) {
-      Leaderboard.showMvpCard(this.scene, {
-        bossLabel: Boss.bossLabel({
-          name: payload.boss_name ?? this.scene.bossState.name,
-          number: payload.boss_number ?? this.scene.bossState.number,
-        }),
-        ranked: this.scene.leaderboard.getRanked(),
-        killerHandle: payload.killer_slack_handle ?? null,
-      });
-    }
+    // Kill ceremony (ceremony.js) replaces the old Phaser MVP card — the
+    // DOM board already shows who dealt how much, so this only names the
+    // killing blow. Holds the next boss's spawn/hits until the countdown
+    // finishes, opened in a finally so a throw mid-ceremony still lets the
+    // new boss through.
+    this.scene.spawnGate.busy = true;
+    runCeremony(this.scene, {
+      killer: {
+        id: payload.killer_user_id ?? null,
+        handle: payload.killer_slack_handle ?? null,
+        avatarUrl: payload.killer_avatar_url ?? null,
+      },
+      bossName: payload.boss_name ?? this.scene.bossState.name,
+      bossNumber: payload.boss_number ?? this.scene.bossState.number,
+    }).finally(() => this.scene.spawnGate.open());
   }
 }

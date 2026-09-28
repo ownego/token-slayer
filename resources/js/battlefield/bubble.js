@@ -1,19 +1,9 @@
 import Phaser from 'phaser';
+import { activityFit, bubbleCenterY, wrapActivity } from './bubble-y.js';
 import { fighterDisplayConfig } from '@battlefield/layout.js';
+import { rankBoard } from '@battlefield/shared/board.js';
 
 export const ACTIVITY_MAX_CHARS = 18;
-
-/**
- * @param {string} activity
- * @param {number} maxChars
- * @return {string}
- */
-function truncateActivity(activity, maxChars = ACTIVITY_MAX_CHARS) {
-  if (!activity || activity.length <= maxChars) {
-    return activity ?? '';
-  }
-  return activity.slice(0, maxChars - 1) + '…';
-}
 
 /** Manages fighter activity bubbles and hover tooltips. */
 export class Bubble {
@@ -34,15 +24,21 @@ export class Bubble {
   }
 
   /**
-   * Returns the world-space Y for the activity bubble above a fighter's avatar.
+   * Returns the world-space Y the activity bubble is centred on, just above
+   * the fighter's avatar at the fighter's current (damage-grown) scale.
    *
    * @param {object} fighter
+   * @param {number} [bubbleH] The bubble's own height.
    * @return {number}
    */
-  activityBubbleY(fighter) {
-    const avatarRelY = fighter.head?.y ?? 0;
-    const avatarRadius = (fighter.head?.displayHeight ?? 28) / 2;
-    return (fighter.sprite?.y ?? fighter.pos.y) + avatarRelY - avatarRadius - 28;
+  activityBubbleY(fighter, bubbleH = 26) {
+    return bubbleCenterY({
+      spriteY: fighter.sprite?.y ?? fighter.pos.y,
+      headY: fighter.head?.y ?? 0,
+      headH: fighter.head?.displayHeight ?? 28,
+      scale: fighter.sprite?.scaleY ?? 1,
+      bubbleH,
+    });
   }
 
   /**
@@ -65,8 +61,7 @@ export class Bubble {
       entry.bubble.setActivity(activity);
     } else {
       const bubbleY = this.activityBubbleY(fighter);
-      const fontPx = Math.max(9, Math.round(fighter.displaySize * 0.22));
-      const maxChars = Math.max(12, Math.round(fighter.displaySize * 0.35));
+      const { fontPx, maxChars } = activityFit(fighter.displaySize);
       entry.bubble = this.createActivityBubble(fighter.sprite?.x ?? fighter.pos.x, bubbleY, activity, fontPx, maxChars);
     }
     // The hover tooltip takes priority over the activity bubble.
@@ -83,13 +78,15 @@ export class Bubble {
    * @param {string} activity
    * @param {number} fontPx
    * @param {number} maxChars
-   * @return {{ destroy: Function, setActivity: Function, moveTo: Function, tweenTo: Function, setVisible: Function }}
+   * @return {{ height: function(): number, destroy: Function, setActivity: Function, moveTo: Function, tweenTo: Function, setVisible: Function }}
    */
   createActivityBubble(x, y, activity, fontPx = 14, maxChars = ACTIVITY_MAX_CHARS) {
-    const text = this.scene.addSharpText(x, y, truncateActivity(activity, maxChars), {
+    // compact whatever the fighter's size: up to two lines, wrapped at words
+    const text = this.scene.addSharpText(x, y, wrapActivity(activity, maxChars, 2), {
       fontFamily: 'monospace',
       fontSize: `${fontPx}px`,
       color: '#f1f5f9',
+      align: 'center',
       padding: { left: 8, right: 8, top: 4, bottom: 4 },
     });
     const bg = this.scene.add
@@ -99,12 +96,13 @@ export class Bubble {
     bg.setDepth(100);
     text.setDepth(101);
     return {
+      height: () => bg.height,
       destroy: () => {
         text.destroy();
         bg.destroy();
       },
       setActivity: newActivity => {
-        text.setText(truncateActivity(newActivity));
+        text.setText(wrapActivity(newActivity, maxChars, 2));
         bg.setSize(text.width + 8, text.height + 4);
       },
       moveTo: (newX, newY) => {
@@ -136,8 +134,14 @@ export class Bubble {
     if (!fighter) {
       return;
     }
-    const tokens = this.scene.leaderboard?.damageFor(userId) ?? 0;
-    const rank = this.scene.leaderboard?.rankOf(userId) ?? null;
+    // The Phaser leaderboard this used to read from is gone; rankBoard over
+    // the same scene.damageTotals the DOM board reads keeps this tooltip and
+    // the board agreeing on both figures. Infinity, not the board's own
+    // top-5 default — a hovered fighter is very often outside the top 5.
+    const board = rankBoard(new Map(), this.scene.damageTotals, Infinity);
+    const row = board.rows.find(r => r.id === userId);
+    const tokens = row?.damage ?? 0;
+    const rank = row ? row.rank + 1 : null;
     const handle = fighter.handleText || `#${userId}`;
     const rankPrefix = rank ? `#${rank} ` : '';
     const content = `${rankPrefix}${handle} · ${tokens.toLocaleString()} tokens`;

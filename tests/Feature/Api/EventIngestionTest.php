@@ -134,6 +134,29 @@ test('Stop event persists the input and cache token breakdown alongside output t
         ->and($event->cache_read_input_tokens)->toBe(140_177);
 });
 
+test('HitDealt carries the same input/cache token breakdown the event row stores', function () {
+    Illuminate\Support\Facades\Event::fake([HitDealt::class]);
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', [
+            'hook_event_name' => 'Stop',
+            'session_id' => 'sess-1',
+            'tokens' => 350,
+            'input_tokens' => 2,
+            'cache_creation_input_tokens' => 791,
+            'cache_read_input_tokens' => 140_177,
+        ])
+        ->assertCreated();
+
+    $event = Event::sole();
+
+    Illuminate\Support\Facades\Event::assertDispatched(HitDealt::class, function ($e) use ($event) {
+        return $e->inputTokens === $event->input_tokens
+            && $e->cacheCreationInputTokens === $event->cache_creation_input_tokens
+            && $e->cacheReadInputTokens === $event->cache_read_input_tokens;
+    });
+});
+
 test('Stop event without an input/cache breakdown defaults those columns to zero', function () {
     // A not-yet-updated hook (pre this feature) never sends these fields at
     // all -- the not-yet-updated-client path, not an error.

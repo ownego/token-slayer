@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { LAYOUTS } from '@battlefield/config.js';
-import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, isInsideLeaderboardPanel, planRoute, moveOrigin } from '@battlefield/move-geometry.js';
+import { isValidMoveTarget, bypassY, clampMoveTarget, snapToValidTarget, planRoute, moveOrigin } from '@battlefield/move-geometry.js';
+import { horizonYFor } from '@battlefield/layout.js';
 
 const BOSS_TYPE = { frameWidth: 32, frameHeight: 32, scale: 4 };
 const landscapeCtx = { layout: LAYOUTS.landscape, bossType: BOSS_TYPE, fsize: 48 };
@@ -38,24 +39,26 @@ test('rejects a point inside the boss/HP-bar exclusion column', () => {
   expect(isValidMoveTarget(480, 200, landscapeCtx)).toBe(false);
 });
 
-test('rejects a point inside the landscape leaderboard panel (right side)', () => {
-  expect(isValidMoveTarget(750, 250, landscapeCtx)).toBe(false);
+// The old hardcoded LEADERBOARD_*/DAMAGE_HUD_* rects are gone — obstacles
+// now come from live HUD zones passed in by the caller (Task 11's
+// domToWorld, refreshed from the DOM every 500ms). With none passed
+// (the default, `zones: []`), a point that used to sit inside those fixed
+// rects is open ground; passing a matching zone is what rejects it.
+test('click-to-move rejects a target inside a live HUD zone and accepts the old leaderboard corner', () => {
+  const zones = [{ l: 0, r: 300, t: 100, b: 250 }];
+  expect(isValidMoveTarget(100, 180, { ...landscapeCtx, zones })).toBe(false);
+  expect(isValidMoveTarget(900, 250, landscapeCtx)).toBe(true);  // was the Phaser board's fixed corner
+  expect(isValidMoveTarget(100, 200, landscapeCtx)).toBe(true);  // was the Phaser Damage HUD's fixed corner
 });
 
-test('leaderboard stays on the right side in both orientations (fixed, does not flip)', () => {
-  expect(isValidMoveTarget(750, 250, landscapeCtx)).toBe(false); // right side, landscape
-  expect(isValidMoveTarget(450, 250, portraitCtx)).toBe(false);  // right side, portrait
-});
-
-test('Damage HUD stays on the left side in both orientations (fixed, does not flip)', () => {
-  expect(isValidMoveTarget(100, 200, landscapeCtx)).toBe(false); // left side, landscape
-  expect(isValidMoveTarget(100, 200, portraitCtx)).toBe(false);  // left side, portrait
-});
-
-test('isInsideLeaderboardPanel detects a click landing directly on the drawn panel rect', () => {
-  expect(isInsideLeaderboardPanel(800, 100, LAYOUTS.landscape)).toBe(true);
-  expect(isInsideLeaderboardPanel(700, 100, LAYOUTS.landscape)).toBe(false); // just left of the panel
-  expect(isInsideLeaderboardPanel(800, 200, LAYOUTS.landscape)).toBe(false); // just below the panel
+test('a zone is padded by the fighter\'s own action-bubble width, not just its bare rect', () => {
+  const zones = [{ l: 700, r: 900, t: 100, b: 300 }];
+  // 650 sits left of the bare rect (l=700) but well inside its action-bubble
+  // padding, and within the zone's vertical band — still rejected.
+  expect(isValidMoveTarget(650, 200, { ...landscapeCtx, zones })).toBe(false);
+  // Far enough left (and clear of the boss column) that even the padding
+  // doesn't reach.
+  expect(isValidMoveTarget(300, 200, { ...landscapeCtx, zones })).toBe(true);
 });
 
 test('bypassY clears the boss/HP-bar column with margin', () => {
@@ -86,10 +89,14 @@ test('snapToValidTarget returns the point unchanged when already valid', () => {
 });
 
 test('snapToValidTarget pulls an invalid destination down to the nearest open point on the same column', () => {
-  const result = snapToValidTarget(750, 250, landscapeCtx);
+  // The exact geometry the old hardcoded TOP DAMAGE leaderboard rect used to
+  // occupy, now supplied as a live HUD zone instead.
+  const zones = [{ l: 716, r: 956, t: 5, b: 165 }];
+  const ctx = { ...landscapeCtx, zones };
+  const result = snapToValidTarget(750, 250, ctx);
   expect(result.x).toBeCloseTo(750, 1);
   expect(result.y).toBeCloseTo(286.5, 0);
-  expect(isValidMoveTarget(result.x, result.y, landscapeCtx)).toBe(true);
+  expect(isValidMoveTarget(result.x, result.y, ctx)).toBe(true);
 });
 
 test('snapToValidTarget resolves a click past the edge margin AND inside the Damage HUD zone', () => {
@@ -165,4 +172,21 @@ test('moveOrigin keeps the sprite position when the home is no better (both bloc
 
 test('moveOrigin tolerates a fighter with no recorded home yet', () => {
   expect(moveOrigin({ x: 480, y: 200 }, null, landscapeCtx)).toEqual({ x: 480, y: 200 });
+});
+
+test.each([
+  ['landscape', landscapeCtx],
+  ['portrait', portraitCtx],
+])('%s: a fighter can never stand with its feet above the line at the foot of the mountains', (_, ctx) => {
+  const horizon = horizonYFor(ctx.layout);
+  const legH = Math.round(6 * (ctx.fsize / 18));
+  const x = ctx.layout.logicalWidth * 0.15; // clear of the boss column and any HUD zone
+  expect(isValidMoveTarget(x, horizon - legH - 4, ctx)).toBe(false);
+  expect(isValidMoveTarget(x, horizon - legH + 20, ctx)).toBe(true);
+});
+
+test('a click on the sky snaps down onto the ground, not somewhere above the mountains', () => {
+  const horizon = horizonYFor(landscapeCtx.layout);
+  const snapped = snapToValidTarget(150, 80, landscapeCtx);
+  expect(snapped.y + Math.round(6 * (48 / 18))).toBeGreaterThanOrEqual(horizon);
 });

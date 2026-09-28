@@ -23,6 +23,12 @@ class HitDealt implements ShouldBroadcastNow
      *                                 null when there is no flair
      * @param  ?string  $flairColor  admin-configured hex color for the flair
      *                               effect, or null when there is no flair
+     * @param  int  $inputTokens  input tokens the turn that produced this
+     *                            hit carried, 0 when unknown
+     * @param  int  $cacheCreationInputTokens  cache-creation input tokens the
+     *                                         turn carried, 0 when unknown
+     * @param  int  $cacheReadInputTokens  cache-read input tokens the turn
+     *                                     carried, 0 when unknown
      */
     public function __construct(
         public User $user,
@@ -32,6 +38,9 @@ class HitDealt implements ShouldBroadcastNow
         public ?string $flair = null,
         public ?int $flairDurationMs = null,
         public ?string $flairColor = null,
+        public int $inputTokens = 0,
+        public int $cacheCreationInputTokens = 0,
+        public int $cacheReadInputTokens = 0,
     ) {}
 
     /**
@@ -64,6 +73,9 @@ class HitDealt implements ShouldBroadcastNow
             'flair' => $this->flair,
             'flair_duration_ms' => $this->flairDurationMs,
             'flair_color' => $this->flairColor,
+            'input_tokens' => $this->inputTokens,
+            'cache_creation_input_tokens' => $this->cacheCreationInputTokens,
+            'cache_read_input_tokens' => $this->cacheReadInputTokens,
         ];
     }
 }

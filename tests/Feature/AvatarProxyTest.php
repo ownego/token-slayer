@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -62,6 +63,22 @@ test('returns 404 when the upstream fetch fails', function () {
 
     $user = User::factory()->create([
         'avatar_url' => 'https://avatars.slack-edge.com/missing.jpg',
+    ]);
+
+    $this->get(route('avatar', $user))->assertNotFound();
+});
+
+test('returns 404, not a 500, when the avatar host can\'t even be reached', function () {
+    // A DNS failure/timeout throws Illuminate\Http\Client\ConnectionException
+    // rather than returning a response Http::response()->successful() can
+    // check — caught live on staging by an old fake-test user whose seeded
+    // avatar_url pointed at a non-resolvable host.
+    Http::fake([
+        'avatars.example/*' => fn () => throw new ConnectionException('Could not resolve host'),
+    ]);
+
+    $user = User::factory()->create([
+        'avatar_url' => 'https://avatars.example/unreachable.png',
     ]);
 
     $this->get(route('avatar', $user))->assertNotFound();

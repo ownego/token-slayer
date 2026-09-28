@@ -1,18 +1,17 @@
 /**
- * The webfont the model-flair orbit ring is set in. Everything else in the
- * battlefield uses the browser's default `monospace`; the ring deliberately
- * does not, because it is a flair effect that is supposed to read as
- * something other than ordinary scene text.
+ * The webfont the model-flair orbit ring is set in — the same "Pixelify
+ * Sans" the DOM HUD (battlefield-hud.css) already uses, loaded from Google
+ * Fonts via the page's own `<link>` (battlefield.blade.php), so the flair
+ * lettering reads as part of the same redesign rather than a leftover of
+ * the old Chakra Petch look this replaces.
  *
- * Self-hosted at a fixed path rather than registered through the
- * `laravel-vite-plugin/fonts` bunny() helper that Instrument Sans uses: the
- * admin's flair preview renders inside the Filament panel, which does not
- * load this app's Vite CSS bundle, so the two surfaces can only share one
- * face if its URL is stable and declarable from both. The @font-face lives
- * in resources/css/app.css for the battlefield page and in
- * resources/views/filament/flair-preview.blade.php for the panel.
+ * The admin's flair preview (`resources/views/filament/flair-preview.blade.php`)
+ * previously matched this file's font choice for a consistent WYSIWYG
+ * preview; it was NOT updated alongside this change (out of scope — PHP/
+ * Blade, not touched by this task) and may now show the ring in a
+ * different face than the live battlefield until it is.
  */
-export const FLAIR_FONT_FAMILY = "'Chakra Petch', monospace";
+export const FLAIR_FONT_FAMILY = "'Pixelify Sans', monospace";
 export const FLAIR_FONT_WEIGHT = '700';
 
 let loading = null;

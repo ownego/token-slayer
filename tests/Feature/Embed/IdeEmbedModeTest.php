@@ -53,18 +53,18 @@ test('non-embed requests do not inject the embed CSP', function () {
     expect($csp === null || ! str_contains($csp, 'vscode-webview'))->toBeTrue();
 });
 
-test('battlefield with embed=ide hides the Profile link so the iframe cannot blank itself out', function () {
+test('battlefield with embed=ide hides the Profile pill (the nav) so the iframe cannot blank itself out', function () {
     $user = User::factory()->create();
 
     $response = $this->actingAs($user)->get('/battlefield?embed=ide')->assertOk();
 
-    expect($response->getContent())->not->toContain('href="'.route('profile').'"');
+    expect($response->getContent())->not->toContain("\$dispatch('open-fighter-sheet', { tab: 'profile' })");
 });
 
-test('battlefield without embed still renders the Profile link for normal web users', function () {
+test('battlefield without embed still renders the Profile pill for normal web users', function () {
     $user = User::factory()->create();
 
     $response = $this->actingAs($user)->get('/battlefield')->assertOk();
 
-    expect($response->getContent())->toContain('href="'.route('profile').'"');
+    expect($response->getContent())->toContain("\$dispatch('open-fighter-sheet', { tab: 'profile' })");
 });

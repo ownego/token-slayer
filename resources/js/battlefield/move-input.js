@@ -1,6 +1,6 @@
 import { Boss } from '@battlefield/boss.js';
 import { AnimState } from '@battlefield/constants.js';
-import { isInsideLeaderboardPanel, moveOrigin, planRoute } from '@battlefield/move-geometry.js';
+import { moveOrigin, planRoute } from '@battlefield/move-geometry.js';
 
 /**
  * Returns the font size in pixels for a fighter handle label.
@@ -40,9 +40,10 @@ export class MoveInput {
     // constant and sprite position here is in logical world units. They were
     // interchangeable only while the camera sat at zoom 1.
     this.scene.input.on('pointerdown', pointer => {
-      if (isInsideLeaderboardPanel(pointer.worldX, pointer.worldY, this.scene.layout)) {
-        return;
-      }
+      // Clicking a HUD panel no longer needs a canvas-side check: the DOM
+      // panels sit on top of the canvas with pointer-events:auto (see
+      // battlefield-hud.css), so the browser itself never lets the click
+      // reach the canvas in the first place.
 
       // Always show ripple at click point
       this._spawnClickRipple(pointer.worldX, pointer.worldY);
@@ -78,9 +79,11 @@ export class MoveInput {
       }, CLICK_DEBOUNCE_MS);
     });
 
-    this.scene.input.on('pointermove', pointer => {
-      const overLeaderboard = isInsideLeaderboardPanel(pointer.worldX, pointer.worldY, this.scene.layout);
-      this.scene.game.canvas.style.cursor = overLeaderboard ? 'default' : 'pointer';
+    this.scene.input.on('pointermove', () => {
+      // No panel-hover check needed: a DOM HUD panel sitting over the canvas
+      // already gets the pointermove itself, so this handler simply never
+      // fires while the pointer is over one.
+      this.scene.game.canvas.style.cursor = 'pointer';
     });
   }
 
@@ -220,6 +223,7 @@ export class MoveInput {
       layout: this.scene.layout,
       bossType: Boss.bossTypeFor(this.scene.bossState?.number ?? 0),
       fsize,
+      zones: this.scene._zones ?? [],
     };
   }
 

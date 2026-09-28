@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, MINION_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
+import { AttackType } from '@battlefield/constants.js';
 
 const publicFile = (urlPath) => join(process.cwd(), 'public', urlPath.split('?')[0]);
 
@@ -41,6 +42,13 @@ describe('FIGHTER_TYPES', () => {
       for (const c of f.chargeColors) {
         expect(typeof c, `${f.key} chargeColors must be numbers`).toBe('number');
       }
+    }
+  });
+
+  test('every FIGHTER_TYPES entry has an attackType from the AttackType enum', () => {
+    const validTypes = Object.values(AttackType);
+    for (const fighter of FIGHTER_TYPES) {
+      expect(validTypes).toContain(fighter.attackType);
     }
   });
 

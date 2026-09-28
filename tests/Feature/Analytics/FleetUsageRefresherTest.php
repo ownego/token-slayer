@@ -5,6 +5,7 @@ use App\Models\Account;
 use App\Models\CodexCredential;
 use App\Services\Analytics\FleetUsageRefresher;
 use App\Services\DamageTotals;
+use App\Services\ProviderServiceFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -62,4 +63,33 @@ it('continues probing after a single account probe fails', function (): void {
     Account::all()->each(
         fn (Account $account) => expect($account->probe_error)->not->toBeNull()
     );
+});
+
+it('skips an account whose probe lock is already held by someone else', function (): void {
+    $held = Account::factory()->create();
+    $free = Account::factory()->create();
+    Cache::lock("account-probe:{$held->id}", 60)->get();
+    $probed = [];
+
+    app()->instance(ProviderServiceFactory::class, fakeProberFactory(function (Account $account) use (&$probed) {
+        $probed[] = $account->id;
+    }));
+
+    $count = app(FleetUsageRefresher::class)->refreshAccounts(collect([$held, $free]));
+
+    expect($count)->toBe(1)->and($probed)->toBe([$free->id]);
+});
+
+it('refreshAccounts probes only the accounts it is given', function (): void {
+    $chosen = Account::factory()->create();
+    Account::factory()->create(); // not passed in — must never be probed
+    $probed = [];
+
+    app()->instance(ProviderServiceFactory::class, fakeProberFactory(function (Account $account) use (&$probed) {
+        $probed[] = $account->id;
+    }));
+
+    $count = app(FleetUsageRefresher::class)->refreshAccounts(collect([$chosen]));
+
+    expect($count)->toBe(1)->and($probed)->toBe([$chosen->id]);
 });

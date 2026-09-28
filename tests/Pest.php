@@ -4,6 +4,13 @@ use App\Enums\MembershipStatus;
 use App\Models\Account;
 use App\Models\Event;
 use App\Models\User;
+use App\Services\AccountConnectService;
+use App\Services\AccountProvisioningService;
+use App\Services\CodexConnectService;
+use App\Services\CodexProvisioningService;
+use App\Services\CodexUsageProber;
+use App\Services\ProviderServiceFactory;
+use App\Services\UsageProber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
@@ -89,6 +96,43 @@ function fakeAnthropic(array $overrides = []): void
         config('token_slayer.anthropic.profile_endpoint') => $overrides['profile'] ?? Http::response($fixture('profile'), 200, ['Content-Type' => 'application/json']),
         config('token_slayer.anthropic.messages_endpoint') => $overrides['messages'] ?? Http::response(['id' => 'msg_fake', 'type' => 'message', 'role' => 'assistant', 'stop_reason' => 'max_tokens'], 200, ['Content-Type' => 'application/json']),
     ]);
+}
+
+/**
+ * A real `ProviderServiceFactory` with both providers' probers swapped for
+ * Mockery doubles that call `$onProbe` and return null, for tests that only
+ * care WHICH accounts got probed (FleetUsageRefresher's own scoping/lock
+ * tests) rather than a probe's actual HTTP/snapshot behavior — that's what
+ * `fakeAnthropic()` is for. `ProviderServiceFactory` is `final` (can't be
+ * subclassed/Mockery-mocked directly), but its own constructor happily takes
+ * fake prober instances since `UsageProber`/`CodexUsageProber` are not.
+ *
+ * @param  callable(Account): void  $onProbe  called with the account each fake probe "handles"
+ * @return ProviderServiceFactory
+ */
+function fakeProberFactory(callable $onProbe): ProviderServiceFactory
+{
+    $claudeProber = Mockery::mock(UsageProber::class);
+    $claudeProber->shouldReceive('probe')->andReturnUsing(function (Account $account) use ($onProbe) {
+        $onProbe($account);
+
+        return null;
+    });
+    $codexProber = Mockery::mock(CodexUsageProber::class);
+    $codexProber->shouldReceive('probe')->andReturnUsing(function (Account $account) use ($onProbe) {
+        $onProbe($account);
+
+        return null;
+    });
+
+    return new ProviderServiceFactory(
+        $claudeProber,
+        $codexProber,
+        app(AccountConnectService::class),
+        app(CodexConnectService::class),
+        app(AccountProvisioningService::class),
+        app(CodexProvisioningService::class),
+    );
 }
 
 /**

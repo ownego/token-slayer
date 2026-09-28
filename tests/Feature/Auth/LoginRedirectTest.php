@@ -47,30 +47,30 @@ it('carries a guest following a legacy /admin link through to the /dashboard pag
     $this->get('/auth/slack/callback')->assertRedirect(url('/dashboard/accounts'));
 });
 
-it('stashes the intended profile URL and sends a guest to Slack login', function () {
-    $this->get('/profile')
+it('stashes the intended setup URL and sends a guest to Slack login', function () {
+    $this->get('/setup')
         ->assertRedirect(route('slack.login'))
-        ->assertSessionHas('url.intended', fn (string $v): bool => str_contains($v, '/profile'));
+        ->assertSessionHas('url.intended', fn (string $v): bool => str_contains($v, '/setup'));
 });
 
-it('returns a guest bounced off the profile page back to the profile page', function () {
-    $this->get('/profile')->assertRedirect(route('slack.login'));
+it('returns a guest bounced off the setup page back to the setup page', function () {
+    $this->get('/setup')->assertRedirect(route('slack.login'));
 
     fakeSlackCallbackUser('UPROF', 'prof@example.com');
 
-    $this->get('/auth/slack/callback')->assertRedirect(url('/profile'));
+    $this->get('/auth/slack/callback')->assertRedirect(url('/setup'));
 });
 
-it('honours the intended profile URL over an existing user default landing page', function () {
+it('honours the intended setup URL over an existing user default landing page', function () {
     // An existing user's default landing page is the battlefield, but an
-    // explicitly requested /profile must still win.
+    // explicitly requested /setup must still win.
     User::factory()->create(['slack_user_id' => 'UOLD']);
 
-    $this->get('/profile')->assertRedirect(route('slack.login'));
+    $this->get('/setup')->assertRedirect(route('slack.login'));
 
     fakeSlackCallbackUser('UOLD', 'old@example.com');
 
-    $this->get('/auth/slack/callback')->assertRedirect(url('/profile'));
+    $this->get('/auth/slack/callback')->assertRedirect(url('/setup'));
 });
 
 it('returns to the intended URL after Slack login', function () {
@@ -84,6 +84,6 @@ it('returns to the intended URL after Slack login', function () {
 it('falls back to the default landing page when no intended URL was stashed', function () {
     fakeSlackCallbackUser('UDEF', 'new@example.com');
 
-    // No url.intended in session → new user lands on their default (profile).
-    $this->get('/auth/slack/callback')->assertRedirect(route('profile'));
+    // No url.intended in session → a new user lands on Setup, to install the hook first.
+    $this->get('/auth/slack/callback')->assertRedirect(route('setup'));
 });

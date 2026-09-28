@@ -47,10 +47,16 @@ test('battlefield mount carries data-battlefield-state for projectile destinatio
         ->assertSeeHtml('data-battlefield-state');
 });
 
-test('battlefield shows a link back to the profile page', function () {
+test('a guest\'s Profile pill sends them to log in; there is no profile page to link to', function () {
     Livewire::test(Battlefield::class)
-        ->assertSeeHtml('href="'.route('profile').'"')
+        ->assertSeeHtml('href="'.route('slack.login').'"')
         ->assertSee('Profile');
+});
+
+test('a signed-in player\'s Profile pill opens the fighter sheet in place', function () {
+    Livewire::actingAs(User::factory()->create())
+        ->test(Battlefield::class)
+        ->assertSeeHtml("\$dispatch('open-fighter-sheet', { tab: 'profile' })");
 });
 
 test('battlefield shows a link to the dashboard panel', function () {
@@ -63,7 +69,7 @@ test('battlefield hides both nav links in ide embed mode', function () {
     Livewire::withQueryParams(['embed' => 'ide'])
         ->test(Battlefield::class)
         ->assertDontSeeHtml('href="'.route('filament.admin.pages.dashboard').'"')
-        ->assertDontSeeHtml('href="'.route('profile').'"');
+        ->assertDontSeeHtml('href="'.route('slack.login').'"');
 });
 
 test('battlefield surfaces a flashed error message', function () {
@@ -277,4 +283,67 @@ test('the re-run-the-installer nudge links straight to the quick-update page, no
 
     Livewire::actingAs($user)->test(Battlefield::class)
         ->assertSeeHtml('href="'.route('update').'"');
+});
+
+test('the battlefield renders one HUD grid with every panel slot', function () {
+    $user = User::factory()->create();
+    Boss::factory()->create(['status' => 'alive', 'number' => 1]);
+
+    $this->actingAs($user)->get(route('battlefield'))
+        ->assertOk()
+        ->assertSee('id="bf-hud"', false)
+        ->assertSee('class="bf-team', false)
+        ->assertSee('class="bf-plate', false)
+        ->assertSee('class="bf-board', false)
+        ->assertSee('class="bf-feed', false)
+        ->assertDontSee('battlefieldDamageHud()', false);
+});
+
+test('the battlefield boot payload carries the sky site from config', function () {
+    config(['token_slayer.sky' => ['lat' => 10.82, 'lon' => 106.63]]);
+    $user = User::factory()->create();
+    Boss::factory()->create(['status' => 'alive', 'number' => 1]);
+
+    $this->actingAs($user)->get(route('battlefield'))
+        ->assertOk()
+        ->assertSee('&quot;sky&quot;:{&quot;lat&quot;:10.82,&quot;lon&quot;:106.63}', false);
+});
+
+test('the battlefield nav is just Profile and Dashboard: the character picker lives in the Profile sheet', function () {
+    Livewire::actingAs(User::factory()->create())
+        ->test(Battlefield::class)
+        ->assertSee('Profile')
+        ->assertSee('Dashboard')
+        ->assertDontSee('Loadout');
+});
+
+test('the nav sits in the HUD grid, in its own row above Team Damage, so the two can never overlap', function () {
+    $html = Livewire::actingAs(User::factory()->create())->test(Battlefield::class)->html();
+
+    $hud = strpos($html, 'id="bf-hud-in"');
+    $nav = strpos($html, 'id="bf-nav"');
+    $team = strpos($html, 'class="bf-team"');
+
+    expect($hud)->toBeInt()
+        ->and($nav)->toBeGreaterThan($hud)
+        ->and($team)->toBeGreaterThan($nav);
+});
+
+test('the Team Damage panel shows the viewer\'s own avatar, not just an initial', function () {
+    Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
+    $user = User::factory()->create(['name' => 'Tung']);
+
+    $this->actingAs($user);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('<img src="'.route('avatar', $user).'" alt="" onerror="this.remove()">');
+});
+
+test('the Team Damage panel is one panel, not a panel drawn inside another (double border and padding)', function () {
+    Boss::factory()->create(['number' => 1, 'max_hp' => 1_000, 'current_hp' => 1_000]);
+    $this->actingAs(User::factory()->create());
+
+    $html = Livewire::test(Battlefield::class)->html();
+
+    expect(substr_count($html, 'class="bf-team'))->toBe(1);
 });

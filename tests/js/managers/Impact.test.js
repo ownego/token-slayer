@@ -9,11 +9,17 @@ vi.mock('phaser', () => ({
 
 import { Impact } from '@battlefield/impact.js';
 import { LAYOUTS } from '@battlefield/config.js';
+import { bus } from '@battlefield/bus.js';
+import { BusEvent } from '@battlefield/constants.js';
 
 const makeScene = () => {
   const added = [];
   const chain = () => {
-    const o = { setScale: () => o, play: () => o, once: () => o, destroy() {} };
+    const o = {
+      setScale: () => o, play: () => o, once: () => o, destroy() {},
+      setVisible: () => o, setColor: () => o, setStroke: () => o,
+      setPosition: () => o, setAlpha: () => o, setText: () => o,
+    };
     return o;
   };
   const boss = {
@@ -26,8 +32,6 @@ const makeScene = () => {
     layout: LAYOUTS.landscape,
     bossSprite: boss,
     bossState: { currentHp: 1000, maxHp: 1000 },
-    hpBarFill: { setFillStyle() {}, width: 0 },
-    hpText: { setText() {} },
     anims: { exists: () => true, create() {} },
     add: { sprite: chain },
     addSharpText: chain,
@@ -83,5 +87,23 @@ describe('Impact boss flinch', () => {
     expect(flinch.scaleX).toBeCloseTo(3 * 1.1);
     expect(flinch.scaleY).toBeCloseTo(3 * 0.9);
     expect(boss.scaleX).toBe(4);
+  });
+});
+
+describe('Impact HP counter', () => {
+  // The DOM boss plate (hud/boss-plate.js) replaced the Phaser HP bar/text
+  // this used to draw directly — it now ticks the bus instead.
+  test('the HP tween ticks BOSS_HP_TICK on the bus instead of drawing Phaser text', () => {
+    const { scene, added } = makeScene();
+    const emit = vi.spyOn(bus, 'emit');
+    const impact = new Impact(scene);
+
+    impact.apply(600);
+    const tween = added.find(t => t.v === 600);
+    tween.onUpdate();
+
+    expect(emit).toHaveBeenCalledWith(BusEvent.BOSS_HP_TICK, expect.objectContaining({ max: 1000 }));
+    const [, payload] = emit.mock.calls.find(([event]) => event === BusEvent.BOSS_HP_TICK);
+    expect(payload.hp).toBeCloseTo(1000, 0); // the tween's onUpdate fires immediately from `from`
   });
 });

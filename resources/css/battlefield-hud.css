@@ -1,0 +1,193 @@
+/* DOM HUD grid overlay: sits exactly on the Phaser canvas (resources/js/battlefield/hud/sync.js
+   keeps #bf-hud's box in sync). Grid + tiers ported from
+   docs/superpowers/mockups/2026-09-27-battlefield-redesign/battlefield.template.html
+   (.hud-in and the two @container hud blocks), renamed .hud->.bf-hud, .hud-in->.bf-hud-in,
+   .team->.bf-team, .boss-plate->.bf-plate, .top->.bf-board, .feed->.bf-feed,
+   .herald-slot->.bf-herald. Panel visual styles below are the mockup's .team/.boss-plate/.top/.feed
+   rule blocks with the same renames. */
+
+:root {
+  --bf-panel: rgba(9, 15, 30, 0.86); /* no backdrop blur over the live canvas: a touch more opaque instead */
+  --bf-line: rgba(120, 140, 190, 0.22);
+  --bf-text: #e8eefc;
+  --bf-dim: #8b97b3;
+  --bf-gold: #fbbf24;
+  --bf-px: 'Pixelify Sans', ui-monospace, monospace;
+  --bf-sk: 'Silkscreen', ui-monospace, monospace;
+}
+
+.bf-hud { position: absolute; pointer-events: none; container: hud / size; }
+.bf-hud-in { position: absolute; inset: 0; display: grid; align-items: start; align-content: start; padding: 14px; row-gap: 8px; column-gap: 16px;
+  grid-template-columns: clamp(220px, 27cqw, 300px) minmax(0, 1fr) clamp(230px, 27cqw, 310px);
+  grid-template-areas: "nav plate board" "team plate board" "feed herald board" ". . board"; }
+.bf-nav { grid-area: nav; }
+.bf-hud-in > * { pointer-events: auto; }
+.bf-team { grid-area: team; } .bf-feed { grid-area: feed; } .bf-board { grid-area: board; --row-h: 30px; }
+.bf-plate { grid-area: plate; justify-self: center; width: min(460px, 100%); position: relative; } .bf-herald { grid-area: herald; justify-self: center; }
+@container hud (max-aspect-ratio: 1/1) {
+  .bf-hud-in { grid-template-columns: minmax(0, 1fr); grid-template-areas: "nav" "plate" "team" "herald" "feed"; padding: 8px; row-gap: 6px; }
+  .bf-board { position: absolute; left: 0; right: 0; bottom: 0; max-height: 78px; overflow: hidden; transition: max-height .3s cubic-bezier(.2,.8,.2,1); }
+  .bf-board.open { max-height: 260px; }
+  .bf-board:not(.open) li:not([data-rank="1"]), .bf-board:not(.open) .more { visibility: hidden; }
+}
+@container hud (min-aspect-ratio: 1/1) and (max-height: 440px) {
+  .bf-hud-in { padding: 6px; row-gap: 4px; column-gap: 8px; grid-template-columns: clamp(150px, 24cqw, 220px) minmax(0, 1fr) clamp(160px, 25cqw, 230px); }
+  .bf-board { --row-h: 22px; } .bf-board li[data-rank="4"], .bf-board li[data-rank="5"], .bf-board .more { display: none; }
+}
+
+/* ---------- panel visuals (ported from the mockup's .team block) ---------- */
+.bf-team { padding: 10px 12px 10px; background: var(--bf-panel); border: 1px solid var(--bf-line); }
+.bf-team .t-title { font: 12px var(--bf-sk); color: var(--bf-dim); letter-spacing: .06em; display: flex; justify-content: space-between; }
+.bf-team .t-title i { font-style: normal; color: #4ade80; }
+.bf-team .t-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
+.bf-team .t-stat span { display: block; font: 10px var(--bf-sk); color: var(--bf-dim); }
+.bf-team .t-stat b { font: 700 19px var(--bf-px); color: #fff; font-variant-numeric: tabular-nums; }
+.bf-team .t-stat.today b { color: #7dd3fc; }
+.bf-team .t-stat.flash b { animation: bf-flash .5s ease-out; }
+@keyframes bf-flash { 0% { color: #fff; text-shadow: 0 0 10px #fde68a; } }
+.bf-team .me { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 8px; margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--bf-line); }
+.bf-team .me .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 700 13px monospace; color: #fff; background: #fb923c; box-shadow: 0 0 0 2px #fbbf24; }
+.bf-team .me .av { position: relative; overflow: hidden; }
+.bf-team .me .av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bf-team .me .me-l { font: 10px var(--bf-sk); color: var(--bf-gold); }
+.bf-team .me .me-v { font: 700 15px var(--bf-px); color: #fff; font-variant-numeric: tabular-nums; }
+.bf-team .me .me-v small { font: 12px ui-sans-serif, system-ui; color: var(--bf-dim); margin-left: 4px; }
+.bf-team .me .me-r { text-align: right; font: 700 17px var(--bf-px); color: var(--bf-gold); }
+.bf-team .me .me-r small { display: block; font: 10px var(--bf-sk); color: var(--bf-dim); }
+
+/* ---------- panel visuals (ported from the mockup's .boss-plate block) ---------- */
+.bf-plate .bp-name { font: 700 22px var(--bf-px); color: #fff; letter-spacing: .04em; text-shadow: 0 2px 0 #000; display: inline-flex; align-items: baseline; gap: 8px; }
+.bf-plate .bp-name small { font: 11px var(--bf-sk); color: var(--bf-dim); }
+.bf-plate .hpbar { position: relative; height: 18px; margin-top: 4px; background: #0d1426; border: 1px solid #2a3858; box-shadow: 0 0 0 1px #000; }
+.bf-plate .hpbar .fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(180deg, #fb7185, #be123c); transition: width .25s ease-out; }
+.bf-plate .hpbar .lag { position: absolute; inset: 0 auto 0 0; background: #fde68a; opacity: .55; transition: width .7s ease-in .15s; }
+.bf-plate .hpbar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(0,0,0,.55) calc(10% - 1px) 10%); }
+.bf-plate .hpbar .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fbbf24; z-index: 2; }
+.bf-plate .hpbar .hp-t { position: absolute; right: 6px; top: 50%; translate: 0 -50%; z-index: 3; font: 700 12px var(--bf-px); color: #fff; text-shadow: 0 1px 0 #000, 0 0 4px #000; font-variant-numeric: tabular-nums; }
+.bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fb923c, #c2410c); }
+.bf-plate.finish .hpbar .fill { animation: bf-finish .5s steps(2) infinite; }
+.bf-plate .finish-chip { display: none; margin-top: 4px; font: 11px var(--bf-sk); color: #fca5a5; letter-spacing: .08em; }
+.bf-plate.finish .finish-chip { display: inline-block; animation: bf-blink 1s steps(2) infinite; }
+@keyframes bf-finish { 50% { filter: brightness(1.6); } }
+@keyframes bf-blink { 50% { opacity: .35; } }
+.bf-plate .hpbar.crack::before { content: ''; position: absolute; top: -2px; bottom: -2px; width: 10%; left: var(--seg); background: #fff; z-index: 4; animation: bf-crack .25s ease-out forwards; }
+@keyframes bf-crack { to { opacity: 0; } }
+.bf-plate .shard { position: absolute; width: 4px; height: 4px; background: #fb7185; z-index: 5; pointer-events: none; }
+
+/* ---------- panel visuals (ported from the mockup's .top block) ---------- */
+.bf-board { padding: 10px 12px 8px; background: var(--bf-panel); border: 1px solid var(--bf-line); }
+.bf-board .tp-title { font: 12px var(--bf-sk); color: var(--bf-dim); letter-spacing: .06em; display: flex; justify-content: space-between; }
+.bf-board .board { position: relative; margin-top: 6px; }
+.bf-board ol { list-style: none; margin: 0; padding: 0; position: relative; }
+.bf-board li { position: absolute; left: 0; right: 0; top: calc(var(--i, 0) * var(--row-h)); height: var(--row-h) !important; display: grid; grid-template-columns: 26px 22px 1fr auto; align-items: center; gap: 7px; transition: top .45s cubic-bezier(.2,.8,.2,1), opacity .3s ease; }
+.bf-board ol { height: calc(var(--n, 0) * var(--row-h)); }
+.bf-board li .rk { position: relative; width: 26px; height: 24px; display: grid; place-items: center; font: 14px var(--bf-sk); color: var(--bf-dim); }
+.bf-board li .av { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 11px monospace; color: #fff; }
+.bf-board li .nm { min-width: 0; }
+.bf-board li .nm span { display: block; font: 500 13px var(--bf-px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bf-board li .nm i { display: block; height: 3px; margin-top: 2px; background: #1a2440; }
+.bf-board li .nm i em { display: block; height: 100%; transition: width .35s ease-out; }
+.bf-board li .dm { font: 700 14px var(--bf-px); color: #7dd3fc; font-variant-numeric: tabular-nums; }
+.bf-board li[data-rank="1"] { color: #fde68a; } .bf-board li[data-rank="2"] { color: #e5e7eb; } .bf-board li[data-rank="3"] { color: #fdba74; }
+.bf-board li.you { background: linear-gradient(90deg, rgba(251,191,36,.14), transparent); box-shadow: inset 2px 0 0 #fbbf24; }
+.bf-board li.you .nm span { color: #fde68a; }
+.bf-board .more { font: 11px var(--bf-sk); color: var(--bf-dim); padding: 4px 0 0 33px; }
+.bf-board-handle { display: none; width: 100%; background: transparent; border: 0; color: var(--bf-dim); font: 12px var(--bf-sk); letter-spacing: .06em; text-align: center; padding: 0 0 5px; cursor: pointer; }
+@container hud (max-aspect-ratio: 1/1) { .bf-board-handle { display: block; } }
+
+/* ---------- rank effects (Task 17: style B always on; Pulse + Overtake always on) ---------- */
+.bf-board li[data-rank="1"] { background: linear-gradient(100deg, transparent 35%, rgba(251,191,36,.22) 50%, transparent 65%) no-repeat, linear-gradient(90deg, rgba(251,191,36,.12), transparent 70%); background-size: 260% 100%, 100% 100%; animation: bf-shine 3.2s ease-in-out infinite; box-shadow: inset 2px 0 0 #fbbf24; }
+.bf-board li[data-rank="2"] { background: linear-gradient(90deg, rgba(226,232,240,.08), transparent 60%); box-shadow: inset 2px 0 0 #cbd5e1; }
+.bf-board li[data-rank="3"] { background: linear-gradient(90deg, rgba(234,142,86,.09), transparent 60%); box-shadow: inset 2px 0 0 #d9824f; }
+@keyframes bf-shine { 0% { background-position: 130% 0, 0 0; } 55%, 100% { background-position: -30% 0, 0 0; } }
+.bf-board .ember { position: absolute; left: 50%; bottom: 4px; width: 2px; height: 2px; background: #fde68a; box-shadow: 0 0 3px #f59e0b; pointer-events: none; animation: bf-ember-rise 1.1s ease-out forwards; }
+@keyframes bf-ember-rise { 0% { opacity: 1; translate: 0 0; } 100% { opacity: 0; translate: var(--dx) -22px; } }
+.bf-board li .rk { position: relative; overflow: hidden; }
+.bf-board li .rk b { position: relative; z-index: 1; text-shadow: 0 1px 0 #000, 0 0 3px #000; transition: color .6s ease; }
+.bf-board li .rk .roll { position: absolute; inset: 0; display: grid; place-items: center; font: inherit; z-index: 1; text-shadow: 0 1px 0 #000; }
+.bf-board li .rk .roll.out-up { animation: bf-roll-out-up .32s cubic-bezier(.5,0,.8,.4) forwards; }
+.bf-board li .rk .roll.out-down { animation: bf-roll-out-down .32s cubic-bezier(.5,0,.8,.4) forwards; }
+.bf-board li .rk b.in-up { animation: bf-roll-in-up .38s cubic-bezier(.2,1.4,.4,1); }
+.bf-board li .rk b.in-down { animation: bf-roll-in-down .38s cubic-bezier(.2,1.4,.4,1); }
+@keyframes bf-roll-out-up { to { translate: 0 -100%; opacity: 0; } }
+@keyframes bf-roll-out-down { to { translate: 0 100%; opacity: 0; } }
+@keyframes bf-roll-in-up { from { translate: 0 100%; } }
+@keyframes bf-roll-in-down { from { translate: 0 -100%; } }
+.bf-board li .rk b.flash-up { color: #4ade80 !important; transition: color 0s; }
+.bf-board li .rk b.flash-down { color: #f87171 !important; transition: color 0s; }
+.bf-board li[data-rank="1"] .rk b:not(.flash-up):not(.flash-down) { color: transparent !important; background: linear-gradient(100deg, #f59e0b 0%, #fde68a 40%, #fff 50%, #fde68a 60%, #f59e0b 100%); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; text-shadow: none; filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 4px rgba(251,191,36,.55)); animation: bf-digit-sheen 2.4s linear infinite; }
+@keyframes bf-digit-sheen { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+.bf-board li[data-rank="2"] .rk b, .bf-board li[data-rank="3"] .rk b { animation: bf-digit-glint 4s steps(1) infinite; }
+.bf-board li[data-rank="3"] .rk b { animation-delay: 1.3s; }
+@keyframes bf-digit-glint { 0%, 90% { filter: none; } 92%, 96% { filter: brightness(1.8) drop-shadow(0 0 3px #fff); } }
+.bf-board li .up { position: absolute; right: -4px; top: -6px; font: 700 10px var(--bf-sk); color: #4ade80; text-shadow: 0 1px 0 #000; animation: bf-up-chip 1.6s ease-out forwards; }
+@keyframes bf-up-chip { 0% { opacity: 0; translate: 0 6px; } 15% { opacity: 1; translate: 0 0; } 75% { opacity: 1; } 100% { opacity: 0; translate: 0 -6px; } }
+.bf-board li .av { position: relative; }
+.bf-board .crown { position: absolute; left: 50%; top: -11px; width: 14px; height: 9px; translate: -50% 0; image-rendering: pixelated; filter: drop-shadow(0 1px 0 #000) drop-shadow(0 0 3px rgba(251,191,36,.7)); }
+.bf-board .crown.drop { animation: bf-crown-drop .7s cubic-bezier(.3,1.6,.5,1); }
+@keyframes bf-crown-drop { 0% { translate: -50% -40px; opacity: 0; rotate: -25deg; } 60% { opacity: 1; } 100% { translate: -50% 0; rotate: 0deg; } }
+.bf-board .medal { display: none; }
+.bf-board li.hit { box-shadow: inset 3px 0 0 var(--fc) !important; }
+.bf-board li.hit .dm { animation: bf-dm-pop .3s ease-out; }
+@keyframes bf-dm-pop { 0% { scale: 1.35; color: #fff; } 100% { scale: 1; } }
+.bf-board li .plus { position: absolute; right: 0; top: 2px; font: 700 11px var(--bf-px); color: var(--fc); text-shadow: 0 1px 0 #000; pointer-events: none; animation: bf-plus-up .9s ease-out forwards; }
+@keyframes bf-plus-up { 0% { opacity: 0; translate: 0 4px; } 20% { opacity: 1; } 100% { opacity: 0; translate: 0 -14px; } }
+.bf-board li .swoosh { position: absolute; left: 0; right: 0; top: 100%; height: 22px; pointer-events: none; background: linear-gradient(180deg, rgba(253,230,138,.28), transparent); animation: bf-swoosh .5s ease-out forwards; }
+@keyframes bf-swoosh { 0% { opacity: 1; transform: scaleY(1.6); transform-origin: 50% 0; } 100% { opacity: 0; transform: scaleY(.3); transform-origin: 50% 0; } }
+.bf-board li.passed { animation: bf-passed .4s steps(4); }
+@keyframes bf-passed { 25% { translate: -2px 0; } 50% { translate: 2px 0; } 75% { translate: -1px 0; } }
+
+/* ---------- panel visuals (ported from the mockup's .feed block) ---------- */
+.bf-feed .lines { position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; }
+.bf-feed .ln { display: flex; align-items: center; gap: 7px; padding: 4px 8px; background: rgba(4, 8, 18, .74); border-left: 2px solid var(--c, #475569); font: 500 13px var(--bf-px); color: #cbd5e1; transition: transform .3s cubic-bezier(.2,.8,.2,1), opacity .5s ease; }
+.bf-feed .ln b { color: #fff; font-weight: 700; }
+.bf-feed .ln .n { margin-left: auto; font: 700 12px var(--bf-px); color: var(--c); padding-left: 6px; }
+.bf-feed .ln .ic { width: 14px; height: 14px; flex: none; image-rendering: pixelated; }
+.bf-feed .ln.in { animation: bf-feed-in .28s ease-out; }
+.bf-feed .ln.bump .n { animation: bf-bump .3s ease-out; display: inline-block; }
+.bf-feed .ln.fading { opacity: 0; }
+.bf-feed .ln.old { opacity: .55; }
+@keyframes bf-feed-in { from { opacity: 0; translate: -12px 0; } }
+@keyframes bf-bump { 0% { scale: 1.7; } 100% { scale: 1; } }
+.bf-feed .earlier { font: 11px var(--bf-sk); color: var(--bf-dim); padding: 2px 10px; }
+.bf-feed .hist { display: none; max-height: 260px; overflow: auto; margin-bottom: 4px; padding: 6px 8px; background: rgba(4, 8, 18, .92); border: 1px solid var(--bf-line); }
+.bf-feed .hist p { display: flex; gap: 7px; align-items: center; margin: 0; padding: 2px 0; font: 500 12px var(--bf-px); color: #cbd5e1; }
+.bf-feed .hist p .ic { width: 12px; height: 12px; flex: none; }
+.bf-feed .hist p time { margin-left: auto; font: 10px var(--bf-sk); color: var(--bf-dim); }
+.bf-feed:hover .hist { display: block; }
+.bf-feed:hover .lines, .bf-feed:hover .earlier { display: none; }
+
+/* ---------- herald strip (ported from the mockup's .herald block) ---------- */
+.bf-herald span { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; background: rgba(4, 8, 18, .82); border: 1px solid var(--hc, #fbbf24); font: 700 14px var(--bf-px); color: #fff; opacity: 0; translate: 0 -6px; transition: opacity .25s ease, translate .25s ease; }
+.bf-herald span.on { opacity: 1; translate: 0 0; }
+.bf-herald .ic { width: 16px; height: 16px; }
+
+/* Bigger screens get a bigger HUD: the panels were a fixed ~300px, which read
+   as tiny next to a 1920px battlefield. zoom scales each panel's type and
+   spacing together; the grid columns grow to match. */
+@container hud (min-width: 1600px) and (min-aspect-ratio: 1/1) {
+  .bf-hud-in { grid-template-columns: clamp(220px, 27cqw, 360px) minmax(0, 1fr) clamp(230px, 27cqw, 372px); }
+  .bf-hud-in > * { zoom: 1.2; }
+}
+@container hud (min-width: 2200px) and (min-aspect-ratio: 1/1) {
+  .bf-hud-in { grid-template-columns: clamp(220px, 27cqw, 420px) minmax(0, 1fr) clamp(230px, 27cqw, 434px); }
+  .bf-hud-in > * { zoom: 1.4; }
+}
+
+/* ---- Load intro: the HUD waits for the field, then slides in panel by panel
+   (hud/reveal.js sets .ready and each panel's --i once the scene exists). ---- */
+.bf-hud:not(.ready) .bf-hud-in > * { opacity: 0; }
+.bf-hud.ready .bf-hud-in > * { animation: bf-hud-in .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 90ms); }
+@keyframes bf-hud-in { from { opacity: 0; translate: 0 -10px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .bf-hud.ready .bf-hud-in > * { animation: none; } }
+
+/* ---- A clearer HP bar: taller, bevelled, a crisper three-stop fill with a
+   lit top edge, darker segment ticks, and an outlined reading. ---- */
+.bf-plate .bp-name { font-size: 24px; text-shadow: 0 2px 0 #000, 0 0 12px rgba(251,113,133,.35); }
+.bf-plate .bp-name small { padding: 1px 5px; border: 1px solid #2a3858; background: rgba(4,8,18,.7); color: #cbd5e1; }
+.bf-plate .hpbar { height: 22px; margin-top: 6px; background: linear-gradient(180deg, #070b16, #111a30); border: 2px solid #05070e; box-shadow: 0 0 0 1px #3b4a6e, 0 4px 14px rgba(0,0,0,.45); }
+.bf-plate .hpbar .fill { background: linear-gradient(180deg, #ff8fa3 0%, #f43f5e 22%, #be123c 70%, #881337 100%); box-shadow: inset 0 2px 0 rgba(255,255,255,.35), inset 0 -2px 0 rgba(0,0,0,.25); }
+.bf-plate .hpbar .lag { background: linear-gradient(180deg, #fff7d6, #fde68a); opacity: .7; }
+.bf-plate .hpbar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(0,0,0,.6) calc(10% - 2px) 10%); }
+.bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fdba74 0%, #f97316 25%, #c2410c 72%, #7c2d12 100%); }
+.bf-plate .hpbar .hp-t { font-size: 13px; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; }

@@ -28,6 +28,14 @@ test('captures boss, leaderboard, and fighters from the scene', () => {
   expect(next.fighters[0]).toMatchObject({ id: 7, handle: 'alice', avatarUrl: '/avatars/7' });
 });
 
+test('the leaderboard snapshot comes from damageTotals once the Phaser board is gone', () => {
+  const scene = fakeScene({ leaderboard: undefined, damageTotals: new Map([[7, 1200], [9, 300]]) });
+  expect(snapshotState({}, scene).leaderboard).toEqual([
+    { userId: 7, damage: 1200, handle: 'alice' },
+    { userId: 9, damage: 300, handle: null },
+  ]);
+});
+
 test('preserves each fighter character so a reboot does not re-roll it', () => {
   const next = snapshotState({}, fakeScene());
 
@@ -110,4 +118,9 @@ test('agentCount defaults to 0 when the scene has no minions manager at all', ()
   const next = snapshotState({}, fakeScene());
 
   expect(next.fighters[0].agentCount).toBe(0);
+});
+
+test('the sky site survives a snapshot (scene restarts on rotate)', () => {
+  const state = { sky: { lat: 21.03, lon: 105.85 } };
+  expect(snapshotState(state, fakeScene()).sky).toEqual({ lat: 21.03, lon: 105.85 });
 });
