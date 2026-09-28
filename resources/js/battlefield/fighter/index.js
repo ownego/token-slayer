@@ -8,6 +8,7 @@ import { moveOrigin, planRoute } from '@battlefield/move-geometry.js';
 import { resolveFighterPlacement } from '@battlefield/fighter-placement.js';
 import { driftedPositions } from '@battlefield/resync.js';
 import { findHeel } from '@battlefield/shared/heel.js';
+import { BOX } from '@battlefield/sheet/sheet-roster.js';
 import { glyphKey } from '@battlefield/shared/flair-glyphs.js';
 import { loadAvatarTexture, makeFallbackAvatarTexture, makePermanentFallbackAvatarTexture } from './avatar.js';
 import { ensureFlairFont, isFlairFontReady } from './flair-font.js';
@@ -113,7 +114,9 @@ function cacheHeel(scene, ftype) {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(source.image, cutX, cutY, cutWidth, cutHeight, 0, 0, cutWidth, cutHeight);
   const { data } = ctx.getImageData(0, 0, cutWidth, cutHeight);
-  ftype.heel = findHeel(data);
+  // the measured body box keeps a weapon held out to either side out of the search
+  const [x0, , x1] = BOX[ftype.key] ?? [30, 0, 70];
+  ftype.heel = findHeel(data, { x0, x1 });
 }
 
 /** @param {string} handle @param {number} maxChars @return {string} */

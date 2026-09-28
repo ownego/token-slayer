@@ -3,6 +3,7 @@
 // stage, paused while hidden).
 import { BY_KEY } from './sprite-strip.js';
 import { BOX, stripUrl } from './sheet-roster.js';
+import { findHeel } from '@battlefield/shared/heel.js';
 
 /**
  * The battlefield draws fighters at displaySize 44 over an 18px body.
@@ -67,7 +68,7 @@ export function heelOf(key) {
     return HEEL[key];
   }
   HEEL[key] = null;
-  const [x0, , x1, y1] = BOX[key];
+  const [x0, , x1] = BOX[key];
   const img = new Image();
   img.onload = () => {
     const c = document.createElement('canvas');
@@ -78,17 +79,9 @@ export function heelOf(key) {
       return;
     }
     ctx.drawImage(img, 0, 0, 100, 100, 0, 0, 100, 100);
-    const px = ctx.getImageData(0, 0, 100, 100).data;
-    let best = null;
-    for (let y = Math.round(y1); y >= Math.round(y1) - 3 && best === null; y--) {
-      for (let xx = Math.max(0, Math.floor(x0) - 4); xx <= Math.min(99, Math.ceil(x1) + 2); xx++) {
-        if (px[(y * 100 + xx) * 4 + 3] > 40) {
-          best = { x: xx, y: y + 1 };
-          break;
-        }
-      }
-    }
-    HEEL[key] = best || { x: (x0 + x1) / 2 - 3, y: y1 };
+    // the battlefield's own heel search (shared/heel.js): a weapon touching
+    // the ground below the feet never counts
+    HEEL[key] = findHeel(ctx.getImageData(0, 0, 100, 100).data, { x0, x1 });
   };
   img.src = stripUrl(BY_KEY[key].anims.idle.file);
 
