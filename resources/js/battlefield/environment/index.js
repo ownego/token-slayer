@@ -4,7 +4,7 @@ import { ensureMoteSoftTexture } from '@battlefield/spark-texture.js';
 import { moonDisplay, skyFrame, mixHex } from './sky-layer.js';
 import { horizonYFor } from '@battlefield/layout.js';
 import { dressingLayout } from './dressing.js';
-import { cameoFrame, hopPlan, nextCameoDelay, peekPlan, pickCameoKind, pickRideCloud, dancePlan, rideCloudY } from './clawd-cameo.js';
+import { cameoFrame, hopPlan, nextCameoDelay, peekPlan, nextCameoKind, pickRideCloud, dancePlan, rideCloudY } from './clawd-cameo.js';
 import { bannerPixels, bloomPixels, flowerBed, islandPixels, landmarkLayout, pixelate, stemPixels, windmillPixels } from './landmarks.js';
 import { LOGOS } from './logo-paths.js';
 import { bakeInto, bakeRuns, floatLive, runBounds } from './bake-runs.js';
@@ -392,6 +392,8 @@ export function createEnvironment(scene, { layout, sky, lite = false }) {
   // and one above the clouds for sitting on them. Two ridge art pixels per
   // quadrant cell: at one it read as a speck.
   env.clawdRidge = scene.add.image(0, 0, TextureKey.CLAWD_DEFAULT).setOrigin(0.5, 1).setScale(R).setAlpha(0);
+  // a second, shy Clawd: it only ever peeks, taking turns with the hopper
+  env.clawdPeek = scene.add.image(0, 0, TextureKey.CLAWD_DEFAULT).setOrigin(0.5, 1).setScale(R).setAlpha(0);
   // small up on the clouds: it reads as far off
   env.clawdCloud = scene.add.image(0, 0, TextureKey.CLAWD_DEFAULT).setOrigin(0.5, 1).setScale(R / 2).setAlpha(0);
 
@@ -505,7 +507,7 @@ export function createEnvironment(scene, { layout, sky, lite = false }) {
     ...env.clouds.map(c => c.o),
     env.clawdCloud,
     ...env.birds,
-    env.back, env.clawdRidge, env.far, env.castle, env.banner, ...env.windows, ...env.windowGlows, ...env.torches,
+    env.back, env.clawdRidge, env.clawdPeek, env.far, env.castle, env.banner, ...env.windows, ...env.windowGlows, ...env.torches,
     // the island and Clawd's own clouds float low, in front of the ranges and behind the hills
     env.island, env.antigravity,
     env.near, env.windmill, env.sails, ...env.flowers.flatMap(f => [f.stem, f.bloom]), env.floor, env.horizon,
@@ -520,6 +522,8 @@ export function createEnvironment(scene, { layout, sky, lite = false }) {
   let flocking = false;
   // the Clawd cameo playing behind the mountains now ({plan, start, sprite}), or null
   let cameo = null;
+  // the kind of the last cameo, so the hopper and the shy peeker take turns
+  let lastCameo = null;
   // Clawd dancing on one of the sky's own drifting clouds, all the time
   const ride = {
     cloud: env.clouds[pickRideCloud(env.clouds.map(c => ({ y: c.o.y, w: c.o.displayWidth })), env.clawdCloud.displayWidth)],
@@ -596,7 +600,9 @@ export function createEnvironment(scene, { layout, sky, lite = false }) {
       [env.sails, env.island, env.antigravity, env.clawdCloud, ...env.flowers.map(fl => fl.bloom)].forEach(o => o.setTint(dim));
       env.banner.setTint(toInt(mixHex(mixHex('#ffffff', h, 0.25), '#1c2236', frame.night * 0.6)));
       // behind the front range, a touch of the horizon's haze
-      env.clawdRidge.setTint(toInt(mixHex(mixHex('#ffffff', h, 0.2), '#3a4466', frame.night * 0.7)));
+      const ridgeTint = toInt(mixHex(mixHex('#ffffff', h, 0.2), '#3a4466', frame.night * 0.7));
+      env.clawdRidge.setTint(ridgeTint);
+      env.clawdPeek.setTint(ridgeTint);
       // Keep fighters readable on a bright day rather than washing the
       // floor all the way out to the raw ambient colour.
       env.floor.setTint(toInt(mixHex(frame.ambient, '#1a2238', 0.35 + 0.25 * frame.day)));
@@ -753,7 +759,7 @@ export function createEnvironment(scene, { layout, sky, lite = false }) {
     }
     if (!cameo && time >= nextCameoAt) {
       nextCameoAt = time + nextCameoDelay(false, Math.random);
-      startCameo(pickCameoKind(Math.random), time);
+      startCameo(nextCameoKind(lastCameo), time);
     }
     if (cameo) {
       playCameo(time);
@@ -858,7 +864,8 @@ export function createEnvironment(scene, { layout, sky, lite = false }) {
       skyline: x => farSky[Math.max(0, Math.min(W - 1, Math.round(x)))],
       avoid: [env.castleSpan],
     };
-    cameo = { plan: (kind === 'hop' ? hopPlan : peekPlan)(box, Math.random), start: time, sprite: env.clawdRidge };
+    lastCameo = kind;
+    cameo = { plan: (kind === 'hop' ? hopPlan : peekPlan)(box, Math.random), start: time, sprite: kind === 'hop' ? env.clawdRidge : env.clawdPeek };
     return kind;
   }
 
@@ -909,7 +916,7 @@ export function createEnvironment(scene, { layout, sky, lite = false }) {
   function setupBakes() {
     const live = new Set([
       env.moonGlow, env.moon, env.sunGlow, env.sun, env.shoot, env.shootHead,
-      env.clawdCloud, env.clawdRidge, env.sails, ...env.birds, ...env.braziers.map(b => b.fire),
+      env.clawdCloud, env.clawdRidge, env.clawdPeek, env.sails, ...env.birds, ...env.braziers.map(b => b.fire),
     ]);
     const dust = new Set(env.motes.map(m => m.o));
     dust.forEach(o => o.setVisible(false));

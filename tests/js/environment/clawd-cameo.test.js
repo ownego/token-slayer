@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameoFrame, hopPlan, nextCameoDelay, peekPlan, pickCameoKind, pickRideCloud, dancePlan, rideCloudY } from '@battlefield/environment/clawd-cameo.js';
+import { cameoFrame, hopPlan, nextCameoDelay, peekPlan, nextCameoKind, pickRideCloud, dancePlan, rideCloudY } from '@battlefield/environment/clawd-cameo.js';
 
 const lcg = seed => {
   let s = seed;
@@ -19,17 +19,13 @@ describe('nextCameoDelay', () => {
   });
 });
 
-describe('pickCameoKind', () => {
-  it('behind the mountains only (the cloud Clawd rides its own train), peeks and hops alike', () => {
-    const counts = { peek: 0, hop: 0 };
-    for (let i = 0; i < 100; i++) {
-      counts[pickCameoKind(() => i / 100)]++;
-    }
-    expect(counts.peek).toBe(50);
-    expect(counts.hop).toBe(50);
+describe('nextCameoKind', () => {
+  it('the hopping Clawd and the shy one take turns behind the mountains, the shy one first', () => {
+    expect(nextCameoKind(null)).toBe('peek');
+    expect(nextCameoKind('peek')).toBe('hop');
+    expect(nextCameoKind('hop')).toBe('peek');
   });
 });
-
 describe('peekPlan', () => {
   it('starts and ends hidden below the ridge, and peeks only its head above it', () => {
     const plan = peekPlan(box, lcg(5));

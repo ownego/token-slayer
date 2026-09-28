@@ -48,14 +48,15 @@ export function nextCameoDelay(first, rnd) {
 }
 
 /**
- * Which cameo plays next behind the mountains: a peek or a hop, alike (the
- * cloud Clawd rides its own train of clouds all the time — dancePlan).
+ * Which Clawd shows next behind the mountains: two of them take turns — the
+ * shy one that only peeks over a crest, and the one that hops along — the
+ * shy one first.
  *
- * @param {function(): number} rnd 0..1 generator.
+ * @param {?string} previous The last cameo played, or null.
  * @return {string} 'peek' or 'hop'
  */
-export function pickCameoKind(rnd) {
-  return rnd() < 0.5 ? 'peek' : 'hop';
+export function nextCameoKind(previous) {
+  return previous === 'peek' ? 'hop' : 'peek';
 }
 
 /**
