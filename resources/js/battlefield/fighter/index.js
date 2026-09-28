@@ -421,6 +421,8 @@ export class Fighter {
     entry.ftype = ftype;
     // the avatar follows the new body's own head height
     entry.head?.setY(Math.round(avatarCenterY(ftype.key, (entry.baseSize ?? 48) / SPRITE_CHAR_HEIGHT)));
+    // a charging ring is placed on the avatar once, when it's made: move it along
+    this.scene.charges?.get(entry.id)?.ring?.setY(entry.head?.y ?? 0);
     entry.animState = AnimState.IDLE;
     entry.body.setTexture(TextureKey.FIGHTERS, `${ftype.key}-idle-0`);
     const idleAnim = this.scene.anims.get(`${ftype.key}-idle`);
