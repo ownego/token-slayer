@@ -1,179 +1,157 @@
 # Token Slayer
 
-A cooperative idle boss raid for your team. Each AI token your coding agents
-spend (Claude Code, Codex, Antigravity, Claude Cowork) becomes damage against the current boss —
-and chats on claude.ai / Claude Desktop can count too via an optional
-browser userscript. Watch hits land in real time on the battlefield, defeat
-bosses together, and celebrate kills in Slack.
+A cooperative idle boss raid for your team. Every token your AI agents spend
+(Claude Code, Codex, Antigravity, Claude Cowork, and claude.ai chats) becomes
+damage against the current boss. Hits land in real time on a shared Phaser
+battlefield, the team defeats bosses together, and kills are announced in Slack.
 
 ## How it works
 
-1. You sign in with Slack and open the `/setup` wizard, which mints your
-   personal hook token.
-2. You run the one-line installer it shows; it installs the hooks for your
-   agents (re-running it is the upgrade path).
-3. Every time your agent finishes a turn, its token usage is posted to the
-   server, broadcast over Reverb websockets, and rendered as a hit on the
-   live battlefield. Subagents your agent dispatches appear as a small minion
-   swarm around your fighter (cosmetic only).
-4. When the boss falls, the kill is announced in a Slack channel and a new
-   boss spawns.
+1. Sign in with Slack and open `/setup`.
+2. Run the installer it gives you. It installs the `tok` CLI and registers
+   hooks for Claude Code, Codex, and Antigravity.
+3. When an agent finishes a turn, the hook reads the token usage locally and
+   posts it to `POST /api/events`. Only whitelisted fields leave the machine;
+   prompts, tool input, and file paths never do.
+4. The server records the event, applies damage to the boss, and broadcasts
+   the hit over Reverb to everyone watching `/battlefield`.
+5. When the boss falls, the kill goes to Slack and a new boss spawns.
 
-Admins additionally get a Filament panel at `/dashboard` for the org's shared
-Claude/Codex accounts: usage attribution, quota probing, analytics, and
-member rebalancing.
+The full pipeline is documented in `.ai/domain/token-tracking.md`.
 
 ## Tech stack
 
-- **Laravel 13** on PHP 8.4+
-- **Livewire 4** + **Tailwind CSS 4** for the UI, **Filament 5** (+ Shield) for the admin panel
-- **Phaser 3** for the battlefield rendering
-- **Laravel Reverb** for websocket broadcasting
-- **Redis** (Valkey) for the queue and live subagent presence
-- **Laravel Socialite** for Slack OAuth
-- **PostgreSQL** in the Docker stacks; `.env.example` defaults to **SQLite**
-- **Pest 4** (incl. browser tests) and **Vitest** for testing
-- IDE plugins for VS Code and JetBrains under `extensions/`
+- **Laravel 13** on PHP 8.4
+- **Livewire 4** + **Tailwind CSS 4** for the pages
+- **Filament 5** for the admin dashboard (`/dashboard`)
+- **Phaser 3** for the battlefield
+- **Laravel Reverb** for websockets, **Redis** for the queue
+- **Laravel Socialite** for Slack login
+- **PostgreSQL** in deployed environments, **SQLite** for local dev
+- **Pest 4** and **Vitest** for tests
 
 ## Local setup
 
-Contributors run the app in Docker via [Spin](https://serversideup.net/open-source/spin/)
-(`docker-compose.yml` + `docker-compose.dev.yml`), which brings up:
-
-| Service | Role |
-| --- | --- |
-| `php` | The app, on host port `${APP_PORT:-8000}` |
-| `reverb` | Websocket server, on host port `${REVERB_PORT:-8080}` |
-| `worker` | `queue:work redis` |
-| `pgsql` | Postgres 18 |
-| `redis` | Valkey 8 — required (queue + subagent presence) |
+The project runs in Docker through [Spin](https://serversideup.net/open-source/spin/).
+Use `spin exec php …` for every PHP command. Bare `php` on the host targets the
+wrong environment.
 
 ```bash
-cp .env.example .env          # then set REDIS_HOST=redis, DB_* for pgsql, Slack + Reverb vars
+cp .env.example .env
 spin up
 spin exec php composer install
 spin exec php php artisan key:generate
 spin exec php php artisan migrate
-npm install && npm run build
+npm install
+npm run build
 ```
 
-Always run PHP through `spin exec php …` — a bare `php` may target a different
-container. There is no scheduler container in dev; run
-`spin exec php php artisan schedule:work` if you need scheduled commands.
+`docker-compose.dev.yml` starts `php`, `reverb`, `worker` (the queue), `pgsql`,
+and `redis`. If the PHP container is stopped, run `docker start token-slayer-php-1`.
 
-`composer run dev` (outside Docker) runs `artisan serve`, a queue listener,
-`pail` logs and Vite together — it does **not** start Reverb or Redis.
+Run `npm run build` after every JS or CSS change. It also packs the battlefield
+sprite sheets.
 
-### Env vars
+### Environment variables
+
+The ones you need to fill in:
 
 | Var | Notes |
 | --- | --- |
-| `SLACK_OAUTH_CLIENT_ID` / `SLACK_OAUTH_CLIENT_SECRET` | Slack app used for "Sign in with Slack". |
-| `SLACK_OAUTH_REDIRECT_URI` | Typically `${APP_URL}/auth/slack/callback`. |
-| `SLACK_BOT_TOKEN` | Bot token with `users:read`; resolves members' Slack display names. |
-| `SLACK_NOTIFIER_WEBHOOK_URL` | Optional. Incoming webhook for boss-kill announcements and recaps. |
-| `SLACK_SECURITY_BOT_TOKEN` / `SLACK_SECURITY_CHANNEL` | Optional. Security alerts when an org account's OAuth token is rejected. |
-| `REVERB_*` / `VITE_REVERB_*` | Websocket server (internal) and browser-facing values; `VITE_*` are baked in at build time. |
-| `HOOK_NAMESPACE` | Optional. Identifier baked into the installer; defaults to a slug of `APP_NAME`. |
-| `GAME_BASE_HP` | Optional. Boss starting HP. Defaults to `1000000`. |
-| `GAME_IDLE_MINUTES` | Optional. Minutes of inactivity before a fighter is swept off the battlefield. Defaults to `30`. |
-| `GAME_SUBAGENT_IDLE_SECONDS` | Optional. Seconds before a quiet subagent's minion is dropped. Defaults to `60`. |
-| `SLAYER_CLI_GITHUB_TOKEN` / `SLAYER_CLI_REPO` | Read-only PAT + repo the server relays the slayer-cli wheel from. |
-| `TOKEN_SLAYER_*` | Optional tunables (hook version, update kill switch, probing, rebalance) — see `config/token_slayer.php`. |
+| `SLACK_OAUTH_CLIENT_ID` | Slack app used for "Sign in with Slack". |
+| `SLACK_OAUTH_CLIENT_SECRET` | Same Slack app. |
+| `SLACK_OAUTH_REDIRECT_URI` | Defaults to `${APP_URL}/auth/slack/callback`. |
+| `SLACK_BOT_TOKEN` | Bot token (`users:read`) used to read members' display names. |
+| `SLACK_NOTIFIER_WEBHOOK_URL` | Incoming webhook for boss-fight announcements. |
+| `REVERB_APP_ID` / `REVERB_APP_KEY` / `REVERB_APP_SECRET` | Reverb credentials. |
 
-## Onboarding a new agent
+Optional:
 
-1. Open `/setup` in a browser and sign in with Slack.
-2. Follow the CLI-hooks track: it shows a one-line installer carrying your
-   hook token — `curl -fsSL <app>/install | … sh` on macOS/Linux, or the
-   PowerShell equivalent against `/install.ps1` on Windows.
-3. Run it. Re-running the same command later upgrades the hooks; `/update`
-   shows the quick-update command.
-4. Open `/battlefield` and watch your hits register as you work.
+| Var | Notes |
+| --- | --- |
+| `HOOK_NAMESPACE` | Identifier baked into the installer. Defaults to a slug of `APP_NAME`. |
+| `GAME_BASE_HP` | Base boss HP. Defaults to `1000000`. |
+| `GAME_IDLE_MINUTES` | Minutes before an idle fighter leaves the field. Defaults to `30`. |
+| `GAME_SUBAGENT_IDLE_SECONDS` | Seconds before an idle subagent minion leaves. Defaults to `60`. |
+| `SLACK_SECURITY_BOT_TOKEN` / `SLACK_SECURITY_CHANNEL` | Security alerts for org accounts. |
+| `CCRC_CALLBACK_URL` | Enables the CC Remote Control login redirect. |
+| `TOKEN_SLAYER_*` | Hook version, update pause, quota probing, and rebalance tuning. See `config/token_slayer.php`. |
+| `ANTHROPIC_*` | Overrides for the Anthropic OAuth client used by quota probing. |
 
-The same wizard also covers the claude.ai userscript and the Claude Cowork
-watcher.
+## Connecting your tools
 
-## Tracking claude.ai & Claude Desktop (optional)
+Open `/setup` after signing in and pick a track:
 
-Coding agents report exact token counts through hooks, but the claude.ai
-web app and Claude Desktop expose no usage data. The tracker userscript
-closes that gap with estimates:
+- **CLI (Claude Code, Codex, Antigravity).** The wizard walks you through
+  Python and then gives you one command:
+  - macOS / Linux: `curl -fsSL <APP_URL>/install | sh`
+  - Windows: `irm <APP_URL>/install.ps1 | iex`
 
-1. Install [Tampermonkey](https://www.tampermonkey.net/) (or Violentmonkey)
-   in your browser.
-2. Open `/setup`, pick the browser-chat track, and click the userscript
-   install link (served at `/tracker.user.js`) — your userscript manager
-   will prompt you.
-3. Open [claude.ai](https://claude.ai) and paste your hook token when the
-   script asks (once; it's stored in the userscript manager).
+  Check it with `tok status`. Re-running the installer (or `tok update`) is how
+  you upgrade. The hook also updates itself on session start when the server
+  announces a newer version. `/guide` has the full `tok` command reference.
+- **Claude Cowork.** Installs a small Python watcher from `/install-cowork`.
+- **claude.ai / Claude Desktop chats.** Install the `/tracker.user.js`
+  userscript with Tampermonkey or Violentmonkey. On Chrome 138+, enable
+  *Allow user scripts* for Tampermonkey first. The script estimates tokens from
+  reply length (~4 chars per token), so its counts are approximate, and it
+  reads claude.ai's undocumented endpoints, so it may break when they change.
 
-The script estimates tokens from assistant reply length (~4 chars/token)
-and posts them as `provider=claude-ai` damage through the same `/api/events`
-pipeline as the hooks. Claude Desktop chats sync to your account, so they
-are picked up by the script's periodic poll whenever claude.ai is open in
-that browser. On first run it baselines your existing history without
-dealing damage, so installing won't nuke the boss.
+IDE plugins for VS Code and JetBrains live in `extensions/`.
 
-Caveats: counts are estimates (thinking tokens and system overhead are
-invisible), dedupe is per-browser, and the script reads claude.ai's
-undocumented internal endpoints, so it may need patching when those change.
+## Org accounts
+
+Usage is attributed per event to the Claude or Codex account that produced it,
+not to the user. Admins manage shared org accounts from `/dashboard`, and
+scheduled jobs probe their quotas. See `.ai/domain/accounts.md`.
 
 ## Pages
 
 | Path | Description |
 | --- | --- |
-| `/` | Landing page (redirects to `/battlefield` when signed in). |
-| `/battlefield` | Live battle view. Public. |
-| `/history` | Defeated bosses. Public. |
-| `/setup` | Install wizard (CLI hooks, claude.ai userscript, Cowork watcher). Slack login required. |
-| `/profile`, `/guide`, `/update` | Your profile, CLI command reference, and update command. Slack login required. |
-| `/dashboard` | Filament admin panel (accounts, users, roles, analytics). Requires a role. |
-| `/admin/usage` | Admin usage page. Requires the `view_usage_analytics` permission. |
-| `/install`, `/install.ps1` | Hook installers (shell / PowerShell). Public. |
-| `/install-cowork`, `/cowork-watcher.py` | Claude Cowork watcher installer. Public. |
-| `/tracker.user.js` | The claude.ai tracker userscript. Public. |
+| `/` | Landing page. Signed-in users go to `/battlefield`. |
+| `/battlefield` | Live battle view. Login required. |
+| `/history` | Defeated bosses. Login required. |
+| `/setup` | Install wizard for every track. Login required. |
+| `/update` | Upgrade instructions for an outdated hook. Login required. |
+| `/guide` | `tok` command reference and hook customisation. Login required. |
+| `/admin/usage` | Usage analytics. Requires the `view_usage_analytics` permission. |
+| `/dashboard` | Filament admin panel. Old `/admin/*` URLs redirect here. |
+
+## Scheduled work
+
+`routes/console.php` schedules the idle-fighter sweep, installer artifact
+refresh, daily/weekly/monthly/yearly recaps, and account quota probing and
+profile sync. In Docker these run in the `scheduler` container
+(`php artisan schedule:work`).
 
 ## Testing
 
 ```bash
-spin exec php php artisan test --compact     # Pest: tests/Unit, tests/Feature, tests/Browser
-npx vitest run                               # Vitest: tests/js (battlefield logic)
+spin exec php php artisan test --compact          # PHP (Pest)
+spin exec php php artisan test --compact --filter=Name
+npx vitest run                                    # JS
 ```
 
-Browser tests use Pest 4's `visit()` driver and run headless by default.
-Contributor conventions (TDD, docblocks, architecture) live in `CLAUDE.md`
-and `.ai/guidelines/`.
+Browser tests use Pest 4's `visit()` driver and run headless.
 
-## Docker deployment
-
-Ships with a multi-stage `Dockerfile` (adapted from the `serversideup/php`
-image) and three layered compose files.
-
-### Staging on a home server (behind Cloudflare Tunnel)
-
-The staging stack runs `php`, `reverb`, `scheduler` (`schedule:work`) and
-`worker` (`queue:work redis`). Postgres and Redis are expected to run
-externally (reachable from the containers via `host.docker.internal`), and a
-host-installed `cloudflared` handles public ingress. Redis is required — the
-worker and the battlefield's subagent presence use it — even though the
-compose file has no Redis service and `.env.staging.example` still says
-otherwise.
+## Staging deployment (behind Cloudflare Tunnel)
 
 ```bash
 cp .env.staging.example .env
-# fill in APP_KEY, DB creds, REDIS_*, Slack vars, Reverb keys, etc.
+# fill in APP_KEY, DB creds, Slack vars, Reverb keys, etc.
 docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --build
 ```
 
-In the Cloudflare Zero Trust dashboard, add two public hostname routes on
-the same hostname:
+The staging stack runs `php`, `reverb`, `scheduler`, and `worker`. Postgres
+runs outside the stack and is reached through `host.docker.internal`. A
+host-installed `cloudflared` handles public traffic, with both routes on the
+same hostname:
 
-- `app.<your-domain>`, path `^/app/` → `http://localhost:${REVERB_HOST_PORT}` (Reverb)
-- `app.<your-domain>`, no path → `http://localhost:${APP_PORT}` (Laravel)
+- `app.<your-domain>` → `http://localhost:${APP_PORT:-8000}`
+- `app.<your-domain>`, path `^/app/` → `http://localhost:${REVERB_HOST_PORT:-8080}` (Reverb)
 
-Both ports are bound to `127.0.0.1` on the host, so the only inbound path
-is via cloudflared.
+Both ports are bound to `127.0.0.1`, so cloudflared is the only way in.
 
 ## License
 
