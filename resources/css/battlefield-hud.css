@@ -72,9 +72,11 @@
 .bf-plate .hpbar .lag { position: absolute; inset: 0 auto 0 0; background: #fde68a; opacity: .55; transition: width .7s ease-in .15s; }
 .bf-plate .hpbar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(0,0,0,.55) calc(10% - 1px) 10%); }
 .bf-plate .hpbar .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fbbf24; z-index: 2; }
-.bf-plate .hpbar .hp-t { position: absolute; right: 6px; top: 50%; translate: 0 -50%; z-index: 3; font: 700 7px var(--bf-num); color: #fff; text-shadow: 0 1px 0 #000, 0 0 4px #000; font-variant-numeric: tabular-nums; }
+.bf-plate .hpbar .hp-t { position: absolute; right: 6px; top: 50%; translate: 0 -50%; z-index: 3; font-variant-numeric: tabular-nums; }
 .bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fb923c, #c2410c); }
+.bf-plate.enraged .hpbar .hp-t { color: #fdba74; }
 .bf-plate.finish .hpbar .fill { animation: bf-finish .5s steps(2) infinite; }
+.bf-plate.finish .hpbar .hp-t { color: #fca5a5; animation: bf-blink 1s steps(2) infinite; }
 .bf-plate .finish-chip { display: none; margin-top: 4px; font: 11px var(--bf-sk); color: #fca5a5; letter-spacing: .08em; }
 .bf-plate.finish .finish-chip { display: inline-block; animation: bf-blink 1s steps(2) infinite; }
 @keyframes bf-finish { 50% { filter: brightness(1.6); } }
@@ -199,7 +201,7 @@
 .bf-plate .hpbar .lag { background: linear-gradient(180deg, #fff7d6, #fde68a); opacity: .7; }
 .bf-plate .hpbar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(0,0,0,.6) calc(10% - 2px) 10%); }
 .bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fdba74 0%, #f97316 25%, #c2410c 72%, #7c2d12 100%); }
-.bf-plate .hpbar .hp-t { font-size: 13px; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; }
+.bf-plate .hpbar .hp-t { font: 700 9px var(--bf-num); color: #fff; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; transition: color .2s ease; }
 
 /* ThaNode's Infinity Stone sockets: a row appended under the HP bar by
    resources/js/battlefield/boss/scripts/thanos.js (absent for every other boss).
