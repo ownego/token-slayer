@@ -68,8 +68,10 @@ export class MoveInput {
           if (entry.handle) this.scene.tweens.killTweensOf(entry.handle);
         }
 
-        if (route.length > 1 && entry) {
-          // Detour route: animate locally, dispatch only the final destination
+        if (entry) {
+          // Animate locally regardless of hop count — don't wait on the
+          // FighterMoved broadcast echo to come back over Reverb, which has
+          // no delivery guarantee or replay (see resync.js).
           this._animateRoute(entry, route);
         }
 
