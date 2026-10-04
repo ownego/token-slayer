@@ -39,6 +39,7 @@ trait ReissuesGrants
         return Action::make('reissueGrant')
             ->label('Reissue')
             ->icon(Heroicon::OutlinedArrowPath)
+            ->authorize(fn (): bool => self::canReissueGrants())
             ->action(fn (array $arguments, Component $livewire) => $this->startReissue((int) $arguments['grant'], $livewire));
     }
 
@@ -75,6 +76,7 @@ trait ReissuesGrants
             ->modalHeading('Reissue this grant')
             ->modalDescription('Use a reserve token, or open the authorize URL, approve, and paste the code back here. The old grant on this device is revoked once the new one is issued.')
             ->modalSubmitActionLabel('Reissue')
+            ->authorize(fn (): bool => self::canReissueGrants())
             ->fillForm(fn (array $arguments): array => TokenSourceFields::fill(
                 AccountProvisionedGrant::query()->findOrFail($arguments['grantId'])->account,
                 $arguments['authorizeUrl'] ?? '',
@@ -101,5 +103,19 @@ trait ReissuesGrants
 
                 Notification::make()->success()->title('Grant reissued')->send();
             });
+    }
+
+    /**
+     * Whether the signed-in admin may reissue grants: the same
+     * `Update:Account` permission that guards the account's own pages. The
+     * Expiring page itself only needs `view_usage_analytics`, so without this
+     * an analytics-only role could revoke member grants and spend the
+     * reserve pool from there.
+     *
+     * @return bool
+     */
+    private static function canReissueGrants(): bool
+    {
+        return auth()->user()?->can('Update:Account') ?? false;
     }
 }

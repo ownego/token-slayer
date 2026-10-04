@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
 use App\Filament\Pages\ExpiringAccounts;
 use App\Filament\Resources\Accounts\AccountResource;
@@ -14,6 +15,8 @@ use App\Services\AccountConnectService;
 use App\Services\Connect\ConnectResolution;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -200,4 +203,25 @@ it('reveals healthy accounts only when Show all is on', function (): void {
         ->assertDontSee('healthy@example.com')
         ->set('showAll', true)
         ->assertSee('healthy@example.com');
+});
+
+it('does not let an analytics-only viewer reissue a member grant', function (): void {
+    Permission::firstOrCreate(['name' => 'view_usage_analytics', 'guard_name' => 'web']);
+    Role::create(['name' => 'usage_viewer', 'guard_name' => 'web'])->givePermissionTo('view_usage_analytics');
+    $viewer = User::factory()->create();
+    $viewer->assignRole('usage_viewer');
+    $account = Account::create(['email' => 'shared@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create();
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->claimed()->create(['session_expires_at' => now()->addDay()]);
+    $reserve = AccountReserveToken::factory()->for($account)->create();
+
+    Livewire::actingAs($viewer)->test(ExpiringAccounts::class)
+        ->assertActionHidden('reissueGrant', ['grant' => $grant->id])
+        ->mountAction('confirmReissue', ['grantId' => $grant->id, 'authorizeUrl' => '', 'state' => ''])
+        ->callMountedAction();
+
+    expect($grant->fresh()->status)->toBe(GrantStatus::Claimed)
+        ->and($reserve->fresh()->used_at)->toBeNull();
 });
