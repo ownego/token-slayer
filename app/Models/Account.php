@@ -128,6 +128,17 @@ class Account extends Model
     }
 
     /**
+     * Claude tokens minted ahead of time for this account, not yet handed to
+     * a device — see {@see AccountReserveToken}.
+     *
+     * @return HasMany<AccountReserveToken, $this>
+     */
+    public function reserveTokens(): HasMany
+    {
+        return $this->hasMany(AccountReserveToken::class);
+    }
+
+    /**
      * Every quota-utilization snapshot recorded for this account by the
      * 5-minute prober, in natural (insertion) order. Callers that need
      * newest-first should order the query explicitly.
