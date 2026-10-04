@@ -177,3 +177,13 @@ test('Press Start 2P numbers render on its 8px grid at every HUD zoom, so the di
     expect(Number(px) % 8).toBe(0);
   }
 });
+
+test('no screen tier resizes a damage number by hand: a tier sized for one face would break the 8px grid of the other', () => {
+  const numbers = ['.bf-team .t-stat b', '.bf-team .me .me-v', '.bf-board li .dm', '.bf-plate .hpbar .hp-t'];
+  const offenders = hudRules()
+    .filter(({ container, rule }) => container && numbers.some(sel => rule.selectors.includes(sel)))
+    .filter(({ rule }) => rule.some(d => d.prop === 'font' || d.prop === 'font-size'))
+    .map(({ container, rule }) => `${container} → ${rule.selector}`);
+
+  expect(offenders).toEqual([]);
+});

@@ -263,11 +263,10 @@
   .bf-team .t-title { font-size: 10px; }
   .bf-team .t-row { gap: 2px; }
   .bf-team .t-stat span { font-size: 8px; white-space: nowrap; }
-  .bf-team .t-stat b { font-size: 13px; white-space: nowrap; }
+  /* the numbers themselves keep --bf-num-px: Press Start 2P on its 8px grid */
   .bf-team .me { margin-top: 6px; padding-top: 6px; gap: 6px; grid-template-columns: 22px 1fr auto; }
   .bf-team .me .av { width: 22px; height: 22px; }
   .bf-team .me .me-l { font-size: 8px; }
-  .bf-team .me .me-v { font-size: 13px; }
   .bf-team .me .me-r { font-size: 14px; }
 }
 /* both phone tiers: icon-only nav, a column of 36px tap targets */
