@@ -298,5 +298,6 @@ Tests that lock config — update them in the same change: `config.test.js` (ros
 | `tests/js/scene.test.js` | `BattlefieldScene#preload`'s `load.once('complete', …)` boot-only handler runs exactly once across repeated loader completions (fake `load` modeling Phaser's real once/on EventEmitter contract) |
 | `tests/js/managers/Charge.test.js` | chargeParticleColors |
 | `tests/js/managers/Fighter.test.js` | fighterRestScale; handleFighterMoved/handleHit with a fake scene — a mid-dash move/hit never records the boss column as home |
+| `tests/js/managers/MoveInput.test.js` | click-to-move animates the viewer's fighter locally for a one-hop click and a detour alike, never waiting on the FighterMoved echo (fake scene, fake timers) |
 | `tests/js/managers/Impact.test.js` | Boss flinch around the rest scale under overlapping hits (fake scene); BOSS_HP_TICK bus emit |
 | `tests/js/impact-pool.test.js` | createTextPool — a released item is reused by the next take(), make() only called once |
