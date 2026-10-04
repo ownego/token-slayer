@@ -17,7 +17,7 @@
 }
 
 .bf-hud { position: absolute; pointer-events: none; container: hud / size; }
-.bf-hud-in { position: absolute; inset: 0; display: grid; align-items: start; align-content: start; padding: 14px; row-gap: 8px; column-gap: 16px;
+.bf-hud-in { position: absolute; display: grid; align-items: start; align-content: start; padding: 14px; row-gap: 8px; column-gap: 16px;
   grid-template-columns: clamp(220px, 27cqw, 300px) minmax(0, 1fr) clamp(230px, 27cqw, 310px);
   grid-template-areas: "nav plate board" "team plate board" "feed herald board" ". . board"; }
 .bf-nav { grid-area: nav; }
@@ -283,3 +283,14 @@
   .bf-board .tp-title { display: flex; }
   .bf-board { --row-h: 26px; }
 }
+
+/* ---- A full-screen game on a touch screen (iOS Safari especially): the page
+   never pans, rubber-bands or zooms (pan-x pan-y: no double-tap or pinch
+   zoom, lists still scroll), and the arena
+   takes every touch for itself. The HUD stays inside the safe area — the
+   battlefield page uses viewport-fit=cover, so the canvas runs under a
+   notch and round corners while the panels must not. ---- */
+html, body { overflow: hidden; overscroll-behavior: none; }
+html { touch-action: pan-x pan-y; }
+#battlefield-mount { touch-action: none; }
+.bf-hud-in { inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }

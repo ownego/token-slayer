@@ -1,5 +1,11 @@
 @extends('layouts.app')
 
+{{-- A full-screen game: iOS Safari zooms the page in on a double tap (the field
+     is tapped constantly) and when a field under 16px gets focus, leaving it
+     slightly wider than the screen and panning sideways. maximum-scale=1 stops
+     the zoom; viewport-fit=cover lets the arena fill a notched screen. --}}
+@section('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover')
+
 @push('styles')
     {{-- HUD grid caps/numbers typefaces (resources/css/battlefield-hud.css) --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">

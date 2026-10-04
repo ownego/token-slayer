@@ -114,3 +114,17 @@ test('a phone on its side gets the whole screen, not a 330px-tall box with two s
   expect(mediaDecl(shortLandscape, '.fs .sheet', 'width')).toBe('100vw');
   expect(mediaDecl(shortLandscape, '.fs .main', 'overflow-x')).toBe('hidden');
 });
+
+test('the full-screen phone sheet keeps its content clear of the notch and rounded corners', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  let padding = '';
+  root.walkRules(rule => {
+    if (rule.parent.type === 'root' && rule.selectors.includes('.fs .sheet')) {
+      rule.walkDecls('padding', d => { padding = d.value; });
+    }
+  });
+
+  for (const side of ['top', 'right', 'bottom', 'left']) {
+    expect(padding).toContain(`env(safe-area-inset-${side})`);
+  }
+});

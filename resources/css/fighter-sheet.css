@@ -1310,3 +1310,6 @@
     .fs .fighter, .fs .main { overflow-x: hidden; }
     .fs .mini-stage { height: 120px; }
 }
+/* The battlefield page is viewport-fit=cover: a full-screen phone sheet keeps
+   its content inside the safe area (0 everywhere but a notched/rounded screen). */
+.fs .sheet { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }

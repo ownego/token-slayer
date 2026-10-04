@@ -103,3 +103,33 @@ test('a portrait tablet has room for team and board in a right column over the s
   expect(containerDecls(tablet, '.bf-stats-handle').display).toBe('none');
   expect(containerDecls(tablet, '.bf-stats:not(.open) .bf-team').display).toBe('block');
 });
+
+/** Declarations a top-level rule gets for one of its selectors. */
+function rootDecls(selector) {
+  const root = postcss.parse(readFileSync('resources/css/battlefield-hud.css', 'utf8'));
+  const decls = {};
+  root.walkRules(rule => {
+    if (rule.parent.type === 'root' && rule.selectors.includes(selector)) {
+      rule.walkDecls(d => { decls[d.prop] = d.value; });
+    }
+  });
+
+  return decls;
+}
+
+test('the game page never pans, rubber-bands or zooms (a double tap or a pinch on iOS)', () => {
+  for (const selector of ['html', 'body']) {
+    expect(rootDecls(selector).overflow, selector).toBe('hidden');
+    expect(rootDecls(selector)['overscroll-behavior'], selector).toBe('none');
+  }
+  expect(rootDecls('html')['touch-action']).toBe('pan-x pan-y');
+  expect(rootDecls('#battlefield-mount')['touch-action']).toBe('none');
+});
+
+test('the HUD keeps clear of the notch and rounded corners now that the arena fills the whole screen', () => {
+  const inset = rootDecls('.bf-hud-in').inset ?? '';
+
+  for (const side of ['top', 'right', 'bottom', 'left']) {
+    expect(inset).toContain(`env(safe-area-inset-${side})`);
+  }
+});
