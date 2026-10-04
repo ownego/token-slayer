@@ -38,3 +38,68 @@ test('lite mode\'s small canvas is scaled up crisp, not smeared', () => {
   });
   expect(value).toBe('pixelated');
 });
+
+/** Declarations a selector gets inside @container blocks whose params match `params`. */
+function containerDecls(params, selector) {
+  const root = postcss.parse(readFileSync('resources/css/battlefield-hud.css', 'utf8'));
+  const decls = {};
+  root.walkAtRules('container', at => {
+    if (!params.test(at.params)) {
+      return;
+    }
+    at.walkRules(rule => {
+      if (rule.selectors.includes(selector)) {
+        rule.walkDecls(d => { decls[d.prop] = d.value; });
+      }
+    });
+  });
+
+  return decls;
+}
+
+test('the portrait board sheet shows TOP DAMAGE once: its handle, not the panel title under it', () => {
+  expect(containerDecls(/^hud \(max-aspect-ratio: 1\/1\)$/, '.bf-board .tp-title').display).toBe('none');
+});
+
+test('desktop keeps team and board as their own grid panels: the stats wrapper adds no box', () => {
+  const root = postcss.parse(readFileSync('resources/css/battlefield-hud.css', 'utf8'));
+  let display = null;
+  root.walkRules(rule => {
+    if (rule.parent.type === 'root' && rule.selectors.includes('.bf-stats')) {
+      rule.walkDecls('display', d => { display = d.value; });
+    }
+  });
+
+  expect(display).toBe('contents');
+});
+
+test('a portrait phone keeps only the boss plate up top: team and board live in a bottom sheet', () => {
+  expect(containerDecls(/^hud \(max-aspect-ratio: 1\/1\)$/, '.bf-stats').position).toBe('absolute');
+  expect(containerDecls(/^hud \(max-aspect-ratio: 1\/1\)$/, '.bf-stats').bottom).toBe('0');
+  expect(containerDecls(/^hud \(max-aspect-ratio: 1\/1\)$/, '.bf-stats:not(.open) .bf-team').display).toBe('none');
+});
+
+test('a phone on its side shows the team totals only when the stats panel is opened', () => {
+  expect(containerDecls(/max-height: 440px/, '.bf-stats:not(.open) .bf-team').display).toBe('none');
+});
+
+test('the nav is icons only on a portrait phone too', () => {
+  expect(containerDecls(/^hud \(max-aspect-ratio: 1\/1\)$/, '.bf-nav-label').display).toBe('none');
+});
+
+test('a phone on its side shows the nav as icons only', () => {
+  expect(containerDecls(/max-height: 440px/, '.bf-nav-label').display).toBe('none');
+});
+
+test('both phone tiers show the stats sheet handle (the desktop hides it)', () => {
+  expect(containerDecls(/^hud \(max-aspect-ratio: 1\/1\)$/, '.bf-stats-handle').display).toBe('flex');
+  expect(containerDecls(/max-height: 440px/, '.bf-stats-handle').display).toBe('flex');
+});
+
+test('a portrait tablet has room for team and board in a right column over the sky: no sheet', () => {
+  const tablet = /max-aspect-ratio: 1\/1\) and \(min-width: 640px/;
+
+  expect(containerDecls(tablet, '.bf-stats').display).toBe('contents');
+  expect(containerDecls(tablet, '.bf-stats-handle').display).toBe('none');
+  expect(containerDecls(tablet, '.bf-stats:not(.open) .bf-team').display).toBe('block');
+});
