@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { BattlefieldScene } from './scene.js';
-import { LAYOUTS, BG_COLOR } from './config.js';
+import { BG_COLOR, layoutFor, needsRelayout } from './config.js';
 import { bus } from './bus.js';
 import { snapshotState } from './snapshot.js';
 import { computeHudTop } from './hud-position.js';
@@ -14,7 +14,7 @@ import { loadoutLayout, fitScale } from './character-preview/modal-fit.js';
 import { thumbGeometry, scrollTopForThumb } from './character-preview/scroll-thumb.js';
 import { BusEvent, SCENE_KEY, WORLD_ZOOM } from './constants.js';
 import { bindBus } from './shared/bus-bindings.js';
-import { keepHudOnCanvas } from './hud/sync.js';
+import { keepHudOnCanvas, measureHudBand } from './hud/sync.js';
 import { createBossPlate } from './hud/boss-plate.js';
 import { createFeedView } from './hud/feed-view.js';
 import { domToWorld } from './shared/hud-zones.js';
@@ -117,6 +117,35 @@ export function detectMode() {
 }
 
 /**
+ * Top-band HUD panels the boss must stay below, per mode: in portrait the
+ * nav column and the boss plate stacked over the top of the canvas, in
+ * landscape only the plate (the side columns never cover the boss).
+ *
+ * @type {{portrait: string, landscape: string}}
+ */
+const HUD_BAND_PANELS = { portrait: '.bf-nav, .bf-plate', landscape: '.bf-plate' };
+
+/**
+ * Returns the layout for the mount's current box: the world takes the
+ * screen's own aspect (config/layouts.js's layoutFor), and the boss is placed
+ * below the HUD panels actually drawn over the top of the canvas.
+ *
+ * @param {HTMLElement} mount
+ * @return {object}
+ */
+function screenLayout(mount) {
+  const width = mount?.clientWidth || window.innerWidth;
+  const height = mount?.clientHeight || window.innerHeight;
+  const bare = layoutFor({ width, height });
+  // Scale.FIT: the canvas fills the mount unless the world was clamped
+  const scale = Math.min(width / bare.logicalWidth, height / bare.logicalHeight);
+  const box = { width: bare.logicalWidth * scale, height: bare.logicalHeight * scale };
+  const hudBand = measureHudBand(document.getElementById('bf-hud'), box, bare.logicalWidth, HUD_BAND_PANELS[bare.mode]);
+
+  return layoutFor({ width, height, hudBand });
+}
+
+/**
  * Returns the canvas size for a layout against the mount's current width.
  *
  * @param {HTMLElement} mount
@@ -148,8 +177,8 @@ function isLite() {
   return liteMode;
 }
 
-function bootGame(mount, state, mode) {
-  const { width, height, renderScale } = canvasSizeForMount(mount, LAYOUTS[mode]);
+function bootGame(mount, state, layout) {
+  const { width, height, renderScale } = canvasSizeForMount(mount, layout);
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: mount,
@@ -162,7 +191,8 @@ function bootGame(mount, state, mode) {
     scene: [BattlefieldScene],
   });
   game.registry.set('initialState', state);
-  game.registry.set('mode', mode);
+  game.registry.set('mode', layout.mode);
+  game.registry.set('layout', layout);
   game.registry.set('renderScale', renderScale);
   game.registry.set('lite', isLite());
   // lite renders at the layout's own size: the browser scales it up, crisp
@@ -182,10 +212,11 @@ function bootGame(mount, state, mode) {
       // the higher-resolution canvas). Anything positioning DOM overlays
       // against the canvas -- the Damage HUD in battlefield.blade.php --
       // must scale against this, or it silently shrinks by renderScale.
-      // Getters: an orientation flip swaps the layout and re-derives the
-      // render scale on this same game (see applyModeChange).
-      get logicalWidth() { return LAYOUTS[game.registry.get('mode')].logicalWidth; },
-      get logicalHeight() { return LAYOUTS[game.registry.get('mode')].logicalHeight; },
+      // Getters: a relayout (rotation, or a real aspect change) swaps the
+      // layout and re-derives the render scale on this same game (see
+      // applyLayout).
+      get logicalWidth() { return game.registry.get('layout').logicalWidth; },
+      get logicalHeight() { return game.registry.get('layout').logicalHeight; },
       get renderScale() { return game.registry.get('renderScale'); },
       // See constants.js's own docblock — the DOM Damage HUD (battlefield.
       // blade.php's fitToCanvas()) needs this to keep mirroring the
@@ -214,7 +245,7 @@ function bootGame(mount, state, mode) {
       // never auto-repositioned when a zone appears over it.
       setHudZones(rects) {
         const canvasRect = game.canvas.getBoundingClientRect();
-        const worldWidth = LAYOUTS[game.registry.get('mode')].logicalWidth;
+        const worldWidth = game.registry.get('layout').logicalWidth;
         scene._zones = rects.map(r => domToWorld(r, canvasRect, worldWidth));
       },
       // The fighter sheet's equip transition: pans/zooms the camera to the
@@ -247,13 +278,13 @@ export function bootBattlefield(mount, state) {
   _cleanupResize?.();
   _cleanupResize = null;
 
-  let currentMode = detectMode();
+  let currentLayout = screenLayout(mount);
   let currentState = state;
-  let currentGame = bootGame(mount, currentState, currentMode);
+  let currentGame = bootGame(mount, currentState, currentLayout);
   let pending = null;
   let destroyed = false;
 
-  // Once per game: applyModeChange() below restarts the scene on this same
+  // Once per game: applyLayout() below restarts the scene on this same
   // game rather than rebooting a new one, and keepHudOnCanvas's own listener
   // on game.scale already re-syncs across that restart — a second call here
   // per rotation would stack listeners instead of replacing one.
@@ -352,30 +383,33 @@ export function bootBattlefield(mount, state) {
       })
     : null;
 
-  const applyModeChange = (next) => {
-    currentMode = next;
-    const { width, height, renderScale } = canvasSizeForMount(mount, LAYOUTS[next]);
+  const applyLayout = (next) => {
+    currentLayout = next;
+    const { width, height, renderScale } = canvasSizeForMount(mount, next);
     const scene = currentGame.scene.getScene('battlefield');
     currentState = snapshotState(currentState, scene);
     currentGame.scale.setGameSize(width, height);
-    currentGame.registry.set('mode', next);
+    currentGame.registry.set('mode', next.mode);
+    currentGame.registry.set('layout', next);
     currentGame.registry.set('renderScale', renderScale);
     currentGame.registry.set('initialState', currentState);
     scene.scene.restart();
   };
 
-  // Desktop resize: immediately refresh FIT scale so the canvas tracks the
-  // new viewport size in real-time, then check for a mode flip after 300ms.
+  // Resize: immediately refresh FIT scale so the canvas tracks the new
+  // viewport size in real-time, then after 300ms restart on a new layout only
+  // when the screen moved far enough from the current one (needsRelayout) —
+  // a phone's URL bar showing/hiding never reboots the scene.
   const onResize = () => {
     if (destroyed) return;
     currentGame.scale.refresh(); // keep canvas CSS in sync immediately
     clearTimeout(pending);
     pending = setTimeout(() => {
       if (destroyed) return;
-      const next = detectMode();
-      if (next === currentMode) return;
+      const next = screenLayout(mount);
+      if (!needsRelayout(currentLayout, next)) return;
       showBfLoader();
-      applyModeChange(next);
+      applyLayout(next);
     }, 300);
   };
 
@@ -387,15 +421,36 @@ export function bootBattlefield(mount, state) {
     clearTimeout(pending);
     pending = setTimeout(() => {
       if (destroyed) return;
-      const next = detectMode();
-      if (next === currentMode) {
+      const next = screenLayout(mount);
+      if (!needsRelayout(currentLayout, next)) {
         // Spurious event — restore the game, hide loader.
         hideBfLoader();
         return;
       }
-      applyModeChange(next);
+      applyLayout(next);
     }, 300);
   };
+
+  // The boss sits under the HUD band measured at boot, but the panels keep
+  // settling after it — webfonts, a boss script's extra plate row
+  // (ThaNode's stones), a longer boss name on the next spawn. Whenever they
+  // grow into the boss (or shrink well clear of it), relayout.
+  let bandTimer = null;
+  const bandObserver = hudEl && typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver(() => {
+        clearTimeout(bandTimer);
+        // a boss spawn grows the plate (a longer name, ThaNode's stones)
+        // mid kill ceremony: relayout only once the ceremony has played out
+        bandTimer = setTimeout(() => holdForCeremony(() => {
+          if (destroyed) return;
+          const next = screenLayout(mount);
+          if (!needsRelayout(currentLayout, next)) return;
+          showBfLoader();
+          applyLayout(next);
+        }), 300);
+      })
+    : null;
+  hudEl?.querySelectorAll('.bf-nav, .bf-plate').forEach(el => bandObserver?.observe(el));
 
   window.addEventListener('resize', onResize);
   window.addEventListener('orientationchange', onOrientationChange);
@@ -403,6 +458,8 @@ export function bootBattlefield(mount, state) {
   _cleanupResize = () => {
     destroyed = true;
     clearTimeout(pending);
+    clearTimeout(bandTimer);
+    bandObserver?.disconnect();
     window.removeEventListener('resize', onResize);
     window.removeEventListener('orientationchange', onOrientationChange);
   };

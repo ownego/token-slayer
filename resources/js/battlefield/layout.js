@@ -78,24 +78,33 @@ export function rowsNeeded(count, perRow = 14) {
 /**
  * Returns display configuration for fighters based on count and viewport mode.
  *
+ * The rows are authored against LAYOUTS; a derived layout (config/layouts.js's
+ * layoutFor) moves them down by its `fighterShiftY` and lets a wider world hold more
+ * fighters per row.
+ *
  * @param {number} count
  * @param {string} [mode='landscape']
+ * @param {{fighterShiftY?: number, shiftY?: number, fighters?: {perRowMax: number}}} [layout] The live layout.
  * @return {{ displaySize: number, topY: number, rowSpacing: number, showHandle: boolean, perRow: number }}
  */
-export function fighterDisplayConfig(count, mode = 'landscape') {
+export function fighterDisplayConfig(count, mode = 'landscape', layout = null) {
+  const shiftY = layout?.fighterShiftY ?? layout?.shiftY ?? 0;
+  const perRow = layout?.fighters?.perRowMax;
   if (mode === 'portrait') {
-    // Canvas 540×960. Boss area ends ~430. Fighters fill 430–960.
-    if (count <= 8) {
-      return { displaySize: 54, topY: 620, rowSpacing: 70, showHandle: true,  perRow: 8 };
+    // Authored canvas 540×960. Boss area ends ~430. Fighters fill 430–960.
+    const portraitRow = Math.max(8, perRow ?? 8);
+    if (count <= portraitRow) {
+      return { displaySize: 54, topY: 620 + shiftY, rowSpacing: 70, showHandle: true,  perRow: portraitRow };
     }
-    return   { displaySize: 45, topY: 610, rowSpacing: 55, showHandle: false, perRow: 8 };
+    return   { displaySize: 45, topY: 610 + shiftY, rowSpacing: 55, showHandle: false, perRow: portraitRow };
   }
-  // Canvas 960×540. Boss area ends ~310. HP bar at 300. Fighters fill 340–540.
-  if (count <= 14) {
-    return { displaySize: 45, topY: 490, rowSpacing: 65, showHandle: true,  perRow: 14 };
+  // Authored canvas 960×540. Boss area ends ~310. HP bar at 300. Fighters fill 340–540.
+  const landscapeRow = perRow ?? 14;
+  if (count <= landscapeRow) {
+    return { displaySize: 45, topY: 490 + shiftY, rowSpacing: 65, showHandle: true,  perRow: landscapeRow };
   }
-  if (count <= 28) {
-    return { displaySize: 36, topY: 440, rowSpacing: 53, showHandle: false, perRow: 14 };
+  if (count <= landscapeRow * 2) {
+    return { displaySize: 36, topY: 440 + shiftY, rowSpacing: 53, showHandle: false, perRow: landscapeRow };
   }
-  return   { displaySize: 27, topY: 425, rowSpacing: 35, showHandle: false, perRow: 14 };
+  return   { displaySize: 27, topY: 425 + shiftY, rowSpacing: 35, showHandle: false, perRow: landscapeRow };
 }

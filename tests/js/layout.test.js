@@ -5,6 +5,7 @@ import {
   fighterDisplayConfig,
   rowsNeeded,
 } from '@battlefield/layout.js';
+import { layoutFor } from '@battlefield/config.js';
 
 test('damageScaleMultiplier grows linearly with damage and caps at +40%', () => {
   expect(damageScaleMultiplier(0, 1000)).toBe(1);
@@ -47,4 +48,39 @@ test('fighterDisplayConfig shows handles only for small rosters', () => {
 test('fighterDisplayConfig shrinks fighters as the roster grows (landscape)', () => {
   const sizes = [14, 28, 29].map((n) => fighterDisplayConfig(n, 'landscape').displaySize);
   expect(sizes).toEqual([45, 36, 27]);
+});
+
+test('fighterDisplayConfig moves the portrait fighter rows down with the boss block', () => {
+  const shifted = layoutFor({ width: 390, height: 844, hudBand: 360 });
+
+  expect(fighterDisplayConfig(3, 'portrait', shifted).topY)
+    .toBe(fighterDisplayConfig(3, 'portrait').topY + shifted.fighterShiftY);
+});
+
+test('fighterDisplayConfig fits as many landscape fighters per row as the wider world holds', () => {
+  const wide = layoutFor({ width: 844, height: 390 });
+
+  expect(fighterDisplayConfig(3, 'landscape', wide).perRow).toBe(wide.fighters.perRowMax);
+  expect(fighterDisplayConfig(3, 'landscape').perRow).toBe(14);
+});
+
+test('fighterDisplayConfig moves the landscape fighter rows with the world (a 4:3 tablet centres it)', () => {
+  const tablet = layoutFor({ width: 1024, height: 768 });
+
+  expect(fighterDisplayConfig(3, 'landscape', tablet).topY)
+    .toBe(fighterDisplayConfig(3, 'landscape').topY + tablet.shiftY);
+});
+
+test('fighterDisplayConfig fits more portrait fighters per row in a wider tablet world', () => {
+  const tablet = layoutFor({ width: 768, height: 1024 });
+
+  expect(fighterDisplayConfig(3, 'portrait', tablet).perRow).toBeGreaterThan(8);
+  expect(fighterDisplayConfig(3, 'portrait', layoutFor({ width: 390, height: 844 })).perRow).toBe(8);
+});
+
+test('fighterDisplayConfig keeps landscape rows on the floor when the boss drops below a short screen\'s plate', () => {
+  const phone = layoutFor({ width: 844, height: 390, hudBand: 113 });
+
+  expect(phone.shiftY).toBeGreaterThan(0);
+  expect(fighterDisplayConfig(3, 'landscape', phone).topY).toBe(fighterDisplayConfig(3, 'landscape').topY);
 });
