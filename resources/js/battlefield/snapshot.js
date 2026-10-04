@@ -37,7 +37,10 @@ export function snapshotState(currentState, scene) {
   if (scene.fighters?.size > 0) {
     next.fighters = [...scene.fighters.values()].map(f => {
       const charge = scene.charges.get(f.id);
-      const pos = f.pos
+      // only a spot the player chose survives a relayout; a fighter still on
+      // its grid slot is re-gridded for the new world (its rows, width and
+      // per-row count all change), never pinned at a scaled copy of the old slot
+      const pos = f.pos && f.hasCustomPosition
         ? { x: f.pos.x / scene.layout.logicalWidth, y: f.pos.y / scene.layout.logicalHeight }
         : null;
       return {
