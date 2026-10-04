@@ -9,6 +9,7 @@ use App\Exceptions\ReserveTokenUnavailableException;
 use App\Exceptions\UsageProbeException;
 use App\Filament\Actions\TokenSourceFields;
 use App\Filament\Concerns\ConnectsAccounts;
+use App\Filament\Concerns\ReissuesGrants;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\AccountUser;
@@ -16,6 +17,7 @@ use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMembershipCache;
+use App\Services\Provisioning\ClaimedGrantsQuery;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -27,10 +29,12 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +54,8 @@ use Livewire\Component;
  */
 class MembersRelationManager extends RelationManager
 {
+    use ReissuesGrants;
+
     /**
      * The relationship on the owner `Account` (all statuses).
      *
@@ -138,6 +144,7 @@ class MembersRelationManager extends RelationManager
             ])
             ->headerActions([
                 $this->addMemberAction(),
+                $this->claimedDevicesAction(),
                 $this->refreshAction(),
             ])
             ->recordActions([
@@ -443,6 +450,36 @@ class MembersRelationManager extends RelationManager
                         : "Provisioned an additional device for {$user->displayHandle()}.")
                     ->send();
             });
+    }
+
+    /**
+     * The "Claimed devices" header action: every device that has pulled a
+     * grant on this account, with how long its session has left, and a
+     * Reissue button per row (the nested
+     * {@see ReissuesGrants::reissueGrantAction()}). Claude accounts only.
+     * Public so Filament's `{name}Action` convention can resolve it.
+     *
+     * @return Action
+     */
+    public function claimedDevicesAction(): Action
+    {
+        return Action::make('claimedDevices')
+            ->label('Claimed devices')
+            ->icon(Heroicon::OutlinedComputerDesktop)
+            ->color('gray')
+            ->visible(fn (): bool => $this->getOwnerRecord()->provider === Provider::Claude)
+            ->modalHeading('Claimed devices')
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close')
+            ->modalWidth(Width::FourExtraLarge)
+            // Registered on the modal (not just rendered from the page's own
+            // action) so Filament can resolve the row button as a child of
+            // this modal when it is clicked.
+            ->registerModalActions([$this->reissueGrantAction()])
+            ->modalContent(fn (Action $action): View => view('filament.modals.claimed-devices', [
+                'grants' => app(ClaimedGrantsQuery::class)->forAccount($this->getOwnerRecord()),
+                'action' => $action,
+            ]));
     }
 
     /**
