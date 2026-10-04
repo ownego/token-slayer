@@ -264,19 +264,29 @@ final class ExpiringAccountsQuery
     public function grouped(bool $showAll): array
     {
         $rows = collect($this->get());
-        $accountIds = $rows->pluck('account_id');
-        if ($showAll) {
-            $accountIds = $accountIds->concat(Account::query()
+        $showAllIds = $showAll
+            ? Account::query()
                 ->where('provider', Provider::Claude)
                 ->whereDoesntHave('claudeCredential', fn ($credential) => $credential->where('status', AccountStatus::Disabled->value))
-                ->pluck('id'));
-        }
+                ->pluck('id')
+            : collect();
 
-        $accounts = Account::query()->whereIn('id', $accountIds->unique()->all())->orderBy('email')->get();
-        $grants = $showAll
-            ? app(ClaimedGrantsQuery::class)->forAccounts($accounts->pluck('id')->all())
-                ->reject(fn (AccountProvisionedGrant $grant): bool => $this->notAMember($grant))
-            : $this->dueGrants();
+        $accounts = Account::query()
+            ->whereIn('id', $rows->pluck('account_id')->concat($showAllIds)->unique()->all())
+            ->orderBy('email')
+            ->get();
+        // Show all only ever ADDS to what is due: claimed devices of
+        // non-disabled accounts on top, so a disabled account still shows
+        // just its due grants and a due Pending grant never disappears.
+        $grants = $this->dueGrants();
+        if ($showAll) {
+            $grants = $grants
+                ->concat(app(ClaimedGrantsQuery::class)->forAccounts($showAllIds->all())
+                    ->reject(fn (AccountProvisionedGrant $grant): bool => $this->notAMember($grant)))
+                ->unique('id')
+                ->sortBy(fn (AccountProvisionedGrant $grant): int => $grant->session_expires_at?->getTimestamp() ?? PHP_INT_MAX)
+                ->values();
+        }
 
         return $accounts->map(fn (Account $account): array => [
             'account_id' => $account->id,

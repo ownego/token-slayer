@@ -389,3 +389,16 @@ it('does not grow the flat rows behind the badge', function (): void {
 
     expect(app(ExpiringAccountsQuery::class)->get())->toBe([]);
 });
+
+it('keeps show-all to due grants only on a disabled account, and never drops a due pending grant', function (): void {
+    $disabled = Account::create(['email' => 'off@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $disabled->id, 'status' => AccountStatus::Disabled->value]);
+    $member = User::factory()->create();
+    $disabled->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+    $due = AccountProvisionedGrant::factory()->for($disabled)->for(Device::factory()->for($member))->pending()->create(['session_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()->for($disabled)->for(Device::factory()->for($member))->claimed()->create(['session_expires_at' => now()->addDays(25)]);
+
+    $groups = collect(app(ExpiringAccountsQuery::class)->grouped(true));
+
+    expect(collect($groups->firstWhere('account_id', $disabled->id)['devices'])->pluck('grant_id')->all())->toBe([$due->id]);
+});
