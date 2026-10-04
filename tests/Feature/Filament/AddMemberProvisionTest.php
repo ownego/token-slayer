@@ -7,6 +7,7 @@ use App\Filament\Resources\Accounts\Pages\EditAccount;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
+use App\Models\AccountReserveToken;
 use App\Models\AccountUser;
 use App\Models\Device;
 use App\Models\User;
@@ -350,4 +351,26 @@ it('keeps the provision toggle visible and hides the Codex hint for a Claude acc
         ->mountAction('addMember')
         ->assertSchemaComponentVisible('provision')
         ->assertSchemaComponentHidden('codex_provision_hint');
+});
+
+it('provisions a new member from the reserve pool without pasting a code', function () {
+    $admin = User::factory()->admin()->create();
+    $account = Account::factory()->create();
+    $newcomer = User::factory()->create();
+    $reserve = AccountReserveToken::factory()->for($account)->create();
+
+    Livewire::actingAs($admin)
+        ->test(MembersRelationManager::class, ['ownerRecord' => $account, 'pageClass' => EditAccount::class])
+        ->mountAction('addMember')
+        ->setActionData(['user_id' => $newcomer->id, 'provision' => true])
+        ->callMountedAction()
+        ->assertActionMounted('confirmProvisionMember')
+        ->assertActionDataSet(['source' => 'reserve', 'reserve_token_id' => $reserve->id])
+        ->callMountedAction()
+        ->assertNotified('Member added');
+
+    $grant = AccountProvisionedGrant::query()->where('account_id', $account->id)->firstOrFail();
+    expect($grant->status)->toBe(GrantStatus::Pending)
+        ->and($reserve->fresh()->used_grant_id)->toBe($grant->id)
+        ->and($newcomer->accounts()->find($account->id)->pivot->status)->toBe(MembershipStatus::Pending);
 });
