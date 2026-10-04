@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Enums\Provider;
+use App\Filament\Concerns\ReissuesGrants;
 use App\Filament\Concerns\RepairsAccounts;
 use App\Services\Attribution\ExpiringAccountsQuery;
 use BackedEnum;
@@ -9,17 +11,22 @@ use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Carbon;
+use Livewire\Attributes\Url;
 use UnitEnum;
 
 /**
  * Admin page listing accounts an admin should look at soon: a Claude
  * account whose refresh token expires within 3 days, or a Codex account
  * whose staleness signal has tripped. See {@see ExpiringAccountsQuery} for
- * the exact predicate per provider. Access is gated by the same
+ * the exact predicate per provider. Rows are grouped by account: the
+ * account's own credential gets Reconnect / Refresh now, each member device
+ * under it gets Reissue ({@see ReissuesGrants}); "Show all" lists every
+ * account and claimed device for reissuing a round ahead of time. Access is gated by the same
  * `view_usage_analytics` permission as {@see UnrecognizedAccounts}.
  */
 class ExpiringAccounts extends Page
 {
+    use ReissuesGrants;
     use RepairsAccounts;
 
     /**
@@ -69,13 +76,24 @@ class ExpiringAccounts extends Page
     protected string $view = 'filament.pages.expiring-accounts';
 
     /**
-     * The expiring-account rows for the Blade view.
+     * Show every Claude account and every claimed device, not only what is
+     * due, so an admin can reissue a whole round ahead of time. Kept in the
+     * URL so a reload keeps the view.
      *
-     * @return array<int, array{account_id:int, email:?string, name:?string, provider:string, label:string, deadline:?Carbon}>
+     * @var bool
      */
-    public function rows(): array
+    #[Url(as: 'all')]
+    public bool $showAll = false;
+
+    /**
+     * The account groups for the Blade view — see
+     * {@see ExpiringAccountsQuery::grouped()}.
+     *
+     * @return array<int, array{account_id:int, name:string, provider:Provider, credential_label:?string, needs_attention:bool, has_fresh_pending_grant:bool, devices: array<int, array{grant_id:int, user_email:string, device_label:string, deadline:?Carbon, estimated:bool}>}>
+     */
+    public function groups(): array
     {
-        return app(ExpiringAccountsQuery::class)->get();
+        return app(ExpiringAccountsQuery::class)->grouped($this->showAll);
     }
 
     /**
