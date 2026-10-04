@@ -402,3 +402,18 @@ it('keeps show-all to due grants only on a disabled account, and never drops a d
 
     expect(collect($groups->firstWhere('account_id', $disabled->id)['devices'])->pluck('grant_id')->all())->toBe([$due->id]);
 });
+
+it('shows every live device in show-all, pending ones too, each with its status', function (): void {
+    $account = Account::create(['email' => 'healthy@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create();
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Pending->value]);
+    $pending = AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->pending()->create(['session_expires_at' => null]);
+    $claimed = AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->claimed()->create(['session_expires_at' => now()->addDays(25)]);
+    AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->revoked()->create();
+
+    $devices = collect(collect(app(ExpiringAccountsQuery::class)->grouped(true))->firstWhere('account_id', $account->id)['devices']);
+
+    expect($devices->pluck('grant_id')->all())->toBe([$claimed->id, $pending->id])
+        ->and($devices->pluck('status')->all())->toBe(['Claimed', 'Pending']);
+});

@@ -1,8 +1,10 @@
 <x-filament-panels::page>
     @php($groups = $this->groups())
 
-    <label style="display:flex; gap:.5rem; align-items:center; font-size:.85rem;">
-        <input type="checkbox" wire:model.live="showAll">
+    {{-- A switch, not a checkbox: the tick box was too small to hit. The
+         label wraps it so clicking the text flips it too. --}}
+    <label style="display:inline-flex; gap:.6rem; align-items:center; font-size:.9rem; cursor:pointer; width:fit-content;">
+        <x-filament::toggle state="$wire.$entangle('showAll', true)" />
         Show all accounts and devices
     </label>
 
@@ -49,6 +51,11 @@
                                 <tr style="border-top:1px solid rgba(120,120,140,.15);">
                                     <td style="padding:.4rem .6rem;">{{ $device['user_email'] }}</td>
                                     <td style="padding:.4rem .6rem; opacity:.85;">{{ $device['device_label'] }}</td>
+                                    <td style="padding:.4rem .6rem;">
+                                        <x-filament::badge :color="$device['status'] === 'Claimed' ? 'success' : 'gray'">
+                                            {{ $device['status'] }}
+                                        </x-filament::badge>
+                                    </td>
                                     <td style="padding:.4rem .6rem;">
                                         <x-filament::badge :color="\App\Support\DaysLeft::isOverdue($device['deadline']) ? 'danger' : 'warning'">
                                             {{ \App\Support\DaysLeft::label($device['deadline'], $device['estimated']) }}

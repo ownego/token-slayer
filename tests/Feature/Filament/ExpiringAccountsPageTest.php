@@ -225,3 +225,19 @@ it('does not let an analytics-only viewer reissue a member grant', function (): 
     expect($grant->fresh()->status)->toBe(GrantStatus::Claimed)
         ->and($reserve->fresh()->used_at)->toBeNull();
 });
+
+it('offers Show all as a switch and lists a pending device with its status', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::create(['email' => 'healthy@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create(['email' => 'newbie@example.com']);
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Pending->value]);
+    AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->pending()->create();
+
+    Livewire::actingAs($admin)->test(ExpiringAccounts::class)
+        ->assertSeeHtml('role="switch"')
+        ->assertDontSeeHtml('type="checkbox"')
+        ->set('showAll', true)
+        ->assertSee('newbie@example.com')
+        ->assertSee('Pending');
+});

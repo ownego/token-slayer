@@ -89,7 +89,7 @@ class ExpiringAccounts extends Page
      * The account groups for the Blade view — see
      * {@see ExpiringAccountsQuery::grouped()}.
      *
-     * @return array<int, array{account_id:int, name:string, provider:Provider, credential_label:?string, needs_attention:bool, has_fresh_pending_grant:bool, devices: array<int, array{grant_id:int, user_email:string, device_label:string, deadline:?Carbon, estimated:bool}>}>
+     * @return array<int, array{account_id:int, name:string, provider:Provider, credential_label:?string, needs_attention:bool, has_fresh_pending_grant:bool, devices: array<int, array{grant_id:int, status:string, user_email:string, device_label:string, deadline:?Carbon, estimated:bool}>}>
      */
     public function groups(): array
     {

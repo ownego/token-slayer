@@ -12,7 +12,6 @@ use App\Models\AccountProvisionedGrant;
 use App\Models\AccountUser;
 use App\Models\ClaudeCredential;
 use App\Models\Event;
-use App\Services\Provisioning\ClaimedGrantsQuery;
 use App\Support\CacheKeys;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -253,13 +252,13 @@ final class ExpiringAccountsQuery
      * The page's rows regrouped by account: one entry per account with its
      * own credential problem (if any) and the member devices under it, each
      * reissuable in place. With `$showAll`, every non-disabled Claude account
-     * appears with every claimed device of its current (Tracked/Pending)
-     * members, due or not, so an admin can reissue a whole round ahead of
+     * appears with every live (Pending or Claimed) device of its current
+     * (Tracked/Pending) members, due or not, so an admin can reissue a whole round ahead of
      * time. The flat {@see get()} — and the sidebar badge counted from it —
      * is untouched.
      *
      * @param  bool  $showAll  include healthy accounts and devices not yet due
-     * @return array<int, array{account_id:int, name:string, provider:Provider, credential_label:?string, needs_attention:bool, has_fresh_pending_grant:bool, devices: array<int, array{grant_id:int, user_email:string, device_label:string, deadline:?Carbon, estimated:bool}>}>
+     * @return array<int, array{account_id:int, name:string, provider:Provider, credential_label:?string, needs_attention:bool, has_fresh_pending_grant:bool, devices: array<int, array{grant_id:int, status:string, user_email:string, device_label:string, deadline:?Carbon, estimated:bool}>}>
      */
     public function grouped(bool $showAll): array
     {
@@ -275,13 +274,17 @@ final class ExpiringAccountsQuery
             ->whereIn('id', $rows->pluck('account_id')->concat($showAllIds)->unique()->all())
             ->orderBy('email')
             ->get();
-        // Show all only ever ADDS to what is due: claimed devices of
-        // non-disabled accounts on top, so a disabled account still shows
-        // just its due grants and a due Pending grant never disappears.
+        // Show all only ever ADDS to what is due: every live device
+        // (Pending or Claimed) of non-disabled accounts on top, so a disabled
+        // account still shows just its due grants.
         $grants = $this->dueGrants();
         if ($showAll) {
             $grants = $grants
-                ->concat(app(ClaimedGrantsQuery::class)->forAccounts($showAllIds->all())
+                ->concat(AccountProvisionedGrant::query()
+                    ->live()
+                    ->whereIn('account_id', $showAllIds->all())
+                    ->with('device.user')
+                    ->get()
                     ->reject(fn (AccountProvisionedGrant $grant): bool => $this->notAMember($grant)))
                 ->unique('id')
                 ->sortBy(fn (AccountProvisionedGrant $grant): int => $grant->session_expires_at?->getTimestamp() ?? PHP_INT_MAX)
@@ -300,6 +303,7 @@ final class ExpiringAccountsQuery
             'devices' => $grants->where('account_id', $account->id)
                 ->map(fn (AccountProvisionedGrant $grant): array => [
                     'grant_id' => $grant->id,
+                    'status' => $grant->status->getLabel(),
                     'user_email' => $grant->device->user->email,
                     'device_label' => $grant->device->name
                         ?? ($grant->device->device_id !== null ? 'Unnamed device' : 'Awaiting device'),
