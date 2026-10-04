@@ -6,6 +6,7 @@ use App\Enums\Provider;
 use App\Exceptions\AccountConnectException;
 use App\Exceptions\UsageProbeException;
 use App\Filament\Actions\ClaudeReconnectModal;
+use App\Filament\Actions\TokenSourceFields;
 use App\Models\Account;
 use App\Models\AccountReserveToken;
 use App\Services\Provisioning\ReserveTokenService;
@@ -166,24 +167,8 @@ class ReserveTokensRelationManager extends RelationManager
 
                 try {
                     $token = app(ReserveTokenService::class)->mint($account, auth()->user(), $data['state'], $data['code']);
-                } catch (AccountConnectException $exception) {
-                    Notification::make()
-                        ->danger()
-                        ->title('Adding the reserve token failed')
-                        ->body($exception->reason === 'connect_state_expired'
-                            ? 'This connect link expired or was already used. Start again.'
-                            : $exception->getMessage())
-                        ->send();
-
-                    return;
-                } catch (UsageProbeException $exception) {
-                    Notification::make()
-                        ->danger()
-                        ->title('Adding the reserve token failed')
-                        ->body($exception->reason === 'invalid_grant'
-                            ? 'Anthropic rejected that code — it may be stale or already used. Open a fresh authorize link and try again.'
-                            : "Anthropic error ({$exception->reason}): {$exception->getMessage()}")
-                        ->send();
+                } catch (AccountConnectException|UsageProbeException $exception) {
+                    TokenSourceFields::notifyFailure($exception, 'Adding the reserve token failed');
 
                     return;
                 }

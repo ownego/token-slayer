@@ -4,17 +4,13 @@ namespace App\Filament\Resources\Accounts\RelationManagers;
 
 use App\Enums\GrantStatus;
 use App\Enums\Provider;
-use App\Exceptions\AccountConnectException;
-use App\Models\Account;
+use App\Filament\Concerns\ReissuesGrants;
 use App\Models\AccountProvisionedGrant;
-use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
 use App\Services\ProviderServiceFactory;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
-use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
@@ -37,6 +33,8 @@ use Livewire\Component;
  */
 class ProvisionsRelationManager extends RelationManager
 {
+    use ReissuesGrants;
+
     /**
      * The relationship on the owner `Account` this manager reads: one row
      * per grant (device × user), not per user.
@@ -131,12 +129,11 @@ class ProvisionsRelationManager extends RelationManager
     }
 
     /**
-     * Build the "Reissue" row action: starts a fresh PKCE connect attempt for
-     * the same device the grant is on and hands off to
-     * {@see confirmReissueAction()} to complete it. The old grant is revoked
-     * as part of the exchange via
-     * {@see AccountProvisioningService::provisionForDevice()}'s one-live-grant
-     * invariant.
+     * Build the "Reissue" row action: hands off to the shared
+     * {@see ReissuesGrants::confirmReissueAction()} modal (reserve token or
+     * pasted code) for the same device the grant is on. The old grant is
+     * revoked by {@see AccountProvisioningService::issueGrant()}'s
+     * one-live-grant invariant.
      *
      * @return Action
      */
@@ -147,62 +144,7 @@ class ProvisionsRelationManager extends RelationManager
             ->icon(Heroicon::OutlinedArrowPath)
             ->visible(fn (AccountProvisionedGrant $record): bool => $record->status !== GrantStatus::Revoked
                 && $record->account->provider === Provider::Claude)
-            ->action(function (AccountProvisionedGrant $record, Component $livewire): void {
-                $started = app(AccountConnectService::class)->start();
-
-                $livewire->replaceMountedAction('confirmReissue', [
-                    'grantId' => $record->id,
-                    'authorizeUrl' => $started['url'],
-                    'state' => $started['state'],
-                ]);
-            });
-    }
-
-    /**
-     * The follow-up "paste the code" modal for {@see reissueAction()},
-     * mounted by name via `replaceMountedAction()`. Resolved on demand by
-     * Filament's `{name}Action` method convention (never rendered as its own
-     * button).
-     *
-     * @return Action
-     */
-    public function confirmReissueAction(): Action
-    {
-        return Action::make('confirmReissue')
-            ->modalHeading('Reissue this grant')
-            ->modalDescription('Open the authorize URL, log in as the account to grant, approve, then paste the code back here. The old grant on this device is revoked once the new one is issued.')
-            ->modalSubmitActionLabel('Reissue')
-            ->fillForm(fn (array $arguments): array => [
-                'authorize_url' => $arguments['authorizeUrl'] ?? '',
-                'state' => $arguments['state'] ?? '',
-                'code' => '',
-            ])
-            ->schema([
-                TextInput::make('authorize_url')
-                    ->label('Authorize URL')
-                    ->readOnly()
-                    ->copyable(),
-                Hidden::make('state'),
-                TextInput::make('code')
-                    ->label('Paste the code here')
-                    ->required(),
-            ])
-            ->action(function (array $data, array $arguments): void {
-                /** @var Account $account */
-                $account = $this->getOwnerRecord();
-                $grant = AccountProvisionedGrant::query()->findOrFail($arguments['grantId']);
-                $service = app(AccountProvisioningService::class);
-
-                try {
-                    $service->provisionForDevice($grant->device->user, $account, $grant->device, $data['state'], $data['code']);
-                } catch (AccountConnectException $exception) {
-                    $this->notifyConnectFailure($exception, 'reissue');
-
-                    return;
-                }
-
-                Notification::make()->success()->title('Grant reissued')->send();
-            });
+            ->action(fn (AccountProvisionedGrant $record, Component $livewire) => $this->startReissue($record->id, $livewire));
     }
 
     /**
@@ -257,29 +199,5 @@ class ProvisionsRelationManager extends RelationManager
 
                 Notification::make()->success()->title('Device deleted')->send();
             });
-    }
-
-    /**
-     * Show the shared "connect failed" notification for
-     * {@see confirmReissueAction()}, which exchanges a pasted PKCE code via
-     * {@see AccountProvisioningService::provisionForDevice()}. Kept as a
-     * named helper (rather than inlined) so a future second PKCE-paste
-     * action on this tab can reuse the same wording.
-     *
-     * @param  AccountConnectException  $exception  the connect failure raised mid-exchange
-     * @param  string  $action  the failing step's label, e.g. 'reissue' — used in the title and default body
-     * @return void
-     */
-    private function notifyConnectFailure(AccountConnectException $exception, string $action): void
-    {
-        Notification::make()
-            ->danger()
-            ->title(ucfirst($action).' failed')
-            ->body(match ($exception->reason) {
-                'connect_identity_mismatch' => $exception->getMessage(),
-                'connect_state_expired' => 'This connect link expired or was already used. Start again.',
-                default => "Something went wrong completing the {$action}.",
-            })
-            ->send();
     }
 }
