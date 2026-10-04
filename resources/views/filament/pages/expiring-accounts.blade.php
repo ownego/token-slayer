@@ -1,69 +1,79 @@
 <x-filament-panels::page>
-    @php($rows = $this->rows())
+    @php($groups = $this->groups())
 
-    <x-filament::section heading="Accounts needing attention">
-        @if (empty($rows))
-            <p style="opacity:.6;">No accounts expiring or stale right now.</p>
-        @else
-            <div style="overflow-x:auto;">
-                <table style="width:100%; border-collapse:collapse; font-size:.85rem;">
-                    <thead>
-                        <tr style="text-align:left; opacity:.6;">
-                            <th style="padding:.4rem .6rem;">Account</th>
-                            <th style="padding:.4rem .6rem;">Provider</th>
-                            <th style="padding:.4rem .6rem;">Status</th>
-                            <th style="padding:.4rem .6rem;">Grant</th>
-                            <th style="padding:.4rem .6rem;">Repair</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($rows as $row)
-                            <tr style="border-top:1px solid rgba(120,120,140,.15);">
-                                <td style="padding:.4rem .6rem;">{{ $row['name'] ?? $row['email'] ?? '— unnamed —' }}</td>
-                                <td style="padding:.4rem .6rem;">
-                                    <x-filament::badge :color="$row['provider']->getColor()">
-                                        {{ $row['provider']->getLabel() }}
-                                    </x-filament::badge>
-                                </td>
-                                <td style="padding:.4rem .6rem; opacity:.85;">{{ $row['label'] }}</td>
-                                {{-- Independent of the Status column: that reflects the shared
-                                     credential's own health, this reflects whether a per-employee
-                                     grant is already out awaiting pull -- an admin who already
-                                     reissued one otherwise has no way to tell "already did this"
-                                     from "haven't yet" while the row keeps showing here. --}}
-                                <td style="padding:.4rem .6rem;">
-                                    @if ($row['has_fresh_pending_grant'])
-                                        <x-filament::badge color="success">🟢 pending — awaiting pull</x-filament::badge>
-                                    @else
-                                        <x-filament::badge color="danger">🔴 no live grant yet</x-filament::badge>
-                                    @endif
-                                </td>
-                                {{-- The repair the admin came here to run, aimed at this row's
-                                     account, so a listed account never has to be opened just to
-                                     act on it. Claude gets a record-bound re-connect; Codex has
-                                     no per-row connect to offer (its device-code flow binds to
-                                     whoever approves), so it gets the re-probe instead. --}}
-                                <td style="padding:.4rem .6rem;">
-                                    @if ($row['kind'] === 'grant')
-                                        {{-- This is one member's own claimed session, not the
-                                             account's shared credential — reconnecting the account
-                                             would not touch it. The fix is a per-grant Reissue on
-                                             the Provisions tab, which needs the specific record, so
-                                             this just gets the admin there. --}}
-                                        <a href="{{ \App\Filament\Resources\Accounts\AccountResource::getUrl('edit', ['record' => $row['account_id']], panel: 'admin') }}">
-                                            Open account →
-                                        </a>
-                                    @elseif ($row['provider'] === \App\Enums\Provider::Claude)
-                                        {{ ($this->reconnectAccountAction)(['account' => $row['account_id']]) }}
-                                    @else
-                                        {{ ($this->refreshAccountUsageAction)(['account' => $row['account_id']]) }}
-                                    @endif
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+    {{-- A switch, not a checkbox: the tick box was too small to hit. The
+         label wraps it so clicking the text flips it too. --}}
+    <label style="display:inline-flex; gap:.6rem; align-items:center; font-size:.9rem; cursor:pointer; width:fit-content;">
+        <x-filament::toggle state="$wire.$entangle('showAll', true)" />
+        Show all accounts and devices
+    </label>
+
+    @forelse ($groups as $group)
+        <x-filament::section>
+            <x-slot name="heading">
+                <span style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+                    {{ $group['name'] }}
+                    <x-filament::badge :color="$group['provider']->getColor()">
+                        {{ $group['provider']->getLabel() }}
+                    </x-filament::badge>
+                    {{-- Whether a per-employee grant is already out awaiting pull --
+                         an admin who already reissued one otherwise has no way to
+                         tell "already did this" from "haven't yet" while the
+                         account keeps showing here. --}}
+                    @if ($group['has_fresh_pending_grant'])
+                        <x-filament::badge color="success">🟢 pending — awaiting pull</x-filament::badge>
+                    @elseif ($group['needs_attention'])
+                        <x-filament::badge color="danger">🔴 no live grant yet</x-filament::badge>
+                    @endif
+                </span>
+            </x-slot>
+
+            {{-- The account's own shared credential: repaired by reconnecting the
+                 account (Claude) or re-probing it (Codex has no per-row connect
+                 to offer -- its device-code flow binds to whoever approves),
+                 never by reissuing a member device. --}}
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; font-size:.85rem;">
+                <span style="opacity:.85;">{{ $group['credential_label'] ?? 'Account credential healthy' }}</span>
+                @if ($group['provider'] === \App\Enums\Provider::Claude)
+                    {{ ($this->reconnectAccountAction)(['account' => $group['account_id']]) }}
+                @else
+                    {{ ($this->refreshAccountUsageAction)(['account' => $group['account_id']]) }}
+                @endif
             </div>
-        @endif
-    </x-filament::section>
+
+            {{-- One member device's own claimed session: reissued in place on
+                 the same device (reserve token or pasted code). --}}
+            @if (! empty($group['devices']))
+                <div style="overflow-x:auto; margin-top:.6rem;">
+                    <table style="width:100%; border-collapse:collapse; font-size:.85rem;">
+                        <tbody>
+                            @foreach ($group['devices'] as $device)
+                                <tr style="border-top:1px solid rgba(120,120,140,.15);">
+                                    <td style="padding:.4rem .6rem;">{{ $device['user_email'] }}</td>
+                                    <td style="padding:.4rem .6rem; opacity:.85;">{{ $device['device_label'] }}</td>
+                                    <td style="padding:.4rem .6rem;">
+                                        <x-filament::badge :color="$device['status'] === 'Claimed' ? 'success' : 'gray'">
+                                            {{ $device['status'] }}
+                                        </x-filament::badge>
+                                    </td>
+                                    <td style="padding:.4rem .6rem;">
+                                        <x-filament::badge :color="\App\Support\DaysLeft::isOverdue($device['deadline']) ? 'danger' : 'warning'">
+                                            {{ \App\Support\DaysLeft::label($device['deadline'], $device['estimated']) }}
+                                        </x-filament::badge>
+                                    </td>
+                                    <td style="padding:.4rem .6rem; text-align:right;">
+                                        {{ ($this->reissueGrantAction)(['grant' => $device['grant_id']]) }}
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </x-filament::section>
+    @empty
+        <x-filament::section>
+            <p style="opacity:.6;">No accounts expiring or stale right now.</p>
+        </x-filament::section>
+    @endforelse
 </x-filament-panels::page>

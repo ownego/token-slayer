@@ -5,14 +5,17 @@ namespace App\Services;
 use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
 use App\Exceptions\AccountConnectException;
+use App\Exceptions\ReserveTokenUnavailableException;
 use App\Http\Controllers\Api\ProvisionedAccountController;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
+use App\Models\AccountReserveToken;
 use App\Models\Device;
 use App\Models\User;
 use App\Services\Contracts\GrantRevokerContract;
 use App\Services\Provisioning\DeviceClaimResolver;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
@@ -79,10 +82,35 @@ final class AccountProvisioningService implements GrantRevokerContract
     {
         $token = $this->connect->exchangeVerifiedToken($state, $pastedCode, $account);
 
+        return $this->issueGrant($user, $account, $device, $token);
+    }
+
+    /**
+     * Issue a fresh Pending grant on `$device` from an already-obtained
+     * token: revokes every live grant the device holds on this account (one
+     * live grant per device), stores the secret durably on the grant row,
+     * and upserts the membership to Tracked. Shared by the paste-code path
+     * ({@see provisionForDevice()}) and the reserve-pool path
+     * ({@see provisionFromReserve()}).
+     *
+     * @param  User  $user  the member receiving the grant
+     * @param  Account  $account  the org account the token belongs to
+     * @param  Device  $device  the device the grant is issued to
+     * @param  array<string, mixed>  $token  the token response: `access_token`, `refresh_token`, `expires_in`, optional `token_uuid` and `refresh_token_expires_in`
+     * @param  Carbon|null  $sessionExpiresAt  a known session deadline, overriding `refresh_token_expires_in`
+     * @param  bool  $sessionEstimated  whether `$sessionExpiresAt` is only an estimate
+     * @return AccountProvisionedGrant the new Pending grant
+     */
+    public function issueGrant(User $user, Account $account, Device $device, array $token, ?Carbon $sessionExpiresAt = null, bool $sessionEstimated = false): AccountProvisionedGrant
+    {
         $previous = $account->provisionedGrants()->live()->where('device_id', $device->id)->get();
         foreach ($previous as $stale) {
             $this->revoke($stale);
         }
+
+        $sessionExpiresAt ??= isset($token['refresh_token_expires_in'])
+            ? Carbon::now()->addSeconds((int) $token['refresh_token_expires_in'])
+            : null;
 
         $grant = $account->provisionedGrants()->create([
             'device_id' => $device->id,
@@ -96,10 +124,8 @@ final class AccountProvisioningService implements GrantRevokerContract
             // token's ~8h life above. This is what lets a single device's
             // session be flagged on its own, instead of only ever reading
             // the whole account's shared, max-wins field.
-            'session_expires_at' => isset($token['refresh_token_expires_in'])
-                ? Carbon::now()->addSeconds((int) $token['refresh_token_expires_in'])
-                : null,
-            'session_expires_at_estimated' => false,
+            'session_expires_at' => $sessionExpiresAt,
+            'session_expires_at_estimated' => $sessionExpiresAt !== null && $sessionEstimated,
         ]);
 
         $user->accounts()->syncWithoutDetaching([
@@ -107,6 +133,43 @@ final class AccountProvisioningService implements GrantRevokerContract
         ]);
 
         return $grant;
+    }
+
+    /**
+     * Assign a reserve token to `$device` instead of exchanging a pasted
+     * code. The reserve row is locked for the whole transaction so two
+     * admins can never hand out the same token, and the new grant keeps the
+     * token's remaining session life rather than a fresh one. The access
+     * token may already be past its ~8h life; the CLI refreshes it on pull,
+     * so it is stored as-is.
+     *
+     * @param  User  $user  the member receiving the grant
+     * @param  Account  $account  the org account being provisioned
+     * @param  Device  $device  the device the grant is issued to
+     * @param  int  $reserveTokenId  the picked reserve token
+     * @return AccountProvisionedGrant the new Pending grant
+     *
+     * @throws ReserveTokenUnavailableException when the token is used, discarded, expired or belongs to another account
+     */
+    public function provisionFromReserve(User $user, Account $account, Device $device, int $reserveTokenId): AccountProvisionedGrant
+    {
+        return DB::transaction(function () use ($user, $account, $device, $reserveTokenId): AccountProvisionedGrant {
+            $reserve = AccountReserveToken::query()->lockForUpdate()->find($reserveTokenId);
+            if ($reserve === null || $reserve->account_id !== $account->id || ! $reserve->isAvailable()) {
+                throw new ReserveTokenUnavailableException('That reserve token was just used or expired. Pick another.');
+            }
+
+            $grant = $this->issueGrant($user, $account, $device, [
+                'access_token' => $reserve->access_token,
+                'refresh_token' => $reserve->refresh_token,
+                'token_uuid' => $reserve->token_uuid,
+                'expires_in' => (int) Carbon::now()->diffInSeconds($reserve->access_expires_at, false),
+            ], $reserve->session_expires_at, $reserve->session_expires_at_estimated);
+
+            $reserve->update(['used_at' => Carbon::now(), 'used_grant_id' => $grant->id]);
+
+            return $grant;
+        });
     }
 
     /**

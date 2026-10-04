@@ -1,10 +1,12 @@
 <?php
 
+use App\Enums\GrantStatus;
 use App\Enums\MembershipStatus;
 use App\Filament\Pages\ExpiringAccounts;
 use App\Filament\Resources\Accounts\AccountResource;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
+use App\Models\AccountReserveToken;
 use App\Models\ClaudeCredential;
 use App\Models\CodexCredential;
 use App\Models\Device;
@@ -13,6 +15,8 @@ use App\Services\AccountConnectService;
 use App\Services\Connect\ConnectResolution;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -147,7 +151,7 @@ it('shows a red unhandled badge on a row with no live grant', function (): void 
         ->assertSee('🔴');
 });
 
-it('lists a member own expiring session even though the account credential is healthy, linking to the account instead of offering reconnect', function (): void {
+it('lists a member own expiring session even though the account credential is healthy, with a Reissue for that device', function (): void {
     $admin = User::factory()->admin()->create();
     $account = Account::create(['email' => 'shared@example.com', 'provider' => 'claude']);
     ClaudeCredential::create([
@@ -165,5 +169,75 @@ it('lists a member own expiring session even though the account credential is he
     Livewire::actingAs($admin)->test(ExpiringAccounts::class)
         ->assertOk()
         ->assertSee('member@example.com')
-        ->assertSee(AccountResource::getUrl('edit', ['record' => $account->id], panel: 'admin'), escape: false);
+        ->assertSee('Reissue')
+        ->assertDontSee(AccountResource::getUrl('edit', ['record' => $account->id], panel: 'admin'), escape: false);
+});
+
+it('reissues a due device straight from the Expiring page', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::create(['email' => 'shared@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create(['email' => 'bob@example.com']);
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->claimed()->create(['session_expires_at' => now()->addDay()->addHour()]);
+    $reserve = AccountReserveToken::factory()->for($account)->create();
+
+    Livewire::actingAs($admin)->test(ExpiringAccounts::class)
+        ->assertSee('bob@example.com')
+        ->assertSee('1d left')
+        ->assertDontSee('Open account')
+        ->mountAction('reissueGrant', ['grant' => $grant->id])
+        ->assertActionMounted('confirmReissue')
+        ->callMountedAction()
+        ->assertNotified('Grant reissued');
+
+    expect($reserve->fresh()->used_at)->not->toBeNull();
+});
+
+it('reveals healthy accounts only when Show all is on', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::create(['email' => 'healthy@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+
+    Livewire::actingAs($admin)->test(ExpiringAccounts::class)
+        ->assertDontSee('healthy@example.com')
+        ->set('showAll', true)
+        ->assertSee('healthy@example.com');
+});
+
+it('does not let an analytics-only viewer reissue a member grant', function (): void {
+    Permission::firstOrCreate(['name' => 'view_usage_analytics', 'guard_name' => 'web']);
+    Role::create(['name' => 'usage_viewer', 'guard_name' => 'web'])->givePermissionTo('view_usage_analytics');
+    $viewer = User::factory()->create();
+    $viewer->assignRole('usage_viewer');
+    $account = Account::create(['email' => 'shared@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create();
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->claimed()->create(['session_expires_at' => now()->addDay()]);
+    $reserve = AccountReserveToken::factory()->for($account)->create();
+
+    Livewire::actingAs($viewer)->test(ExpiringAccounts::class)
+        ->assertActionHidden('reissueGrant', ['grant' => $grant->id])
+        ->mountAction('confirmReissue', ['grantId' => $grant->id, 'authorizeUrl' => '', 'state' => ''])
+        ->callMountedAction();
+
+    expect($grant->fresh()->status)->toBe(GrantStatus::Claimed)
+        ->and($reserve->fresh()->used_at)->toBeNull();
+});
+
+it('offers Show all as a switch and lists a pending device with its status', function (): void {
+    $admin = User::factory()->admin()->create();
+    $account = Account::create(['email' => 'healthy@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create(['email' => 'newbie@example.com']);
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Pending->value]);
+    AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->pending()->create();
+
+    Livewire::actingAs($admin)->test(ExpiringAccounts::class)
+        ->assertSeeHtml('role="switch"')
+        ->assertDontSeeHtml('type="checkbox"')
+        ->set('showAll', true)
+        ->assertSee('newbie@example.com')
+        ->assertSee('Pending');
 });

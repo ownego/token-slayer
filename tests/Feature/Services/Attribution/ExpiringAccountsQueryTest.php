@@ -335,3 +335,85 @@ it('still flags a grant whose holder is only Pending on the account', function (
 
     expect($rows->contains(fn (array $row): bool => $row['kind'] === 'grant'))->toBeTrue();
 });
+
+it('groups expiring rows by account, putting due devices under their account', function (): void {
+    $account = Account::create(['email' => 'shared@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create(['email' => 'bob@example.com']);
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+    $device = Device::factory()->for($member)->create(['device_id' => 'fp-b']);
+    $grant = AccountProvisionedGrant::factory()->for($account)->for($device)->claimed()->create(['session_expires_at' => now()->addDay()]);
+
+    $groups = app(ExpiringAccountsQuery::class)->grouped(false);
+
+    expect($groups)->toHaveCount(1)
+        ->and($groups[0]['account_id'])->toBe($account->id)
+        ->and($groups[0]['credential_label'])->toBeNull()
+        ->and(collect($groups[0]['devices'])->pluck('grant_id')->all())->toBe([$grant->id])
+        ->and($groups[0]['devices'][0]['user_email'])->toBe('bob@example.com');
+});
+
+it('keeps the account credential problem as the group label', function (): void {
+    $account = Account::create(['email' => 'soon@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(2)]);
+
+    $groups = app(ExpiringAccountsQuery::class)->grouped(false);
+
+    expect($groups[0]['credential_label'])->toStartWith('expires')
+        ->and($groups[0]['devices'])->toBe([]);
+});
+
+it('shows every Claude account and every claimed device of current members when showing all', function (): void {
+    $healthy = Account::create(['email' => 'healthy@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $healthy->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $disabled = Account::create(['email' => 'off@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $disabled->id, 'status' => AccountStatus::Disabled->value]);
+    $stayer = User::factory()->create();
+    $leaver = User::factory()->create();
+    $healthy->users()->attach($stayer->id, ['status' => MembershipStatus::Tracked->value]);
+    $healthy->users()->attach($leaver->id, ['status' => MembershipStatus::Untracked->value]);
+    $kept = AccountProvisionedGrant::factory()->for($healthy)->for(Device::factory()->for($stayer))->claimed()->create(['session_expires_at' => now()->addDays(25)]);
+    AccountProvisionedGrant::factory()->for($healthy)->for(Device::factory()->for($leaver))->claimed()->create(['session_expires_at' => now()->addDays(25)]);
+
+    $groups = collect(app(ExpiringAccountsQuery::class)->grouped(true));
+
+    expect($groups->pluck('account_id')->all())->toBe([$healthy->id])
+        ->and(collect($groups->first()['devices'])->pluck('grant_id')->all())->toBe([$kept->id]);
+});
+
+it('does not grow the flat rows behind the badge', function (): void {
+    $account = Account::create(['email' => 'safe@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+
+    app(ExpiringAccountsQuery::class)->grouped(true);
+
+    expect(app(ExpiringAccountsQuery::class)->get())->toBe([]);
+});
+
+it('keeps show-all to due grants only on a disabled account, and never drops a due pending grant', function (): void {
+    $disabled = Account::create(['email' => 'off@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $disabled->id, 'status' => AccountStatus::Disabled->value]);
+    $member = User::factory()->create();
+    $disabled->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+    $due = AccountProvisionedGrant::factory()->for($disabled)->for(Device::factory()->for($member))->pending()->create(['session_expires_at' => now()->addDay()]);
+    AccountProvisionedGrant::factory()->for($disabled)->for(Device::factory()->for($member))->claimed()->create(['session_expires_at' => now()->addDays(25)]);
+
+    $groups = collect(app(ExpiringAccountsQuery::class)->grouped(true));
+
+    expect(collect($groups->firstWhere('account_id', $disabled->id)['devices'])->pluck('grant_id')->all())->toBe([$due->id]);
+});
+
+it('shows every live device in show-all, pending ones too, each with its status', function (): void {
+    $account = Account::create(['email' => 'healthy@example.com', 'provider' => 'claude']);
+    ClaudeCredential::create(['account_id' => $account->id, 'oauth_refresh_expires_at' => now()->addDays(20)]);
+    $member = User::factory()->create();
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Pending->value]);
+    $pending = AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->pending()->create(['session_expires_at' => null]);
+    $claimed = AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->claimed()->create(['session_expires_at' => now()->addDays(25)]);
+    AccountProvisionedGrant::factory()->for($account)->for(Device::factory()->for($member))->revoked()->create();
+
+    $devices = collect(collect(app(ExpiringAccountsQuery::class)->grouped(true))->firstWhere('account_id', $account->id)['devices']);
+
+    expect($devices->pluck('grant_id')->all())->toBe([$claimed->id, $pending->id])
+        ->and($devices->pluck('status')->all())->toBe(['Claimed', 'Pending']);
+});
