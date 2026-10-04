@@ -9,11 +9,24 @@ The deep operational guide is the `battlefield` skill (`.claude/skills/battlefie
 3. **Sprite sheets.** Fighter sheets are `frameWidth: 100`. Never upscale (a Real-ESRGAN attempt produced broken 19200×3200 sheets). Boss sheets carry their own per-type frame data in `resources/js/battlefield/config/bosses.js`.
 4. **Boss cycle.** Generic monsters rotate by number: `Boss.bossTypeFor(number)` = `BOSS_ROTATION[number % BOSS_ROTATION.length]`, where `BOSS_ROTATION` is every `BOSS_TYPES` entry **without** a `fixedName` (`boss/boss-type.js`) — reordering or inserting into those entries changes which visual each boss number gets (including the one currently up), nothing else. A recognizable character (an entry with `fixedName`, mirrored by `App\Enums\BossCharacter`) is identified by the **name** the boss spawned with, never its number: `Boss.bossTypeOf(bossState)` checks the name first, and every sprite lookup (scene preload, spawn, kill, move geometry) goes through it. `BossNameGenerator::nameForSpawn()` hands out the fixed name once `BossCharacter::isDueAfter()` says the last `spawnGap()` bosses all went without it (ThaNode: 7, so one boss in eight), otherwise a pool name — so adding a character never re-skins or renames a boss already alive. Every boss sheet must fit a 4096px GPU texture (locked by `tests/js/boss-assets.test.js`, which scans every PNG under `public/assets/battlefield/bosses`) — re-pack a sheet into more, narrower rows rather than adding a wider one; Phaser numbers spritesheet frames row-major, so re-flowing the same frame order at a new column count keeps every `idleStart`/`moveStart`/`attackStart`/`hurtStart` index valid without touching `bosses.js`. Only the active and one-ahead boss types are ever loaded — `Boss.preloadNextType(number)` queues the rotation type after `number` in the background (a character can't be predicted, so its sheet loads on spawn), and `handleBossSpawned` defers building the new sprite until `_awaitBossTypeReady` confirms every texture key exists, so a spawn never shows the previous type's sprite under the new key.
 5. **Key discipline.** Fighters/charges are keyed by `user_id` from broadcast payloads — keep key types consistent (number vs string never collide-match).
-6. **Layout.** Two separate logical spaces: landscape 960×540, portrait 540×960. Positions that cross the wire are normalized fractions of the sender's logical space; receiver-side clamping lives in `move-geometry.js`.
-7. **Fighter size depends on headcount, by design.** `fighterDisplayConfig(count, mode)` (`layout.js`) steps `displaySize` down as more fighters join (landscape: 45px ≤14, 36px ≤28, 27px beyond; portrait: 54px ≤8, 45px beyond) so a crowded roster doesn't overflow the canvas. On top of that, `damageScaleMultiplier(damage, maxHp)` adds up to another ×1.4 for a fighter whose cumulative damage share against the current boss's `maxHp` is high. A near-empty battlefield showing oversized fighters is this combination working as intended, not a bug.
+6. **Layout follows the screen.** `LAYOUTS` (`config/layouts.js`) holds the two *authored* worlds, landscape 960×540 and portrait 540×960. The live layout is derived from them by `layoutFor({width, height, hudBand})`; `index.js` calls it, stores it in the registry as `layout`, and `scene.layout` reads it from there. The world takes the screen's own aspect, so Scale.FIT never letterboxes a phone or tablet:
+   - **Longer than 16:9:** the short side stays 540 and the long side grows, up to 1240.
+   - **Squarer than 16:9 (a tablet):** the long side stays 960 and the short side grows, up to 720.
+   - **Placement:** everything stays centred.
+   - **Boss shift (`shiftY`):** the boss block moves down below `hudBand` (the HUD panels measured over the top of the canvas, via `hud/sync.js`'s `measureHudBand`). In portrait the shift is capped at the extra height plus 140 of the fighter area; in landscape at 60.
+   - **Fighter rows (`fighterShiftY`):** they follow the boss in portrait. In landscape they only follow the centring, so they never drop off a 540-tall floor.
+   - **When to relayout:** a resize restarts the scene on a new layout only when `needsRelayout` says so. That means:
+     - an orientation flip;
+     - a side changing by more than 8% (a phone URL bar showing or hiding does not count);
+     - the HUD band growing at all into the boss block, or shrinking by more than 60.
+
+     A `ResizeObserver` on the nav and plate re-checks the band as the panels settle (webfonts, ThaNode's stone row).
+
+   Positions that cross the wire are normalized fractions of the sender's logical space. Receiver-side clamping lives in `move-geometry.js`.
+7. **Fighter size depends on headcount, by design.** `fighterDisplayConfig(count, mode, layout)` (`layout.js`) steps `displaySize` down as more fighters join (landscape: 45px ≤14, 36px ≤28, 27px beyond; portrait: 54px ≤8, 45px beyond) so a crowded roster doesn't overflow the canvas. On top of that, `damageScaleMultiplier(damage, maxHp)` adds up to another ×1.4 for a fighter whose cumulative damage share against the current boss's `maxHp` is high. A near-empty battlefield showing oversized fighters is this combination working as intended, not a bug.
 8. **The fighter atlas is a build artifact.** Source strips live in `resources/assets/battlefield/fighters/` (committed); `scripts/pack-sprites.js` (run by `npm run build`/`npm run dev`/the Vitest `pack-sprites` test) packs them into `public/assets/battlefield/fighters/fighters-atlas.{png,json}` and writes `resources/js/battlefield/config/atlas-version.js` (`ATLAS_VERSION` = content hash of the atlas JSON). All three outputs are gitignored — never hand-edit or commit them. The hash is baked into the JS bundle as `?v=`, busting the host's 7-day cache on the non-hashed atlas URL. Other sprites (bosses, companions) have no generated version: bump their hand-written `?v=` on edit (`public/assets/battlefield/CLAUDE.md`).
 9. **Never baseline on a mid-tween value.** Hits, moves and attacks overlap constantly (`killTweensOf` mid-flight is routine), so any value read off a sprite that another tween may be animating is transient. Long sessions surfaced two "fixed by F5" drifts from this: the boss flinch took the boss's *current* scale as its yoyo base (overlapping hits ratcheted it flat — `impact.js` now tracks its own rest scale), and `entry.pos` was overwritten from a sprite caught mid blade-dash inside the boss column (the fighter then "returned" to and planned every move from the boss — `moveOrigin` in `move-geometry.js` now guards `handleHit`, `handleFighterMoved` and click-to-move). A persistent value derived from live sprite state must go through a guard like these.
-10. **Canvas size and camera zoom move together.** `renderScale` sets both the canvas pixel size and the camera zoom; any resize of the running game (orientation flip in `index.js`'s `applyModeChange`) sizes through `render-scale.js`'s `canvasSizeFor` and updates the registry's `renderScale`, or the world renders zoomed in.
+10. **Canvas size and camera zoom move together.** `renderScale` sets both the canvas pixel size and the camera zoom; any resize of the running game (relayout in `index.js`'s `applyLayout`) sizes through `render-scale.js`'s `canvasSizeFor` and updates the registry's `renderScale`, or the world renders zoomed in.
 11. **Roster order is a cross-stack contract.** `FIGHTER_TYPES` key order must equal the PHP `App\Enums\FighterCharacter` case order: the server assigns a character as `cases()[(user_id + boss_id) % count]` and broadcasts the key. Locked by `tests/js/config.test.js` and `tests/Unit/FighterCharacterTest.php` — append new types at the end of both, or every existing player's assigned character shifts.
 
 ## Boss scripts
@@ -81,12 +94,23 @@ See `resources/js/battlefield/CLAUDE.md`'s Key Files and Test Files tables for e
 The battle HUD — team damage, boss plate, TOP DAMAGE board, activity feed,
 herald strip — is a real DOM grid (`#bf-hud`/`#bf-hud-in`,
 `resources/css/battlefield-hud.css`) that sits exactly on the canvas
-(`hud/sync.js`'s `keepHudOnCanvas`), not Phaser-drawn text/rectangles. Three
-container-query tiers (wide landscape, portrait, short landscape) reflow the
-grid without any JS. Each panel has its own controller:
+(`hud/sync.js`'s `keepHudOnCanvas`), not Phaser-drawn text/rectangles.
+Container-query tiers reflow the grid without any JS. On a phone, only the
+essentials stay on screen; the rest opens on demand:
+
+| Tier | Container query | Layout |
+|---|---|---|
+| Desktop / tablet landscape | default | three columns: nav + team on the left, boss plate in the middle, board on the right |
+| Portrait phone | `max-aspect-ratio: 1/1` | an icon-only nav column beside the boss plate; team and board live in the `.bf-stats` **bottom sheet**. Its peek shows the leader; the handle opens it, and the team totals show only while it is open |
+| Phone on its side | `min-aspect-ratio: 1/1` and `max-height: 440px` | icon nav; the `.bf-stats` **right column** shows the top three, and opening it adds the team totals |
+| Portrait tablet | `max-aspect-ratio: 1/1` and `min-width: 640px` | team and board in a right column over the sky; no sheet |
+
+`.bf-stats` wraps team and board. On a desktop it is `display: contents`, so
+both stay grid panels of their own. `hud/reveal.js` numbers the panels inside
+it, not the wrapper.
 
 - `hud/index.js`'s `battlefieldHud` Alpine component owns the team panel,
-  the viewer's own row, the portrait board-sheet toggle, and the herald
+  the viewer's own row, the phone stats-sheet toggle (`boardOpen`/`toggleBoard`), and the herald
   strip (kill/spawn announcements, 4.5s).
 - `hud/boss-plate.js`'s `createBossPlate`, `hud/board-view.js`'s
   `createBoardView`, and `hud/feed-view.js`'s `createFeedView` are
