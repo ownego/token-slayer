@@ -67,3 +67,13 @@ test('the HUD reveals once, panel by panel', () => {
   expect(hud.classList.contains('ready')).toBe(true);
   expect([...hud.querySelectorAll('.bf-hud-in > *')].map(el => el.style.getPropertyValue('--i'))).toEqual(['0', '1', '2']);
 });
+
+test('team and board inside the stats wrapper slide in as panels of their own', () => {
+  document.body.innerHTML = '<div id="bf-hud" class="bf-hud"><div class="bf-hud-in"><nav></nav><div class="bf-stats"><button></button><section class="t"></section><section class="b"></section></div><section class="f"></section></div></div>';
+  const hud = document.getElementById('bf-hud');
+
+  revealHud(hud);
+
+  expect(['nav', '.bf-stats > .t', '.bf-stats > .b', '.f'].map(sel => hud.querySelector(sel).style.getPropertyValue('--i')))
+    .toEqual(['0', '1', '2', '3']);
+});

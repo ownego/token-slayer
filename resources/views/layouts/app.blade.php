@@ -5,7 +5,8 @@
 <html lang="en" @if ($embed) data-ide-embed="true" @endif>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {{-- A page may override it (the battlefield locks the zoom, see battlefield.blade.php) --}}
+    <meta name="viewport" content="@yield('viewport', 'width=device-width, initial-scale=1.0')">
     <title>{{ config('app.name') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     {{-- Page-specific stylesheets/fonts (e.g. the battlefield HUD's Pixelify Sans/Silkscreen link) --}}
