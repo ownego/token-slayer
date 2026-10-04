@@ -14,6 +14,21 @@
   --bf-gold: #fbbf24;
   --bf-px: 'Pixelify Sans', ui-monospace, monospace;
   --bf-sk: 'Silkscreen', ui-monospace, monospace;
+  /* Damage figures read as digits first, flavor second — Pixelify Sans
+     (--bf-px) blurs 3/6/8/9 apart at these small sizes because its pixel
+     grid carries thin sans-style curves. Press Start 2P (self-hosted via
+     vite.config.js's bunny() call, like Instrument Sans) stays in the same
+     pixel/arcade family but draws each glyph as simple, separated blocks
+     with no thin strokes, so digits stay legible at the same sizes. Used
+     only by the three damage-number spans (team totals, your damage, boss
+     HP), never names/labels/titles, which keep --bf-px. */
+  --bf-num: 'Press Start 2P', ui-monospace, monospace;
+  /* Press Start 2P is drawn on an 8px grid: only at multiples of 8 does each
+     glyph pixel land on whole screen pixels — at 9 or 11px they come out
+     uneven and soft, which is what the font was brought in to fix. Every
+     number reads its size from here; a HUD tier that zooms its panels
+     divides it back by that zoom (see the min-width tiers below). */
+  --bf-num-px: 8px;
 }
 
 .bf-hud { position: absolute; pointer-events: none; container: hud / size; }
@@ -41,7 +56,7 @@
 .bf-team .t-title i { font-style: normal; color: #4ade80; }
 .bf-team .t-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
 .bf-team .t-stat span { display: block; font: 10px var(--bf-sk); color: var(--bf-dim); }
-.bf-team .t-stat b { font: 700 19px var(--bf-px); color: #fff; font-variant-numeric: tabular-nums; }
+.bf-team .t-stat b { font: 700 var(--bf-num-px) var(--bf-num); color: #fff; font-variant-numeric: tabular-nums; }
 .bf-team .t-stat.today b { color: #7dd3fc; }
 .bf-team .t-stat.flash b { animation: bf-flash .5s ease-out; }
 @keyframes bf-flash { 0% { color: #fff; text-shadow: 0 0 10px #fde68a; } }
@@ -50,7 +65,7 @@
 .bf-team .me .av { position: relative; overflow: hidden; }
 .bf-team .me .av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .bf-team .me .me-l { font: 10px var(--bf-sk); color: var(--bf-gold); }
-.bf-team .me .me-v { font: 700 15px var(--bf-px); color: #fff; font-variant-numeric: tabular-nums; }
+.bf-team .me .me-v { font: 700 var(--bf-num-px) var(--bf-num); color: #fff; font-variant-numeric: tabular-nums; }
 .bf-team .me .me-v small { font: 12px ui-sans-serif, system-ui; color: var(--bf-dim); margin-left: 4px; }
 .bf-team .me .me-r { text-align: right; font: 700 17px var(--bf-px); color: var(--bf-gold); }
 .bf-team .me .me-r small { display: block; font: 10px var(--bf-sk); color: var(--bf-dim); }
@@ -63,9 +78,11 @@
 .bf-plate .hpbar .lag { position: absolute; inset: 0 auto 0 0; background: #fde68a; opacity: .55; transition: width .7s ease-in .15s; }
 .bf-plate .hpbar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(0,0,0,.55) calc(10% - 1px) 10%); }
 .bf-plate .hpbar .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fbbf24; z-index: 2; }
-.bf-plate .hpbar .hp-t { position: absolute; right: 6px; top: 50%; translate: 0 -50%; z-index: 3; font: 700 12px var(--bf-px); color: #fff; text-shadow: 0 1px 0 #000, 0 0 4px #000; font-variant-numeric: tabular-nums; }
+.bf-plate .hpbar .hp-t { position: absolute; right: 6px; top: 50%; translate: 0 -50%; z-index: 3; font-variant-numeric: tabular-nums; }
 .bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fb923c, #c2410c); }
+.bf-plate.enraged .hpbar .hp-t { color: #fdba74; }
 .bf-plate.finish .hpbar .fill { animation: bf-finish .5s steps(2) infinite; }
+.bf-plate.finish .hpbar .hp-t { color: #fca5a5; animation: bf-blink 1s steps(2) infinite; }
 .bf-plate .finish-chip { display: none; margin-top: 4px; font: 11px var(--bf-sk); color: #fca5a5; letter-spacing: .08em; }
 .bf-plate.finish .finish-chip { display: inline-block; animation: bf-blink 1s steps(2) infinite; }
 @keyframes bf-finish { 50% { filter: brightness(1.6); } }
@@ -87,7 +104,7 @@
 .bf-board li .nm span { display: block; font: 500 13px var(--bf-px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bf-board li .nm i { display: block; height: 3px; margin-top: 2px; background: #1a2440; }
 .bf-board li .nm i em { display: block; height: 100%; transition: width .35s ease-out; }
-.bf-board li .dm { font: 700 14px var(--bf-px); color: #7dd3fc; font-variant-numeric: tabular-nums; }
+.bf-board li .dm { font: 700 var(--bf-num-px) var(--bf-num); color: #7dd3fc; font-variant-numeric: tabular-nums; }
 .bf-board li[data-rank="1"] { color: #fde68a; } .bf-board li[data-rank="2"] { color: #e5e7eb; } .bf-board li[data-rank="3"] { color: #fdba74; }
 .bf-board li.you { background: linear-gradient(90deg, rgba(251,191,36,.14), transparent); box-shadow: inset 2px 0 0 #fbbf24; }
 .bf-board li.you .nm span { color: #fde68a; }
@@ -168,10 +185,12 @@
 @container hud (min-width: 1600px) and (min-aspect-ratio: 1/1) {
   .bf-hud-in { grid-template-columns: clamp(220px, 27cqw, 360px) minmax(0, 1fr) clamp(230px, 27cqw, 372px); }
   .bf-hud-in > * { zoom: 1.2; }
+  .bf-hud-in { --bf-num-px: calc(8px / 1.2); }
 }
 @container hud (min-width: 2200px) and (min-aspect-ratio: 1/1) {
   .bf-hud-in { grid-template-columns: clamp(220px, 27cqw, 420px) minmax(0, 1fr) clamp(230px, 27cqw, 434px); }
   .bf-hud-in > * { zoom: 1.4; }
+  .bf-hud-in { --bf-num-px: calc(16px / 1.4); }
 }
 
 /* ---- Load intro: the HUD waits for the field, then slides in panel by panel
@@ -190,7 +209,7 @@
 .bf-plate .hpbar .lag { background: linear-gradient(180deg, #fff7d6, #fde68a); opacity: .7; }
 .bf-plate .hpbar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(0,0,0,.6) calc(10% - 2px) 10%); }
 .bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fdba74 0%, #f97316 25%, #c2410c 72%, #7c2d12 100%); }
-.bf-plate .hpbar .hp-t { font-size: 13px; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; }
+.bf-plate .hpbar .hp-t { font: 700 var(--bf-num-px) var(--bf-num); color: #fff; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; transition: color .2s ease; }
 
 /* ThaNode's Infinity Stone sockets: a row appended under the HP bar by
    resources/js/battlefield/boss/scripts/thanos.js (absent for every other boss).
