@@ -68,9 +68,9 @@ Provisioning is part of the Members tab's **Add member** action. A *provision* t
 - Members tab → **Add member** (`confirmProvisionMember`).
 - Members tab → **Claimed devices** modal: every `Claimed` grant on the account (`ClaimedGrantsQuery`, overdue first), with a per-row Reissue registered via `registerModalActions()`.
 - Provisions tab → row **Reissue**.
-- *Expiring* page: one section per account — the account's own credential with Reconnect (Claude) / Refresh now (Codex), and its due member devices with Reissue. **Show all** (`?all=1`) adds every non-disabled Claude account and every claimed device of its Tracked/Pending members, due or not (`ExpiringAccountsQuery::grouped()`); the sidebar badge still counts only `get()`.
+- *Expiring* page: one section per account — the account's own credential with Reconnect (Claude) / Refresh now (Codex), and its due member devices with Reissue. **Show all** (`?all=1`) only adds to what is due: every non-disabled Claude account and every claimed device of its Tracked/Pending members (`ExpiringAccountsQuery::grouped()`); the sidebar badge still counts only `get()`.
 
-The three Reissue surfaces share the `ReissuesGrants` trait (`reissueGrant` → `confirmReissue`). Session deadlines are always shown through `App\Support\DaysLeft` (`5d left` / `today` / `2d overdue`, `~` when estimated).
+The three Reissue surfaces share the `ReissuesGrants` trait (`reissueGrant` → `confirmReissue`), which authorizes `Update:Account` — the Expiring page itself only needs `view_usage_analytics`, so the check lives on the action. Session deadlines are always shown through `App\Support\DaysLeft` (`5d left` / `today` / `2d overdue`, `~` when estimated).
 
 The user's machine completes the handoff:
 1. `token-slayer setup` → `GET /api/provisioned` (`hook.token`). `AccountProvisioningService::claim($user, $fingerprint)` uses `DeviceClaimResolver` to pick the device (a null fingerprint may only speak for `'default'`) and returns each grant's secret. It is shared across both providers, since one device can hold both.
