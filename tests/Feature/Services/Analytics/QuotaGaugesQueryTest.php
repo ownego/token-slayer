@@ -40,3 +40,16 @@ it('reports when the account was last probed, or null when never', function (): 
     expect($rows[$probed->id]['probed_at']->diffInMinutes(now()))->toBeGreaterThanOrEqual(3.9)
         ->and($rows[$never->id]['probed_at'])->toBeNull();
 });
+
+it('labels the gauge with the account name, falling back to the email while the name is blank or the default organization name', function (?string $name, string $label): void {
+    $account = Account::factory()->create(['email' => 'clone@example.com', 'name' => $name]);
+
+    $row = collect(app(QuotaGaugesQuery::class)->get())->firstWhere('account_id', $account->id);
+
+    expect($row['label'])->toBe($label)
+        ->and($row['email'])->toBe('clone@example.com');
+})->with([
+    'custom name' => ['OE Clone', 'OE Clone'],
+    'default organization name' => ["clone@example.com's Organization", 'clone@example.com'],
+    'no name' => [null, 'clone@example.com'],
+]);
