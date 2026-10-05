@@ -20,7 +20,7 @@ use Livewire\Component;
 /**
  * Reissue one Claude grant on the same device, reached by grant id so any
  * Filament surface can host it — the Provisions tab
- * ({@see ProvisionsRelationManager}), the Members tab's Claimed devices
+ * ({@see ProvisionsRelationManager}), the Members tab's Devices
  * modal ({@see MembersRelationManager}) and the Expiring page
  * ({@see ExpiringAccounts}). The confirm modal offers both the paste-code
  * path and the account's reserve pool ({@see TokenSourceFields}). Filament
