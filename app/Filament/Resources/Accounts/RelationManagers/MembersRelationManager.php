@@ -17,7 +17,7 @@ use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMembershipCache;
-use App\Services\Provisioning\ClaimedGrantsQuery;
+use App\Services\Provisioning\AccountDevicesQuery;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -144,7 +144,7 @@ class MembersRelationManager extends RelationManager
             ])
             ->headerActions([
                 $this->addMemberAction(),
-                $this->claimedDevicesAction(),
+                $this->devicesAction(),
                 $this->refreshAction(),
             ])
             ->recordActions([
@@ -453,22 +453,22 @@ class MembersRelationManager extends RelationManager
     }
 
     /**
-     * The "Claimed devices" header action: every device that has pulled a
-     * grant on this account, with how long its session has left, and a
-     * Reissue button per row (the nested
+     * The "Devices" header action: every device of a tracked or pending
+     * member holding a live grant on this account — set up or not — with how
+     * long its session has left, and a Reissue button per row (the nested
      * {@see ReissuesGrants::reissueGrantAction()}). Claude accounts only.
      * Public so Filament's `{name}Action` convention can resolve it.
      *
      * @return Action
      */
-    public function claimedDevicesAction(): Action
+    public function devicesAction(): Action
     {
-        return Action::make('claimedDevices')
-            ->label('Claimed devices')
+        return Action::make('devices')
+            ->label('Devices')
             ->icon(Heroicon::OutlinedComputerDesktop)
             ->color('gray')
             ->visible(fn (): bool => $this->getOwnerRecord()->provider === Provider::Claude)
-            ->modalHeading('Claimed devices')
+            ->modalHeading('Devices')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Close')
             ->modalWidth(Width::FourExtraLarge)
@@ -476,8 +476,8 @@ class MembersRelationManager extends RelationManager
             // action) so Filament can resolve the row button as a child of
             // this modal when it is clicked.
             ->registerModalActions([$this->reissueGrantAction()])
-            ->modalContent(fn (Action $action): View => view('filament.modals.claimed-devices', [
-                'grants' => app(ClaimedGrantsQuery::class)->forAccount($this->getOwnerRecord()),
+            ->modalContent(fn (Action $action): View => view('filament.modals.devices', [
+                'grants' => app(AccountDevicesQuery::class)->forAccount($this->getOwnerRecord()),
                 'action' => $action,
             ]));
     }

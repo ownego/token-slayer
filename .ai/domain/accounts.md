@@ -66,7 +66,7 @@ Provisioning is part of the Members tab's **Add member** action. A *provision* t
 
 **Where an admin hands a token out.** Every modal that gives a device a Claude grant shows the same `Paste code | From reserve (n)` switch (`App\Filament\Actions\TokenSourceFields`): reserve preselected on its soonest-expiring token when the pool has any, paste code otherwise. It is a `ToggleButtons` field, not Filament `Tabs`, because the submit must say which source was chosen. Surfaces:
 - Members tab → **Add member** (`confirmProvisionMember`).
-- Members tab → **Claimed devices** modal: every `Claimed` grant on the account (`ClaimedGrantsQuery`, overdue first), with a per-row Reissue registered via `registerModalActions()`.
+- Members tab → **Devices** modal: every live (pending or claimed) grant of the account's Tracked/Pending members (`AccountDevicesQuery`; overdue first, not-yet-set-up last, Untracked members' devices hidden), with a per-row Reissue registered via `registerModalActions()` — pending rows too.
 - Provisions tab → row **Reissue**.
 - *Expiring* page: one section per account — the account's own credential with Reconnect (Claude) / Refresh now (Codex), and its due member devices with Reissue. **Show all** (`?all=1`, a switch) only adds to what is due: every non-disabled Claude account and every live (Pending or Claimed, badged) device of its Tracked/Pending members (`ExpiringAccountsQuery::grouped()`); the sidebar badge still counts only `get()`.
 
