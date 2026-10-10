@@ -213,14 +213,7 @@ final class ExpiringAccountsQuery
      */
     private function claudeGrantRows(): Collection
     {
-        return AccountProvisionedGrant::query()
-            ->live()
-            ->whereHas('account', fn ($query) => $query->where('provider', Provider::Claude))
-            ->whereNotNull('session_expires_at')
-            ->where('session_expires_at', '<=', now()->addDays(self::CLAUDE_WARNING_DAYS))
-            ->with(['account', 'device.user'])
-            ->get()
-            ->reject(fn (AccountProvisionedGrant $grant): bool => $this->estimateOutlived($grant) || $this->notAMember($grant))
+        return $this->dueGrants()
             ->map(fn (AccountProvisionedGrant $grant): array => [
                 'account_id' => $grant->account_id,
                 'email' => $grant->account->email,
@@ -232,6 +225,94 @@ final class ExpiringAccountsQuery
                 'kind' => 'grant',
             ])
             ->values();
+    }
+
+    /**
+     * The live Claude grants behind {@see claudeGrantRows()}: session
+     * deadline inside the warning window, minus disproved estimates and
+     * grants of people no longer on the account. Soonest deadline first.
+     *
+     * @return Collection<int, AccountProvisionedGrant>
+     */
+    private function dueGrants(): Collection
+    {
+        return AccountProvisionedGrant::query()
+            ->live()
+            ->whereHas('account', fn ($query) => $query->where('provider', Provider::Claude))
+            ->whereNotNull('session_expires_at')
+            ->where('session_expires_at', '<=', now()->addDays(self::CLAUDE_WARNING_DAYS))
+            ->with(['account', 'device.user'])
+            ->orderBy('session_expires_at')
+            ->get()
+            ->reject(fn (AccountProvisionedGrant $grant): bool => $this->estimateOutlived($grant) || $this->notAMember($grant))
+            ->values();
+    }
+
+    /**
+     * The page's rows regrouped by account: one entry per account with its
+     * own credential problem (if any) and the member devices under it, each
+     * reissuable in place. With `$showAll`, every non-disabled Claude account
+     * appears with every live (Pending or Claimed) device of its current
+     * (Tracked/Pending) members, due or not, so an admin can reissue a whole round ahead of
+     * time. The flat {@see get()} — and the sidebar badge counted from it —
+     * is untouched.
+     *
+     * @param  bool  $showAll  include healthy accounts and devices not yet due
+     * @return array<int, array{account_id:int, name:string, provider:Provider, credential_label:?string, needs_attention:bool, has_fresh_pending_grant:bool, devices: array<int, array{grant_id:int, status:string, user_email:string, device_label:string, deadline:?Carbon, estimated:bool}>}>
+     */
+    public function grouped(bool $showAll): array
+    {
+        $rows = collect($this->get());
+        $showAllIds = $showAll
+            ? Account::query()
+                ->where('provider', Provider::Claude)
+                ->whereDoesntHave('claudeCredential', fn ($credential) => $credential->where('status', AccountStatus::Disabled->value))
+                ->pluck('id')
+            : collect();
+
+        $accounts = Account::query()
+            ->whereIn('id', $rows->pluck('account_id')->concat($showAllIds)->unique()->all())
+            ->orderBy('email')
+            ->get();
+        // Show all only ever ADDS to what is due: every live device
+        // (Pending or Claimed) of non-disabled accounts on top, so a disabled
+        // account still shows just its due grants.
+        $grants = $this->dueGrants();
+        if ($showAll) {
+            $grants = $grants
+                ->concat(AccountProvisionedGrant::query()
+                    ->live()
+                    ->whereIn('account_id', $showAllIds->all())
+                    ->with('device.user')
+                    ->get()
+                    ->reject(fn (AccountProvisionedGrant $grant): bool => $this->notAMember($grant)))
+                ->unique('id')
+                ->sortBy(fn (AccountProvisionedGrant $grant): int => $grant->session_expires_at?->getTimestamp() ?? PHP_INT_MAX)
+                ->values();
+        }
+
+        return $accounts->map(fn (Account $account): array => [
+            'account_id' => $account->id,
+            'name' => $account->name ?? $account->email ?? '— unnamed —',
+            'provider' => $account->provider,
+            'credential_label' => $rows->first(fn (array $row): bool => $row['account_id'] === $account->id && $row['kind'] === 'account')['label'] ?? null,
+            // Something on this account is actually due (it is on the flat
+            // list), as opposed to merely shown because of "Show all".
+            'needs_attention' => $rows->contains('account_id', $account->id),
+            'has_fresh_pending_grant' => $this->hasFreshPendingGrant($account),
+            'devices' => $grants->where('account_id', $account->id)
+                ->map(fn (AccountProvisionedGrant $grant): array => [
+                    'grant_id' => $grant->id,
+                    'status' => $grant->status->getLabel(),
+                    'user_email' => $grant->device->user->email,
+                    'device_label' => $grant->device->name
+                        ?? ($grant->device->device_id !== null ? 'Unnamed device' : 'Awaiting device'),
+                    'deadline' => $grant->session_expires_at,
+                    'estimated' => $grant->session_expires_at_estimated,
+                ])
+                ->values()
+                ->all(),
+        ])->all();
     }
 
     /**

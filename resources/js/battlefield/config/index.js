@@ -1,5 +1,5 @@
 export { BG_COLOR, BOSS_TYPES } from './bosses.js';
 export { FIGHTER_TYPES } from './fighters.js';
-export { LAYOUTS } from './layouts.js';
+export { LAYOUTS, layoutFor, needsRelayout } from './layouts.js';
 export { TIMINGS } from './timings.js';
 export { BAT_CONFIG, NECROMANCER_CONFIG, MINION_TYPES, MINION_CLASH_EFFECTS } from './companions.js';

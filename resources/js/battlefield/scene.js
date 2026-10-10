@@ -105,11 +105,14 @@ export class BattlefieldScene extends Phaser.Scene {
    */
   create() {
     this.isShuttingDown = false;
-    // scene.restart() (mode change, index.js's applyModeChange) reuses this
+    // scene.restart() (relayout, index.js's applyLayout) reuses this
     // same Scene instance, so a prior teardown must re-arm here.
     this._tornDown = false;
     this.mode = this.game.registry.get('mode') ?? 'landscape';
-    this.layout = LAYOUTS[this.mode];
+    // index.js derives the live layout from the screen (config/layouts.js's
+    // layoutFor); the authored LAYOUTS entry is only a fallback for a game
+    // booted without one.
+    this.layout = this.game.registry.get('layout') ?? LAYOUTS[this.mode];
     const L = this.layout;
 
     // The canvas is created at logical size * renderScale (see render-scale.js's

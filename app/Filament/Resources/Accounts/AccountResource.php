@@ -14,6 +14,7 @@ use App\Filament\Resources\Accounts\Pages\ViewAccount;
 use App\Filament\Resources\Accounts\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\MembersRelationManager;
 use App\Filament\Resources\Accounts\RelationManagers\ProvisionsRelationManager;
+use App\Filament\Resources\Accounts\RelationManagers\ReserveTokensRelationManager;
 use App\Models\Account;
 use App\Models\ClaudeCredential;
 use App\Services\AccountConnectService;
@@ -428,6 +429,7 @@ class AccountResource extends Resource
         return [
             MembersRelationManager::class,
             ProvisionsRelationManager::class,
+            ReserveTokensRelationManager::class,
             EventsRelationManager::class,
         ];
     }

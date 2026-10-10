@@ -5,8 +5,11 @@ namespace App\Filament\Resources\Accounts\RelationManagers;
 use App\Enums\MembershipStatus;
 use App\Enums\Provider;
 use App\Exceptions\AccountConnectException;
+use App\Exceptions\ReserveTokenUnavailableException;
 use App\Exceptions\UsageProbeException;
+use App\Filament\Actions\TokenSourceFields;
 use App\Filament\Concerns\ConnectsAccounts;
+use App\Filament\Concerns\ReissuesGrants;
 use App\Models\Account;
 use App\Models\AccountProvisionedGrant;
 use App\Models\AccountUser;
@@ -14,10 +17,10 @@ use App\Models\User;
 use App\Services\AccountConnectService;
 use App\Services\AccountProvisioningService;
 use App\Services\Accounts\AccountMembershipCache;
+use App\Services\Provisioning\AccountDevicesQuery;
 use App\Support\CacheKeys;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
-use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -26,10 +29,12 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\DB;
@@ -49,6 +54,8 @@ use Livewire\Component;
  */
 class MembersRelationManager extends RelationManager
 {
+    use ReissuesGrants;
+
     /**
      * The relationship on the owner `Account` (all statuses).
      *
@@ -137,6 +144,7 @@ class MembersRelationManager extends RelationManager
             ])
             ->headerActions([
                 $this->addMemberAction(),
+                $this->devicesAction(),
                 $this->refreshAction(),
             ])
             ->recordActions([
@@ -354,8 +362,11 @@ class MembersRelationManager extends RelationManager
      * The follow-up "provision for this member" modal, mounted by name from
      * {@see addMemberAction()} via `replaceMountedAction()` when the toggle is
      * on. Resolved on demand by Filament's `{name}Action` method convention
-     * (never rendered as its own button). Exchanges the pasted code via
-     * {@see AccountProvisioningService::provisionForDevice()}, granting the
+     * (never rendered as its own button). Offers the account's reserve pool
+     * next to the paste-code path ({@see TokenSourceFields}); a reserve token
+     * goes through {@see AccountProvisioningService::provisionFromReserve()},
+     * a pasted code through
+     * {@see AccountProvisioningService::provisionForDevice()}, either granting the
      * device resolved by
      * {@see AccountProvisioningService::resolveProvisionTarget()} (an
      * existing device by id, or a fresh placeholder named from
@@ -376,23 +387,14 @@ class MembersRelationManager extends RelationManager
     {
         return Action::make('confirmProvisionMember')
             ->modalHeading('Provision a Claude account for this member')
-            ->modalDescription('Open the authorize URL, log in as the account to grant, approve, then paste the code back here.')
+            ->modalDescription('Use a reserve token, or open the authorize URL, log in as the account to grant, approve, then paste the code back here.')
             ->modalSubmitActionLabel('Provision')
-            ->fillForm(fn (array $arguments): array => [
-                'authorize_url' => $arguments['authorizeUrl'] ?? '',
-                'state' => $arguments['state'] ?? '',
-                'code' => '',
-            ])
-            ->schema([
-                TextInput::make('authorize_url')
-                    ->label('Authorize URL')
-                    ->readOnly()
-                    ->copyable(),
-                Hidden::make('state'),
-                TextInput::make('code')
-                    ->label('Paste the code here')
-                    ->required(),
-            ])
+            ->fillForm(fn (array $arguments): array => TokenSourceFields::fill(
+                $this->getOwnerRecord(),
+                $arguments['authorizeUrl'] ?? '',
+                $arguments['state'] ?? '',
+            ))
+            ->schema(fn (): array => TokenSourceFields::schema($this->getOwnerRecord()))
             ->action(function (array $data, array $arguments): void {
                 /** @var Account $account */
                 $account = $this->getOwnerRecord();
@@ -406,37 +408,23 @@ class MembersRelationManager extends RelationManager
 
                 try {
                     // Wrapped so a throw from provisionForDevice() (bad/expired
-                    // code) rolls back the device insert too — otherwise a
-                    // failed paste leaves an orphan placeholder device behind.
+                    // code) or provisionFromReserve() (token gone meanwhile)
+                    // rolls back the device insert too — otherwise a failed
+                    // attempt leaves an orphan placeholder device behind.
                     DB::transaction(function () use ($service, $user, $account, $arguments, $data): void {
                         $device = $service->resolveProvisionTarget($user, $arguments['devicePk'] ?? null, $arguments['deviceName'] ?? null);
-                        $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
+                        if (TokenSourceFields::usesReserve($data)) {
+                            $service->provisionFromReserve($user, $account, $device, (int) $data['reserve_token_id']);
+                        } else {
+                            $service->provisionForDevice($user, $account, $device, $data['state'], $data['code']);
+                        }
                     });
-                } catch (AccountConnectException $exception) {
-                    Notification::make()
-                        ->danger()
-                        ->title('Provisioning failed')
-                        ->body(match ($exception->reason) {
-                            'connect_identity_mismatch' => $exception->getMessage(),
-                            'connect_state_expired' => 'This connect link expired or was already used. Start again.',
-                            default => 'Something went wrong completing the provisioning.',
-                        })
-                        ->send();
-
-                    return;
-                } catch (UsageProbeException $exception) {
-                    // exchangeVerifiedToken() calls out to Anthropic's token
-                    // endpoint, which can reject the pasted code directly
-                    // (stale, already-used, or otherwise invalid) rather than
-                    // through this app's own AccountConnectException path --
-                    // a different exception class the catch above doesn't see.
-                    Notification::make()
-                        ->danger()
-                        ->title('Provisioning failed')
-                        ->body($exception->reason === 'invalid_grant'
-                            ? 'Anthropic rejected that code — it may be stale or already used. Open a fresh authorize link and try again.'
-                            : "Anthropic error ({$exception->reason}): {$exception->getMessage()}")
-                        ->send();
+                } catch (AccountConnectException|UsageProbeException|ReserveTokenUnavailableException $exception) {
+                    // UsageProbeException: exchangeVerifiedToken() calls out to
+                    // Anthropic's token endpoint, which can reject the pasted
+                    // code directly (stale, already-used, or otherwise invalid)
+                    // rather than through this app's own AccountConnectException.
+                    TokenSourceFields::notifyFailure($exception, 'Provisioning failed');
 
                     return;
                 }
@@ -462,6 +450,36 @@ class MembersRelationManager extends RelationManager
                         : "Provisioned an additional device for {$user->displayHandle()}.")
                     ->send();
             });
+    }
+
+    /**
+     * The "Devices" header action: every device of a tracked or pending
+     * member holding a live grant on this account — set up or not — with how
+     * long its session has left, and a Reissue button per row (the nested
+     * {@see ReissuesGrants::reissueGrantAction()}). Claude accounts only.
+     * Public so Filament's `{name}Action` convention can resolve it.
+     *
+     * @return Action
+     */
+    public function devicesAction(): Action
+    {
+        return Action::make('devices')
+            ->label('Devices')
+            ->icon(Heroicon::OutlinedComputerDesktop)
+            ->color('gray')
+            ->visible(fn (): bool => $this->getOwnerRecord()->provider === Provider::Claude)
+            ->modalHeading('Devices')
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close')
+            ->modalWidth(Width::FourExtraLarge)
+            // Registered on the modal (not just rendered from the page's own
+            // action) so Filament can resolve the row button as a child of
+            // this modal when it is clicked.
+            ->registerModalActions([$this->reissueGrantAction()])
+            ->modalContent(fn (Action $action): View => view('filament.modals.devices', [
+                'grants' => app(AccountDevicesQuery::class)->forAccount($this->getOwnerRecord()),
+                'action' => $action,
+            ]));
     }
 
     /**

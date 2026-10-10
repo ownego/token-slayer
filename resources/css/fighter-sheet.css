@@ -1289,3 +1289,27 @@
 .fs .sheet-body { grid-template-rows: minmax(0, 1fr); overflow: hidden; }
 .fs .sheet-body > * { min-height: 0; }
 .fs .sheet-body > .fighter { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.35) transparent; }
+/* Phone: the header wrapped the close button onto a row of its own (name,
+   then tabs, then the links and ×). Pin × to the header's corner and keep
+   the name clear of it. */
+@media (max-width: 640px) {
+    .fs .sheet-head { position: relative; padding-right: 52px; }
+    .fs .close { position: absolute; top: 10px; right: 12px; }
+}
+/* A phone on its side: ~390px tall. The 641–1000px tablet rule boxed the
+   sheet into ~330px with two inner scrollers, each showing a sideways bar.
+   Take the whole screen, one compact header row, columns that only scroll
+   down. */
+@media (max-height: 500px) and (orientation: landscape) {
+    .fs .overlay { padding: 0; place-items: stretch; }
+    .fs .sheet { width: 100vw; height: 100dvh; max-height: none; border-width: 0; }
+    .fs .rivet { display: none; }
+    .fs .sheet-head { padding: 8px 16px 6px; gap: 12px; align-items: center; }
+    .fs .sheet-head h1 { font-size: 20px; white-space: nowrap; }
+    .fs .sheet-body { padding-top: 8px; }
+    .fs .fighter, .fs .main { overflow-x: hidden; }
+    .fs .mini-stage { height: 120px; }
+}
+/* The battlefield page is viewport-fit=cover: a full-screen phone sheet keeps
+   its content inside the safe area (0 everywhere but a notched/rounded screen). */
+.fs .sheet { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }

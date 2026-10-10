@@ -78,38 +78,44 @@
                 {{-- The Profile pill opens the fighter sheet in place; there is no
                      separate profile page any more. A guest is sent to log in. --}}
                 @auth
-                    <button type="button" @click="$dispatch('open-fighter-sheet', { tab: 'profile' })" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
+                    <button type="button" aria-label="Profile" @click="$dispatch('open-fighter-sheet', { tab: 'profile' })" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
                         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
                     </svg>
-                        Profile
+                        <span class="bf-nav-label">Profile</span>
                     </button>
                 @else
-                    <a href="{{ route('slack.login') }}" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
+                    <a href="{{ route('slack.login') }}" aria-label="Profile" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
                         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
                     </svg>
-                        Profile
+                        <span class="bf-nav-label">Profile</span>
                     </a>
                 @endauth
                 <a
                     href="{{ route('filament.admin.pages.dashboard') }}"
+                    aria-label="Dashboard"
                     class="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300"
                 >
                     <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
                     </svg>
-                    Dashboard
+                    <span class="bf-nav-label">Dashboard</span>
                 </a>
             </nav>
             @endunless
-            <section class="bf-team" aria-label="Team damage">@include('livewire.battlefield.hud-team')</section>
             <section class="bf-plate" aria-label="Boss">@include('livewire.battlefield.hud-plate')</section>
-            <section class="bf-board" aria-label="Top damage" :class="{ open: boardOpen }">
-                {{-- portrait: the header is the sheet's handle; a real button so keyboards and screen readers can open it --}}
-                <button type="button" class="bf-board-handle" @click="toggleBoard()" :aria-expanded="boardOpen.toString()" aria-controls="bf-board-rows">TOP DAMAGE</button>
-                @include('livewire.battlefield.hud-board')
-            </section>
+            {{-- Team + board. On a desktop the wrapper adds no box (display: contents)
+                 and both stay grid panels; on a phone it is the stats sheet (portrait:
+                 a bottom sheet, on its side: the right column) — the handle opens it,
+                 and the team totals only show while it is open. --}}
+            <div id="bf-stats" class="bf-stats" :class="{ open: boardOpen }">
+                <button type="button" class="bf-stats-handle" @click="toggleBoard()" :aria-expanded="boardOpen.toString()" aria-controls="bf-stats">
+                    <span>TOP DAMAGE</span><span class="chev" aria-hidden="true"></span>
+                </button>
+                <section class="bf-team" aria-label="Team damage">@include('livewire.battlefield.hud-team')</section>
+                <section class="bf-board" aria-label="Top damage">@include('livewire.battlefield.hud-board')</section>
+            </div>
             <div class="bf-herald" aria-live="polite"><span :class="{on: herald}" x-text="herald?.text" :style="{'--hc': herald?.kind === 'kill' ? '#f87171' : '#fbbf24'}"></span></div>
             <section class="bf-feed" aria-live="polite">@include('livewire.battlefield.hud-feed')</section>
         </div>

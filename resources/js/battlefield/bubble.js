@@ -20,7 +20,7 @@ export class Bubble {
    * @return {boolean}
    */
   fightersAllowBubbles() {
-    return fighterDisplayConfig(this.scene.fighters.size, this.scene.mode).showHandle;
+    return fighterDisplayConfig(this.scene.fighters.size, this.scene.mode, this.scene.layout).showHandle;
   }
 
   /**

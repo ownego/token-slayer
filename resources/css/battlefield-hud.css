@@ -14,26 +14,37 @@
   --bf-gold: #fbbf24;
   --bf-px: 'Pixelify Sans', ui-monospace, monospace;
   --bf-sk: 'Silkscreen', ui-monospace, monospace;
+  /* Damage figures read as digits first, flavor second — Pixelify Sans
+     (--bf-px) blurs 3/6/8/9 apart at these small sizes because its pixel
+     grid carries thin sans-style curves. Press Start 2P (self-hosted via
+     vite.config.js's bunny() call, like Instrument Sans) stays in the same
+     pixel/arcade family but draws each glyph as simple, separated blocks
+     with no thin strokes, so digits stay legible at the same sizes. Used
+     only by the three damage-number spans (team totals, your damage, boss
+     HP), never names/labels/titles, which keep --bf-px. */
+  --bf-num: 'Press Start 2P', ui-monospace, monospace;
+  /* Press Start 2P is drawn on an 8px grid: only at multiples of 8 does each
+     glyph pixel land on whole screen pixels — at 9 or 11px they come out
+     uneven and soft, which is what the font was brought in to fix. Every
+     number reads its size from here; a HUD tier that zooms its panels
+     divides it back by that zoom (see the min-width tiers below). */
+  --bf-num-px: 8px;
 }
 
 .bf-hud { position: absolute; pointer-events: none; container: hud / size; }
-.bf-hud-in { position: absolute; inset: 0; display: grid; align-items: start; align-content: start; padding: 14px; row-gap: 8px; column-gap: 16px;
+.bf-hud-in { position: absolute; display: grid; align-items: start; align-content: start; padding: 14px; row-gap: 8px; column-gap: 16px;
   grid-template-columns: clamp(220px, 27cqw, 300px) minmax(0, 1fr) clamp(230px, 27cqw, 310px);
   grid-template-areas: "nav plate board" "team plate board" "feed herald board" ". . board"; }
 .bf-nav { grid-area: nav; }
 .bf-hud-in > * { pointer-events: auto; }
 .bf-team { grid-area: team; } .bf-feed { grid-area: feed; } .bf-board { grid-area: board; --row-h: 30px; }
 .bf-plate { grid-area: plate; justify-self: center; width: min(460px, 100%); position: relative; } .bf-herald { grid-area: herald; justify-self: center; }
-@container hud (max-aspect-ratio: 1/1) {
-  .bf-hud-in { grid-template-columns: minmax(0, 1fr); grid-template-areas: "nav" "plate" "team" "herald" "feed"; padding: 8px; row-gap: 6px; }
-  .bf-board { position: absolute; left: 0; right: 0; bottom: 0; max-height: 78px; overflow: hidden; transition: max-height .3s cubic-bezier(.2,.8,.2,1); }
-  .bf-board.open { max-height: 260px; }
-  .bf-board:not(.open) li:not([data-rank="1"]), .bf-board:not(.open) .more { visibility: hidden; }
-}
-@container hud (min-aspect-ratio: 1/1) and (max-height: 440px) {
-  .bf-hud-in { padding: 6px; row-gap: 4px; column-gap: 8px; grid-template-columns: clamp(150px, 24cqw, 220px) minmax(0, 1fr) clamp(160px, 25cqw, 230px); }
-  .bf-board { --row-h: 22px; } .bf-board li[data-rank="4"], .bf-board li[data-rank="5"], .bf-board .more { display: none; }
-}
+/* Team + board share a wrapper that adds no box here (display: contents): both
+   stay grid panels. On a phone it becomes the stats sheet (see the phone
+   blocks at the end of this file). */
+.bf-stats { display: contents; }
+.bf-stats > section { pointer-events: auto; }
+.bf-stats-handle { display: none; }
 
 /* ---------- panel visuals (ported from the mockup's .team block) ---------- */
 .bf-team { padding: 10px 12px 10px; background: var(--bf-panel); border: 1px solid var(--bf-line); }
@@ -41,7 +52,7 @@
 .bf-team .t-title i { font-style: normal; color: #4ade80; }
 .bf-team .t-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
 .bf-team .t-stat span { display: block; font: 10px var(--bf-sk); color: var(--bf-dim); }
-.bf-team .t-stat b { font: 700 19px var(--bf-px); color: #fff; font-variant-numeric: tabular-nums; }
+.bf-team .t-stat b { font: 700 var(--bf-num-px) var(--bf-num); color: #fff; font-variant-numeric: tabular-nums; }
 .bf-team .t-stat.today b { color: #7dd3fc; }
 .bf-team .t-stat.flash b { animation: bf-flash .5s ease-out; }
 @keyframes bf-flash { 0% { color: #fff; text-shadow: 0 0 10px #fde68a; } }
@@ -50,7 +61,7 @@
 .bf-team .me .av { position: relative; overflow: hidden; }
 .bf-team .me .av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .bf-team .me .me-l { font: 10px var(--bf-sk); color: var(--bf-gold); }
-.bf-team .me .me-v { font: 700 15px var(--bf-px); color: #fff; font-variant-numeric: tabular-nums; }
+.bf-team .me .me-v { font: 700 var(--bf-num-px) var(--bf-num); color: #fff; font-variant-numeric: tabular-nums; }
 .bf-team .me .me-v small { font: 12px ui-sans-serif, system-ui; color: var(--bf-dim); margin-left: 4px; }
 .bf-team .me .me-r { text-align: right; font: 700 17px var(--bf-px); color: var(--bf-gold); }
 .bf-team .me .me-r small { display: block; font: 10px var(--bf-sk); color: var(--bf-dim); }
@@ -63,9 +74,11 @@
 .bf-plate .hpbar .lag { position: absolute; inset: 0 auto 0 0; background: #fde68a; opacity: .55; transition: width .7s ease-in .15s; }
 .bf-plate .hpbar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(0,0,0,.55) calc(10% - 1px) 10%); }
 .bf-plate .hpbar .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fbbf24; z-index: 2; }
-.bf-plate .hpbar .hp-t { position: absolute; right: 6px; top: 50%; translate: 0 -50%; z-index: 3; font: 700 12px var(--bf-px); color: #fff; text-shadow: 0 1px 0 #000, 0 0 4px #000; font-variant-numeric: tabular-nums; }
+.bf-plate .hpbar .hp-t { position: absolute; right: 6px; top: 50%; translate: 0 -50%; z-index: 3; font-variant-numeric: tabular-nums; }
 .bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fb923c, #c2410c); }
+.bf-plate.enraged .hpbar .hp-t { color: #fdba74; }
 .bf-plate.finish .hpbar .fill { animation: bf-finish .5s steps(2) infinite; }
+.bf-plate.finish .hpbar .hp-t { color: #fca5a5; animation: bf-blink 1s steps(2) infinite; }
 .bf-plate .finish-chip { display: none; margin-top: 4px; font: 11px var(--bf-sk); color: #fca5a5; letter-spacing: .08em; }
 .bf-plate.finish .finish-chip { display: inline-block; animation: bf-blink 1s steps(2) infinite; }
 @keyframes bf-finish { 50% { filter: brightness(1.6); } }
@@ -87,13 +100,11 @@
 .bf-board li .nm span { display: block; font: 500 13px var(--bf-px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bf-board li .nm i { display: block; height: 3px; margin-top: 2px; background: #1a2440; }
 .bf-board li .nm i em { display: block; height: 100%; transition: width .35s ease-out; }
-.bf-board li .dm { font: 700 14px var(--bf-px); color: #7dd3fc; font-variant-numeric: tabular-nums; }
+.bf-board li .dm { font: 700 var(--bf-num-px) var(--bf-num); color: #7dd3fc; font-variant-numeric: tabular-nums; }
 .bf-board li[data-rank="1"] { color: #fde68a; } .bf-board li[data-rank="2"] { color: #e5e7eb; } .bf-board li[data-rank="3"] { color: #fdba74; }
 .bf-board li.you { background: linear-gradient(90deg, rgba(251,191,36,.14), transparent); box-shadow: inset 2px 0 0 #fbbf24; }
 .bf-board li.you .nm span { color: #fde68a; }
 .bf-board .more { font: 11px var(--bf-sk); color: var(--bf-dim); padding: 4px 0 0 33px; }
-.bf-board-handle { display: none; width: 100%; background: transparent; border: 0; color: var(--bf-dim); font: 12px var(--bf-sk); letter-spacing: .06em; text-align: center; padding: 0 0 5px; cursor: pointer; }
-@container hud (max-aspect-ratio: 1/1) { .bf-board-handle { display: block; } }
 
 /* ---------- rank effects (Task 17: style B always on; Pulse + Overtake always on) ---------- */
 .bf-board li[data-rank="1"] { background: linear-gradient(100deg, transparent 35%, rgba(251,191,36,.22) 50%, transparent 65%) no-repeat, linear-gradient(90deg, rgba(251,191,36,.12), transparent 70%); background-size: 260% 100%, 100% 100%; animation: bf-shine 3.2s ease-in-out infinite; box-shadow: inset 2px 0 0 #fbbf24; }
@@ -168,18 +179,20 @@
 @container hud (min-width: 1600px) and (min-aspect-ratio: 1/1) {
   .bf-hud-in { grid-template-columns: clamp(220px, 27cqw, 360px) minmax(0, 1fr) clamp(230px, 27cqw, 372px); }
   .bf-hud-in > * { zoom: 1.2; }
+  .bf-hud-in { --bf-num-px: calc(8px / 1.2); }
 }
 @container hud (min-width: 2200px) and (min-aspect-ratio: 1/1) {
   .bf-hud-in { grid-template-columns: clamp(220px, 27cqw, 420px) minmax(0, 1fr) clamp(230px, 27cqw, 434px); }
   .bf-hud-in > * { zoom: 1.4; }
+  .bf-hud-in { --bf-num-px: calc(16px / 1.4); }
 }
 
 /* ---- Load intro: the HUD waits for the field, then slides in panel by panel
    (hud/reveal.js sets .ready and each panel's --i once the scene exists). ---- */
-.bf-hud:not(.ready) .bf-hud-in > * { opacity: 0; }
-.bf-hud.ready .bf-hud-in > * { animation: bf-hud-in .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 90ms); }
+.bf-hud:not(.ready) .bf-hud-in > *, .bf-hud:not(.ready) .bf-stats > section { opacity: 0; }
+.bf-hud.ready .bf-hud-in > *, .bf-hud.ready .bf-stats > section { animation: bf-hud-in .5s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 90ms); }
 @keyframes bf-hud-in { from { opacity: 0; translate: 0 -10px; } to { opacity: 1; translate: 0 0; } }
-@media (prefers-reduced-motion: reduce) { .bf-hud.ready .bf-hud-in > * { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .bf-hud.ready .bf-hud-in > *, .bf-hud.ready .bf-stats > section { animation: none; } }
 
 /* ---- A clearer HP bar: taller, bevelled, a crisper three-stop fill with a
    lit top edge, darker segment ticks, and an outlined reading. ---- */
@@ -190,7 +203,7 @@
 .bf-plate .hpbar .lag { background: linear-gradient(180deg, #fff7d6, #fde68a); opacity: .7; }
 .bf-plate .hpbar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), rgba(0,0,0,.6) calc(10% - 2px) 10%); }
 .bf-plate.enraged .hpbar .fill { background: linear-gradient(180deg, #fdba74 0%, #f97316 25%, #c2410c 72%, #7c2d12 100%); }
-.bf-plate .hpbar .hp-t { font-size: 13px; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; }
+.bf-plate .hpbar .hp-t { font: 700 var(--bf-num-px) var(--bf-num); color: #fff; letter-spacing: .02em; text-shadow: -1px 0 0 #000, 1px 0 0 #000, 0 -1px 0 #000, 0 1px 0 #000, 0 0 6px #000; transition: color .2s ease; }
 
 /* ThaNode's Infinity Stone sockets: a row appended under the HP bar by
    resources/js/battlefield/boss/scripts/thanos.js (absent for every other boss).
@@ -214,3 +227,88 @@
 .bf-stone-flight { position: fixed; left: 0; top: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px; z-index: 60; pointer-events: none; background: var(--stone); box-shadow: 0 0 14px 5px var(--stone), inset 0 0 3px #fff; }
 .bf-stone-pulse { position: absolute; inset: 0; pointer-events: none; opacity: 0; box-shadow: inset 0 0 90px 24px color-mix(in srgb, var(--stone), transparent 35%); }
 @media (prefers-reduced-motion: reduce) { .bf-plate .bf-stones .stone.pop, .bf-plate .bf-stones .stone.pop::after, .bf-plate .bf-stones.full .stone.on { animation: none; } }
+
+/* ---- Phones. Only the boss plate stays up top: the nav shrinks to a column
+   of icon buttons beside it, and team + board move into the stats sheet,
+   opened from its handle — a bottom sheet in portrait (its peek shows the
+   leader), the right column on a phone on its side (its peek shows the top
+   three). The team totals only show while the sheet is open. ---- */
+@container hud (max-aspect-ratio: 1/1) {
+  .bf-hud-in { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "nav plate" "herald herald" "feed feed"; padding: 8px; row-gap: 6px; column-gap: 8px; }
+  .bf-plate { width: 100%; }
+  .bf-stats { display: flex; flex-direction: column; position: absolute; left: 0; right: 0; bottom: 0; max-height: 84px; overflow: hidden;
+    background: rgba(9, 15, 30, .96); border-top: 1px solid var(--bf-line); pointer-events: auto; transition: max-height .3s cubic-bezier(.2,.8,.2,1); }
+  .bf-stats.open { max-height: min(72cqh, 560px); overflow-y: auto; }
+  .bf-stats:not(.open) .bf-team { display: none; }
+  .bf-stats:not(.open) .bf-board li:not([data-rank="1"]), .bf-stats:not(.open) .bf-board .more { visibility: hidden; }
+  .bf-stats > .bf-team, .bf-stats > .bf-board { background: transparent; border: 0; flex-shrink: 0; }
+  .bf-stats > .bf-team { border-bottom: 1px dashed var(--bf-line); }
+  .bf-stats-handle { display: flex; justify-content: center; }
+  .bf-board .tp-title { display: none; }
+}
+@container hud (min-aspect-ratio: 1/1) and (max-height: 440px) {
+  .bf-hud-in { padding: 6px; row-gap: 4px; column-gap: 8px; grid-template-columns: auto minmax(0, 1fr) clamp(170px, 26cqw, 240px);
+    grid-template-areas: "nav plate stats" "nav herald stats" "feed feed stats"; }
+  .bf-stats { display: flex; flex-direction: column; grid-area: stats; align-self: start; max-height: calc(100cqh - 12px); overflow-y: auto;
+    background: var(--bf-panel); border: 1px solid var(--bf-line); pointer-events: auto; }
+  .bf-stats:not(.open) .bf-team { display: none; }
+  .bf-stats > .bf-team, .bf-stats > .bf-board { background: transparent; border: 0; flex-shrink: 0; }
+  .bf-stats > .bf-team { border-bottom: 1px dashed var(--bf-line); }
+  .bf-stats-handle { display: flex; justify-content: space-between; }
+  .bf-board { --row-h: 22px; padding-top: 2px; }
+  .bf-board .tp-title { display: none; }
+  .bf-board li[data-rank="4"], .bf-board li[data-rank="5"], .bf-board .more { display: none; }
+  .bf-stats.open .bf-board li[data-rank="4"], .bf-stats.open .bf-board li[data-rank="5"] { display: grid; }
+  .bf-team { padding: 7px 9px 8px; }
+  .bf-team .t-title { font-size: 10px; }
+  .bf-team .t-row { gap: 2px; }
+  .bf-team .t-stat span { font-size: 8px; white-space: nowrap; }
+  /* the numbers themselves keep --bf-num-px: Press Start 2P on its 8px grid */
+  .bf-team .me { margin-top: 6px; padding-top: 6px; gap: 6px; grid-template-columns: 22px 1fr auto; }
+  .bf-team .me .av { width: 22px; height: 22px; }
+  .bf-team .me .me-l { font-size: 8px; }
+  .bf-team .me .me-r { font-size: 14px; }
+}
+/* both phone tiers: icon-only nav, a column of 36px tap targets */
+@container hud (max-aspect-ratio: 1/1) {
+  .bf-nav { flex-direction: column; align-self: start; }
+  .bf-nav-label { display: none; }
+  .bf-nav a, .bf-nav button { width: 36px; height: 36px; justify-content: center; padding: 0; }
+}
+@container hud (min-aspect-ratio: 1/1) and (max-height: 440px) {
+  .bf-nav { flex-direction: column; align-self: start; }
+  .bf-nav-label { display: none; }
+  .bf-nav a, .bf-nav button { width: 36px; height: 36px; justify-content: center; padding: 0; }
+}
+/* the stats sheet's handle: its title and an open/close chevron */
+.bf-stats-handle { width: 100%; align-items: center; gap: 8px; padding: 8px 12px 4px; background: transparent; border: 0; cursor: pointer;
+  color: var(--bf-dim); font: 12px var(--bf-sk); letter-spacing: .06em; }
+.bf-stats-handle .chev { width: 8px; height: 8px; border-right: 2px solid currentColor; border-top: 2px solid currentColor; rotate: -45deg; translate: 0 2px; transition: rotate .2s ease; }
+.bf-stats.open .bf-stats-handle .chev { rotate: 135deg; translate: 0 -2px; }
+.bf-stats-handle:hover, .bf-stats-handle:focus-visible { color: var(--bf-text); outline: none; }
+/* A portrait tablet (≥640px wide): beside a 460px plate there is ~240px of
+   sky to the right, so team and board stay on screen in a right column, as
+   on a desktop, and no sheet is needed. */
+@container hud (max-aspect-ratio: 1/1) and (min-width: 640px) {
+  .bf-hud-in { grid-template-columns: auto minmax(0, 1fr) clamp(200px, 32cqw, 280px);
+    grid-template-areas: "nav plate team" "nav herald board" "feed feed board"; padding: 10px; column-gap: 10px; }
+  .bf-stats { display: contents; }
+  .bf-stats-handle { display: none; }
+  .bf-stats:not(.open) .bf-team { display: block; }
+  .bf-stats > .bf-team, .bf-stats > .bf-board { background: var(--bf-panel); border: 1px solid var(--bf-line); }
+  .bf-stats > .bf-team { border-bottom: 1px solid var(--bf-line); }
+  .bf-stats:not(.open) .bf-board li:not([data-rank="1"]), .bf-stats:not(.open) .bf-board .more { visibility: visible; }
+  .bf-board .tp-title { display: flex; }
+  .bf-board { --row-h: 26px; }
+}
+
+/* ---- A full-screen game on a touch screen (iOS Safari especially): the page
+   never pans, rubber-bands or zooms (pan-x pan-y: no double-tap or pinch
+   zoom, lists still scroll), and the arena
+   takes every touch for itself. The HUD stays inside the safe area — the
+   battlefield page uses viewport-fit=cover, so the canvas runs under a
+   notch and round corners while the panels must not. ---- */
+html, body { overflow: hidden; overscroll-behavior: none; }
+html { touch-action: pan-x pan-y; }
+#battlefield-mount { touch-action: none; }
+.bf-hud-in { inset: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }

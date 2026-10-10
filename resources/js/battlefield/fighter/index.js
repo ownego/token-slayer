@@ -164,7 +164,7 @@ export class Fighter {
    */
   seedInitial(state) {
     const L = this.scene.layout;
-    const config = fighterDisplayConfig(state.fighters.length, this.scene.mode);
+    const config = fighterDisplayConfig(state.fighters.length, this.scene.mode, this.scene.layout);
     // Grid slots are only for fighters without a saved custom position —
     // sizing this array against the total fighter count and consuming one
     // slot per fighter regardless left the grid ones scattered across gaps
@@ -234,7 +234,7 @@ export class Fighter {
     };
 
     const count = this.scene.fighters.size + 1;
-    const config = fighterDisplayConfig(count, this.scene.mode);
+    const config = fighterDisplayConfig(count, this.scene.mode, this.scene.layout);
     // Only fighters without a custom position occupy a grid slot — see
     // relayoutFighters() for why sizing this array against the total count
     // (including custom-positioned fighters) leaves the grid ones scattered
@@ -1140,7 +1140,7 @@ export class Fighter {
     if (count === 0) {
       return;
     }
-    const config = fighterDisplayConfig(count, this.scene.mode);
+    const config = fighterDisplayConfig(count, this.scene.mode, this.scene.layout);
     // Grid slots are only for fighters without a custom (persisted or
     // click-to-moved) position — sizing a `count`-length grid and then
     // skipping some of it for custom-positioned fighters left the grid ones

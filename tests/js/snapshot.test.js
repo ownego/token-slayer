@@ -68,11 +68,11 @@ test('falls back to currentState.currentUserId when scene has none', () => {
   expect(next.currentUserId).toBe(99);
 });
 
-test('normalizes fighter pos to layout dimensions', () => {
+test('normalizes a placed fighter\'s pos to layout dimensions', () => {
   const scene = fakeScene({
     layout: { logicalWidth: 800, logicalHeight: 400 },
     fighters: new Map([
-      [7, { id: 7, handleText: 'alice', avatarUrl: '/avatars/7', ftype: { key: 'ninjagirl' }, pos: { x: 400, y: 200 } }],
+      [7, { id: 7, handleText: 'alice', avatarUrl: '/avatars/7', ftype: { key: 'ninjagirl' }, pos: { x: 400, y: 200 }, hasCustomPosition: true }],
     ]),
   });
 
@@ -155,4 +155,17 @@ test('agentCount defaults to 0 when the scene has no minions manager at all', ()
 test('the sky site survives a snapshot (scene restarts on rotate)', () => {
   const state = { sky: { lat: 21.03, lon: 105.85 } };
   expect(snapshotState(state, fakeScene()).sky).toEqual({ lat: 21.03, lon: 105.85 });
+});
+
+test('a fighter still on its grid slot snapshots no position, so the next layout re-grids it instead of pinning it', () => {
+  const scene = fakeScene({
+    layout: { logicalWidth: 800, logicalHeight: 400 },
+    fighters: new Map([
+      [7, { id: 7, handleText: 'alice', avatarUrl: '/avatars/7', ftype: { key: 'ninjagirl' }, pos: { x: 400, y: 200 }, hasCustomPosition: false }],
+    ]),
+  });
+
+  const next = snapshotState({}, scene);
+
+  expect(next.fighters[0].position).toBeNull();
 });

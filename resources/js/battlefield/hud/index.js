@@ -139,9 +139,9 @@ export function battlefieldHud() {
     allTime: 0,
     board: new Map(),
     currentUserId: null,
-    // Portrait: the TOP DAMAGE board collapses to its #1 row behind a
-    // bottom sheet until the handle button is tapped (see the
-    // `.bf-board`/`.bf-board.open` rules in battlefield-hud.css).
+    // Phones: team + board live in the stats sheet (`.bf-stats`), collapsed
+    // to a peek of the board until its handle is tapped (see the phone
+    // blocks at the end of battlefield-hud.css).
     boardOpen: false,
     // A big-event strip shown under the boss plate ({text, kind}); wiring
     // to real events lands with the feed in a later task.
@@ -230,9 +230,11 @@ export function battlefieldHud() {
       if (!setHudZones) {
         return;
       }
-      const rects = ['.bf-nav', '.bf-team', '.bf-plate', '.bf-board', '.bf-herald']
+      // .bf-stats is the phone stats sheet (no box on a desktop); a collapsed
+      // sheet hides .bf-team — zero-size rects are dropped
+      const rects = ['.bf-nav', '.bf-team', '.bf-plate', '.bf-board', '.bf-stats', '.bf-herald']
         .map(sel => document.querySelector(sel)?.getBoundingClientRect())
-        .filter(Boolean);
+        .filter(r => r && r.width > 0 && r.height > 0);
       setHudZones(rects);
     },
 
@@ -291,9 +293,9 @@ export function battlefieldHud() {
 
     toggleBoard() {
       this.boardOpen = !this.boardOpen;
-      // .open changes the board's own footprint (portrait: collapsed sheet
-      // vs. full list) — push the new rect right away rather than waiting
-      // for the next 500ms tick.
+      // .open changes the phone stats sheet's footprint (collapsed peek vs.
+      // team + full board) — push the new rects right away rather than
+      // waiting for the next 500ms tick.
       this._pushZones();
     },
 

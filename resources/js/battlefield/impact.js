@@ -39,8 +39,9 @@ export class Impact {
     // burst of hits used to create/destroy one Phaser Text every time.
     this.damagePool = createTextPool(() => scene.addSharpText(0, 0, '', {
       fontFamily: 'monospace',
+      fontStyle: 'bold',
       fontSize: '20px',
-    }).setVisible(false));
+    }, 3).setVisible(false));
     // One retargeted tween drives the HP bar/text — see hp-counter.js's own
     // docblock for why a burst of hits must never stack more than one.
     this.hp = createHpCounter({
@@ -171,7 +172,7 @@ export class Impact {
     popup
       .setText(`-${damage.toLocaleString()}`)
       .setColor(isYou ? '#fbbf24' : '#fca5a5')
-      .setStroke(isYou ? '#78350f' : '#7f1d1d', isYou ? 6 : 5)
+      .setStroke(isYou ? '#78350f' : '#7f1d1d', isYou ? 7 : 6)
       .setScale(isYou ? 1.3 : 1)
       .setPosition(startX, startY)
       .setAlpha(1)

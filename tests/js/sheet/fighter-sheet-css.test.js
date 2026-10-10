@@ -83,3 +83,48 @@ test('the Clawd loader bounces and leaps by transform only, so it stays smooth',
   expect(bad).toEqual([]);
   expect(leap).toMatch(/^transform /);
 });
+
+/** The last value a `.fs …` selector gets for a prop inside @media blocks whose params match. */
+function mediaDecl(params, selector, prop) {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  let value = null;
+  root.walkAtRules('media', at => {
+    if (!params.test(at.params)) {
+      return;
+    }
+    at.walkRules(rule => {
+      if (rule.selectors.includes(selector)) {
+        rule.walkDecls(prop, d => { value = d.value; });
+      }
+    });
+  });
+
+  return value;
+}
+
+test('on a phone the close button pins to the header corner instead of wrapping onto a row of its own', () => {
+  expect(mediaDecl(/max-width: 640px/, '.fs .close', 'position')).toBe('absolute');
+  expect(mediaDecl(/max-width: 640px/, '.fs .sheet-head', 'position')).toBe('relative');
+});
+
+test('a phone on its side gets the whole screen, not a 330px-tall box with two scrollbars', () => {
+  const shortLandscape = /max-height: 500px/;
+
+  expect(mediaDecl(shortLandscape, '.fs .sheet', 'height')).toBe('100dvh');
+  expect(mediaDecl(shortLandscape, '.fs .sheet', 'width')).toBe('100vw');
+  expect(mediaDecl(shortLandscape, '.fs .main', 'overflow-x')).toBe('hidden');
+});
+
+test('the full-screen phone sheet keeps its content clear of the notch and rounded corners', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  let padding = '';
+  root.walkRules(rule => {
+    if (rule.parent.type === 'root' && rule.selectors.includes('.fs .sheet')) {
+      rule.walkDecls('padding', d => { padding = d.value; });
+    }
+  });
+
+  for (const side of ['top', 'right', 'bottom', 'left']) {
+    expect(padding).toContain(`env(safe-area-inset-${side})`);
+  }
+});

@@ -59,8 +59,6 @@ class Account extends Model
      * relation after the parent account saves — Eloquent does not cascade-save
      * `HasOne` relations on its own, so the accessor proxies below rely on
      * this hook to actually reach the database.
-     *
-     * @return void
      */
     protected static function booted(): void
     {
@@ -78,6 +76,19 @@ class Account extends Model
                 $account->claudeCredential->save();
             }
         });
+    }
+
+    /**
+     * Short label for display: the admin-set name, or the email while the
+     * name is blank or still Anthropic's default "<email>'s Organization".
+     */
+    public function displayName(): string
+    {
+        if (blank($this->name) || $this->name === "{$this->email}'s Organization") {
+            return $this->email;
+        }
+
+        return $this->name;
     }
 
     /**
@@ -125,6 +136,17 @@ class Account extends Model
     public function provisionedGrants(): HasMany
     {
         return $this->hasMany(AccountProvisionedGrant::class);
+    }
+
+    /**
+     * Claude tokens minted ahead of time for this account, not yet handed to
+     * a device — see {@see AccountReserveToken}.
+     *
+     * @return HasMany<AccountReserveToken, $this>
+     */
+    public function reserveTokens(): HasMany
+    {
+        return $this->hasMany(AccountReserveToken::class);
     }
 
     /**
@@ -254,8 +276,6 @@ class Account extends Model
      * instance the first time a write touches a credential-less account,
      * so several accessor writes in the same request land on one in-memory
      * row instead of each silently creating and discarding its own.
-     *
-     * @return ClaudeCredential
      */
     private function claudeCredentialForWrite(): ClaudeCredential
     {

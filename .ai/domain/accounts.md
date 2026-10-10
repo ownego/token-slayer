@@ -14,6 +14,7 @@ An **Account** is one org-owned AI subscription, identified by its login email a
 | `account_user` | Pivot with `status` (`MembershipStatus`) |
 | `devices` | A user's machines (`device_id` fingerprint; `'default'` for the legacy CLI) |
 | `account_provisioned_grants` | Per (account, device) grant: `status` (`GrantStatus` pending/claimed/revoked), `provisioned_at`/`claimed_at`/`revoked_at`/`deprovisioned_at`, session expiry, and the encrypted pending secret |
+| `account_reserve_tokens` (`Account::reserveTokens()`) | Claude tokens an admin minted ahead of time, not yet on any device: encrypted `access_token`/`refresh_token`, `access_expires_at`, `session_expires_at` (+ `_estimated`), `created_by`, `used_at`/`used_grant_id`, `discarded_at`. Rows are never deleted |
 | `account_usage_snapshots` | Append-only probe results (5h/7d utilization in percent 0–100, resets, raw JSON) |
 | `rebalance_plans` | Adopted rebalance plans |
 | `events.account_id` / `account_email` / `account_source` / `account_org_id` | Per-event attribution (written once at ingest) |
@@ -56,6 +57,20 @@ Server side, `AccountResolver::resolve($orgId, $email, $provider)`:
 Provisioning is part of the Members tab's **Add member** action. A *provision* toggle (default on for Claude, absent for Codex) runs the code-paste flow on the user's behalf. It stores the grant against one of the user's `devices` and writes the pivot as `pending`. With the toggle off, it just adds a `tracked` membership. Codex device grants come from the CLI (`token-slayer admin codex-provision` → `POST /api/admin/codex/provision`), and the modal shows that command.
 
 **The grant's raw secret lives on `account_provisioned_grants` itself** (`pending_claude_access_token`/`pending_claude_refresh_token`/`pending_claude_expires_at`, or `pending_codex_auth_json`, all `encrypted` casts), **not in a cache with a TTL**. The 2026-09-08 fix moved it there after TTL expiry lost real, unclaimed production grants. The secret lives until it is confirmed (`clearPendingSecret()` in `confirmSetup()`) or revoked, never on a clock.
+
+**Issuing a grant.** `AccountProvisioningService::issueGrant()` is the one place a Claude grant row is created. It revokes every live grant on the same (account, device) — one live grant per device, which is also what makes Reissue work — stores the secret, and upserts the membership to `tracked`. Two callers feed it a token:
+- `provisionForDevice()`: exchanges a pasted PKCE code (`AccountConnectService::exchangeVerifiedToken()`, identity-checked against the account).
+- `provisionFromReserve()`: takes a **reserve token** instead. It `lockForUpdate()`s the reserve row inside one transaction and throws `ReserveTokenUnavailableException` if the token is used, discarded, expired or belongs to another account, so two admins can never hand out the same token. The grant keeps the token's remaining session life (`session_expires_at` and its estimated flag are copied, not reset). The access token may already be past its ~8 h life; the CLI refreshes it on pull, so it is stored as-is.
+
+**Reserve token pool.** The account's **Reserve** tab (`ReserveTokensRelationManager`, Claude only; tab badge = available count) mints tokens with `ReserveTokenService::mint()` (authorize URL + paste once; the code must authorize this account). The session deadline comes from the exchange's `refresh_token_expires_in`; when Anthropic omits it, `GrantSessionExpiryBackfiller::TYPICAL_SESSION_LIFETIME_SECONDS` is used and flagged estimated. *Available* = not used, not discarded, `session_expires_at` in the future (`AccountReserveToken::scopeAvailable()`, soonest first). Discard only hides a token from the pool — it stays valid at Anthropic until it expires.
+
+**Where an admin hands a token out.** Every modal that gives a device a Claude grant shows the same `Paste code | From reserve (n)` switch (`App\Filament\Actions\TokenSourceFields`): reserve preselected on its soonest-expiring token when the pool has any, paste code otherwise. It is a `ToggleButtons` field, not Filament `Tabs`, because the submit must say which source was chosen. Surfaces:
+- Members tab → **Add member** (`confirmProvisionMember`).
+- Members tab → **Devices** modal: every live (pending or claimed) grant of the account's Tracked/Pending members (`AccountDevicesQuery`; overdue first, not-yet-set-up last, Untracked members' devices hidden), with a per-row Reissue registered via `registerModalActions()` — pending rows too.
+- Provisions tab → row **Reissue**.
+- *Expiring* page: one section per account — the account's own credential with Reconnect (Claude) / Refresh now (Codex), and its due member devices with Reissue. **Show all** (`?all=1`, a switch) only adds to what is due: every non-disabled Claude account and every live (Pending or Claimed, badged) device of its Tracked/Pending members (`ExpiringAccountsQuery::grouped()`); the sidebar badge still counts only `get()`.
+
+The three Reissue surfaces share the `ReissuesGrants` trait (`reissueGrant` → `confirmReissue`), which authorizes `Update:Account` — the Expiring page itself only needs `view_usage_analytics`, so the check lives on the action. Session deadlines are always shown through `App\Support\DaysLeft` (`5d left` / `today` / `2d overdue`, `~` when estimated).
 
 The user's machine completes the handoff:
 1. `token-slayer setup` → `GET /api/provisioned` (`hook.token`). `AccountProvisioningService::claim($user, $fingerprint)` uses `DeviceClaimResolver` to pick the device (a null fingerprint may only speak for `'default'`) and returns each grant's secret. It is shared across both providers, since one device can hold both.
@@ -115,3 +130,4 @@ Pipeline: `FleetSnapshot` (one coherent `FleetReading` of who is where, capacity
 - Deleting an account nulls `events.account_id`; the raw email/org id survive for re-attribution.
 - Account stats are keyed by `events.account_id`, so a user active in two accounts contributes to each correctly.
 - Client input never creates an Account, and never promotes a membership without a live grant.
+- A reserve token becomes at most one grant: it is consumed under a row lock in the same transaction that creates the grant.
