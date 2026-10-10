@@ -142,4 +142,59 @@ return [
         'lon' => (float) env('TOKEN_SLAYER_SKY_LON', 105.85),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Custom character pose sheet limits
+    |--------------------------------------------------------------------------
+    |
+    | What an uploaded pose sheet may look like before we spend any time on it.
+    | max_pixels bounds the decoded bitmap (a tiny PNG can still expand to
+    | gigabytes), so it is checked from the header before decoding.
+    |
+    */
+
+    'custom_character' => [
+        'max_bytes' => 4 * 1024 * 1024,
+        'min_side' => 512,
+        'max_side' => 4096,
+        'max_pixels' => 16_000_000,
+        // Uploads a user may attempt per hour; building a sheet costs about a second of CPU.
+        'uploads_per_hour' => 10,
+        // Bump when the sheet layout or the prompt below changes in a way that invalidates sheets made with the old one.
+        'prompt_version' => 1,
+        // The prompt users paste into an image AI, together with a picture of their character.
+        'prompt' => <<<'PROMPT'
+This is my original character. Redraw the SAME character (same face, head shape, fur/skin/hair colors, body proportions, and signature features such as glasses, ears, tail or hairstyle) as a medieval fantasy adventurer in the style of a classic 16-bit pixel-art RPG.
+
+COSTUME (required): replace ALL modern clothing and accessories with medieval fantasy gear: a leather-and-cloth tunic, a small metal pauldron or bracer, a belt, boots and a short cape or scarf, and a short sword in the hand. If the character has a signature item (such as glasses or a hat), keep it but make it fit the fantasy look. No modern items (no phones, logos, text, sneakers, hoodies, jeans, suits).
+
+COLORS: muted, slightly desaturated medieval palette (earthy browns, dull steel greys, deep reds, forest greens). Keep the character's own main colors recognisable but toned down. Thick dark outline, flat shading with at most 2 tones per color, no gradients, no glow, no shadows, no motion lines, no impact effects, no text.
+
+OUTPUT: ONE image on a flat solid magenta (#FF00FF) background, no grid lines, no borders. 4 rows, all poses the same size, feet on the same baseline within a row, character facing RIGHT, with clear empty space between poses:
+- Row 1: idle, standing, 4 poses.
+- Row 2: walk cycle, pure side profile, exactly 4 poses.
+- Row 3: sword slash attack, exactly 3 poses (wind up, strike, follow through).
+- Row 4: defeated, exactly 3 poses, eyes closed, falling then lying on the ground.
+PROMPT,
+        // Height in px the idle/walk poses are shrunk to, before the outline is added.
+        'sprite_height' => 28,
+        // Colours shared by every pose after quantising.
+        'palette_colors' => 24,
+        'outline_color' => '#16121f',
+        // How far an idle/walk pose's height may stray from the median, as a fraction of it.
+        'size_tolerance' => 0.3,
+        // A detached ink blob smaller than this share of its pose's ink is a stray mark (motion lines, sparks).
+        'stray_ratio' => 0.03,
+        // Multipliers pulling an uploaded character's colours toward the roster's muted look.
+        'tone_saturation' => 0.85,
+        'tone_lightness' => 0.95,
+        // Rows top to bottom, each with the pose count it must have.
+        'rows' => [
+            ['name' => 'idle', 'min' => 2, 'max' => 4],
+            ['name' => 'walk', 'min' => 4, 'max' => 4],
+            ['name' => 'attack', 'min' => 3, 'max' => 3],
+            ['name' => 'death', 'min' => 3, 'max' => 3],
+        ],
+    ],
+
 ];

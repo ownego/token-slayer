@@ -99,4 +99,6 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/avatars/{user}', AvatarProxyController::class)->name('avatar');
 
     Route::get('/history', [HistoryController::class, 'index'])->name('history');
+
+    Route::get('/character', fn () => view('custom-character'))->name('custom-character');
 });

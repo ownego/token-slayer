@@ -228,3 +228,100 @@ function fakeRedis(array &$store): void
         return $store[$key] ?? [];
     });
 }
+
+/**
+ * Draws a synthetic pose sheet: one solid block per pose, laid out in rows on
+ * a flat background. Each cell is `$cell` px square and its block is 75% of
+ * the cell wide by 70% tall, centred, so with the default cell of 150 the
+ * first block sits at x 19..130, y 22..126 (rows step by `$cell`).
+ *
+ * @param  array<int, int>  $poseCounts  poses per row, top to bottom
+ * @param  string  $background  'magenta', 'transparent' or 'white'
+ * @param  int  $cell  cell size in px
+ * @param  bool  $speckles  scatter single stray pixels in the gaps between rows and poses
+ * @return GdImage the drawn sheet
+ */
+function poseSheetImage(array $poseCounts = [4, 4, 3, 3], string $background = 'magenta', int $cell = 150, bool $speckles = false): GdImage
+{
+    $image = imagecreatetruecolor(max($poseCounts) * $cell, count($poseCounts) * $cell);
+    imagealphablending($image, false);
+    imagesavealpha($image, true);
+
+    imagefill($image, 0, 0, match ($background) {
+        'magenta' => imagecolorallocate($image, 255, 0, 255),
+        'white' => imagecolorallocate($image, 255, 255, 255),
+        'transparent' => imagecolorallocatealpha($image, 0, 0, 0, 127),
+    });
+
+    $ink = imagecolorallocate($image, 120, 60, 20);
+    $poseWidth = (int) ($cell * 0.75);
+    $poseHeight = (int) ($cell * 0.7);
+
+    foreach ($poseCounts as $row => $count) {
+        for ($column = 0; $column < $count; $column++) {
+            $left = $column * $cell + intdiv($cell - $poseWidth, 2);
+            $top = $row * $cell + intdiv($cell - $poseHeight, 2);
+            imagefilledrectangle($image, $left, $top, $left + $poseWidth - 1, $top + $poseHeight - 1, $ink);
+
+            if ($speckles) {
+                imagesetpixel($image, $left + $poseWidth + 10, $top + 5, $ink);
+                imagesetpixel($image, $left + 20, $top - 8, $ink);
+            }
+        }
+    }
+
+    return $image;
+}
+
+/**
+ * Paints a red block onto the first walk pose, so the sheet builds different
+ * strips than the plain one (the plain poses are all identical).
+ *
+ * @param  GdImage  $image  a sheet drawn by poseSheetImage() with its default 150 px cell
+ * @return GdImage the same image, marked
+ */
+function markedPoseSheet(GdImage $image): GdImage
+{
+    imagefilledrectangle($image, 40, 190, 100, 240, imagecolorallocate($image, 200, 30, 30));
+
+    return $image;
+}
+
+/**
+ * Encodes a GD image as PNG bytes, as an upload would arrive.
+ *
+ * @param  GdImage  $image  the image to encode
+ * @return string PNG file bytes
+ */
+function pngBytes(GdImage $image): string
+{
+    ob_start();
+    imagepng($image);
+
+    return (string) ob_get_clean();
+}
+
+/**
+ * Encodes a flat-colour image of the given size with GD, so custom-character
+ * tests build their sheets in memory instead of committing binary fixtures.
+ *
+ * @param  int  $width  image width in px
+ * @param  int  $height  image height in px
+ * @param  string  $format  one of 'png', 'jpeg', 'webp', 'gif'
+ * @return string the encoded file bytes
+ */
+function imageBytes(int $width, int $height, string $format = 'png'): string
+{
+    $image = imagecreatetruecolor($width, $height);
+    imagefill($image, 0, 0, imagecolorallocate($image, 255, 0, 255));
+
+    ob_start();
+    match ($format) {
+        'png' => imagepng($image),
+        'jpeg' => imagejpeg($image),
+        'webp' => imagewebp($image),
+        'gif' => imagegif($image),
+    };
+
+    return (string) ob_get_clean();
+}
