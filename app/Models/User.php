@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
@@ -127,6 +128,16 @@ class User extends Authenticatable implements FilamentUser
     public function devices(): HasMany
     {
         return $this->hasMany(Device::class);
+    }
+
+    /**
+     * The fighter this user built from an uploaded pose sheet, if any.
+     *
+     * @return HasOne<CustomCharacter, $this>
+     */
+    public function customCharacter(): HasOne
+    {
+        return $this->hasOne(CustomCharacter::class);
     }
 
     /**

@@ -10,4 +10,6 @@
     <a href="{{ route('setup') }}" class="{{ $active === 'setup' ? 'text-orange-600' : 'text-gray-500 hover:text-gray-900' }}">Setup</a>
     <span class="text-gray-300">·</span>
     <a href="{{ route('guide') }}" class="{{ $active === 'guide' ? 'text-orange-600' : 'text-gray-500 hover:text-gray-900' }}">Guide</a>
+    <span class="text-gray-300">·</span>
+    <a href="{{ route('custom-character') }}" class="{{ $active === 'character' ? 'text-orange-600' : 'text-gray-500 hover:text-gray-900' }}">Character</a>
 </nav>

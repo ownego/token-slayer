@@ -41,6 +41,7 @@ No scheduler container in dev (staging adds `scheduler` = `schedule:work`). The 
 | `token-tracking.md` | hook → EventController → damage pipeline, providers, per-event model, subagent dispatch tracking, install scripts |
 | `broadcasting.md` | PHP↔JS broadcast contract rules |
 | `accounts.md` | org accounts (Claude + Codex), attribution chain, provisioning, quota probing, rebalance/reconciliation |
+| `custom-characters.md` | player-uploaded fighters: the pose-sheet contract, conversion to 100 px strips, storage, `/character` page |
 
 Convention docs also live scattered next to the code they describe — these do NOT auto-load unless you're already working in that path, so check for one before touching a directory that has a `CLAUDE.md`/`CREDITS.md`/`README.md`:
 
