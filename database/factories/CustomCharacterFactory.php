@@ -21,6 +21,7 @@ class CustomCharacterFactory extends Factory
         return [
             'user_id' => User::factory(),
             'version_hash' => fake()->regexify('[a-f0-9]{12}'),
+            'active' => true,
             'animations' => [
                 'idle' => ['frames' => 6, 'rate' => 8],
                 'walk' => ['frames' => 8, 'rate' => 10],

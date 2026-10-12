@@ -22,13 +22,13 @@ All events are `ShouldBroadcastNow` on the public `battlefield` channel. Handler
 |---|---|---|---|
 | `HitDealt` | `EventController` (Stop, tokens > 0) | `user_id, slack_handle, avatar_url, damage, boss_id, boss_hp_after, boss_max_hp, model, flair, flair_duration_ms, flair_color, input_tokens, cache_creation_input_tokens, cache_read_input_tokens` | `HIT` `'hit'` → `fighter.handleHit` |
 | `BossKilled` | `EventController`, once per boss killed in the chain | `boss_number, boss_name, boss_id, killer_user_id, killer_slack_handle, killer_avatar_url` | `BOSS_KILLED` `'boss-killed'` → `boss.handleBossKilled` |
-| `BossSpawned` | `EventController`, once after any kill | `boss_id, boss_number, boss_name, max_hp, fighters[] {user_id, character}` (+ per-boss script keys, below) | `BOSS_SPAWNED` `'boss-spawned'` → `boss.handleBossSpawned` |
-| `FighterJoined` | `EventController` (SessionStart) | `user_id, slack_handle, display_name, avatar_url, character, position` | `FIGHTER_JOINED` `'fighter-joined'` → `fighter.handleFighterJoined` |
-| `FighterCharging` | `EventController` (prompt / pre-invocation / pre-tool-use; post-hit label for Stop-only providers) | `user_id, slack_handle, avatar_url, character, activity, position` | `FIGHTER_CHARGING` `'fighter-charging'` → `charge.handleCharging` |
+| `BossSpawned` | `EventController`, once after any kill | `boss_id, boss_number, boss_name, max_hp, fighters[] {user_id, character, custom_character}` (+ per-boss script keys, below) | `BOSS_SPAWNED` `'boss-spawned'` → `boss.handleBossSpawned` |
+| `FighterJoined` | `EventController` (SessionStart) | `user_id, slack_handle, display_name, avatar_url, character, custom_character, position` | `FIGHTER_JOINED` `'fighter-joined'` → `fighter.handleFighterJoined` |
+| `FighterCharging` | `EventController` (prompt / pre-invocation / pre-tool-use; post-hit label for Stop-only providers) | `user_id, slack_handle, avatar_url, character, custom_character, activity, position` | `FIGHTER_CHARGING` `'fighter-charging'` → `charge.handleCharging` |
 | `FighterChargeCleared` | `EventController` (Stop with 0 tokens) | `user_id` | `FIGHTER_CHARGE_CLEARED` `'fighter-charge-cleared'` → `charge.handleChargeCleared` |
 | `FighterIdled` | `fighters:sweep-idle` command (every minute, users past `game.idle_minutes`) | `user_id` | `FIGHTER_IDLED` `'fighter-idled'` → `fighter.handleIdled` + `minions.despawnAll` |
 | `FighterMoved` | `Livewire\Battlefield::move` (user drags own fighter) | `user_id, x, y` | `FIGHTER_MOVED` `'fighter-moved'` → `fighter.handleFighterMoved` |
-| `FighterCharacterChanged` | `Livewire\FighterSheet::equip()` (Character tab; the old `Livewire\CharacterSelect` was removed in the battlefield-redesign PR chain) | `user_id, character` | `CHARACTER_CHANGED` `'character-changed'` → `fighter.updateCharacters([payload])` |
+| `FighterCharacterChanged` | `Livewire\FighterSheet::equip()` (Character tab; the old `Livewire\CharacterSelect` was removed in the battlefield-redesign PR chain) and `Livewire\CustomCharacterUpload` (a custom fighter built or removed) | `user_id, character, custom_character` | `CHARACTER_CHANGED` `'character-changed'` → `fighter.updateCharacters([payload])` |
 | `FighterAgentCountChanged` | `EventController` (subagent dispatch/activity), `fighters:sweep-idle` | `user_id, count, seq` | `FIGHTER_AGENT_COUNT_CHANGED` `'fighter-agent-count-changed'` → `minions.handleAgentCountChanged` |
 | `FighterAgentToolUsed` | `EventController` (pre/post-tool-use with `agent_id`, hook v7) | `user_id, agent_id, busy` | `FIGHTER_AGENT_TOOL_USED` `'fighter-agent-tool-used'` → `minions.handleAgentToolUsed` |
 
@@ -40,7 +40,7 @@ Not broadcast: `AccountTokenRejected` is a plain server-side event (listener `Se
 
 ## Payload rules
 
-- `broadcastWith()` sends scalars in snake_case. Never send whole Eloquent models. The one nested value is `BossSpawned.fighters`, a list of scalar pairs.
+- `broadcastWith()` sends scalars in snake_case. Never send whole Eloquent models. The nested values are `BossSpawned.fighters`, a list of scalar rows, and `custom_character`, a small object of scalars plus an animation table, null unless the custom fighter is equipped (see `custom-characters.md`).
 - Every key a JS handler reads must exist in `broadcastWith()`. Removals and renames must update both sides (and `ide-bridge.js`) in the same commit.
 - User display fields: `displayHandle()` for `slack_handle`. `avatar_url` is the raw Slack URL everywhere **except** `FighterJoined`, which sends `route('avatar', $user)` (the `/avatars/{user}` CORS proxy).
 - `character` comes from `$user->characterForBoss($bossId)`. `position` comes from `FighterPositionCache::get()` (null when the user has never moved).

@@ -157,3 +157,87 @@ test('a teammate on a fighter shows their real avatar over the initial', () => {
   expect(face.querySelector('img')?.getAttribute('src')).toBe('/avatars/3?v=abc');
   expect(face.textContent).toBe('L');
 });
+
+const CUSTOM = {
+  version: 'abc123def456',
+  url_base: '/storage/custom-characters/7/abc123def456',
+  animations: {
+    idle: { frames: 6, rate: 8 },
+    walk: { frames: 8, rate: 10 },
+    attack: { frames: 6, rate: 12 },
+    death: { frames: 3, rate: 6 },
+  },
+};
+
+test('the roster starts with a + Custom tile that opens the guide in a new tab, and it is not a fighter slot', () => {
+  mount();
+
+  const tile = document.querySelector('#roster-grid').firstElementChild;
+  expect(tile.textContent).toContain('Custom');
+  expect(tile.getAttribute('href')).toBe('/character');
+  expect(tile.getAttribute('target')).toBe('_blank');
+  expect(tile.classList.contains('slot')).toBe(false);
+  expect(document.querySelectorAll('.slot')).toHaveLength(20);
+});
+
+test('someone with no custom fighter gets no custom slot', () => {
+  mount();
+
+  expect(document.querySelector('.slot[data-key="custom"]')).toBeNull();
+});
+
+test('a custom fighter is a slot next to the roster, tagged YOU when it is the equipped one', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+
+  const slot = document.querySelector('.slot[data-key="custom"]');
+  expect(slot).not.toBeNull();
+  expect(slot.querySelector('.tag')?.textContent).toBe('YOU');
+  expect(document.querySelectorAll('.slot')).toHaveLength(21);
+  expect(document.getElementById('roster-count').textContent).toBe('21 fighters');
+  expect(document.getElementById('show-name').textContent).toBe('Custom');
+  expect(document.getElementById('show-state').textContent).toBe('Equipped');
+});
+
+test('a custom fighter that is not equipped can be picked and equipped like any other', () => {
+  vi.useFakeTimers();
+  const { equip } = mount({ equipped: 'orc-rider', custom: CUSTOM });
+
+  document.querySelector('.slot[data-key="custom"]').click();
+  expect(document.getElementById('equip-label').textContent).toBe('Equip Custom');
+  document.getElementById('equip-btn').click();
+  vi.advanceTimersByTime(2300);
+
+  expect(equip).toHaveBeenCalledWith('custom');
+  expect(document.querySelector('.slot[data-key="custom"] .tag')).not.toBeNull();
+});
+
+test('its moves are idle, walk, its one attack, death and summon', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+
+  expect([...document.querySelectorAll('#hotbar .move')].map(m => m.dataset.id)).toEqual(['idle', 'walk', 'attack1', 'death', 'summon']);
+});
+
+test('a style chip leaves the custom slot showing, since it fights as nothing in particular', () => {
+  mount({ custom: CUSTOM });
+
+  document.querySelector('.chip[data-type="ARROW"]').click();
+
+  expect(document.querySelector('.slot[data-key="custom"]').classList.contains('filtered-out')).toBe(false);
+});
+
+test('an equipped key the roster does not know falls back to the first fighter, not a crash', () => {
+  mount({ equipped: 'custom' });
+
+  expect(document.querySelectorAll('.slot')).toHaveLength(20);
+  expect(document.getElementById('show-name').textContent).toBe('Soldier');
+});
+
+test('arrow keys walk the fighters and skip the + Custom tile', () => {
+  mount({ custom: CUSTOM });
+  const first = document.querySelector('.slot[data-key="custom"]');
+  first.focus();
+
+  first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+  expect(document.activeElement.dataset.key).toBe('soldier');
+});

@@ -12,6 +12,7 @@ use App\Events\FighterJoined;
 use App\Events\FighterMoved;
 use App\Events\HitDealt;
 use App\Models\Boss;
+use App\Models\CustomCharacter;
 use App\Models\User;
 use App\Services\FighterPositionCache;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -182,6 +183,7 @@ test('FighterCharacterChanged broadcasts on the battlefield channel with the use
         ->and($event->broadcastWith())->toBe([
             'user_id' => $user->id,
             'character' => 'archer',
+            'custom_character' => null,
         ]);
 });
 
@@ -271,4 +273,41 @@ test('every broadcast avatar is the versioned proxy URL, never the raw 512px Sla
         ->and((new FighterCharging($user))->broadcastWith()['avatar_url'])->toBe($user->avatarProxyUrl())
         ->and((new FighterJoined($user, $boss))->broadcastWith()['avatar_url'])->toBe($user->avatarProxyUrl())
         ->and((new BossKilled($boss, $user))->broadcastWith()['killer_avatar_url'])->toBe($user->avatarProxyUrl());
+});
+
+test('FighterJoined carries the custom character a user built, and null for one without', function () {
+    $boss = Boss::factory()->create(['number' => 1]);
+    $plain = User::factory()->create();
+    $custom = CustomCharacter::factory()->create()->user;
+
+    expect((new FighterJoined($plain, $boss))->broadcastWith())->toHaveKey('custom_character', null)
+        ->and((new FighterJoined($custom, $boss))->broadcastWith()['custom_character'])->toBe($custom->customFighterState());
+});
+
+test('FighterCharacterChanged carries the custom character so every client can load or drop it', function () {
+    $plain = User::factory()->create();
+    $custom = CustomCharacter::factory()->create()->user;
+
+    expect((new FighterCharacterChanged($plain))->broadcastWith())->toHaveKey('custom_character', null)
+        ->and((new FighterCharacterChanged($custom))->broadcastWith()['custom_character'])->toBe($custom->customFighterState());
+});
+
+test('BossSpawned lists each fighter with its custom character, so a boss change never re-skins it', function () {
+    $boss = Boss::factory()->create(['number' => 2]);
+    $plain = User::factory()->create(['last_event_at' => now()]);
+    $custom = CustomCharacter::factory()->create()->user;
+    $custom->forceFill(['last_event_at' => now()])->save();
+
+    $fighters = collect((new BossSpawned($boss))->broadcastWith()['fighters'])->keyBy('user_id');
+
+    expect($fighters[$plain->id])->toHaveKey('custom_character', null)
+        ->and($fighters[$custom->id]['custom_character'])->toBe($custom->customFighterState());
+});
+
+test('FighterCharging carries the custom character, so a synthetic client-side rejoin shows it', function () {
+    $plain = User::factory()->create();
+    $custom = CustomCharacter::factory()->create()->user;
+
+    expect((new FighterCharging($plain, 'thinking…'))->broadcastWith())->toHaveKey('custom_character', null)
+        ->and((new FighterCharging($custom, 'thinking…'))->broadcastWith()['custom_character'])->toBe($custom->customFighterState());
 });

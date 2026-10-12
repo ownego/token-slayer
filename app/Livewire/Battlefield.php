@@ -59,7 +59,8 @@ class Battlefield extends Component
         $this->bossScript = collect(BossCharacter::of($this->boss)?->scriptState($this->boss) ?? [])
             ->mapWithKeys(fn (mixed $value, string $key) => [Str::camel($key) => $value])
             ->all();
-        $this->fighters = User::where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
+        $this->fighters = User::with('customCharacter')
+            ->where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
             ->get();
         $userIds = $this->fighters->pluck('id')->all();
         $this->chargingByUser = $chargingCache->many($userIds);

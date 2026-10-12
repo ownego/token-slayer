@@ -48,6 +48,11 @@ export function snapshotState(currentState, scene) {
         handle: f.handleText,
         avatarUrl: f.avatarUrl,
         character: f.ftype?.key ?? null,
+        // a custom fighter's own character: the newest one asked for (still loading, or
+        // swapping in), else the one it shows — a rotate must not lose a fighter whose
+        // strips have not landed, and a removal clears the request. The rebooted scene
+        // shows it from the first frame once its strips are in the textures
+        customCharacter: f.wantedCustom ?? f.ftype?.spec ?? null,
         charging: charge ? { activity: charge.activity ?? '' } : null,
         position: pos,
         // Minions are cosmetic-only and were deliberately never snapshotted

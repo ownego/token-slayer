@@ -7,6 +7,7 @@ import { accountCard } from './battlefield/sheet/account-card.js';
 import { modelPicker, periodTabs } from './battlefield/sheet/pickers.js';
 import { miniStage } from './battlefield/sheet/mini-stage.js';
 import { characterStage } from './battlefield/sheet/character-stage.js';
+import { characterPrompt } from './custom-character/prompt-picker.js';
 
 // Registered before Livewire's bundled Alpine calls Alpine.start() (this
 // script loads via @vite in <head>; @livewireScripts starts Alpine later in
@@ -32,6 +33,7 @@ document.addEventListener('alpine:init', () => {
   window.Alpine.data('miniStage', miniStage);
   window.Alpine.data('clawdBuddyPanel', clawdBuddyPanel);
   window.Alpine.data('characterStage', characterStage);
+  window.Alpine.data('characterPrompt', characterPrompt);
 });
 
 // Phaser is ~1 MB — only load when battlefield canvas is present

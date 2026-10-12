@@ -42,3 +42,10 @@ test('the heel offset follows the fighter\'s whole size: its damage growth times
   expect(heelWorldOffset({ x: 44, y: 58 }, fighter)).toEqual(heelToLocal({ x: 44, y: 58 }, 2.8, 1));
   expect(heelWorldOffset({ x: 44, y: 58 }, { ...fighter, body: { scaleX: 2, flipX: true } })).toEqual(heelToLocal({ x: 44, y: 58 }, 2.8, -1));
 });
+
+test('a body nudged down inside its container moves the heel with it (a custom fighter\'s feet-line offset)', () => {
+  const fighter = { sprite: { scaleX: 2 }, body: { scaleX: 1, flipX: false, y: 5 } };
+  const plain = heelToLocal({ x: 44, y: 58 }, 2, 1);
+
+  expect(heelWorldOffset({ x: 44, y: 58 }, fighter)).toEqual({ dx: plain.dx, dy: plain.dy + 10 });
+});

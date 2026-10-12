@@ -41,6 +41,7 @@
                 'handle' => $f->displayHandle(),
                 'avatarUrl' => $f->avatarProxyUrl(),
                 'character' => $f->characterForBoss($boss->id),
+                'customCharacter' => $f->customFighterState(),
                 'charging' => $this->chargingByUser[$f->id] ?? null,
                 'position' => $this->positionsByUser[$f->id] ?? null,
                 'agentCount' => $this->agentCountsByUser[$f->id] ?? 0,

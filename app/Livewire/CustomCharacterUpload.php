@@ -2,7 +2,10 @@
 
 namespace App\Livewire;
 
+use App\Events\FighterCharacterChanged;
 use App\Exceptions\InvalidPoseSheetException;
+use App\Models\User;
+use App\Services\CustomCharacter\CharacterPromptBuilder;
 use App\Services\CustomCharacter\RemoveCustomCharacter;
 use App\Services\CustomCharacter\SaveCustomCharacter;
 use Illuminate\Contracts\View\View;
@@ -30,6 +33,13 @@ class CustomCharacterUpload extends Component
     public $sheet = null;
 
     /**
+     * Confirmation shown at the top of the page after a fighter was built.
+     *
+     * @var string|null
+     */
+    public ?string $notice = null;
+
+    /**
      * Validation rules for the chosen file. The byte limit is the same one
      * the decoder enforces; this only fails fast, before the file is read.
      *
@@ -47,13 +57,16 @@ class CustomCharacterUpload extends Component
     /**
      * Builds the user's character from the chosen sheet, replacing any earlier
      * one. A sheet that breaks the contract is refused with its reason and
-     * leaves the existing character alone.
+     * leaves the existing character alone. Not named `upload`: in the browser
+     * `$wire.upload()` is Livewire's own file-upload function and wins over a
+     * component method of that name, so the form would never reach the server.
      *
      * @param  SaveCustomCharacter  $save  builds and stores the character
      * @return void
      */
-    public function upload(SaveCustomCharacter $save): void
+    public function build(SaveCustomCharacter $save): void
     {
+        $this->notice = null;
         $this->validate();
 
         $user = auth()->user();
@@ -68,6 +81,9 @@ class CustomCharacterUpload extends Component
 
         try {
             $save->execute($user, (string) file_get_contents($this->sheet->getRealPath()));
+            $this->notice = 'Your fighter is ready! Here it is.';
+            $this->announceCharacter($user);
+            $this->js('window.scrollTo({ top: 0, behavior: "smooth" })');
         } catch (InvalidPoseSheetException $exception) {
             $this->addError('sheet', $exception->getMessage());
 
@@ -85,7 +101,26 @@ class CustomCharacterUpload extends Component
      */
     public function remove(RemoveCustomCharacter $remove): void
     {
-        $remove->execute(auth()->user());
+        $this->notice = null;
+        $user = auth()->user();
+        $remove->execute($user);
+        $this->announceCharacter($user);
+    }
+
+    /**
+     * Tells every client on the battlefield that this user's fighter changed,
+     * so they load (or drop) the custom strips without a reload. A broadcast
+     * that cannot be sent must not fail the page: the fighter is saved either
+     * way and shows up on the next reload.
+     *
+     * @param  User  $user  the user whose fighter changed
+     * @return void
+     */
+    private function announceCharacter(User $user): void
+    {
+        $user->unsetRelation('customCharacter');
+
+        rescue(fn () => FighterCharacterChanged::dispatch($user));
     }
 
     /**
@@ -110,7 +145,9 @@ class CustomCharacterUpload extends Component
 
         return view('livewire.custom-character-upload', [
             'strips' => $strips,
-            'prompt' => (string) config('token_slayer.custom_character.prompt'),
+            'types' => collect((array) config('token_slayer.custom_character.types'))->map(fn (array $type): string => $type['label'])->all(),
+            'prompts' => app(CharacterPromptBuilder::class)->execute(),
+            'thumbs' => asset('assets/custom-character/types'),
         ]);
     }
 }

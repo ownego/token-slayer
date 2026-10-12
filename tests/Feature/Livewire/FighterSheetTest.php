@@ -7,6 +7,7 @@ use App\Livewire\FighterSheet;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Boss;
+use App\Models\CustomCharacter;
 use App\Models\Event as EventModel;
 use App\Models\User;
 use App\Services\ProviderServiceFactory;
@@ -618,4 +619,55 @@ test('the loaded sheet takes the loader\'s exact place: its fade never puts a tr
         ->call('open', 'profile')
         ->assertSeeHtml('x-transition:enter="fs-content-enter"')
         ->assertDontSeeHtml('x-transition.opacity.duration.200ms');
+});
+
+test('a user with a custom fighter has it equipped, and the sheet hands the Character tab its strips', function () {
+    $character = CustomCharacter::factory()->create();
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->assertSet('equipped', 'custom')
+        ->assertSet('customCharacter', $character->broadcastState());
+});
+
+test('a user whose custom fighter is not equipped sees their roster character equipped, and still gets the strips', function () {
+    $character = CustomCharacter::factory()->create(['active' => false]);
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->assertSet('equipped', $character->user->characterForBoss(Boss::first()->id))
+        ->assertSet('customCharacter', $character->broadcastState());
+});
+
+test('equipping custom turns the custom fighter on and tells the battlefield', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    $character = CustomCharacter::factory()->create(['active' => false]);
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->call('equip', 'custom')
+        ->assertSet('equipped', 'custom');
+
+    expect($character->fresh()->active)->toBeTrue();
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->customFighterState() !== null);
+});
+
+test('equipping a roster character turns the custom fighter off, keeps it, and tells the battlefield', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    $character = CustomCharacter::factory()->create();
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->call('equip', 'werebear')
+        ->assertSet('equipped', 'werebear');
+
+    expect($character->fresh()->active)->toBeFalse()
+        ->and($character->user->fresh()->equipped_character)->toBe(FighterCharacter::Werebear);
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->customFighterState() === null);
+});
+
+test('equipping custom without having built one does nothing', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    $user = User::factory()->create(['equipped_character' => null]);
+
+    Livewire::actingAs($user)->test(FighterSheet::class)->call('equip', 'custom');
+
+    expect($user->refresh()->equipped_character)->toBeNull();
+    Event::assertNotDispatched(FighterCharacterChanged::class);
 });

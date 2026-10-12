@@ -141,6 +141,17 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The custom fighter's broadcast state (see CustomCharacter::broadcastState()),
+     * or null when the user has none, or has gone back to a roster character.
+     *
+     * @return array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>}|null
+     */
+    public function customFighterState(): ?array
+    {
+        return $this->customCharacter?->active ? $this->customCharacter->broadcastState() : null;
+    }
+
+    /**
      * Usage events this user has logged, across all accounts, in natural
      * order. Callers that need newest-first order the query explicitly.
      *

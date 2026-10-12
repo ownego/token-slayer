@@ -36,11 +36,13 @@ class BossSpawned implements ShouldBroadcastNow
     {
         $bossId = $this->boss->id;
 
-        $activeFighters = User::where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
+        $activeFighters = User::with('customCharacter')
+            ->where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
             ->get()
             ->map(fn (User $user) => [
                 'user_id' => $user->id,
                 'character' => $user->characterForBoss($bossId),
+                'custom_character' => $user->customFighterState(),
             ])
             ->all();
 

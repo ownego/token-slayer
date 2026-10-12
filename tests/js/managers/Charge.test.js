@@ -67,3 +67,48 @@ describe('particle emitters removed', () => {
     expect(Charge.prototype.createChargingTrail).toBeUndefined();
   });
 });
+
+describe('handleCharging for a fighter this client does not have', () => {
+  test('rejoins it with its custom character, not just its roster one', () => {
+    const joined = vi.fn();
+    const scene = { fighters: new Map(), charges: new Map(), fighter: { handleFighterJoined: joined } };
+    const custom = { version: 'abc', url_base: '/storage/custom-characters/7/abc', animations: {} };
+
+    new Charge(scene).handleCharging({ user_id: 7, character: 'soldier', custom_character: custom, position: null });
+
+    expect(joined).toHaveBeenCalledWith(expect.objectContaining({ user_id: 7, character: 'soldier', custom_character: custom }));
+  });
+});
+
+describe('handleCharging for a fighter already on the field', () => {
+  const custom = { version: 'abc', url_base: '/storage/custom-characters/7/abc', animations: {} };
+  const sceneWith = ftype => ({
+    fighters: new Map([[7, { id: 7, ftype, sprite: {}, body: { play() {} } }]]),
+    charges: new Map([[7, { activity: '' }]]),
+    fighter: { updateCharacters: vi.fn() },
+  });
+
+  test('reconciles a custom fighter this client missed the change of (Reverb has no replay)', () => {
+    const scene = sceneWith({ key: 'soldier' });
+
+    new Charge(scene).handleCharging({ user_id: 7, character: 'soldier', custom_character: custom });
+
+    expect(scene.fighter.updateCharacters).toHaveBeenCalledWith([{ user_id: 7, character: 'soldier', custom_character: custom }]);
+  });
+
+  test('reconciles a custom fighter whose removal this client missed', () => {
+    const scene = sceneWith({ key: 'custom-7-abc', custom: true });
+
+    new Charge(scene).handleCharging({ user_id: 7, character: 'wizard', custom_character: null });
+
+    expect(scene.fighter.updateCharacters).toHaveBeenCalledWith([{ user_id: 7, character: 'wizard', custom_character: null }]);
+  });
+
+  test('leaves a roster fighter alone, as before', () => {
+    const scene = sceneWith({ key: 'soldier' });
+
+    new Charge(scene).handleCharging({ user_id: 7, character: 'wizard', custom_character: null });
+
+    expect(scene.fighter.updateCharacters).not.toHaveBeenCalled();
+  });
+});

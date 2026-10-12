@@ -98,5 +98,10 @@ export const TYPE_LINE = {
  * @return {string}
  */
 export function stripUrl(file) {
+  // a custom fighter's strips are served files, not bundled ones
+  if (file.startsWith('/')) {
+    return file;
+  }
+
   return STRIP_URLS[`../../../assets/battlefield/fighters/${file}`];
 }

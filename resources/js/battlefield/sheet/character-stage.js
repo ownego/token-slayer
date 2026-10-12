@@ -8,6 +8,7 @@
 import { BOX, ROSTER, TYPE_LINE } from './sheet-roster.js';
 import { BY_KEY, faceColor, frameIn, moves, paint, paintCharge, playAnim, pretty, standOn, strip, wait } from './sprite-strip.js';
 import { heelOf, sparkField, sparkPoint } from './stage-sparks.js';
+import { CUSTOM_KEY, registerCustomRoster } from './custom-roster.js';
 
 /**
  * The stage FX strips, all existing battlefield assets.
@@ -63,9 +64,10 @@ const EQUIP_PERSIST_DELAY_MS = EQUIP_FOLD_DELAY_MS + 350 + 950;
  * @param {Object<string, Array<{user_id: number, handle: string}>>} roommates Everyone by the fighter they play.
  * @param {string} handle The viewer's own display handle.
  * @param {number} me The viewer's user id, left out of the teammates.
+ * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
  * @return {object}
  */
-export function characterStage(startingKey, roommates, handle, me) {
+export function characterStage(startingKey, roommates, handle, me, custom = null) {
   return {
     cleanup: [],
     init() {
@@ -78,6 +80,7 @@ export function characterStage(startingKey, roommates, handle, me) {
         roommates: roommates || {},
         handle,
         me,
+        custom,
         equip: key => window.Livewire.find(componentId)?.equip(key),
         dispatch: (name, detail) => this.$dispatch(name, detail),
       });
@@ -92,10 +95,14 @@ export function characterStage(startingKey, roommates, handle, me) {
  * Wires the Character tab onto its already-rendered markup.
  *
  * @param {HTMLElement} root The tab's root element.
- * @param {{equipped: string, roommates: object, handle: string, me?: number, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
+ * The viewer's custom fighter, if they have one, becomes a roster slot of its own
+ * (key `custom`) beside the fighters; a "+ Custom" tile always opens the page
+ * where one is made or replaced.
+ *
+ * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
  * @return {Array<function(): void>} Teardown callbacks.
  */
-export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, equip, dispatch }) {
+export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, equip, dispatch }) {
   // teammates only: CharacterRoommates lists everyone on a fighter, the viewer included
   const roommates = Object.fromEntries(Object.entries(everyone).map(([key, users]) => [key, users.filter(u => Number(u.user_id) !== Number(me))]));
   const $$ = id => root.querySelector(`#${id}`);
@@ -105,6 +112,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     cleanup.push(() => target.removeEventListener(type, fn, opts));
   };
   const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // before anything reads the roster lookups: puts the custom fighter in, or clears an earlier mount's
+  const hasCustom = registerCustomRoster(BY_KEY, BOX, custom);
   const known = key => Boolean(BY_KEY[key]);
 
   let equipped = known(startingKey) ? startingKey : ROSTER[0].key;
@@ -150,7 +159,17 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   const grid = $$('roster-grid');
   // the real avatar over the initial; the initial stays underneath if the image fails
   const mateFace = (mate, cls = 'mate') => `<span class="${cls}" style="background:${faceColor(mate.user_id)}" title="${escapeHtml(mate.handle)}">${escapeHtml(mate.handle.charAt(0).toUpperCase())}${mate.avatar ? `<img src="${escapeHtml(mate.avatar)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
-  ROSTER.forEach(c => {
+  // the tile that opens the guide: not a fighter, so not a .slot (selection, filters, keys and tooltips ignore it)
+  const add = document.createElement('a');
+  add.className = 'slot-add';
+  add.href = '/character';
+  add.target = '_blank';
+  add.rel = 'noopener';
+  add.setAttribute('aria-label', 'Make or replace your custom fighter');
+  add.innerHTML = '<span class="plus" aria-hidden="true">+</span><span class="nm">Custom</span>';
+  grid.appendChild(add);
+  const entries = hasCustom ? [BY_KEY[CUSTOM_KEY], ...ROSTER] : ROSTER;
+  entries.forEach(c => {
     const b = document.createElement('button');
     b.className = 'slot';
     b.type = 'button';
@@ -170,7 +189,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     on(b, 'click', () => select(c.key));
     grid.appendChild(b);
   });
-  $$('roster-count').textContent = `${ROSTER.length} fighters`;
+  $$('roster-count').textContent = `${entries.length} fighters`;
 
   function paintAlso(key) {
     const mates = roommates[key] || [];
@@ -532,7 +551,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     root.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', String(x === ch)));
     let n = 0;
     root.querySelectorAll('.slot').forEach(sl => {
-      const hide = Boolean(ch.dataset.type) && sl.dataset.type !== ch.dataset.type;
+      // the custom fighter fights as nothing in particular, so no style filter hides it
+      const hide = Boolean(ch.dataset.type) && sl.dataset.type !== ch.dataset.type && sl.dataset.key !== CUSTOM_KEY;
       sl.classList.toggle('filtered-out', hide);
       if (!hide) {
         n++;
@@ -543,7 +563,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
 
   // keyboard: arrows walk the roster grid, 1-9 play a move, ←/→ walk the hotbar
   on(grid, 'keydown', e => {
-    const slots = [...grid.children];
+    const slots = [...grid.children].filter(el => el.classList.contains('slot'));
     const i = slots.indexOf(document.activeElement);
     const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 4, ArrowUp: -4 }[e.key];
     if (i < 0 || !step) {

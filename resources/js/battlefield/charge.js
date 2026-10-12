@@ -54,12 +54,22 @@ export class Charge {
         slack_handle: payload.slack_handle,
         avatar_url: payload.avatar_url,
         character: payload.character ?? null,
+        custom_character: payload.custom_character ?? null,
         position: payload.position ?? null,
       });
     }
     const fighter = this.scene.fighters.get(payload.user_id);
     if (!fighter) {
       return;
+    }
+    // Reverb has no replay: a client that missed a custom fighter being built or
+    // removed catches up from the next charge, which carries the same state.
+    if (payload.custom_character || fighter.ftype?.custom) {
+      this.scene.fighter?.updateCharacters([{
+        user_id: payload.user_id,
+        character: payload.character ?? null,
+        custom_character: payload.custom_character ?? null,
+      }]);
     }
     const existing = this.scene.charges.get(payload.user_id);
     if (existing) {

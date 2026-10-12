@@ -18,7 +18,7 @@ class CustomCharacterStore
      *
      * @var string
      */
-    private const string ROOT = 'custom-characters';
+    public const string ROOT = 'custom-characters';
 
     /**
      * Length of the version hash used in the folder name.
@@ -26,6 +26,18 @@ class CustomCharacterStore
      * @var int
      */
     private const int HASH_LENGTH = 12;
+
+    /**
+     * Folder, on the public disk, that holds one version of a user's strips.
+     *
+     * @param  int  $userId  the owner
+     * @param  string  $hash  the version hash the strips were stored under
+     * @return string
+     */
+    public static function folder(int $userId, string $hash): string
+    {
+        return self::ROOT."/{$userId}/{$hash}";
+    }
 
     /**
      * Stores the strips as the user's current character.
@@ -41,7 +53,7 @@ class CustomCharacterStore
         $disk = Storage::disk('public');
 
         foreach ($encoded as $animation => $png) {
-            $disk->put(self::ROOT."/{$userId}/{$hash}/{$animation}.png", $png);
+            $disk->put(self::folder($userId, $hash)."/{$animation}.png", $png);
         }
 
         foreach ($disk->directories(self::ROOT."/{$userId}") as $directory) {

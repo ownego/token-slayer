@@ -106,6 +106,23 @@ class FighterSheet extends Component
     public ?string $equippedKey = null;
 
     /**
+     * The user's own custom fighter, equipped or not (the Character tab shows it
+     * as a slot either way), or null when they have not built one. Its shape is
+     * CustomCharacter::broadcastState().
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $customCharacter = null;
+
+    /**
+     * The roster key the Character tab uses for the custom fighter's slot, in
+     * $equipped and in equip().
+     *
+     * @var string
+     */
+    public const string CUSTOM_KEY = 'custom';
+
+    /**
      * Seeds $equipped/$equippedKey from the current boss context, same as
      * the old CharacterSelect::mount(), and prefills the custom range.
      *
@@ -125,8 +142,9 @@ class FighterSheet extends Component
             return;
         }
 
-        $this->equipped = $user->characterForBoss($arena->current()->id);
+        $this->equipped = $user->customFighterState() ? self::CUSTOM_KEY : $user->characterForBoss($arena->current()->id);
         $this->equippedKey = $user->equipped_character?->value;
+        $this->customCharacter = $user->customCharacter?->broadcastState();
     }
 
     /**
@@ -291,21 +309,52 @@ class FighterSheet extends Component
      */
     public function equip(string $key): void
     {
-        $character = FighterCharacter::tryFrom($key);
-
-        if ($character === null) {
-            return;
-        }
-
         $user = auth()->user();
 
         if (! $user) {
             return;
         }
 
+        if ($key === self::CUSTOM_KEY) {
+            $this->equipCustom($user);
+
+            return;
+        }
+
+        $character = FighterCharacter::tryFrom($key);
+
+        if ($character === null) {
+            return;
+        }
+
         $user->forceFill(['equipped_character' => $character])->save();
+        $user->customCharacter?->update(['active' => false]);
+        $user->unsetRelation('customCharacter');
         $this->equipped = $character->value;
         $this->equippedKey = $character->value;
+
+        FighterCharacterChanged::dispatch($user);
+    }
+
+    /**
+     * Equips the user's custom fighter, if they built one, and broadcasts the
+     * change. The roster character they had equipped is left as it is, so
+     * picking it again later puts them back.
+     *
+     * @param  User  $user  the authenticated user
+     * @return void
+     */
+    private function equipCustom(User $user): void
+    {
+        $custom = $user->customCharacter;
+
+        if ($custom === null) {
+            return;
+        }
+
+        $custom->update(['active' => true]);
+        $user->unsetRelation('customCharacter');
+        $this->equipped = self::CUSTOM_KEY;
 
         FighterCharacterChanged::dispatch($user);
     }

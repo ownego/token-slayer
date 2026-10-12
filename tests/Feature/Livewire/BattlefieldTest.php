@@ -2,6 +2,7 @@
 
 use App\Livewire\Battlefield;
 use App\Models\Boss;
+use App\Models\CustomCharacter;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\FighterChargingCache;
@@ -381,4 +382,16 @@ test('the arena loader is the viewer\'s own fighter running along the loading ba
         ->assertSeeHtml('x-data="runnerSprite()" data-char="werebear"')
         // the scene's preload progress still drives the bar by this id
         ->assertSeeHtml('id="bf-loader-bar"');
+});
+
+test('battlefield boot payload carries each fighter\'s custom character, null when they have none', function () {
+    Boss::factory()->create(['number' => 1]);
+    $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    $custom = CustomCharacter::factory()->create(['version_hash' => 'feedfacecafe'])->user;
+    $custom->forceFill(['last_event_at' => now()->subMinute()])->save();
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;customCharacter&quot;:null')
+        ->assertSeeHtml('&quot;version&quot;:&quot;feedfacecafe&quot;')
+        ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-characters\/'.$custom->id.'\/feedfacecafe&quot;');
 });

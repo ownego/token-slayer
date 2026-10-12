@@ -48,6 +48,7 @@ class FighterCharacterChanged implements ShouldBroadcastNow
         return [
             'user_id' => $this->user->id,
             'character' => $this->user->characterForBoss(null),
+            'custom_character' => $this->user->customFighterState(),
         ];
     }
 }

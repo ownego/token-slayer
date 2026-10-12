@@ -60,3 +60,13 @@ test('removes the character and its files', function () {
     expect($user->fresh()->customCharacter)->toBeNull();
     Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$character->version_hash}/idle.png");
 });
+
+test('building again equips the custom fighter even if the user had gone back to a roster character', function () {
+    Storage::fake('public');
+    $user = User::factory()->create();
+    CustomCharacter::factory()->create(['user_id' => $user->id, 'active' => false]);
+
+    app(SaveCustomCharacter::class)->execute($user, pngBytes(poseSheetImage(background: 'magenta')));
+
+    expect($user->fresh()->customCharacter->active)->toBeTrue();
+});

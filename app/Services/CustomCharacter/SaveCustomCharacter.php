@@ -40,7 +40,7 @@ class SaveCustomCharacter
 
         return CustomCharacter::updateOrCreate(
             ['user_id' => $user->id],
-            ['version_hash' => $saved['hash'], 'animations' => $saved['animations']],
+            ['version_hash' => $saved['hash'], 'animations' => $saved['animations'], 'active' => true],
         );
     }
 }

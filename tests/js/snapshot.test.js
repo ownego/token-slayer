@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { snapshotState } from '@battlefield/snapshot.js';
 
 function fakeScene(overrides = {}) {
@@ -168,4 +168,40 @@ test('a fighter still on its grid slot snapshots no position, so the next layout
   const next = snapshotState({}, scene);
 
   expect(next.fighters[0].position).toBeNull();
+});
+
+describe('custom fighters', () => {
+  const spec = {
+    version: 'abc',
+    urlBase: '/storage/custom-characters/7/abc',
+    animations: {
+      idle: { frames: 6, rate: 8 },
+      walk: { frames: 8, rate: 10 },
+      attack: { frames: 6, rate: 12 },
+      death: { frames: 3, rate: 6 },
+    },
+  };
+
+  test('a custom fighter\'s character rides the snapshot in the boot payload\'s own shape, so a rotate keeps it', () => {
+    const scene = fakeScene();
+    scene.fighters.get(7).ftype = { key: 'custom-7-abc', custom: true, spec };
+
+    const next = snapshotState({}, scene);
+
+    expect(next.fighters[0].customCharacter).toEqual(spec);
+  });
+
+  test('a roster fighter snapshots no custom character', () => {
+    expect(snapshotState({}, fakeScene()).fighters[0].customCharacter).toBeNull();
+  });
+
+  test('the snapshot round-trips through the fighter manager\'s own reader', async () => {
+    const { normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+    const scene = fakeScene();
+    scene.fighters.get(7).ftype = { key: 'custom-7-abc', custom: true, spec };
+
+    const next = snapshotState({}, scene);
+
+    expect(normalizeCustomCharacter(next.fighters[0].customCharacter)).toEqual(spec);
+  });
 });
