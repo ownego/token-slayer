@@ -154,6 +154,10 @@ return [
     */
 
     'custom_character' => [
+        // Disk the strips live on: 'public' locally, 'r2' on staging and production.
+        'disk' => env('CUSTOM_CHARACTER_DISK', 'public'),
+        // How long a staged preview is remembered; equals the R2 lifecycle rule's one-day minimum for `pending/`, so a stage record never outlives its files.
+        'stage_ttl_hours' => 24,
         'max_bytes' => 4 * 1024 * 1024,
         'min_side' => 512,
         'max_side' => 4096,

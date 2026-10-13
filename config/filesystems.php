@@ -60,6 +60,22 @@ return [
             'report' => false,
         ],
 
+        // Cloudflare R2 bucket for user uploads. R2 has no ACLs, so `visibility`
+        // is left unset, and `throw` is on so a failed write is loud.
+        'r2' => [
+            'driver' => 's3',
+            'key' => env('R2_MEDIA_ACCESS_KEY_ID'),
+            'secret' => env('R2_MEDIA_SECRET_ACCESS_KEY'),
+            'region' => 'auto',
+            'bucket' => env('R2_MEDIA_BUCKET'),
+            'endpoint' => env('R2_ENDPOINT'),
+            'url' => env('R2_MEDIA_URL'),
+            'use_path_style_endpoint' => env('R2_USE_PATH_STYLE_ENDPOINT', false),
+            'options' => ['CacheControl' => 'public, max-age=31536000, immutable'],
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
 
     /*
