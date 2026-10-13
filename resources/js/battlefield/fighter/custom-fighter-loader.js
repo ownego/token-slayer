@@ -18,18 +18,27 @@ const BROWSER = {
     const image = new Image();
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error(`custom fighter strip failed to load: ${url}`));
+    image.crossOrigin = 'anonymous';
     image.src = url;
   }),
   makeCanvas: (width, height) => Object.assign(document.createElement('canvas'), { width, height }),
 };
 
 /**
+ * The default image loader, exported only so a test can reach the real one.
+ * @type {function(string): Promise<HTMLImageElement>}
+ */
+export const loadImageForTest = BROWSER.loadImage;
+
+/**
  * Loads a user's custom fighter into the scene: fetches its four strips, stacks
  * them into one texture of named 100 px frames (the names the roster atlas uses,
  * so the fighter code reads both the same), and registers its animations. The
  * texture is the game's, not the scene's, so it survives a rotate-restart and a
- * second request for the same version costs nothing. The strips are same-origin
- * paths, which keeps the canvas readable for the heel measurement.
+ * second request for the same version costs nothing. The strips may be served
+ * from another origin (a CDN), so they are requested with CORS and the host must
+ * send `Access-Control-Allow-Origin`: without it the canvas would be tainted and
+ * the heel measurement could not read it.
  *
  * @param {Phaser.Scene} scene
  * @param {number|string} userId

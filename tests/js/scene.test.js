@@ -43,6 +43,7 @@ import { registerAllFighterAnimations } from '@battlefield/fighter/animations.js
 function fakeLoad() {
   const listeners = { progress: [], complete: [] };
   return {
+    setCORS: vi.fn(),
     atlas: vi.fn(),
     spritesheet: vi.fn(),
     isLoading: vi.fn(() => false),
@@ -88,6 +89,13 @@ describe('BattlefieldScene#preload — boot-only complete handler', () => {
     // just skips the progress-bar/`display:none` branches).
     globalThis.document = { getElementById: vi.fn(() => null) };
     registerAllFighterAnimations.mockClear();
+  });
+
+  test('asks for every image with CORS so a custom strip from the media origin does not taint the canvas', () => {
+    const scene = fakeSceneForPreload();
+    BattlefieldScene.prototype.preload.call(scene);
+
+    expect(scene.load.setCORS).toHaveBeenCalledWith('anonymous');
   });
 
   test('runs boot-only registration exactly once even when the loader completes again later', () => {

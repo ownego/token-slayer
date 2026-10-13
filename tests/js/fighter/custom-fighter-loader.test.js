@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('phaser', () => ({
   default: { Textures: { FilterMode: { NEAREST: 1 } } },
@@ -138,5 +138,25 @@ describe('loadCustomFighter', () => {
     expect(scene.stored.textures.has('custom-7-abc')).toBe(false);
 
     await expect(loadCustomFighter(scene, 7, SPEC, fakeBrowser())).resolves.toMatchObject({ key: 'custom-7-abc' });
+  });
+});
+
+describe('the real image loader', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  test('asks for the strips with CORS so the canvas can read them back', async () => {
+    const created = [];
+    vi.stubGlobal('Image', class {
+      constructor() {
+        created.push(this);
+        setTimeout(() => this.onload?.(), 0);
+      }
+    });
+    const { loadImageForTest } = await import('@battlefield/fighter/custom-fighter-loader.js');
+
+    await loadImageForTest('https://assets.example.test/custom-characters/1/abc/idle.png');
+
+    expect(created[0].crossOrigin).toBe('anonymous');
+    expect(created[0].src).toBe('https://assets.example.test/custom-characters/1/abc/idle.png');
   });
 });

@@ -35,6 +35,7 @@ export class BattlefieldScene extends Phaser.Scene {
    * @return {void}
    */
   preload() {
+    this.load.setCORS('anonymous');
     // Single atlas covers all 138 fighter strips. ?v= busts the host
     // nginx's 7-day must-revalidate cache on this non-hashed filename the
     // moment a roster/animation change actually changes its content — see

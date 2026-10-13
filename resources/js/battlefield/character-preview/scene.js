@@ -71,6 +71,7 @@ export class CharacterPreviewScene extends Phaser.Scene {
 
   /** @return {void} */
   preload() {
+    this.load.setCORS('anonymous');
     if (!this.textures.exists(TextureKey.FIGHTERS)) {
       this.load.atlas(
         TextureKey.FIGHTERS,
