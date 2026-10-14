@@ -36,3 +36,13 @@ test('an unequipped custom character is not what the battlefield shows', functio
     expect($character->user->customFighterState())->toBeNull()
         ->and($character->broadcastState())->toBeArray();
 });
+
+test('on a remote disk the broadcast url_base is the full url of the strips folder', function () {
+    config([
+        'token_slayer.custom_character.disk' => 'cdn',
+        'filesystems.disks.cdn' => ['driver' => 's3', 'key' => 'k', 'secret' => 's', 'region' => 'auto', 'bucket' => 'b', 'endpoint' => 'https://r2.example.test', 'url' => 'https://media.example.test'],
+    ]);
+    $character = CustomCharacter::factory()->create(['version_hash' => 'abc123def456']);
+
+    expect($character->broadcastState()['url_base'])->toBe("https://media.example.test/custom-characters/{$character->user_id}/abc123def456");
+});

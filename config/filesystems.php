@@ -72,6 +72,8 @@ return [
             'url' => env('R2_MEDIA_URL'),
             'use_path_style_endpoint' => env('R2_USE_PATH_STYLE_ENDPOINT', false),
             'options' => ['CacheControl' => 'public, max-age=31536000, immutable'],
+            // Storage calls run inside the upload request: give up on a stalled bucket instead of hanging it.
+            'http' => ['connect_timeout' => 3, 'timeout' => 15],
             'throw' => true,
             'report' => false,
         ],

@@ -6,11 +6,11 @@ use App\Events\FighterCharacterChanged;
 use App\Exceptions\InvalidPoseSheetException;
 use App\Models\User;
 use App\Services\CustomCharacter\CharacterPromptBuilder;
+use App\Services\CustomCharacter\CustomCharacterStore;
 use App\Services\CustomCharacter\RemoveCustomCharacter;
 use App\Services\CustomCharacter\SaveCustomCharacter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Storage;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
@@ -131,12 +131,12 @@ class CustomCharacterUpload extends Component
     public function render(): View
     {
         $character = auth()->user()->customCharacter;
-        $disk = Storage::disk('public');
+        $baseUrl = $character === null ? '' : app(CustomCharacterStore::class)->baseUrl($character->user_id, $character->version_hash);
 
         $strips = $character === null ? [] : collect($character->animations)
             ->map(fn (array $animation, string $name): array => [
                 'name' => $name,
-                'url' => $disk->url("custom-characters/{$character->user_id}/{$character->version_hash}/{$name}.png"),
+                'url' => "{$baseUrl}/{$name}.png",
                 'frames' => $animation['frames'],
                 'rate' => $animation['rate'],
             ])

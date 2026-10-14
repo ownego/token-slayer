@@ -73,3 +73,38 @@ test('leaves other users untouched, and forgetting removes everything for that u
     Storage::disk('public')->assertMissing("custom-characters/7/{$mine}/idle.png");
     Storage::disk('public')->assertExists("custom-characters/8/{$theirs}/idle.png");
 });
+
+test('a local disk serves the strips from a same-origin path, any other driver from the full url', function () {
+    $store = app(CustomCharacterStore::class);
+    expect($store->baseUrl(7, 'abc123def456'))->toBe('/storage/custom-characters/7/abc123def456');
+
+    config([
+        'token_slayer.custom_character.disk' => 'cdn',
+        'filesystems.disks.cdn' => ['driver' => 's3', 'key' => 'k', 'secret' => 's', 'region' => 'auto', 'bucket' => 'b', 'endpoint' => 'https://r2.example.test', 'url' => 'https://media.example.test'],
+    ]);
+
+    expect($store->baseUrl(7, 'abc123def456'))->toBe('https://media.example.test/custom-characters/7/abc123def456');
+});
+
+test('the strips are written to and removed from the configured disk', function () {
+    Storage::fake('elsewhere');
+    config([
+        'token_slayer.custom_character.disk' => 'elsewhere',
+        'filesystems.disks.elsewhere' => ['driver' => 'local', 'root' => storage_path('framework/testing/disks/elsewhere'), 'url' => '/storage-elsewhere'],
+    ]);
+    $store = app(CustomCharacterStore::class);
+
+    $saved = $store->put(7, builtStrips());
+
+    Storage::disk('elsewhere')->assertExists("custom-characters/7/{$saved['hash']}/idle.png");
+    Storage::disk('public')->assertMissing("custom-characters/7/{$saved['hash']}/idle.png");
+
+    $store->forget(7);
+
+    Storage::disk('elsewhere')->assertMissing("custom-characters/7/{$saved['hash']}/idle.png");
+});
+
+test('the r2 disk gives up on a stalled storage call instead of hanging the request', function () {
+    expect(config('filesystems.disks.r2.http.connect_timeout'))->toBeInt()->toBeGreaterThan(0)
+        ->and(config('filesystems.disks.r2.http.timeout'))->toBeInt()->toBeGreaterThan(0);
+});
