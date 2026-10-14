@@ -70,6 +70,8 @@ export function heelOf(key) {
   HEEL[key] = null;
   const [x0, , x1] = BOX[key];
   const img = new Image();
+  // a custom fighter's strip lives on the media origin: without CORS the canvas is tainted and getImageData throws
+  img.crossOrigin = 'anonymous';
   img.onload = () => {
     const c = document.createElement('canvas');
     c.width = 100;

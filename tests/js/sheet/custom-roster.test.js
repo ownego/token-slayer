@@ -96,4 +96,9 @@ describe('stripUrl', () => {
   test('hands a served URL back as it is, so custom strips play like the roster\'s', () => {
     expect(stripUrl('/storage/custom-characters/7/abc/idle.png')).toBe('/storage/custom-characters/7/abc/idle.png');
   });
+
+  test('hands a full URL on another origin back as it is, so strips on a media domain play too', () => {
+    expect(stripUrl('https://media.example.test/custom-characters/7/abc/idle.png'))
+      .toBe('https://media.example.test/custom-characters/7/abc/idle.png');
+  });
 });
