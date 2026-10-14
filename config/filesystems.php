@@ -60,6 +60,26 @@ return [
             'report' => false,
         ],
 
+        // Cloudflare R2 bucket for user uploads, served from its own public domain
+        // (`url`). R2 has no ACLs, so `visibility` is left unset, and `throw` is on
+        // so a failed write is loud. Objects are immutable for a year: write them
+        // under a content-hashed path, and purge the CDN when one must be taken down.
+        'r2' => [
+            'driver' => 's3',
+            'key' => env('R2_MEDIA_ACCESS_KEY_ID'),
+            'secret' => env('R2_MEDIA_SECRET_ACCESS_KEY'),
+            'region' => 'auto',
+            'bucket' => env('R2_MEDIA_BUCKET'),
+            'endpoint' => env('R2_ENDPOINT'),
+            'url' => env('R2_MEDIA_URL'),
+            'use_path_style_endpoint' => env('R2_USE_PATH_STYLE_ENDPOINT', false),
+            'options' => ['CacheControl' => 'public, max-age=31536000, immutable'],
+            // Storage calls often run inside a web request: give up on a stalled bucket instead of hanging it.
+            'http' => ['connect_timeout' => 3, 'timeout' => 15],
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
 
     /*
