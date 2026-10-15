@@ -42,6 +42,8 @@ No scheduler container in dev (staging adds `scheduler` = `schedule:work`). The 
 | `broadcasting.md` | PHP↔JS broadcast contract rules |
 | `accounts.md` | org accounts (Claude + Codex), attribution chain, provisioning, quota probing, rebalance/reconciliation |
 
+**UI work:** before adding or changing anything a player sees (HUD, fighter sheet, a page, a control, copy), read `.ai/design/README.md`: tokens, components, patterns (confirm, empty/error states, previews), motion, layout and accessibility, plus a pre-build checklist. Update it in the same PR when a token, component class or rule changes.
+
 Convention docs also live scattered next to the code they describe — these do NOT auto-load unless you're already working in that path, so check for one before touching a directory that has a `CLAUDE.md`/`CREDITS.md`/`README.md`:
 
 | File | Covers |

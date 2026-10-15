@@ -1,5 +1,7 @@
 # Frontend (project-specific)
 
+Look and behaviour of every screen (tokens, components, states, motion, layout, accessibility, copy) are documented in `.ai/design/`; read `.ai/design/README.md` before touching UI.
+
 ## Livewire 4 + Alpine
 
 - State lives server-side in the Livewire component; Alpine handles purely client-side interactivity (overlays, toggles, canvas HUD positioning). Don't duplicate server state into Alpine stores.
