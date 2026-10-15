@@ -62,7 +62,7 @@
             @enderror
 
             <div class="cce-row">
-                <button type="submit" x-show="phase === 'ready' || phase === 'building'" x-cloak x-bind:disabled="phase !== 'ready'" class="btn primary" wire:target="build">
+                <button type="submit" x-show="phase === 'ready' || phase === 'building'" x-cloak x-bind:disabled="phase !== 'ready'" class="btn primary cce-build" wire:target="build">
                     <span x-text="phase === 'building' ? 'Building…' : 'Build preview'">Build preview</span>
                 </button>
                 <span class="cce-note" x-show="phase === 'idle'">Then build a preview and try it on the stage before you use it.</span>
@@ -95,8 +95,8 @@
                 @if ($confirming === 'remove')
                     <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $character['name'] }}" wire:keydown.escape.stop.prevent="dismissConfirm">
                         <span>Remove <b>{{ $character['name'] }}</b>{{ count($character['versions']) > 1 ? ' and its '.count($character['versions']).' versions' : '' }}? You go back to your roster fighter.</span>
-                        <button type="button" class="btn blood" wire:click="remove" wire:loading.attr="disabled" wire:target="remove">Remove</button>
                         <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
+                        <button type="button" class="btn blood" wire:click="remove" wire:loading.attr="disabled" wire:target="remove">Remove</button>
                     </div>
                 @else
                     <button type="button" class="cce-link danger" id="cce-remove-open-{{ $this->getId() }}" wire:click="askToConfirm('remove')">Remove fighter</button>
@@ -118,8 +118,8 @@
                                 @if ($confirming === 'version-'.$version['hash'])
                                     <div class="alert crit confirm-row" role="alertdialog" aria-label="Delete this version" wire:keydown.escape.stop.prevent="dismissConfirm">
                                         <span>Delete this version?</span>
-                                        <button type="button" class="btn blood" wire:click="deleteVersion('{{ $version['hash'] }}')" wire:loading.attr="disabled" wire:target="equipVersion,deleteVersion">Delete</button>
                                         <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
+                                        <button type="button" class="btn blood" wire:click="deleteVersion('{{ $version['hash'] }}')" wire:loading.attr="disabled" wire:target="equipVersion,deleteVersion">Delete</button>
                                     </div>
                                 @else
                                     <div class="cce-row">

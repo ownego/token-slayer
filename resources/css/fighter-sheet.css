@@ -1462,3 +1462,17 @@
 .fs .cce-skel i:nth-child(2) { width: 90%; height: 40px; border: 1px dashed #3a4a70; background: transparent; }
 .fs .cce-skel i:nth-child(3) { width: 25%; }
 @keyframes fs-skel { from { opacity: 0.45; } to { opacity: 1; } }
+
+/* stable widths: a control that changes its label reserves the longest one, so Pause/Play, Equip/Equipping and
+   Build/Building never push their neighbours; text beside them is tabular and the row keeps its height */
+#inspect-toggle { min-width: 64px; }
+#inspect-label { min-width: 17ch; display: inline-block; white-space: nowrap; }
+.fs .btn-equip { min-width: 190px; }
+#discard-draft { min-width: 112px; }
+.fs .cce-build { min-width: 140px; }
+.fs .equip-row { min-height: 52px; }
+.fs .equip-note { font-size: 12px; line-height: 1.3; }
+
+/* confirm row: the question on its own line, then Cancel and the destructive verb right-aligned, the verb last */
+.fs .cce .confirm-row { justify-content: flex-end; }
+.fs .cce .confirm-row > span { flex: 1 1 100%; }

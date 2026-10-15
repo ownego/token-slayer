@@ -176,3 +176,16 @@ test('editor controls have touch targets and its build action stays in the drawe
   expect(value('.fs .slot-add')).toBe('44px');
   expect(mediaDecl(/max-width: 640px/, '.fs .cce-form .cce-row:last-child', 'position')).toBe('sticky');
 });
+
+test('every control whose label changes at runtime reserves the width of its longest label, so toggling never shifts its neighbours', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  const reserved = new Set();
+  root.walkRules(rule => {
+    rule.walkDecls('min-width', () => reserved.add(rule.selector));
+  });
+  const joined = [...reserved].join(' , ');
+
+  for (const selector of ['#inspect-toggle', '#inspect-label', '.btn-equip', '#discard-draft', '.cce-build']) {
+    expect(joined, `${selector} has no min-width`).toContain(selector);
+  }
+});

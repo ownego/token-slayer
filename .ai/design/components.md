@@ -20,6 +20,14 @@ State vocabulary used below: default, hover, `:focus-visible`, active (pressed),
 | `.link` | 13 px gold text, underline, 3 px offset | an inline text action or a link |
 | `.fold` | 12 px `--dim`, rotating triangle | expand/collapse |
 
+Rules for weight and stability (checked on the real page, not only in CSS):
+- One gold action per view. Tools (the frame inspector) and secondary actions beside Use are small, 1 px dim-bordered (`#2e3d63`), parchment text, gold only on hover/focus/pressed. 30-36 px high on a mouse, 44 px only under `@media (pointer: coarse)`.
+- A control whose label changes (Pause/Play, Equip/Equipping, Build/Building) reserves the width of its longest label (`min-width`), and a status text beside it is tabular with a fixed width. Toggling must never move a neighbour.
+- Buttons keep their natural width inside a flex/grid row (`flex: 0 0 auto`); a stretched full-width button is a bug unless it is the sticky phone action bar.
+- Fields and the buttons beside them share one height and one edge weight.
+- A confirm row is the question on its own line, then Cancel (safe, focused) and the destructive verb right-aligned, the verb last.
+- Before calling a screen done, measure it: list every button/field with size, font, border and colour and look for outliers; open each state (empty, loading, error, long text), not only the happy path.
+
 Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness(1.1)`. Every pressable control sets `cursor: pointer` (Tailwind 4 preflight resets buttons to the arrow; see `layout.md`). Destructive buttons are not a new colour: they are `.btn` with the confirm pattern in `patterns.md` and, once confirmed, `--blood` text on the confirm step only.
 
 ## Tabs
