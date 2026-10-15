@@ -10,7 +10,7 @@
 
     <section class="cce-sec" aria-labelledby="cce-upload-title-{{ $this->getId() }}">
         <h3 id="cce-upload-title-{{ $this->getId() }}">{{ $character ? 'Make a new version' : 'Make your own fighter' }}</h3>
-        <p class="cce-note">PNG, JPEG or WebP, up to 4 MB and 2048 px a side. Four rows of poses on solid magenta or a transparent background: idle (2 to 4), walk (4), attack (3) and death (3).</p>
+        <p class="cce-note">PNG, JPEG or WebP, up to 4 MB and 2048 px. Four rows on magenta or transparent: idle 2–4, walk 4, attack 3, death 3.</p>
         @if (! $character && ! $draft)
             @include('partials.custom-character-sheet-diagram')
             <a class="panel-link" href="{{ route('custom-character') }}" target="_blank" rel="noopener">Open the prompt guide</a>

@@ -143,8 +143,8 @@ test('the form submits to an action the browser can reach, not Livewire\'s built
 test('the editor tells the player why Build is disabled, and the size limits the decoder enforces', function () {
     editorFor(User::factory()->create())
         ->assertSee('Choose a file first.')
-        ->assertSee('2048 px a side')
-        ->assertSee('death (3)');
+        ->assertSee('2048 px')
+        ->assertSee('death 3');
 });
 
 test('the editor is built from the sheet\'s own pieces: no browser dialogs, no pill progress, no second set of buttons', function () {

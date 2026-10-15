@@ -342,7 +342,7 @@
 .fs .inspector[hidden] { display: none; }
 .fs .inspector .btn { min-height: 44px; }
 /* the editor is a drawer under the stage: the stage keeps showing the fighter, the roster stays beside it */
-.fs .cce-drawer { display: none; min-width: 0; padding: 12px; }
+.fs .cce-drawer { display: none; min-width: 0; padding: 8px 14px 12px; container-type: inline-size; }
 .fs .showcase.editing > .moves-head, .fs .showcase.editing > .hotbar, .fs .showcase.editing > .move-name,
 .fs .showcase.editing > .equip-row, .fs .showcase.editing > .inspector { display: none; }
 .fs .showcase.editing > .cce-drawer { display: block; flex: 1 1 0; min-height: 0; overflow-y: auto; border-top: 1px solid rgba(251,191,36,0.18); }
@@ -1348,9 +1348,9 @@
    Built from the sheet's own pieces; only what the sheet has no equivalent for is here:
    panel sections, a labelled field with a counter, the upload bar, the version cards and
    the in-place confirm row. */
-.fs .cce { display: grid; gap: 18px; font: 400 14px/1.45 var(--body); color: var(--parchment); }
-.fs .cce-sec { display: grid; gap: 10px; min-width: 0; }
-.fs .cce-sec + .cce-sec { padding-top: 16px; border-top: 1px solid rgba(251,191,36,0.18); }
+.fs .cce { display: grid; gap: 12px; font: 400 14px/1.45 var(--body); color: var(--parchment); }
+.fs .cce-sec { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.fs .cce-sec + .cce-sec { padding-top: 12px; border-top: 1px solid rgba(251,191,36,0.18); }
 .fs .cce-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .fs .cce h3 { margin: 0; font: 600 15px var(--display); color: var(--rivet); }
 .fs .cce-note { margin: 0; font-size: 13px; color: var(--dim); }
@@ -1358,7 +1358,7 @@
 .fs .cce-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .fs .cce-form { display: grid; gap: 10px; }
 .fs .cce-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--dim); }
-.fs .cce-sheet-diagram { display: block; width: min(100%, 320px); height: auto; border: 1px solid var(--rivet); }
+.fs .cce-sheet-diagram { display: block; width: min(100%, 240px); height: auto; border: 1px solid var(--rivet); }
 .fs .cce-thumb { display: flex; align-items: center; gap: 10px; color: var(--dim); }
 .fs .cce-thumb img { display: block; width: 96px; height: 72px; object-fit: contain; image-rendering: pixelated; background: #0e1a31; border: 1px solid #243150; }
 .fs .build-bar { height: 6px; margin-top: 6px; background: #243150; overflow: hidden; }
@@ -1380,7 +1380,8 @@
 .fs .field-count { font: 500 12px var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
 .fs .upload-bar { height: 6px; margin-top: 6px; background: #243150; overflow: hidden; }
 .fs .upload-bar i { display: block; height: 100%; background: var(--rivet); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform 0.15s ease; }
-.fs .versions { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.fs .versions { display: flex; gap: 8px; margin: 0; padding: 0 0 6px; list-style: none; overflow-x: auto; scroll-snap-type: x proximity; }
+.fs .versions > .version { flex: 0 0 160px; scroll-snap-align: start; }
 .fs .version { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 8px; background: #0e1a31; border: 1px solid #243150; text-align: center; }
 .fs .version.current { border-color: var(--rivet); }
 .fs .version .cce-row { justify-content: center; }
@@ -1406,3 +1407,11 @@
 .fs .slot .badge { background: var(--rivet); color: var(--night-deep); }
 /* the CUSTOM marker and YOU share the corner: YOU drops to the second row instead of covering it */
 .fs .slot:has(.badge) .tag { top: 12px; }
+
+/* a wide drawer puts upload and fighter side by side, the version strip under both: less scrolling */
+@container (min-width: 600px) {
+    .fs .cce { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; align-items: start; }
+    .fs .cce > .alert { grid-column: 1 / -1; }
+    .fs .cce-sec + .cce-sec { padding-top: 0; border-top: 0; padding-left: 16px; border-left: 1px solid rgba(251,191,36,0.18); }
+    .fs .cce > .cce-sec:nth-of-type(3) { grid-column: 1 / -1; padding-left: 0; border-left: 0; padding-top: 12px; border-top: 1px solid rgba(251,191,36,0.18); }
+}
