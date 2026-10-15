@@ -52,7 +52,7 @@ test('the page sends guests to the slack login', function () {
     $this->get('/character')->assertRedirect();
 });
 
-test('the page is the guide only: it explains the sheet and links to the sheet\'s Character tab in a new tab', function () {
+test('the page is the guide only and links to the editor in the same tab', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
     $html = $this->get('/character')->assertOk()
@@ -61,7 +61,8 @@ test('the page is the guide only: it explains the sheet and links to the sheet\'
         ->assertDontSeeLivewire(CustomCharacterEditor::class)
         ->getContent();
 
-    expect($html)->toMatch('/<a [^>]*href="[^"]*\/battlefield\?sheet=character"[^>]*target="_blank"[^>]*rel="noopener"/');
+    expect($html)->toContain('href="'.route('battlefield').'?sheet=character&amp;editor=1"')
+        ->not->toContain('target="_blank"');
 });
 
 test('the battlefield opens the sheet on the Character tab when asked to by the guide\'s link', function () {
@@ -112,22 +113,22 @@ test('the picker shows each type with its thumbnail', function () {
         ->assertSee('x-bind:src="thumbs + \'/\' + key + \'.png\'"', false);
 });
 
-test('the nav opens other pages in a new tab and shows the current page as plain text, not a link', function () {
+test('the nav opens other pages in the same tab and shows the current page as plain text', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
     $html = $this->get('/character')->assertOk()->getContent();
 
-    expect($html)->toContain('target="_blank" rel="noopener"')
-        ->and(preg_match_all('/<a [^>]*href="[^"]*\/(?:setup|guide|battlefield|dashboard)[^"]*"[^>]*>/', $html, $links))->toBeGreaterThan(0);
+    expect($html)->not->toContain('target="_blank"');
+    expect(preg_match_all('/<a [^>]*href="[^"]*\/(?:setup|guide|battlefield|dashboard)[^"]*"[^>]*>/', $html, $links))->toBeGreaterThan(0);
     foreach ($links[0] as $link) {
-        expect($link)->toContain('target="_blank"');
+        expect($link)->not->toContain('target="_blank"');
     }
     expect($html)->toContain('aria-current="page"');
 });
 
 test('the editor offers an upload and no fighter to a player who has none', function () {
     editorFor(User::factory()->create())
-        ->assertSee('Upload a sheet')
+        ->assertSee('Make your own fighter')
         ->assertSee('Build preview')
         ->assertDontSee('Your fighter')
         ->assertDontSee('Earlier versions');
@@ -218,7 +219,20 @@ test('the sheet loads the editor when its panel is first opened, not with every 
         ->assertSeeHtml('__lazyLoad');
 });
 
-test('building a valid sheet previews it as a draft: nothing goes live yet', function () {
+test('a new player sees the pose layout and a file preview flow before building', function () {
+    $user = User::factory()->create();
+
+    editorFor($user)
+        ->assertSee('Make your own fighter')
+        ->assertSee('Open the prompt guide')
+        ->assertSeeHtml('<svg role="img"')
+        ->assertSeeHtml('phase:')
+        ->assertSeeHtml('destroy()')
+        ->assertDontSeeHtml('x-on:alpine:destroy')
+        ->assertDontSeeHtml('info +=');
+});
+
+test('building a valid sheet sends a draft to the stage without equipping it', function () {
     Event::fake([FighterCharacterChanged::class]);
     $user = User::factory()->create();
 
@@ -226,13 +240,8 @@ test('building a valid sheet previews it as a draft: nothing goes live yet', fun
         ->set('sheet', sheetUpload(pngBytes(poseSheetImage(background: 'magenta'))))
         ->call('build')
         ->assertHasNoErrors()
-        ->assertSee('Previewing')
-        ->assertSee('Not live yet')
-        ->assertSee('Use this fighter')
-        ->assertSee('Discard preview')
-        ->assertSeeHtml('x-data="customDraftPreview(')
-        ->assertDispatched('sheet-toast', message: 'Built. It goes live only when you use it.')
-        ->assertJs('document.getElementById("cce-draft-" + $wire.$id)?.scrollIntoView({ behavior: "smooth", block: "center" })');
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft']['hash'] === $user->fresh()->customCharacterDraft->version_hash)
+        ->assertDispatched('sheet-toast', message: 'Built. It goes live only when you use it.');
 
     expect($user->fresh()->customCharacterDraft)->not->toBeNull()
         ->and($user->fresh()->customCharacter)->toBeNull();
@@ -246,6 +255,7 @@ test('a sheet that breaks the contract is refused with the reason, and nothing i
         ->set('sheet', sheetUpload(pngBytes(poseSheetImage(background: 'white'))))
         ->call('build')
         ->assertHasErrors('sheet')
+        ->assertSee('Ask the image AI for one flat magenta (#FF00FF) background')
         ->assertSee('The background must be solid magenta');
 
     expect($user->fresh()->customCharacterDraft)->toBeNull();
@@ -371,7 +381,10 @@ test('the earlier versions list is there once there is more than one, with the o
 
     $confirm->execute($user, stagedFor($user, 1)->version_hash);
 
-    editorFor($user)->assertSee('Earlier versions')->assertSee('In use')->assertSee('Equip version')
+    editorFor($user)->assertSee('Earlier versions')->assertSee('In use')
+        ->assertSee('Version 1')->assertSee('Version 2')
+        ->assertSee('Preview')->assertSee('Equip version 1')
+        ->assertSeeHtml('custom-version-peek')
         ->call('equipVersion', $first)
         ->assertDispatched('sheet-toast', message: 'Switched to that version and equipped it.');
 
@@ -476,7 +489,8 @@ test('confirming announces the new fighter with a ceremony and no draft left', f
         ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null
             && $params['ceremony'] === true
             && $params['equipped'] === 'custom'
-            && $params['custom']['version'] === $draft->version_hash);
+            && $params['custom']['version'] === $draft->version_hash)
+        ->assertDispatched('sheet-focus', target: 'equipped-slot');
 });
 
 test('renaming or discarding is announced without a ceremony', function () {

@@ -17,6 +17,7 @@
             </div>
             <div class="roster-scroll" id="roster-scroll">
                 <div class="roster-grid" id="roster-grid" role="listbox" aria-label="Characters"></div>
+                <span class="sr-only" id="draft-status" role="status"></span>
             </div>
         </aside>
 
@@ -68,12 +69,19 @@
             </div>
             <div class="moves-head"><h3><svg class="px-ic" viewBox="0 0 8 8" aria-hidden="true" shape-rendering="crispEdges"><rect x="4" y="0" width="1" height="1"/><rect x="5" y="0" width="1" height="1"/><rect x="3" y="1" width="1" height="1"/><rect x="4" y="1" width="1" height="1"/><rect x="2" y="2" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="1" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="1" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="0" y="7" width="1" height="1"/></svg>Moves</h3><span id="move-max" hidden></span></div>
             <div class="hotbar" id="hotbar"></div>
+            <div class="inspector" id="inspector" role="group" aria-label="Inspect fighter frames" hidden>
+                <button class="btn" type="button" id="inspect-toggle">Pause</button>
+                <button class="btn" type="button" id="inspect-prev" aria-label="Previous frame">&larr; Frame</button>
+                <button class="btn" type="button" id="inspect-next" aria-label="Next frame">Frame &rarr;</button>
+                <span id="inspect-label" aria-live="off"></span>
+            </div>
             <div class="move-name" id="move-name" aria-live="polite"></div>
 
             <div class="equip-row">
                 <span class="equip-note" id="equip-note"></span>
                 <button class="btn" type="button" id="back-equipped" hidden>Back to mine</button>
                 <button class="btn" type="button" id="edit-custom" hidden>Edit custom fighter</button>
+                <button class="btn" type="button" id="discard-draft" hidden>Discard</button>
                 <button class="btn primary btn-equip" type="button" id="equip-btn" disabled>
                     <span class="core"></span><span class="sheen"></span>
                     <span class="label"><span class="icon-cluster"><span class="sword-fx sword-left">🗡️</span><span class="icon-wiggle">🛡</span><span class="sword-fx sword-right">🗡️</span></span><span id="equip-label">Equipped</span></span>

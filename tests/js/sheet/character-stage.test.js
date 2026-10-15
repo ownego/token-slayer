@@ -14,7 +14,9 @@ beforeEach(() => {
     <aside class="roster"><span id="roster-count"></span>
       <div class="chips"><button class="chip" data-type="">All</button><button class="chip" data-type="CUSTOM" hidden>Custom</button><button class="chip" data-type="ARROW">Arrow</button></div>
       <div id="roster-grid"></div></aside>
-    <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div>
+    <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div><div class="equip-row"></div>
+      <button type="button" id="discard-draft" hidden>Discard</button><span id="draft-status" role="status"></span>
+      <div id="inspector" hidden><button id="inspect-toggle">Pause</button><button id="inspect-prev">Previous frame</button><button id="inspect-next">Next frame</button><span id="inspect-label"></span></div>
       <section class="cce-drawer" id="custom-panel" hidden><button type="button" id="panel-back">Back</button><div class="cce-row"><button type="button" data-focus="upload">Choose file</button></div><input type="text" data-focus="name"></section>
     </section>
   </div></div><div id="toast"></div><div id="tipbox"></div>`;
@@ -24,6 +26,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup.forEach(fn => fn());
+  delete window.__openCustomEditor;
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -35,6 +38,15 @@ const mount = (overrides = {}) => {
 
   return { equip, dispatch };
 };
+
+test('measures the phone action rows so a toast clears their controls', () => {
+  const actions = document.querySelector('.equip-row');
+  Object.defineProperty(actions, 'offsetHeight', { value: 56 });
+  mount();
+
+  expect(document.getElementById('toast').style.getPropertyValue('--bar-h')).toBe('56px');
+  expect(document.querySelector('.showcase').style.getPropertyValue('--actions-h')).toBe('56px');
+});
 
 test('renders one slot per fighter and tags the equipped one YOU', () => {
   mount();
@@ -170,6 +182,214 @@ const CUSTOM = {
     death: { frames: 3, rate: 6 },
   },
 };
+
+const DRAFT = { hash: 'draft-hash', spec: { ...CUSTOM, name: 'New Fighter' } };
+
+test('a saved draft is selected on the shared stage before the editor mounts', () => {
+  mount({ draft: DRAFT });
+
+  const slot = document.querySelector('.slot[data-key="custom-draft"]');
+  expect(slot).not.toBeNull();
+  expect(slot.querySelector('.badge')?.textContent).toBe('DRAFT');
+  expect(slot.getAttribute('aria-selected')).toBe('true');
+  expect(document.getElementById('show-name').textContent).toBe('New Fighter');
+  expect(document.getElementById('equip-label').textContent).toBe('Use this fighter');
+  expect(document.getElementById('discard-draft').hidden).toBe(false);
+});
+
+test('a new draft closes the drawer, selects its slot and keeps it visible after a style filter', () => {
+  mount();
+  document.querySelector('.chip[data-type="ARROW"]').click();
+  document.querySelector('.slot-add').click();
+
+  changed({ custom: null, draft: DRAFT, equipped: 'orc-rider' });
+
+  const slot = document.querySelector('.slot[data-key="custom-draft"]');
+  expect(document.getElementById('custom-panel').hidden).toBe(true);
+  expect(slot.classList.contains('filtered-out')).toBe(false);
+  expect(slot.getAttribute('aria-selected')).toBe('true');
+  expect(document.activeElement).toBe(slot);
+  expect(document.getElementById('show-state').textContent).toBe('Preview');
+  expect(document.getElementById('equip-note').textContent).toContain('Not live yet');
+});
+
+test('discarding a selected draft restores the equipped fighter', () => {
+  mount({ draft: DRAFT });
+
+  changed({ custom: null, draft: null, equipped: 'orc-rider' });
+
+  expect(document.querySelector('.slot[data-key="custom-draft"]')).toBeNull();
+  expect(document.querySelector('.slot[data-key="orc-rider"]').getAttribute('aria-selected')).toBe('true');
+  expect(document.getElementById('discard-draft').hidden).toBe(true);
+  expect(document.getElementById('equip-label').textContent).toBe('Equipped');
+});
+
+test('using a draft dispatches its hash and shows an equipping state without equipping a roster slot', () => {
+  const dispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch });
+  const { equip } = mount({ draft: DRAFT });
+
+  document.getElementById('equip-btn').click();
+
+  expect(dispatch).toHaveBeenCalledWith('custom-draft-confirm', { hash: 'draft-hash' });
+  expect(document.getElementById('equip-btn').getAttribute('aria-busy')).toBe('true');
+  expect(document.getElementById('equip-label').textContent).toBe('Equipping…');
+  expect(equip).not.toHaveBeenCalled();
+  expect(document.querySelector('.slot[data-key="orc-rider"] .tag')).not.toBeNull();
+});
+
+test('discarding a draft asks the editor to remove it', () => {
+  const dispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch });
+  mount({ draft: DRAFT });
+
+  document.getElementById('discard-draft').click();
+
+  expect(dispatch).toHaveBeenCalledWith('custom-draft-discard');
+});
+
+test('a failed confirm clears the equipping state and shows the error', () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('Livewire', { dispatch: vi.fn() });
+  mount({ draft: DRAFT });
+  document.getElementById('equip-btn').click();
+
+  window.dispatchEvent(new CustomEvent('sheet-error', { detail: { message: 'That draft is gone.' } }));
+
+  expect(document.getElementById('equip-btn').getAttribute('aria-busy')).toBe('false');
+  expect(document.getElementById('equip-btn').disabled).toBe(false);
+  expect(document.getElementById('toast').textContent).toContain('That draft is gone.');
+});
+
+test('an unacknowledged draft confirm eventually unlocks the action and asks for fresh state', () => {
+  vi.useFakeTimers();
+  const livewireDispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch: livewireDispatch });
+  mount({ draft: DRAFT });
+  document.getElementById('equip-btn').click();
+
+  vi.runOnlyPendingTimers();
+
+  expect(document.getElementById('equip-btn').disabled).toBe(false);
+  expect(document.getElementById('toast').textContent).toContain('The equip did not finish');
+  expect(livewireDispatch).toHaveBeenCalledWith('custom-character-refresh');
+});
+
+test('confirming the draft selects the custom fighter before its equip ceremony', () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('Livewire', { dispatch: vi.fn() });
+  const { dispatch } = mount({ draft: DRAFT });
+  document.getElementById('equip-btn').click();
+
+  changed({ custom: { ...CUSTOM, name: 'New Fighter', active: true }, draft: null, equipped: 'custom', ceremony: true });
+
+  expect(document.querySelector('.slot[data-key="custom"] .tag')?.textContent).toBe('YOU');
+  expect(document.querySelector('.slot[data-key="custom"]').getAttribute('aria-selected')).toBe('true');
+  expect(document.getElementById('banner').textContent).toBe('Now fighting as New Fighter');
+  expect(document.getElementById('equip-btn').getAttribute('aria-busy')).toBe('false');
+  vi.advanceTimersByTime(900);
+  expect(dispatch).toHaveBeenCalledWith('fighter-equipped');
+});
+
+test('the shared stage can pause, step, and play a draft after manual frame selection', () => {
+  mount({ draft: DRAFT });
+  const sprite = document.getElementById('show-sprite');
+  const inspector = document.getElementById('inspector');
+  expect(inspector.hidden).toBe(false);
+
+  document.getElementById('inspect-toggle').click();
+  expect(sprite.style.animationPlayState).toBe('paused');
+  document.getElementById('inspect-next').click();
+  expect(sprite.style.animation).toBe('none');
+  expect(sprite.style.backgroundPosition).toBe('-100px 0px');
+  expect(document.getElementById('inspect-label').textContent).toContain('Frame 2');
+
+  document.getElementById('inspect-toggle').click();
+  expect(sprite.style.animation).not.toBe('none');
+  expect(sprite.style.animationPlayState).toBe('running');
+  expect(document.getElementById('inspect-label').textContent).toContain('playing');
+});
+
+test('the inspector disappears when a roster fighter is selected', () => {
+  mount({ draft: DRAFT });
+  document.querySelector('.slot[data-key="wizard"]').click();
+
+  expect(document.getElementById('inspector').hidden).toBe(true);
+});
+
+test('an earlier version can be inspected on the stage, equipped, or closed without a server change', () => {
+  const livewireDispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch: livewireDispatch });
+  mount({ equipped: 'custom', custom: { ...CUSTOM, name: 'Current Fighter' } });
+
+  window.dispatchEvent(new CustomEvent('custom-version-peek', { detail: { hash: 'older-hash', spec: { ...CUSTOM, version: 'older-hash', name: 'Older Fighter' }, number: 1 } }));
+
+  const slot = document.querySelector('.slot[data-key="custom-draft"]');
+  expect(slot.querySelector('.badge').textContent).toBe('Version 1');
+  expect(slot.getAttribute('aria-selected')).toBe('true');
+  expect(document.getElementById('show-name').textContent).toBe('Older Fighter');
+  expect(document.getElementById('show-state').textContent).toBe('Preview');
+  expect(document.getElementById('equip-label').textContent).toBe('Equip version 1');
+  expect(document.getElementById('discard-draft').textContent).toBe('Close preview');
+  expect(document.getElementById('inspector').hidden).toBe(false);
+
+  document.getElementById('equip-btn').click();
+  expect(livewireDispatch).toHaveBeenCalledWith('custom-version-equip', { hash: 'older-hash' });
+  document.getElementById('discard-draft').click();
+  expect(livewireDispatch).not.toHaveBeenCalledWith('custom-draft-discard');
+  expect(document.querySelector('.slot[data-key="custom-draft"]')).toBeNull();
+  expect(document.querySelector('.slot[data-key="custom"]').getAttribute('aria-selected')).toBe('true');
+});
+
+test('a real draft replaces a version peek', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+  window.dispatchEvent(new CustomEvent('custom-version-peek', { detail: { hash: 'older-hash', spec: { ...CUSTOM, version: 'older-hash' }, number: 1 } }));
+
+  changed({ custom: CUSTOM, draft: DRAFT, equipped: 'custom' });
+
+  expect(document.querySelector('.slot[data-key="custom-draft"] .badge').textContent).toBe('DRAFT');
+  expect(document.getElementById('equip-label').textContent).toBe('Use this fighter');
+});
+
+test('another session changing this player requests one fresh sheet state without reacting to teammates', () => {
+  vi.useFakeTimers();
+  const livewireDispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch: livewireDispatch });
+  mount({ me: 7 });
+
+  window.dispatchEvent(new CustomEvent('sheet-own-character-broadcast', { detail: { user_id: 8 } }));
+  window.dispatchEvent(new CustomEvent('sheet-own-character-broadcast', { detail: { user_id: 7 } }));
+  window.dispatchEvent(new CustomEvent('sheet-own-character-broadcast', { detail: { user_id: 7 } }));
+  vi.runOnlyPendingTimers();
+
+  expect(livewireDispatch).toHaveBeenCalledTimes(1);
+  expect(livewireDispatch).toHaveBeenCalledWith('custom-character-refresh');
+});
+
+test('the editor deep link opens after the stage mounts even when its event arrived first', () => {
+  window.__openCustomEditor = true;
+  mount();
+
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+  expect(window.__openCustomEditor).toBe(false);
+
+  window.dispatchEvent(new Event('open-custom-editor'));
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  window.__openCustomEditor = false;
+});
+
+test('the broadcast echo of a just-announced local change does not request another refresh', () => {
+  vi.useFakeTimers();
+  const livewireDispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch: livewireDispatch });
+  mount({ me: 7 });
+  changed({ custom: CUSTOM, draft: null, equipped: 'custom' });
+
+  window.dispatchEvent(new CustomEvent('sheet-own-character-broadcast', { detail: { user_id: 7 } }));
+  vi.runOnlyPendingTimers();
+
+  expect(livewireDispatch).not.toHaveBeenCalledWith('custom-character-refresh');
+});
 
 test('the roster starts with a Create tile that opens the editor panel in place, and it is not a fighter slot', () => {
   mount();

@@ -127,7 +127,6 @@ class CustomCharacterEditor extends Component
             $stage->execute($user, (string) file_get_contents($this->sheet->getRealPath()));
             $this->toast('Built. It goes live only when you use it.');
             $this->announce();
-            $this->js('document.getElementById("cce-draft-" + $wire.$id)?.scrollIntoView({ behavior: "smooth", block: "center" })');
         } catch (Throwable $exception) {
             $this->fail($exception, 'sheet');
         } finally {
@@ -150,6 +149,7 @@ class CustomCharacterEditor extends Component
         $this->run(function () use ($hash, $confirm): void {
             $confirm->execute(auth()->user(), $hash);
             $this->toast('Your fighter is equipped.');
+            $this->dispatch('sheet-focus', target: 'equipped-slot');
         });
     }
 
@@ -244,6 +244,8 @@ class CustomCharacterEditor extends Component
      *
      * @param  RemoveCustomCharacter  $remove  removes the fighter
      * @return void
+     *
+     * @throws CustomCharacterVersionException when the fighter is already gone, handled by run()
      */
     public function remove(RemoveCustomCharacter $remove): void
     {
@@ -326,12 +328,14 @@ class CustomCharacterEditor extends Component
             'character' => $character === null ? null : [
                 'name' => $character->name,
                 'active' => $character->active,
-                'versions' => $character->versions->reverse()->map(fn ($version): array => [
+                'versions' => $character->versions->map(fn ($version, int $index): array => [
                     'hash' => $version->version_hash,
+                    'number' => $index + 1,
                     'current' => $version->version_hash === $character->version_hash,
                     'at' => $version->created_at,
                     'idle' => $previews->execute($user->id, $version->version_hash, $version->animations)[0],
-                ])->values()->all(),
+                    'spec' => $previews->spec($user->id, $version->version_hash, $version->animations, staged: false, name: $character->name),
+                ])->reverse()->values()->all(),
             ],
         ]);
     }
@@ -387,7 +391,7 @@ class CustomCharacterEditor extends Component
     private function fail(Throwable $exception, string $field): void
     {
         if ($exception instanceof InvalidPoseSheetException) {
-            $this->addError('sheet', $exception->getMessage());
+            $this->addError('sheet', $exception->getMessage().' '.$exception->problem->hint());
 
             return;
         }

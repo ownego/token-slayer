@@ -9,6 +9,7 @@ import { BOX, ROSTER, TYPE_LINE } from './sheet-roster.js';
 import { BY_KEY, faceColor, frameIn, moves, nameOf, paint, paintCharge, playAnim, standOn, strip, wait } from './sprite-strip.js';
 import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
 import { CUSTOM_KEY, DRAFT_KEY, groupOf, matchesChip, registerCustomRoster } from './custom-roster.js';
+import { frameOffset, inspectorLabel, inspectorStart, inspectorStep, inspectorToggle } from './frame-inspector.js';
 
 /**
  * The stage FX strips, all existing battlefield assets.
@@ -56,6 +57,21 @@ const EQUIP_FOLD_DELAY_MS = 900;
  * @type {number}
  */
 const EQUIP_PERSIST_DELAY_MS = EQUIP_FOLD_DELAY_MS + 350 + 950;
+
+/**
+ * Recovery window while waiting for the editor to acknowledge a draft equip.
+ * Revisit against the measured staging duration before release.
+ *
+ * @type {number}
+ */
+const EQUIP_TIMEOUT_MS = 30000;
+
+/**
+ * Coalesces repeated broadcasts and the echo of a local editor action.
+ *
+ * @type {number}
+ */
+const REFRESH_DEBOUNCE_MS = 150;
 
 /**
  * Alpine.data() component for the Character tab.
@@ -116,12 +132,20 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   // before anything reads the roster lookups: puts the custom fighter in, or clears an earlier mount's
   const hasCustom = registerCustomRoster(BY_KEY, BOX, custom);
+  const hasDraft = registerCustomRoster(BY_KEY, BOX, draft?.spec ?? null, DRAFT_KEY);
   const known = key => Boolean(BY_KEY[key]);
   let editing = false;
+  let draftHash = draft?.hash ?? null;
+  let currentDraft = draft;
+  let previewMode = hasDraft ? 'draft' : null;
+  let previewNumber = null;
+  let lastLocalAnnouncementAt = -Infinity;
+  let refreshTimer = null;
 
   let equipped = known(startingKey) ? startingKey : ROSTER[0].key;
   let previewing = equipped;
   let activeMove = 'idle';
+  let inspectorState = inspectorStart();
   let seq = 0; // bumps on every new selection so stale chains stop
   let beforeEquip = equipped;
 
@@ -179,6 +203,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   function makeSlot(c) {
     const b = document.createElement('button');
     const custom = c.key === CUSTOM_KEY;
+    const isDraft = c.key === DRAFT_KEY;
     b.className = 'slot';
     b.type = 'button';
     b.setAttribute('role', 'option');
@@ -186,12 +211,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     b.dataset.type = c.type;
     b.style.setProperty('--d', grid.children.length);
     b.dataset.group = groupOf(c);
-    const label = custom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : nameOf(c.key);
+    const label = custom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : isDraft ? `${nameOf(c.key)} (draft)` : nameOf(c.key);
     b.setAttribute('aria-label', label);
     if (custom) {
       b.title = label;
     }
-    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
+    const badge = isDraft ? (previewMode === 'peek' ? `Version ${previewNumber}` : 'DRAFT') : null;
+    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : badge ? `<span class="badge draft">${badge}</span>` : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
     paint(b.querySelector('.face-sprite'), c.key, 'idle', { hoverOnly: true });
     frameIn(b.querySelector('.face-sprite'), c.key, { maxW: 46, maxH: 36, cyPct: 40 });
     const mates = roommates[c.key] || [];
@@ -203,7 +229,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
 
     return b;
   }
-  const entries = hasCustom ? [BY_KEY[CUSTOM_KEY], ...ROSTER] : ROSTER;
+  const entries = [...(hasCustom ? [BY_KEY[CUSTOM_KEY]] : []), ...(hasDraft ? [BY_KEY[DRAFT_KEY]] : []), ...ROSTER];
   entries.forEach(c => grid.appendChild(makeSlot(c)));
   const countFighters = () => {
     $$('roster-count').textContent = `${grid.querySelectorAll('.slot').length} fighters`;
@@ -420,6 +446,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   async function playMove(m) {
     const my = ++seq;
     activeMove = m.id;
+    inspectorState = inspectorStart();
+    updateInspector();
     root.querySelectorAll('.move').forEach(el => el.setAttribute('aria-pressed', String(el.dataset.id === m.id)));
     const idx = moves(previewing).findIndex(x => x.id === m.id) + 1;
     $$('move-name').innerHTML = `${m.label}<small>key ${idx}</small>`;
@@ -491,6 +519,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   function select(key) {
     leaveEditor({ restoreFocus: false });
     previewing = key;
+    inspectorState = inspectorStart();
+    updateInspector();
     const c = BY_KEY[key];
     root.querySelectorAll('.slot').forEach(el => el.setAttribute('aria-selected', String(el.dataset.key === key)));
     $$('show-stage').style.setProperty('--acc', c.accent);
@@ -510,11 +540,16 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     h2.style.animation = '';
     $$('show-type').textContent = c.author ? `${TYPE_LINE[c.type]} · by ${c.author}` : TYPE_LINE[c.type];
     const mine = key === equipped;
-    $$('show-state').textContent = mine ? 'Equipped' : 'Previewing';
+    const isDraft = key === DRAFT_KEY;
+    const isPeek = isDraft && previewMode === 'peek';
+    $$('show-state').textContent = isDraft ? 'Preview' : mine ? 'Equipped' : 'Previewing';
     $$('show-state').classList.toggle('previewing', !mine);
     $$('equip-btn').disabled = mine;
-    $$('equip-label').textContent = mine ? 'Equipped' : `Equip ${nameOf(key)}`;
-    $$('back-equipped').hidden = mine;
+    $$('equip-label').textContent = isPeek ? `Equip version ${previewNumber}` : isDraft ? 'Use this fighter' : mine ? 'Equipped' : `Equip ${nameOf(key)}`;
+    $$('back-equipped').hidden = mine || isDraft;
+    $$('discard-draft').hidden = !isDraft;
+    $$('discard-draft').textContent = isPeek ? 'Close preview' : 'Discard';
+    $$('equip-note').textContent = isPeek ? 'Saved version, not in use' : isDraft ? 'Not live yet. Your fighter stays as it is until you use this one.' : '';
 
     const hb = $$('hotbar');
     hb.innerHTML = '';
@@ -541,6 +576,40 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const my = ++seq;
     summonIn(my).then(ok => { if (ok) { playMove(ms[0]); } });
   }
+
+  function updateInspector() {
+    const inspector = $$('inspector');
+    if (!inspector) {
+      return;
+    }
+    inspector.hidden = previewing !== DRAFT_KEY;
+    $$('inspect-toggle').textContent = inspectorState.playing ? 'Pause' : 'Play';
+    $$('inspect-label').textContent = inspectorLabel(inspectorState);
+  }
+
+  function inspectStep(direction) {
+    const move = moves(previewing).find(candidate => candidate.id === activeMove);
+    const anim = BY_KEY[previewing].anims[move.anim ?? move.id];
+    ++seq;
+    inspectorState = inspectorStep(inspectorState, direction, anim.frames);
+    const sprite = $$('show-sprite');
+    sprite.style.animation = 'none';
+    sprite.style.backgroundPosition = `${frameOffset(move.reverse ? anim.frames - 1 - inspectorState.frame : inspectorState.frame)}px 0`;
+    updateInspector();
+  }
+  on($$('inspect-toggle'), 'click', () => {
+    const result = inspectorToggle(inspectorState);
+    inspectorState = result.state;
+    const sprite = $$('show-sprite');
+    if (result.restart) {
+      const move = moves(previewing).find(candidate => candidate.id === activeMove);
+      playAnim(sprite, previewing, move.anim ?? move.id, { loop: true, reverse: move.reverse });
+    }
+    sprite.style.animationPlayState = inspectorState.playing ? 'running' : 'paused';
+    updateInspector();
+  });
+  on($$('inspect-prev'), 'click', () => inspectStep(-1));
+  on($$('inspect-next'), 'click', () => inspectStep(1));
 
   // hover a slot to peek at that fighter on the stage; leaving the roster puts back the one you picked
   let peekTimer = null;
@@ -656,11 +725,23 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     return t;
   }
   let persistTimer = null;
-  on($$('equip-btn'), 'click', () => {
-    beforeEquip = equipped;
-    equipped = previewing;
-    markYou(equipped);
-    select(equipped);
+  let equippingTimer = null;
+  function setEquipping(on) {
+    clearTimeout(equippingTimer);
+    equippingTimer = null;
+    const button = $$('equip-btn');
+    button.setAttribute('aria-busy', String(on));
+    button.disabled = on || previewing === equipped;
+    $$('equip-label').textContent = on ? 'Equipping…' : previewing === DRAFT_KEY && previewMode === 'peek' ? `Equip version ${previewNumber}` : previewing === DRAFT_KEY ? 'Use this fighter' : previewing === equipped ? 'Equipped' : `Equip ${nameOf(previewing)}`;
+    if (on) {
+      equippingTimer = setTimeout(() => {
+        setEquipping(false);
+        toast('The equip did not finish. Check your fighter and try again.', false);
+        window.Livewire?.dispatch('custom-character-refresh');
+      }, EQUIP_TIMEOUT_MS);
+    }
+  }
+  function celebrateEquip(key) {
     restart($$('equip-btn'), 'flash');
     const shock = $$('shock');
     shock.classList.add('gold');
@@ -669,12 +750,25 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     addTrauma(TIER.large.trauma * 0.7);
     squash($$('show-sprite'), TIER.large.squash, 'land');
     const banner = $$('banner');
-    banner.textContent = `Now fighting as ${nameOf(equipped)}`;
+    banner.textContent = `Now fighting as ${nameOf(key)}`;
     restart(banner, 'show');
-    const first = moves(equipped).find(m => m.id.startsWith('attack'));
+    const first = moves(key).find(m => m.id.startsWith('attack'));
     if (first) {
       setTimeout(() => playMove(first), 700);
     }
+  }
+  on($$('equip-btn'), 'click', () => {
+    if (previewing === DRAFT_KEY) {
+      setEquipping(true);
+      window.Livewire?.dispatch(previewMode === 'peek' ? 'custom-version-equip' : 'custom-draft-confirm', { hash: draftHash });
+
+      return;
+    }
+    beforeEquip = equipped;
+    equipped = previewing;
+    markYou(equipped);
+    select(equipped);
+    celebrateEquip(equipped);
     const previous = beforeEquip;
     const chosen = equipped;
     clearTimeout(persistTimer);
@@ -699,6 +793,18 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     // let the in-sheet shockwave + banner land first, then the sheet folds onto the real battlefield
     setTimeout(() => dispatch('fighter-equipped'), EQUIP_FOLD_DELAY_MS);
   });
+  on($$('discard-draft'), 'click', () => {
+    if (previewMode === 'peek') {
+      previewMode = currentDraft ? 'draft' : null;
+      draftHash = currentDraft?.hash ?? null;
+      registerCustomRoster(BY_KEY, BOX, currentDraft?.spec ?? null, DRAFT_KEY);
+      renderDraftSlot();
+      select(equipped);
+
+      return;
+    }
+    window.Livewire?.dispatch('custom-draft-discard');
+  });
   on($$('back-equipped'), 'click', () => {
     select(equipped);
     root.querySelector(`.slot[data-key="${equipped}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -707,6 +813,16 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   // ---- the custom fighter editor: a drawer under the stage, which keeps showing the fighter ----
   const panel = $$('custom-panel');
   const showcase = root.querySelector('.showcase');
+  const actionRow = showcase.querySelector('.equip-row');
+  const inspectorRow = $$('inspector');
+  function updateBarHeight() {
+    const actionHeight = editing ? 0 : (actionRow?.offsetHeight ?? 0);
+    const inspectorHeight = editing || inspectorRow?.hidden ? 0 : (inspectorRow?.offsetHeight ?? 0);
+    const drawerFooterHeight = editing ? (panel.querySelector('.cce-form .cce-row:last-child')?.offsetHeight ?? 0) : 0;
+    showcase.style.setProperty('--actions-h', `${actionHeight}px`);
+    document.getElementById('toast')?.style.setProperty('--bar-h', `${actionHeight + inspectorHeight + drawerFooterHeight}px`);
+  }
+  updateBarHeight();
   let openerEl = null;
   let mountWatch = null;
   add.setAttribute('aria-controls', 'custom-panel');
@@ -746,6 +862,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     openerEl = active instanceof HTMLElement && active !== document.body ? active : add;
     showcase.classList.add('editing');
     panel.hidden = false;
+    updateBarHeight();
     add.setAttribute('aria-pressed', 'true');
     add.setAttribute('aria-expanded', 'true');
     if (focus) {
@@ -762,6 +879,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     mountWatch = null;
     showcase.classList.remove('editing');
     panel.hidden = true;
+    updateBarHeight();
     add.setAttribute('aria-pressed', 'false');
     add.setAttribute('aria-expanded', 'false');
     if (restoreFocus) {
@@ -790,6 +908,11 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       leaveEditor();
     }
   });
+  function openEditorFromLink() {
+    window.__openCustomEditor = false;
+    enterEditor();
+  }
+  on(window, 'open-custom-editor', openEditorFromLink);
 
   // ---- where focus goes after an action re-renders what had it ----
   const usable = el => Boolean(el) && !el.disabled && !el.closest('[hidden]');
@@ -829,17 +952,64 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     // a slot that just appeared obeys the chip that is already on
     root.querySelector('.chip[aria-pressed="true"]')?.click();
   }
+  function renderDraftSlot({ announce = false } = {}) {
+    grid.querySelector(`.slot[data-key="${DRAFT_KEY}"]`)?.remove();
+    if (known(DRAFT_KEY)) {
+      const slot = makeSlot(BY_KEY[DRAFT_KEY]);
+      (grid.querySelector(`.slot[data-key="${CUSTOM_KEY}"]`) ?? add).after(slot);
+      if (announce) {
+        if (!reduced) {
+          slot.classList.add('pop');
+        }
+        $$('draft-status').textContent = `Draft ready: ${nameOf(DRAFT_KEY)}`;
+      }
+    }
+    countFighters();
+    syncCustomChip();
+    root.querySelector('.chip[aria-pressed="true"]')?.click();
+  }
   function onCustomChanged(event) {
-    const { custom = null, equipped: now } = event.detail ?? {};
+    if (event.type === 'custom-character-changed') {
+      lastLocalAnnouncementAt = Date.now();
+      clearTimeout(refreshTimer);
+    }
+    const { custom = null, draft: nextDraft = null, equipped: now, ceremony = false } = event.detail ?? {};
+    setEquipping(false);
+    const nextDraftHash = nextDraft?.hash ?? null;
+    const isNewDraft = nextDraftHash !== null && nextDraftHash !== currentDraft?.hash;
+    currentDraft = nextDraft;
+    const preservePeek = previewMode === 'peek' && nextDraft === null && !ceremony;
+    if (!preservePeek) {
+      draftHash = nextDraftHash;
+      previewMode = nextDraftHash ? 'draft' : null;
+      previewNumber = null;
+    }
     forgetHeel(CUSTOM_KEY);
     registerCustomRoster(BY_KEY, BOX, custom);
+    if (!preservePeek) {
+      registerCustomRoster(BY_KEY, BOX, nextDraft?.spec ?? null, DRAFT_KEY);
+    }
     if (now && known(now)) {
       equipped = now;
     } else if (equipped === CUSTOM_KEY && !known(CUSTOM_KEY)) {
       equipped = ROSTER[0].key;
     }
     renderCustomSlot();
+    if (isNewDraft && !['', 'CUSTOM'].includes(root.querySelector('.chip[aria-pressed="true"]')?.dataset.type)) {
+      root.querySelector('.chip[data-type=""]')?.click();
+    }
+    renderDraftSlot({ announce: isNewDraft });
     markYou(equipped);
+    if (isNewDraft) {
+      leaveEditor({ restoreFocus: false });
+      select(DRAFT_KEY);
+      focusTarget('draft-slot');
+
+      return;
+    }
+    if (previewing === DRAFT_KEY && !known(DRAFT_KEY)) {
+      previewing = equipped;
+    }
     if (previewing === CUSTOM_KEY && !known(CUSTOM_KEY)) {
       previewing = equipped;
     }
@@ -848,11 +1018,42 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     } else {
       $$('show-name').textContent = nameOf(previewing);
     }
+    if (ceremony && equipped === CUSTOM_KEY) {
+      select(equipped);
+      celebrateEquip(equipped);
+      setTimeout(() => dispatch('fighter-equipped'), EQUIP_FOLD_DELAY_MS);
+      focusTarget('equipped-slot');
+    }
   }
   on(window, 'custom-character-changed', onCustomChanged);
+  on(window, 'custom-character-state', onCustomChanged);
+  on(window, 'sheet-own-character-broadcast', event => {
+    if (Number(event.detail?.user_id) !== Number(me) || Date.now() - lastLocalAnnouncementAt <= REFRESH_DEBOUNCE_MS) {
+      return;
+    }
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => window.Livewire?.dispatch('custom-character-refresh'), REFRESH_DEBOUNCE_MS);
+  });
+  on(window, 'custom-version-peek', event => {
+    const { hash, spec, number } = event.detail ?? {};
+    if (!hash || !spec || !Number.isInteger(number)) {
+      return;
+    }
+    previewMode = 'peek';
+    previewNumber = number;
+    draftHash = hash;
+    registerCustomRoster(BY_KEY, BOX, spec, DRAFT_KEY);
+    renderDraftSlot();
+    select(DRAFT_KEY);
+    focusTarget('draft-slot');
+  });
 
   // A result line from the editor (a Livewire component) shows in the sheet's own toast.
   on(window, 'sheet-toast', event => toast(escapeHtml(String(event.detail?.message ?? '')), false));
+  on(window, 'sheet-error', event => {
+    setEquipping(false);
+    toast(escapeHtml(String(event.detail?.message ?? '')), false);
+  });
 
   // The server turned an equip away (the player has another change running): the sheet had already
   // moved on optimistically, so it goes back to the fighter the server still has.
@@ -911,6 +1112,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     });
     ro.observe($$('show-stage'));
     cleanup.push(() => ro.disconnect());
+    const barObserver = new ResizeObserver(updateBarHeight);
+    for (const row of [actionRow, inspectorRow, panel]) {
+      if (row) {
+        barObserver.observe(row);
+      }
+    }
+    cleanup.push(() => barObserver.disconnect());
   }
 
   // opening the Character tab replays the roster pop-in and summons the picked fighter
@@ -944,8 +1152,11 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   }), () => parseFloat($$('show-sprite').style.scale)));
 
   $$('stage-avatar')?.setAttribute('title', handle);
-  select(equipped);
-  cleanup.push(() => { seq++; clearTimeout(peekTimer); });
+  select(hasDraft ? DRAFT_KEY : equipped);
+  if (window.__openCustomEditor) {
+    openEditorFromLink();
+  }
+  cleanup.push(() => { seq++; clearTimeout(peekTimer); clearTimeout(equippingTimer); clearTimeout(refreshTimer); });
 
   return cleanup;
 }

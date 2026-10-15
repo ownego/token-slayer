@@ -128,3 +128,51 @@ test('the full-screen phone sheet keeps its content clear of the notch and round
     expect(padding).toContain(`env(safe-area-inset-${side})`);
   }
 });
+
+test('the build progress indicator stops moving when reduced motion is requested', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  let animation = null;
+  root.walkAtRules('media', at => {
+    if (!at.params.includes('prefers-reduced-motion: reduce')) {
+      return;
+    }
+    at.walkRules('.fs .build-bar i', rule => {
+      rule.walkDecls('animation', decl => { animation = decl.value; });
+    });
+  });
+
+  expect(animation).toBe('none');
+});
+
+test('phone keeps preview actions above its measured toast clearance and hides the roster while editing', () => {
+  expect(mediaDecl(/max-width: 640px/, '.fs .showcase .equip-row', 'position')).toBe('sticky');
+  expect(mediaDecl(/max-width: 640px/, '.fs .char-body:has(.showcase.editing) .roster', 'display')).toBe('none');
+
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  let bottom;
+  root.walkRules('.fs .toast', rule => rule.walkDecls('bottom', decl => { bottom = decl.value; }));
+  expect(bottom).toContain('var(--bar-h)');
+});
+
+test('the landscape drawer scrolls beneath a 120px stage', () => {
+  const landscape = /max-height: 500px/;
+  expect(Number.parseInt(mediaDecl(landscape, '.fs .show-stage', 'height'), 10)).toBeLessThanOrEqual(120);
+  expect(mediaDecl(landscape, '.fs .cce-drawer', 'overflow-y')).toBe('auto');
+});
+
+test('editor controls have touch targets and its build action stays in the drawer', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  const value = selector => {
+    let height;
+    root.walkRules(rule => {
+      if (rule.selectors.includes(selector)) {
+        rule.walkDecls('min-height', decl => { height = decl.value; });
+      }
+    });
+    return height;
+  };
+  expect(value('.fs .cce-drawer .btn')).toBe('44px');
+  expect(value('.fs .inspector .btn')).toBe('44px');
+  expect(value('.fs .slot-add')).toBe('44px');
+  expect(mediaDecl(/max-width: 640px/, '.fs .cce-form .cce-row:last-child', 'position')).toBe('sticky');
+});

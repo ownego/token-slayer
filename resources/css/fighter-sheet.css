@@ -335,6 +335,12 @@
 .fs .slot-add[aria-pressed="true"] { border-style: solid; border-color: var(--rivet); color: var(--rivet); background: #15233f; }
 /* the custom fighter is marked in the roster whatever its name is */
 .fs .slot .badge { position: absolute; top: 0; left: 0; padding: 1px 4px; font: 700 8px var(--display); letter-spacing: 0.04em; background: #7c3aed; color: #fff; }
+.fs .slot .badge.draft { background: var(--rivet); color: var(--night-deep); }
+.fs .slot.pop { animation: fs-slot-pop 0.35s cubic-bezier(.2,.8,.2,1); }
+@keyframes fs-slot-pop { from { opacity: 0; scale: .8; } }
+.fs .inspector { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fs .inspector[hidden] { display: none; }
+.fs .inspector .btn { min-height: 44px; }
 /* the editor is a drawer under the stage: the stage keeps showing the fighter, the roster stays beside it */
 .fs .cce-drawer { display: none; min-width: 0; padding: 12px; }
 .fs .showcase.editing > .moves-head, .fs .showcase.editing > .hotbar, .fs .showcase.editing > .move-name,
@@ -1351,6 +1357,13 @@
 .fs .cce-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .fs .cce-form { display: grid; gap: 10px; }
 .fs .cce-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--dim); }
+.fs .cce-sheet-diagram { display: block; width: min(100%, 320px); height: auto; border: 1px solid var(--rivet); }
+.fs .cce-thumb { display: flex; align-items: center; gap: 10px; color: var(--dim); }
+.fs .cce-thumb img { display: block; width: 96px; height: 72px; object-fit: contain; image-rendering: pixelated; background: #0e1a31; border: 1px solid #243150; }
+.fs .build-bar { height: 6px; margin-top: 6px; background: #243150; overflow: hidden; }
+.fs .build-bar i { display: block; width: 35%; height: 100%; background: var(--rivet); animation: fs-build-progress 1.2s ease-in-out infinite alternate; }
+@keyframes fs-build-progress { from { transform: translateX(0); } to { transform: translateX(190%); } }
+@media (prefers-reduced-motion: reduce) { .fs .build-bar i { animation: none; width: 100%; } }
 .fs .cce .btn { min-height: 44px; cursor: pointer; }
 .fs .btn.blood { color: var(--blood); border-color: var(--blood); }
 .fs .cce .alert { max-height: none; }
@@ -1372,6 +1385,22 @@
 .fs .version .cce-row { justify-content: center; }
 .fs .vsprite { width: 100px; height: 100px; image-rendering: pixelated; background-repeat: no-repeat; background-size: calc(var(--frames) * 100px) 100px; animation: fs-cce-play calc(var(--frames) / var(--rate) * 1s) steps(var(--frames)) infinite; }
 @keyframes fs-cce-play { to { background-position: calc(var(--frames) * -100px) 0; } }
+.fs .cce-drawer .btn { min-height: 44px; }
+@media (max-width: 640px) {
+    .fs .char-body:has(.showcase.editing) .roster { display: none; }
+    .fs .showcase { padding-bottom: env(safe-area-inset-bottom); }
+    .fs .show-stage { flex: none; min-height: 190px; height: 190px; }
+    .fs .showcase .equip-row { position: sticky; bottom: 0; z-index: 8; padding: 8px 0; background: var(--night-deep); }
+    .fs .showcase .equip-row .btn.primary { flex: 1 1 auto; }
+    .fs .showcase .inspector { position: sticky; bottom: var(--actions-h, 60px); z-index: 8; padding: 8px 0; background: var(--night-deep); }
+    .fs .cce-form .cce-row:last-child { position: sticky; bottom: 0; z-index: 2; padding: 8px 0; background: var(--night-deep); }
+    .fs .toast { --bar-h: 0px; bottom: calc(env(safe-area-inset-bottom) + var(--bar-h) + 12px); max-width: calc(100vw - 24px); }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+    .fs .show-stage { flex: none; min-height: 120px; height: 120px; }
+    .fs .cce-drawer { overflow-y: auto; }
+    .fs .cce-form .cce-row:last-child { position: sticky; bottom: 0; z-index: 2; padding: 8px 0; background: var(--night-deep); }
+}
 /* the CUSTOM marker is the sheet's own gold corner label */
 .fs .slot .badge { background: var(--rivet); color: var(--night-deep); }
 /* the CUSTOM marker and YOU share the corner: YOU drops to the second row instead of covering it */
