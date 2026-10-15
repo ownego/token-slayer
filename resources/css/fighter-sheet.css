@@ -336,7 +336,7 @@
 /* the custom fighter is marked in the roster whatever its name is */
 .fs .slot .badge { position: absolute; bottom: 0; left: 0; right: 0; padding: 1px 0; text-align: center; font: 700 8px var(--display); letter-spacing: 0.06em; background: #7c3aed; color: #fff; }
 .fs .slot .badge.draft { background: var(--rivet); color: var(--night-deep); }
-.fs .slot.pop { animation: fs-slot-pop 0.35s cubic-bezier(.2,.8,.2,1); }
+.fs .slot.slot-new { animation: fs-slot-pop 0.35s cubic-bezier(.2,.8,.2,1); }
 @keyframes fs-slot-pop { from { opacity: 0; scale: .8; } }
 .fs .inspector { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .fs .inspector[hidden] { display: none; }
@@ -1476,3 +1476,7 @@
 /* confirm row: the question on its own line, then Cancel and the destructive verb right-aligned, the verb last */
 .fs .cce .confirm-row { justify-content: flex-end; }
 .fs .cce .confirm-row > span { flex: 1 1 100%; }
+
+/* the author of a custom fighter: its own line under the description, so credit is never lost in the caption */
+.fs .show-author { margin: 4px 0 0; font: 600 12px var(--display); color: var(--rivet); letter-spacing: 0.02em; }
+.fs .show-author[hidden] { display: none; }

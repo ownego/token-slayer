@@ -61,6 +61,7 @@
                 <div>
                     <h2 id="show-name"></h2>
                     <p class="show-type" id="show-type"></p>
+                    <p class="show-author" id="show-author" hidden></p>
                     <div class="also" id="also"></div>
                 </div>
                 <span class="show-state" id="show-state">Equipped</span>

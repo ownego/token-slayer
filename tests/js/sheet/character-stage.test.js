@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { characterStage, mountCharacterStage } from '@battlefield/sheet/character-stage.js';
 
-const IDS = ['show-stage', 'flames', 'tick-ring', 'shock', 'fx-circle', 'fx-burst', 'show-sprite', 'stage-avatar', 'show-effect', 'boss', 'hit-spark', 'flashbang', 'dmg-layer', 'banner', 'show-name', 'show-type', 'also', 'show-state', 'hotbar', 'move-name', 'equip-note', 'back-equipped', 'edit-custom', 'equip-btn', 'equip-label'];
+const IDS = ['show-stage', 'flames', 'tick-ring', 'shock', 'fx-circle', 'fx-burst', 'show-sprite', 'stage-avatar', 'show-effect', 'boss', 'hit-spark', 'flashbang', 'dmg-layer', 'banner', 'show-name', 'show-type', 'show-author', 'also', 'show-state', 'hotbar', 'move-name', 'equip-note', 'back-equipped', 'edit-custom', 'equip-btn', 'equip-label'];
 
 let cleanup = [];
 
@@ -605,13 +605,14 @@ test('the Custom chip appears only when there is a custom fighter, and goes with
 test('the stage and the slot name the author of a custom fighter, as plain text', () => {
   mount({ equipped: 'custom', custom: { ...CUSTOM, name: 'Sir Pixel', author: 'a&b' } });
 
-  expect(document.getElementById('show-type').textContent).toBe('Slash fighter. Hits up close with sweeping cuts. · by a&b');
+  expect(document.getElementById('show-type').textContent).toBe('Slash fighter. Hits up close with sweeping cuts.');
+  expect(document.getElementById('show-author').textContent).toBe('Created by a&b');
   const slot = document.querySelector('.slot[data-key="custom"]');
   expect(slot.getAttribute('aria-label')).toBe('Sir Pixel (custom, by a&b)');
   expect(slot.title).toBe('Sir Pixel (custom, by a&b)');
 
   document.querySelector('.slot[data-key="wizard"]').click();
-  expect(document.getElementById('show-type').textContent).not.toContain('by a&b');
+  expect(document.getElementById('show-author').hidden).toBe(true);
 });
 
 test('an equipped key the roster does not know falls back to the first fighter, not a crash', () => {
@@ -766,4 +767,25 @@ test('Manage shows the player\'s fighter even when a draft is waiting', () => {
 
   expect(document.getElementById('show-name').textContent).toBe('Sir Pixel');
   expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('custom');
+});
+
+test('a draft slot that appears never carries the damage-number class (it would be thrown out of the grid)', () => {
+  mount({ equipped: 'orc-rider', custom: CUSTOM });
+
+  changed({ custom: CUSTOM, draft: DRAFT, equipped: 'orc-rider', ceremony: false });
+
+  const slot = document.querySelector('.slot[data-key="custom-draft"]');
+  expect(slot).not.toBeNull();
+  expect(slot.classList.contains('pop')).toBe(false);
+});
+
+test('the author gets a line of its own on the stage for a custom fighter, its draft, and nothing for a roster fighter', () => {
+  mount({ equipped: 'custom', custom: { ...CUSTOM, name: 'Sir Pixel', author: 'tungot.work' } });
+  const line = document.getElementById('show-author');
+
+  expect(line.hidden).toBe(false);
+  expect(line.textContent).toBe('Created by tungot.work');
+
+  document.querySelector('.slot[data-key="wizard"]').click();
+  expect(line.hidden).toBe(true);
 });

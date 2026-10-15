@@ -539,7 +539,12 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     void h2.offsetWidth;
     h2.style.animation = '';
     const author = c.author ?? (key === DRAFT_KEY ? handle : null);
-    $$('show-type').textContent = author ? `${TYPE_LINE[c.type]} · by ${author}` : TYPE_LINE[c.type];
+    $$('show-type').textContent = TYPE_LINE[c.type];
+    const authorLine = $$('show-author');
+    if (authorLine) {
+      authorLine.hidden = !author;
+      authorLine.textContent = author ? `Created by ${author}` : '';
+    }
     const mine = key === equipped;
     const isDraft = key === DRAFT_KEY;
     const isPeek = isDraft && previewMode === 'peek';
@@ -991,7 +996,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       (grid.querySelector(`.slot[data-key="${CUSTOM_KEY}"]`) ?? add).after(slot);
       if (announce) {
         if (!reduced) {
-          slot.classList.add('pop');
+          slot.classList.add('slot-new');
         }
         $$('draft-status').textContent = `Draft ready: ${nameOf(DRAFT_KEY)}`;
       }
