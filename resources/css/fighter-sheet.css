@@ -335,9 +335,12 @@
 .fs .slot-add[aria-pressed="true"] { border-style: solid; border-color: var(--rivet); color: var(--rivet); background: #15233f; }
 /* the custom fighter is marked in the roster whatever its name is */
 .fs .slot .badge { position: absolute; top: 0; left: 0; padding: 1px 4px; font: 700 8px var(--display); letter-spacing: 0.04em; background: #7c3aed; color: #fff; }
-/* the editor takes the stage's place; the roster stays beside it */
-.fs .custom-panel { min-width: 0; padding: 12px; overflow: auto; }
-.fs .custom-panel[hidden] { display: none; }
+/* the editor is a drawer under the stage: the stage keeps showing the fighter, the roster stays beside it */
+.fs .cce-drawer { display: none; min-width: 0; padding: 12px; }
+.fs .showcase.editing > .moves-head, .fs .showcase.editing > .hotbar, .fs .showcase.editing > .move-name,
+.fs .showcase.editing > .equip-row, .fs .showcase.editing > .inspector { display: none; }
+.fs .showcase.editing > .cce-drawer { display: block; flex: 1 1 0; min-height: 0; overflow-y: auto; border-top: 1px solid rgba(251,191,36,0.18); }
+.fs .slot-add { min-height: 44px; }
 .fs .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .fs .panel-link { color: var(--rivet); font: 500 12px var(--body); text-decoration: underline; text-underline-offset: 2px; }
 .fs .panel-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }

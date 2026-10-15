@@ -64,7 +64,7 @@
             <input type="file" wire:model="sheet" x-ref="file" x-on:change="name = $event.target.files[0]?.name ?? null" accept="image/png,image/jpeg,image/webp" class="sr-only" tabindex="-1">
 
             <div class="cce-row">
-                <button type="button" x-on:click="$refs.file.click()" x-bind:disabled="uploading" class="btn">
+                <button type="button" x-on:click="$refs.file.click()" x-bind:disabled="uploading" class="btn" data-focus="upload">
                     <span x-text="name ? 'Choose another file' : 'Choose file'">Choose file</span>
                 </button>
                 <span class="cce-file" x-text="name ?? 'No file chosen'">No file chosen</span>
@@ -102,7 +102,7 @@
                 <div class="field">
                     <label for="cce-name-{{ $this->getId() }}">Name</label>
                     <div class="cce-row">
-                        <input type="text" id="cce-name-{{ $this->getId() }}" wire:model="name" maxlength="{{ config('token_slayer.custom_character.name_max') }}" placeholder="{{ config('token_slayer.custom_character.default_name') }}" autocomplete="off" aria-describedby="cce-count-{{ $this->getId() }}">
+                        <input type="text" id="cce-name-{{ $this->getId() }}" data-focus="name" wire:model="name" maxlength="{{ config('token_slayer.custom_character.name_max') }}" placeholder="{{ config('token_slayer.custom_character.default_name') }}" autocomplete="off" aria-describedby="cce-count-{{ $this->getId() }}">
                         <button type="submit" class="btn" wire:loading.attr="disabled" wire:target="rename">Save name</button>
                     </div>
                     <span class="field-count" id="cce-count-{{ $this->getId() }}"><span x-text="$wire.name.length">0</span> / {{ config('token_slayer.custom_character.name_max') }}</span>

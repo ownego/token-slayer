@@ -188,6 +188,7 @@ class CustomCharacterEditor extends Component
         $this->run(function () use ($discard): void {
             $discard->execute(auth()->user());
             $this->toast('Preview discarded. Your fighter is unchanged.');
+            $this->dispatch('sheet-focus', target: 'upload');
         });
     }
 
@@ -253,6 +254,7 @@ class CustomCharacterEditor extends Component
             $remove->execute($character);
             $this->name = '';
             $this->toast('Fighter removed. Back to your roster fighter.');
+            $this->dispatch('sheet-focus', target: 'opener');
         });
     }
 

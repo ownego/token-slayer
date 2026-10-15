@@ -489,7 +489,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
 
   // ---- selection ----
   function select(key) {
-    leaveEditor();
+    leaveEditor({ restoreFocus: false });
     previewing = key;
     const c = BY_KEY[key];
     root.querySelectorAll('.slot').forEach(el => el.setAttribute('aria-selected', String(el.dataset.key === key)));
@@ -704,47 +704,116 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     root.querySelector(`.slot[data-key="${equipped}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   });
 
-  // ---- the custom fighter editor, in place of the stage ----
+  // ---- the custom fighter editor: a drawer under the stage, which keeps showing the fighter ----
   const panel = $$('custom-panel');
   const showcase = root.querySelector('.showcase');
-  function enterEditor() {
+  let openerEl = null;
+  let mountWatch = null;
+  add.setAttribute('aria-controls', 'custom-panel');
+  add.setAttribute('aria-expanded', 'false');
+
+  /**
+   * The editor is a lazily mounted Livewire component: when its file button first
+   * appears and focus is still inside the drawer, focus moves there (it is the control the
+   * player came for); focus the player has moved elsewhere is left alone.
+   */
+  function watchEditorMount() {
+    const fileButton = () => panel.querySelector('[data-focus="upload"]');
+    if (fileButton() || typeof MutationObserver !== 'function') {
+      return;
+    }
+    mountWatch?.disconnect();
+    mountWatch = new MutationObserver(() => {
+      const target = fileButton();
+      if (!target) {
+        return;
+      }
+      mountWatch.disconnect();
+      mountWatch = null;
+      if (editing && panel.contains(document.activeElement)) {
+        target.focus();
+      }
+    });
+    mountWatch.observe(panel, { childList: true, subtree: true });
+    cleanup.push(() => mountWatch?.disconnect());
+  }
+  function enterEditor({ focus = true } = {}) {
     if (!panel || editing) {
       return;
     }
     editing = true;
-    seq++; // stop whatever the stage was playing
-    showcase.hidden = true;
+    const active = document.activeElement;
+    openerEl = active instanceof HTMLElement && active !== document.body ? active : add;
+    showcase.classList.add('editing');
     panel.hidden = false;
     add.setAttribute('aria-pressed', 'true');
+    add.setAttribute('aria-expanded', 'true');
+    if (focus) {
+      $$('panel-back')?.focus();
+      watchEditorMount();
+    }
   }
-  function leaveEditor() {
+  function leaveEditor({ restoreFocus = true } = {}) {
     if (!editing) {
       return;
     }
     editing = false;
-    showcase.hidden = false;
+    mountWatch?.disconnect();
+    mountWatch = null;
+    showcase.classList.remove('editing');
     panel.hidden = true;
     add.setAttribute('aria-pressed', 'false');
+    add.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) {
+      openerEl?.focus();
+    }
   }
   on(add, 'click', () => {
     if (editing) {
       leaveEditor();
-      select(previewing);
     } else {
       enterEditor();
     }
   });
   const panelBack = $$('panel-back');
   if (panelBack) {
-    on(panelBack, 'click', () => {
-      leaveEditor();
-      select(previewing);
-    });
+    on(panelBack, 'click', () => leaveEditor());
   }
   const editButton = $$('edit-custom');
   if (editButton) {
-    on(editButton, 'click', enterEditor);
+    on(editButton, 'click', () => enterEditor());
   }
+  // Escape closes the drawer before it closes the sheet: the shell offers the event, only an open drawer takes it
+  on(window, 'sheet-escape', event => {
+    if (editing) {
+      event.preventDefault();
+      leaveEditor();
+    }
+  });
+
+  // ---- where focus goes after an action re-renders what had it ----
+  const usable = el => Boolean(el) && !el.disabled && !el.closest('[hidden]');
+  const FOCUS_TARGETS = {
+    'draft-slot': () => root.querySelector('.slot[data-key="custom-draft"]'),
+    'equipped-slot': () => root.querySelector(`.slot[data-key="${equipped}"]`),
+    upload: () => panel?.querySelector('[data-focus="upload"]'),
+    name: () => panel?.querySelector('[data-focus="name"]'),
+    opener: () => openerEl,
+  };
+  function focusTarget(name) {
+    const find = FOCUS_TARGETS[name];
+    if (!find) {
+      return;
+    }
+    if ((name === 'upload' || name === 'name') && !editing) {
+      enterEditor({ focus: false });
+    }
+    const el = find();
+    if (usable(el)) {
+      el.focus();
+    }
+  }
+  on(window, 'sheet-focus', event => focusTarget(event.detail?.target));
 
   // The editor (a Livewire component inside the panel) says what the fighter is now after every change; the
   // roster follows without a reload: the slot appears, is renamed or goes, and the YOU tag moves.
