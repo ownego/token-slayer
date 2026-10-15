@@ -452,3 +452,85 @@ test('another player\'s draft or version hash does nothing when it is sent throu
         ->and($theirs->user->fresh()->customCharacterDraft)->not->toBeNull()
         ->and($user->fresh()->customCharacter)->toBeNull();
 });
+
+test('building announces the draft to the stage, with no ceremony', function () {
+    $user = User::factory()->create();
+
+    editorFor($user)
+        ->set('sheet', sheetUpload(pngBytes(poseSheetImage(background: 'magenta'))))
+        ->call('build')
+        ->assertDispatched('custom-character-changed', function (string $event, array $params) use ($user) {
+            return $params['draft']['hash'] === $user->fresh()->customCharacterDraft->version_hash
+                && $params['draft']['spec']['version'] === $params['draft']['hash']
+                && $params['ceremony'] === false
+                && $params['custom'] === null;
+        });
+});
+
+test('confirming announces the new fighter with a ceremony and no draft left', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+
+    editorFor($user)
+        ->call('confirm', $draft->version_hash)
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null
+            && $params['ceremony'] === true
+            && $params['equipped'] === 'custom'
+            && $params['custom']['version'] === $draft->version_hash);
+});
+
+test('renaming or discarding is announced without a ceremony', function () {
+    $character = CustomCharacter::factory()->create();
+    stagedFor($character->user);
+
+    editorFor($character->user)
+        ->call('discard')
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null && $params['ceremony'] === false);
+});
+
+test('the stage can equip its draft by hash through an event, and only the player\'s own', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+
+    editorFor($user)
+        ->dispatch('custom-draft-confirm', hash: 'abcdefabcdef')
+        ->assertHasErrors('action')
+        ->dispatch('custom-draft-confirm', hash: $draft->version_hash)
+        ->assertHasNoErrors();
+
+    expect($user->fresh()->customCharacter->version_hash)->toBe($draft->version_hash);
+});
+
+test('the stage can discard its draft through an event', function () {
+    $user = User::factory()->create();
+    stagedFor($user);
+
+    editorFor($user)->dispatch('custom-draft-discard');
+
+    expect($user->fresh()->customCharacterDraft)->toBeNull();
+});
+
+test('the stage can equip a saved version through an event, never another player\'s', function () {
+    $user = User::factory()->create();
+    $first = app(ConfirmCustomCharacter::class)->execute($user, stagedFor($user, 0)->version_hash)->version_hash;
+    app(ConfirmCustomCharacter::class)->execute($user, stagedFor($user, 1)->version_hash);
+    $theirs = CustomCharacter::factory()->create();
+
+    editorFor($user)
+        ->dispatch('custom-version-equip', hash: $theirs->version_hash)
+        ->assertHasErrors('action');
+    expect($user->fresh()->customCharacter->version_hash)->not->toBe($theirs->version_hash);
+
+    editorFor($user)->dispatch('custom-version-equip', hash: $first)->assertHasNoErrors();
+    expect($user->fresh()->customCharacter->version_hash)->toBe($first);
+});
+
+test('a failed action tells the sheet, and refreshes it so a stale draft slot corrects itself', function () {
+    $user = User::factory()->create();
+
+    editorFor($user)
+        ->call('confirm', 'abcdefabcdef')
+        ->assertHasErrors('action')
+        ->assertDispatched('sheet-error', fn (string $event, array $params) => str_contains($params['message'], 'no built fighter'))
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null && $params['ceremony'] === false);
+});

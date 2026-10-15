@@ -714,3 +714,43 @@ test('equipping while another change of the player is running changes nothing an
     expect($user->refresh()->equipped_character)->toBe(FighterCharacter::Soldier);
     Event::assertNotDispatched(FighterCharacterChanged::class);
 });
+
+test('a pending draft is handed to the stage on load, without the editor ever mounting', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+
+    Livewire::actingAs($user)->test(FighterSheet::class)
+        ->assertSet('customDraft.hash', $draft->version_hash)
+        ->assertSet('customDraft.spec.version', $draft->version_hash);
+});
+
+test('a player with no draft hands the stage none', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)->assertSet('customDraft', null);
+});
+
+test('the sheet follows a draft discarded or built in the editor', function () {
+    $user = User::factory()->create();
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class)->assertSet('customDraft', null);
+
+    $draft = stagedFor($user);
+    $sheet->dispatch('custom-character-changed')->assertSet('customDraft.hash', $draft->version_hash);
+
+    $user->customCharacterDraft()->delete();
+    $sheet->dispatch('custom-character-changed')->assertSet('customDraft', null);
+});
+
+test('a refresh request is answered with the current state and no ceremony, and never loops back as a change', function () {
+    $character = CustomCharacter::factory()->create(['name' => 'Sir Pixel']);
+    $draft = stagedFor($character->user);
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->dispatch('custom-character-refresh')
+        ->assertDispatched('custom-character-state', function (string $event, array $params) use ($character, $draft) {
+            return $params['custom']['name'] === 'Sir Pixel'
+                && $params['custom']['version'] === $character->version_hash
+                && $params['draft']['hash'] === $draft->version_hash
+                && $params['equipped'] === 'custom'
+                && ! array_key_exists('ceremony', $params);
+        })
+        ->assertNotDispatched('custom-character-changed');
+});
