@@ -43,6 +43,8 @@ No scheduler container in dev (staging adds `scheduler` = `schedule:work`). The 
 | `accounts.md` | org accounts (Claude + Codex), attribution chain, provisioning, quota probing, rebalance/reconciliation |
 | `custom-characters.md` | player-uploaded fighters: the pose-sheet contract, conversion to 100 px strips, storage, `/character` page |
 
+**Game and UI work:** `.ai/design/game.md` is the map of the game (the idea, loops, systems, knobs, flows): read it before designing anything a player sees or does. Then, before building any HUD, fighter sheet, page, control or copy, read `.ai/design/README.md`: tokens, components, patterns (confirm, empty/error states, previews), motion, layout and accessibility, plus a pre-build checklist. Update it in the same PR when a token, component class or rule changes.
+
 Convention docs also live scattered next to the code they describe — these do NOT auto-load unless you're already working in that path, so check for one before touching a directory that has a `CLAUDE.md`/`CREDITS.md`/`README.md`:
 
 | File | Covers |
@@ -62,6 +64,7 @@ Convention docs also live scattered next to the code they describe — these do 
 | `commit` skill | Every commit — Angular convention + project scopes |
 | `battlefield` skill | Working in `resources/js/battlefield/` |
 | `scaffold-broadcast-event` skill | Adding/renaming a broadcast event |
+| `game-design` skill | Designing or changing anything a player sees or does (feature, fighter, screen, HUD, ceremony, flow): place it on the game's map and design its whole flow before code, sized to the change (skippable) |
 | `broadcast-reviewer` agent | Review of `app/Events/*`, `routes/channels.php`, Echo listeners |
 | `battlefield-reviewer` agent | Review of `resources/js/battlefield/**` |
 
@@ -80,6 +83,7 @@ Convention docs also live scattered next to the code they describe — these do 
 ## Workflow
 
 - New fix/feature work goes in its own worktree (`.worktrees/<name>`) branched from `origin/master`.
+- Starting a feature or a change to what a player sees or does: offer a short design brief first (`game-design` skill, sized to the change; a one-line `No brief: …` in the PR is fine for a small fix). It starts from `.ai/design/game.md`, the map of the game.
 - TDD is mandatory — use the `tdd` skill (failing test first, watch it fail).
 - Commit via the `commit` skill; never commit `docs/superpowers/**`, spec/plan docs, or `pint.json`. `.ai/` and `.claude/` ARE committed.
 - `env()` only inside `config/*.php`.
