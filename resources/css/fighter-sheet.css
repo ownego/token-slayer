@@ -1333,3 +1333,43 @@
 /* The battlefield page is viewport-fit=cover: a full-screen phone sheet keeps
    its content inside the safe area (0 everywhere but a notched/rounded screen). */
 .fs .sheet { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+/* ==== the custom fighter editor (the Character tab's panel) ====
+   Built from the sheet's own pieces; only what the sheet has no equivalent for is here:
+   panel sections, a labelled field with a counter, the upload bar, the version cards and
+   the in-place confirm row. */
+.fs .cce { display: grid; gap: 18px; font: 400 14px/1.45 var(--body); color: var(--parchment); }
+.fs .cce-sec { display: grid; gap: 10px; min-width: 0; }
+.fs .cce-sec + .cce-sec { padding-top: 16px; border-top: 1px solid rgba(251,191,36,0.18); }
+.fs .cce-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.fs .cce h3 { margin: 0; font: 600 15px var(--display); color: var(--rivet); }
+.fs .cce-note { margin: 0; font-size: 13px; color: var(--dim); }
+.fs .cce-ok { color: var(--life); }
+.fs .cce-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fs .cce-form { display: grid; gap: 10px; }
+.fs .cce-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--dim); }
+.fs .cce .btn { min-height: 44px; cursor: pointer; }
+.fs .btn.blood { color: var(--blood); border-color: var(--blood); }
+.fs .cce .alert { max-height: none; }
+.fs .cce .confirm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.fs .cce .confirm-row > span { flex: 1 1 200px; }
+.fs .cce-stage { height: 280px; min-height: 280px; flex: none; }
+.fs .cce-stage .show-sprite { left: 50%; }
+.fs .cce .equip-row { flex-wrap: wrap; margin-top: 0; }
+.fs .field { display: grid; gap: 6px; }
+.fs .field label { font: 600 12px var(--display); color: var(--dim); }
+.fs .field input { flex: 1 1 180px; min-width: 0; height: 44px; padding: 0 12px; background: #0e1a31; border: 1px solid #243150; color: var(--parchment); font: 500 14px var(--body); }
+.fs .field input:hover { border-color: rgba(251,191,36,0.55); }
+.fs .field-count { font: 500 12px var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
+.fs .upload-bar { height: 6px; margin-top: 6px; background: #243150; overflow: hidden; }
+.fs .upload-bar i { display: block; height: 100%; background: var(--rivet); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform 0.15s ease; }
+.fs .versions { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.fs .version { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 8px; background: #0e1a31; border: 1px solid #243150; text-align: center; }
+.fs .version.current { border-color: var(--rivet); }
+.fs .version .cce-row { justify-content: center; }
+.fs .vsprite { width: 100px; height: 100px; image-rendering: pixelated; background-repeat: no-repeat; background-size: calc(var(--frames) * 100px) 100px; animation: fs-cce-play calc(var(--frames) / var(--rate) * 1s) steps(var(--frames)) infinite; }
+@keyframes fs-cce-play { to { background-position: calc(var(--frames) * -100px) 0; } }
+/* the CUSTOM marker is the sheet's own gold corner label */
+.fs .slot .badge { background: var(--rivet); color: var(--night-deep); }
+/* the CUSTOM marker and YOU share the corner: YOU drops to the second row instead of covering it */
+.fs .slot:has(.badge) .tag { top: 12px; }

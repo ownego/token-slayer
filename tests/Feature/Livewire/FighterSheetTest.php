@@ -699,3 +699,18 @@ test('a rename in the editor reaches the sheet', function () {
     $character->update(['name' => 'Sir Pixel']);
     $sheet->dispatch('custom-character-changed')->assertSet('customCharacter.name', 'Sir Pixel');
 });
+
+test('equipping while another change of the player is running changes nothing and tells the sheet to go back', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    config(['token_slayer.custom_character.lock_seconds' => 0]);
+    $user = User::factory()->create(['equipped_character' => FighterCharacter::Soldier]);
+    Cache::lock(App\Support\CacheKeys::customCharacterBuild($user->id), 30)->get();
+
+    Livewire::actingAs($user)
+        ->test(FighterSheet::class)
+        ->call('equip', 'werebear')
+        ->assertDispatched('sheet-equip-failed');
+
+    expect($user->refresh()->equipped_character)->toBe(FighterCharacter::Soldier);
+    Event::assertNotDispatched(FighterCharacterChanged::class);
+});

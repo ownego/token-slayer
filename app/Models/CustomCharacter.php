@@ -22,6 +22,13 @@ class CustomCharacter extends Model
     use HasFactory;
 
     /**
+     * The key the fighter sheet's roster and the equipped fighter use for the custom slot.
+     *
+     * @var string
+     */
+    public const string SHEET_KEY = 'custom';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>

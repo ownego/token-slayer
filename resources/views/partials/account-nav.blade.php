@@ -5,7 +5,7 @@
      loses a build in progress or a running battlefield; the page you are on is
      not a link. --}}
 @php($active = $active ?? null)
-@php($link = 'inline-flex min-h-9 items-center')
+@php($link = 'inline-flex min-h-11 items-center')
 <nav class="max-w-3xl mx-auto px-4 sm:px-8 pt-6 flex flex-wrap items-center gap-2 text-sm font-medium">
     <a href="{{ route('battlefield') }}" target="_blank" rel="noopener" class="{{ $link }} rounded-lg border border-gray-200 px-3 py-1 text-gray-700 hover:border-orange-400 hover:text-orange-600">Battlefield</a>
     <a href="{{ route('filament.admin.pages.dashboard') }}" target="_blank" rel="noopener" class="{{ $link }} rounded-lg border border-gray-200 px-3 py-1 text-gray-700 hover:border-orange-400 hover:text-orange-600">Dashboard</a>

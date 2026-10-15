@@ -91,7 +91,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function equippedFighterKey(?int $bossId): string
     {
-        return $this->customFighterState() !== null ? 'custom' : $this->characterForBoss($bossId);
+        return $this->customFighterState() !== null ? CustomCharacter::SHEET_KEY : $this->characterForBoss($bossId);
     }
 
     /**

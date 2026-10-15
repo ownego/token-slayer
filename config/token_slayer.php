@@ -163,11 +163,15 @@ return [
         'max_pixels' => 4_194_304,
         // The filesystem disk the strips live on. Served from the app's own origin ('public') they are a path;
         // on a disk with another host (a bucket, a CDN) the fighter payload carries a full URL instead.
+        // Changing it after fighters exist points the app at an empty place: run
+        // custom-characters:copy-disk <from> <to> first.
         'disk' => env('TOKEN_SLAYER_CUSTOM_CHARACTER_DISK', 'public'),
         // How many confirmed versions of a fighter a player keeps to switch back to.
         'max_versions' => 5,
         // How long a second build by the same player waits for the first before being turned away.
         'lock_seconds' => 10,
+        // How long a built-but-unused draft (and its staged files) is kept before custom-characters:prune-drafts removes it.
+        'draft_ttl_hours' => 24,
         // What a fighter is called until its player names it, and the longest name.
         'default_name' => 'Custom',
         'name_max' => 24,

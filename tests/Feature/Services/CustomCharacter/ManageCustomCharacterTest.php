@@ -133,3 +133,111 @@ test('deleting a user leaves no files of theirs behind', function () {
     Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$first}/idle.png");
     Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$second}/idle.png");
 });
+
+/**
+ * Holds the player's lock, as a build running in another tab would.
+ *
+ * @param  User  $user  the player
+ * @return Illuminate\Contracts\Cache\Lock the held lock; release it to let the player's changes through
+ */
+function holdPlayersLock(User $user): Illuminate\Contracts\Cache\Lock
+{
+    config(['token_slayer.custom_character.lock_seconds' => 0]);
+    $held = Cache::lock(App\Support\CacheKeys::customCharacterBuild($user->id), 30);
+    $held->get();
+
+    return $held;
+}
+
+test('removing the fighter also drops a pending draft and its files, so no preview is left broken', function () {
+    [$user] = userWithTwoVersions();
+    $draft = stagedFor($user, 2);
+
+    app(RemoveCustomCharacter::class)->execute($user->customCharacter);
+
+    expect(App\Models\CustomCharacterDraft::count())->toBe(0);
+    Storage::disk('public')->assertMissing("custom-characters/{$user->id}/staged/{$draft->version_hash}/idle.png");
+});
+
+test('removing the fighter waits for the players other changes instead of racing them', function () {
+    [$user] = userWithTwoVersions();
+    $held = holdPlayersLock($user);
+
+    expect(fn () => app(RemoveCustomCharacter::class)->execute($user->customCharacter))
+        ->toThrow(App\Exceptions\CustomCharacterBusyException::class);
+
+    expect(CustomCharacter::count())->toBe(1);
+    $held->release();
+    app(RemoveCustomCharacter::class)->execute($user->customCharacter);
+    expect(CustomCharacter::count())->toBe(0);
+});
+
+test('discarding the draft waits for the players other changes instead of racing them', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+    holdPlayersLock($user);
+
+    expect(fn () => app(App\Services\CustomCharacter\DiscardCustomCharacterDraft::class)->execute($user))
+        ->toThrow(App\Exceptions\CustomCharacterBusyException::class);
+
+    expect($user->fresh()->customCharacterDraft->version_hash)->toBe($draft->version_hash);
+    Storage::disk('public')->assertExists("custom-characters/{$user->id}/staged/{$draft->version_hash}/idle.png");
+});
+
+test('a versions files go while the lock is still held, so a re-confirm cannot slip in between', function () {
+    [$user, $first] = userWithTwoVersions();
+    $lockHeldWhenFilesGo = null;
+    $this->partialMock(App\Services\CustomCharacter\CustomCharacterStore::class, function ($store) use ($user, &$lockHeldWhenFilesGo) {
+        $store->shouldReceive('forgetVersion')->once()->andReturnUsing(function () use ($user, &$lockHeldWhenFilesGo): void {
+            $probe = Cache::lock(App\Support\CacheKeys::customCharacterBuild($user->id), 5);
+            $lockHeldWhenFilesGo = ! $probe->get();
+            $probe->release();
+        });
+    });
+
+    app(DeleteCustomCharacterVersion::class)->execute($user, $first);
+
+    expect($lockHeldWhenFilesGo)->toBeTrue();
+});
+
+test('renaming waits for the players other changes, and strips control and bidi characters from the name', function () {
+    $character = CustomCharacter::factory()->create();
+    $rename = app(RenameCustomCharacter::class);
+
+    expect($rename->execute($character->user, "Sir\u{202E} Pixel\u{0007}\u{200B}\n")->name)->toBe('Sir Pixel');
+
+    holdPlayersLock($character->user);
+    expect(fn () => $rename->execute($character->user, 'Late'))->toThrow(App\Exceptions\CustomCharacterBusyException::class);
+});
+
+test('equipping the custom fighter or a roster character goes through the lock and tells the battlefield', function () {
+    [$user] = userWithTwoVersions();
+    $user->customCharacter->update(['active' => false]);
+
+    app(App\Services\CustomCharacter\EquipCustomCharacter::class)->execute($user);
+    expect($user->customCharacter()->first()->active)->toBeTrue();
+
+    app(App\Services\CustomCharacter\EquipRosterCharacter::class)->execute($user, App\Enums\FighterCharacter::Werebear);
+    expect($user->customCharacter()->first()->active)->toBeFalse()
+        ->and($user->fresh()->equipped_character)->toBe(App\Enums\FighterCharacter::Werebear);
+    Event::assertDispatchedTimes(FighterCharacterChanged::class, 2);
+
+    holdPlayersLock($user);
+    expect(fn () => app(App\Services\CustomCharacter\EquipCustomCharacter::class)->execute($user))
+        ->toThrow(App\Exceptions\CustomCharacterBusyException::class)
+        ->and(fn () => app(App\Services\CustomCharacter\EquipRosterCharacter::class)->execute($user, App\Enums\FighterCharacter::Werebear))
+        ->toThrow(App\Exceptions\CustomCharacterBusyException::class);
+});
+
+test('a player cannot confirm, equip or delete another players draft or version', function () {
+    [$user] = userWithTwoVersions();
+    $theirs = CustomCharacter::factory()->create();
+    $theirDraft = stagedFor($theirs->user);
+
+    expect(fn () => app(ConfirmCustomCharacter::class)->execute($user, $theirDraft->version_hash))
+        ->toThrow(App\Exceptions\CustomCharacterDraftMissingException::class)
+        ->and(fn () => app(DeleteCustomCharacterVersion::class)->execute($user, $theirs->version_hash))
+        ->toThrow(CustomCharacterVersionException::class)
+        ->and(fn () => app(EquipCustomCharacterVersion::class)->execute($user, $theirs->version_hash))
+        ->toThrow(CustomCharacterVersionException::class);
+});

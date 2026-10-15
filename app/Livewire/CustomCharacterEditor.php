@@ -28,11 +28,11 @@ use Throwable;
 /**
  * Where a player makes and manages their own fighter: upload a pose sheet, see
  * how it came out before it goes live, use or discard it, name the fighter,
- * switch back to an earlier version, delete one, or remove the fighter. It is
- * one component with two homes: the `/character` page and the fighter sheet's
- * Character tab (`variant` only picks the look). Every change that touches what
- * is equipped tells the page around it (the `custom-character-changed` browser
- * event) so the sheet's roster follows without a reload.
+ * switch back to an earlier version, delete one, or remove the fighter. It lives
+ * in the fighter sheet's Character tab (the `/character` page is only the guide
+ * to making a sheet). Every change that touches what is equipped tells the sheet
+ * around it (the `custom-character-changed` browser event) so the roster follows
+ * without a reload, and a result worth a line is announced as a `sheet-toast`.
  *
  * Method names avoid `upload`, `removeUpload`, `uploadMultiple` and `cancelUpload`:
  * in the browser those are Livewire's own file-upload functions and win over a
@@ -57,28 +57,20 @@ class CustomCharacterEditor extends Component
     public string $name = '';
 
     /**
-     * Confirmation shown after a change went through.
+     * What the player is being asked to confirm, in place: `remove` (the fighter) or
+     * `version-<hash>` (deleting one earlier version); null when nothing is pending.
      *
      * @var string|null
      */
-    public ?string $notice = null;
+    public ?string $confirming = null;
 
     /**
-     * Where the editor is shown, `page` or `sheet`: only a styling hook.
+     * Fills the name box from the player's fighter.
      *
-     * @var string
-     */
-    public string $variant = 'page';
-
-    /**
-     * Sets the look and fills the name box from the player's fighter.
-     *
-     * @param  string  $variant  `page` or `sheet`
      * @return void
      */
-    public function mount(string $variant = 'page'): void
+    public function mount(): void
     {
-        $this->variant = $variant === 'sheet' ? 'sheet' : 'page';
         $this->name = (string) auth()->user()->customCharacter()->value('name');
     }
 
@@ -109,7 +101,6 @@ class CustomCharacterEditor extends Component
      */
     public function build(StageCustomCharacter $stage): void
     {
-        $this->notice = null;
         $this->resetErrorBag();
         $this->validateOnly('sheet');
 
@@ -125,7 +116,7 @@ class CustomCharacterEditor extends Component
 
         try {
             $stage->execute($user, (string) file_get_contents($this->sheet->getRealPath()));
-            $this->notice = 'Built. Have a look below: it only goes live when you use it.';
+            $this->toast('Built. It goes live only when you use it.');
             $this->js('document.getElementById("cce-draft-" + $wire.$id)?.scrollIntoView({ behavior: "smooth", block: "center" })');
         } catch (Throwable $exception) {
             $this->fail($exception, 'sheet');
@@ -147,8 +138,32 @@ class CustomCharacterEditor extends Component
     {
         $this->run(function () use ($hash, $confirm): void {
             $confirm->execute(auth()->user(), $hash);
-            $this->notice = 'Your fighter is ready and equipped.';
+            $this->toast('Your fighter is equipped.');
         });
+    }
+
+    /**
+     * Asks for the player's go-ahead before something destructive, in the panel (never a
+     * browser dialog). It only remembers the question; the change itself is a separate action.
+     *
+     * @param  string  $what  `remove` or `version-<hash>`
+     * @return void
+     */
+    public function askToConfirm(string $what): void
+    {
+        $this->confirming = preg_match('/^(remove|version-[a-f0-9]{12})$/', $what) === 1 ? $what : null;
+    }
+
+    /**
+     * Drops the question without changing anything, and puts focus back on what opened it.
+     *
+     * @return void
+     */
+    public function dismissConfirm(): void
+    {
+        $opener = $this->confirming === 'remove' ? 'cce-remove-open-' : 'cce-version-open-'.substr((string) $this->confirming, 8).'-';
+        $this->confirming = null;
+        $this->js('setTimeout(() => document.getElementById("'.$opener.'" + $wire.$id)?.focus(), 0)');
     }
 
     /**
@@ -161,7 +176,7 @@ class CustomCharacterEditor extends Component
     {
         $this->run(function () use ($discard): void {
             $discard->execute(auth()->user());
-            $this->notice = 'Discarded. Your fighter is unchanged.';
+            $this->toast('Preview discarded. Your fighter is unchanged.');
         });
     }
 
@@ -177,7 +192,7 @@ class CustomCharacterEditor extends Component
 
         $this->run(function () use ($rename): void {
             $this->name = $rename->execute(auth()->user(), $this->name)->name;
-            $this->notice = 'Renamed.';
+            $this->toast('Name saved.');
         });
     }
 
@@ -192,7 +207,7 @@ class CustomCharacterEditor extends Component
     {
         $this->run(function () use ($hash, $equip): void {
             $equip->execute(auth()->user(), $hash);
-            $this->notice = 'Switched to that version and equipped it.';
+            $this->toast('Switched to that version and equipped it.');
         });
     }
 
@@ -207,7 +222,7 @@ class CustomCharacterEditor extends Component
     {
         $this->run(function () use ($hash, $delete): void {
             $delete->execute(auth()->user(), $hash);
-            $this->notice = 'Version deleted.';
+            $this->toast('Version deleted.');
         });
     }
 
@@ -226,8 +241,20 @@ class CustomCharacterEditor extends Component
 
             $remove->execute($character);
             $this->name = '';
-            $this->notice = 'Fighter removed. You are back to your roster character.';
+            $this->toast('Fighter removed. Back to your roster fighter.');
         });
+    }
+
+    /**
+     * What the panel shows while it loads: it is mounted when the player first opens it.
+     *
+     * @return string
+     */
+    public function placeholder(): string
+    {
+        return <<<'HTML'
+        <p class="cce-note" role="status">Loading your fighter…</p>
+        HTML;
     }
 
     /**
@@ -245,12 +272,11 @@ class CustomCharacterEditor extends Component
         return view('livewire.custom-character-editor', [
             'draft' => $draft === null ? null : [
                 'hash' => $draft->version_hash,
-                'strips' => $previews->execute($user->id, $draft->version_hash, $draft->animations, staged: true),
+                'spec' => $previews->spec($user->id, $draft->version_hash, $draft->animations, staged: true, name: $character?->name ?? ($this->name ?: (string) config('token_slayer.custom_character.default_name'))),
             ],
             'character' => $character === null ? null : [
                 'name' => $character->name,
                 'active' => $character->active,
-                'strips' => $previews->execute($user->id, $character->version_hash, $character->animations),
                 'versions' => $character->versions->reverse()->map(fn ($version): array => [
                     'hash' => $version->version_hash,
                     'current' => $version->version_hash === $character->version_hash,
@@ -262,6 +288,17 @@ class CustomCharacterEditor extends Component
     }
 
     /**
+     * Tells the sheet to show a short result line (its toast).
+     *
+     * @param  string  $message  the line
+     * @return void
+     */
+    private function toast(string $message): void
+    {
+        $this->dispatch('sheet-toast', message: $message);
+    }
+
+    /**
      * Runs a change, then tells the page around the editor about it. A change the
      * player is not allowed or able to make shows its reason instead.
      *
@@ -270,7 +307,7 @@ class CustomCharacterEditor extends Component
      */
     private function run(callable $change): void
     {
-        $this->notice = null;
+        $this->confirming = null;
         $this->resetErrorBag();
 
         try {

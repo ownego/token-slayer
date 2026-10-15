@@ -1,6 +1,6 @@
 {{-- The prompt guide on /character: pick a character type, get its costume prompt, copy it into an image AI.
      $types: label by type key; $prompts: prompt text by type key; $thumbs: where the type thumbnails are served from.
-     Static (no Livewire state), so the page and its editor never wipe what was typed. --}}
+     Alpine only, no Livewire state. --}}
 <section class="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 space-y-4" x-data="characterPrompt(@js($types), @js($prompts), @js($thumbs))">
     <h2 class="font-bold text-gray-900">1. Ask an image AI for a pose sheet</h2>
     <p class="text-sm text-gray-600">Pick a costume by character type below, then copy its prompt and paste it into ChatGPT (or another image AI) together with a picture of your custom character to make your pose sheet. The prompt already spells out that type's costume; write into a line under COSTUME ITEMS only to change that item, and leave it empty to keep the type's default. If one AI refuses your character, try another.</p>

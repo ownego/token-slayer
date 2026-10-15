@@ -56,6 +56,15 @@ export function sparkPoint({ width, height, cxRatio, floor, lift = 0, box, heel,
 const HEEL = {};
 
 /**
+ * Which measurement of a fighter's heel is the current one, per key. A fighter whose strips
+ * are replaced is measured again; a measurement still in flight for the old strips must not
+ * overwrite the new one when its image finally loads.
+ *
+ * @type {Object<string, number>}
+ */
+const MEASURE = {};
+
+/**
  * Forgets a fighter's cached heel, so the next heelOf() reads it again. Only the
  * custom fighter needs this: its strips change when its player replaces them.
  *
@@ -64,6 +73,7 @@ const HEEL = {};
  */
 export function forgetHeel(key) {
   delete HEEL[key];
+  MEASURE[key] = (MEASURE[key] ?? 0) + 1;
 }
 
 /**
@@ -80,6 +90,7 @@ export function heelOf(key) {
     return HEEL[key];
   }
   HEEL[key] = null;
+  const token = MEASURE[key] ?? 0;
   const [x0, , x1] = BOX[key];
   const img = new Image();
   // a strip on another origin (a bucket, a CDN) needs CORS for its pixels to be read back
@@ -88,6 +99,9 @@ export function heelOf(key) {
     img.crossOrigin = 'anonymous';
   }
   img.onload = () => {
+    if ((MEASURE[key] ?? 0) !== token) {
+      return;
+    }
     const c = document.createElement('canvas');
     c.width = 100;
     c.height = 100;

@@ -3,11 +3,14 @@
 namespace App\Livewire;
 
 use App\Enums\FighterCharacter;
-use App\Events\FighterCharacterChanged;
+use App\Exceptions\CustomCharacterBusyException;
+use App\Models\CustomCharacter;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Analytics\FleetUsageRefresher;
 use App\Services\BossArena;
+use App\Services\CustomCharacter\EquipCustomCharacter;
+use App\Services\CustomCharacter\EquipRosterCharacter;
 use App\Services\DamageTotals;
 use App\Services\GitHub\CachedLatestVersion;
 use App\Services\Profile\AccountAlerts;
@@ -120,7 +123,7 @@ class FighterSheet extends Component
      *
      * @var string
      */
-    public const string CUSTOM_KEY = 'custom';
+    public const string CUSTOM_KEY = CustomCharacter::SHEET_KEY;
 
     /**
      * Seeds $equipped/$equippedKey from the current boss context, same as
@@ -328,10 +331,12 @@ class FighterSheet extends Component
      * CharacterSelect::equip(), whose own docblock this repeats. Unknown
      * keys are silently rejected.
      *
-     * @param  string  $key  a FighterCharacter enum value
+     * @param  string  $key  a FighterCharacter enum value, or CUSTOM_KEY
+     * @param  EquipCustomCharacter  $equipCustom  equips the custom fighter
+     * @param  EquipRosterCharacter  $equipRoster  equips a roster character
      * @return void
      */
-    public function equip(string $key): void
+    public function equip(string $key, EquipCustomCharacter $equipCustom, EquipRosterCharacter $equipRoster): void
     {
         $user = auth()->user();
 
@@ -339,26 +344,30 @@ class FighterSheet extends Component
             return;
         }
 
-        if ($key === self::CUSTOM_KEY) {
-            $this->equipCustom($user);
+        try {
+            if ($key === self::CUSTOM_KEY) {
+                $this->equipCustom($user, $equipCustom);
+
+                return;
+            }
+
+            $character = FighterCharacter::tryFrom($key);
+
+            if ($character === null) {
+                return;
+            }
+
+            $equipRoster->execute($user, $character);
+        } catch (CustomCharacterBusyException $exception) {
+            // the sheet moved on optimistically: tell it to go back to what the server still has
+            $this->dispatch('sheet-equip-failed', message: $exception->getMessage(), equipped: $this->equipped);
 
             return;
         }
 
-        $character = FighterCharacter::tryFrom($key);
-
-        if ($character === null) {
-            return;
-        }
-
-        $user->forceFill(['equipped_character' => $character])->save();
-        $user->customCharacter()->update(['active' => false]);
-        $user->unsetRelation('customCharacter');
         $this->equipped = $character->value;
         $this->customCharacter = $user->customCharacter()->first()?->sheetState();
         $this->equippedKey = $character->value;
-
-        FighterCharacterChanged::dispatch($user);
     }
 
     /**
@@ -367,22 +376,21 @@ class FighterSheet extends Component
      * picking it again later puts them back.
      *
      * @param  User  $user  the authenticated user
+     * @param  EquipCustomCharacter  $equipCustom  equips the fighter
      * @return void
+     *
+     * @throws CustomCharacterBusyException when another change of the player's is still running
      */
-    private function equipCustom(User $user): void
+    private function equipCustom(User $user, EquipCustomCharacter $equipCustom): void
     {
-        $custom = $user->customCharacter()->first();
+        $custom = $equipCustom->execute($user);
 
         if ($custom === null) {
             return;
         }
 
-        $custom->update(['active' => true]);
-        $user->unsetRelation('customCharacter');
         $this->equipped = self::CUSTOM_KEY;
         $this->customCharacter = $custom->fresh()->sheetState();
-
-        FighterCharacterChanged::dispatch($user);
     }
 
     /**

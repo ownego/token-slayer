@@ -57,3 +57,16 @@ test('a role that may view the list but not delete cannot take a fighter down', 
 
     expect(CustomCharacter::count())->toBe(1);
 });
+
+test('taking a fighter down while its owner has a change running is turned away with a message, and nothing is removed', function () {
+    config(['token_slayer.custom_character.lock_seconds' => 0]);
+    $admin = User::factory()->admin()->create();
+    $character = CustomCharacter::factory()->create();
+    Cache::lock(App\Support\CacheKeys::customCharacterBuild($character->user_id), 30)->get();
+
+    Livewire::actingAs($admin)->test(ListCustomCharacters::class)
+        ->callTableAction('remove', $character)
+        ->assertNotified();
+
+    expect(CustomCharacter::count())->toBe(1);
+});

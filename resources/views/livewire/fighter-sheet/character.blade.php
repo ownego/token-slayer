@@ -81,12 +81,13 @@
         </section>
 
         {{-- Where a custom fighter is made and managed, in place of the stage (character-stage.js swaps them). The
-             editor is its own Livewire component: it tells this tab what changed with `custom-character-changed`. --}}
+             editor is its own Livewire component, loaded when the panel is first opened: it tells this tab what changed
+             with `custom-character-changed`. --}}
         <section class="custom-panel" id="custom-panel" aria-label="Your custom fighter" hidden>
             <div class="panel-head">
                 <button class="btn" type="button" id="panel-back">&larr; Back to roster</button>
                 <a class="panel-link" href="{{ route('custom-character') }}" target="_blank" rel="noopener">How to make a pose sheet &#8599;</a>
             </div>
-            @livewire('custom-character-editor', ['variant' => 'sheet'])
+            @livewire('custom-character-editor', ['lazy' => true])
         </section>
     </div>

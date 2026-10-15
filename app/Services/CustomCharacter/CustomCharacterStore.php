@@ -158,14 +158,17 @@ class CustomCharacterStore
     }
 
     /**
-     * Moves a staged version into the confirmed folder. A version that is already
-     * confirmed (the same strips confirmed before) just loses its staged copy.
+     * Copies a staged version into the confirmed folder, then drops the staged
+     * copy. The staged files stay whole until all four strips are in place, so a
+     * failure half way leaves the draft usable and no half-confirmed folder. A
+     * version that is already confirmed (the same strips confirmed before) just
+     * loses its staged copy; a confirmed folder missing some strips is completed.
      *
      * @param  int  $userId  the owner
      * @param  string  $hash  the version hash
      * @return void
      *
-     * @throws CustomCharacterStorageException when the version was never staged, or a file cannot be moved
+     * @throws CustomCharacterStorageException when the version was never staged, or a file cannot be copied
      */
     public function promote(int $userId, string $hash): void
     {
@@ -173,21 +176,25 @@ class CustomCharacterStore
         $from = self::stagedFolder($userId, $hash);
         $to = self::folder($userId, $hash);
 
-        if ($this->safely(fn (): bool => $disk->exists("{$to}/idle.png"))) {
+        if ($this->isComplete($disk, $to)) {
             $this->safely(fn () => $disk->deleteDirectory($from));
 
             return;
         }
 
-        if (! $this->safely(fn (): bool => $disk->exists("{$from}/idle.png"))) {
+        if (! $this->isComplete($disk, $from)) {
             throw new CustomCharacterStorageException('The built fighter\'s files are gone. Please build it again.');
         }
 
         try {
             foreach (self::ANIMATIONS as $animation) {
-                if (! $disk->move("{$from}/{$animation}.png", "{$to}/{$animation}.png")) {
+                if (! $disk->copy("{$from}/{$animation}.png", "{$to}/{$animation}.png")) {
                     throw new CustomCharacterStorageException;
                 }
+            }
+
+            if (! $this->isComplete($disk, $to)) {
+                throw new CustomCharacterStorageException;
             }
         } catch (Throwable $exception) {
             $this->safely(fn () => $disk->deleteDirectory($to));
@@ -288,6 +295,24 @@ class CustomCharacterStore
         } catch (Throwable) {
             throw new CustomCharacterStorageException;
         }
+    }
+
+    /**
+     * Whether a folder holds all of a version's strips.
+     *
+     * @param  Filesystem  $disk  the disk
+     * @param  string  $folder  the version's folder
+     * @return bool
+     */
+    private function isComplete(Filesystem $disk, string $folder): bool
+    {
+        foreach (self::ANIMATIONS as $animation) {
+            if (! $this->safely(fn (): bool => $disk->exists("{$folder}/{$animation}.png"))) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -39,6 +39,22 @@ Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness
 
 `.show-stage` (270 px tall, accent glow floor line, sprite at `scale: 4`, the boss on the right), `.show-info` (name `h2` 24 px, type, `.show-state` badge: `Equipped` green, `Previewing` gold), `.hotbar`, `.equip-row` (`.equip-note` + `.btn.primary`). Any fighter (roster or custom) is previewed here, with the same stage, scale, moves and equip row; do not build a second preview widget (see `motion.md` for rates and `patterns.md` for the flow).
 
+## Editor panel (the custom fighter editor, `.cce`)
+
+An in-place editor in the Character tab (it replaces the stage; `custom-character-editor.blade.php`). It is made of the pieces above plus a few small ones:
+
+| Class | Look | Use |
+|---|---|---|
+| `.cce` > `.cce-sec` | grid of sections, 18 px apart, a gold hairline between them; `h3` is 15 px `--display` gold | one concern per section (preview, upload, your fighter, versions) |
+| `.cce-head` | title left, a `.show-state` badge right | a section whose state is a badge (`Previewing`, `Equipped`, `In use`) |
+| `.cce-note`, `.cce-ok` | 13 px `--dim` / `--life` | a hint or a status line next to a control: the reason a button is disabled, "File uploaded." |
+| `.field` + `.field-count` | label above (12 px `--display` `--dim`), 44 px input on the tile fill, a `n / max` counter | a text field whose length is limited and read by others |
+| `.upload-bar` | 6 px bar, fills by `transform: scaleX(var(--p))` | upload progress (never animate `width`) |
+| `.cce-stage` | the shared `.show-stage`, 280 px, sprite centred | the draft preview, with the `.hotbar`/`.move` poses, play/pause and frame step (`custom-draft-preview.js`) |
+| `.versions` > `.version` | auto-fill grid of 150 px tiles, `.current` has the gold border; `.vsprite` is the idle strip at 1x | earlier versions of something the player owns |
+| `.confirm-row` | an `.alert.crit` row that replaces the control in place, with a `.btn.blood` (the verb) and a `.btn` Cancel | confirming a destructive action (see `patterns.md`): names the thing, Cancel focused, Escape cancels |
+| `.btn.blood` | `.btn` with `--blood` text and border | the confirming button of a destructive action, only on the confirm step |
+
 ## Feedback
 
 - `.alert` (info `--mana`, default amber, `.crit` `--blood`): left 3 px bar, 8/12 px padding, optional `.act` button on the right, `.dismiss` x; stacks in `.heads` (shows two, "more" for the rest); collapses with a 0.28 s height transition. Use it for something that needs the player's attention in a view.

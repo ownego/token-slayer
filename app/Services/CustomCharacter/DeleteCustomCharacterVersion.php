@@ -45,8 +45,9 @@ class DeleteCustomCharacterVersion
             }
 
             ($character->versions()->where('version_hash', $hash)->first() ?? throw new CustomCharacterVersionException)->delete();
-        });
 
-        $this->store->forgetVersion($user->id, $hash);
+            // the files go while the lock is still held: a re-confirm of the same sheet cannot slip in between
+            $this->store->forgetVersion($user->id, $hash);
+        });
     }
 }

@@ -8,6 +8,14 @@ import { normalizeCustomCharacter, stripUrls } from '../fighter/custom-fighter.j
 export const CUSTOM_KEY = 'custom';
 
 /**
+ * The key a built-but-not-used draft goes by while the editor previews it. It is
+ * registered next to the fighter in use, never in its place, and taken out again
+ * when the preview goes away.
+ * @type {string}
+ */
+export const DRAFT_KEY = 'custom-draft';
+
+/**
  * The custom fighter's body core inside its 100px frame, as [x0, y0, x1, y1] — the
  * roster's `BOX` shape. Custom strips are built 28px tall with the feet on row 58
  * and the body centred on column 50, so the box is fixed rather than measured.
@@ -33,9 +41,10 @@ const CUSTOM_ACCENT = '#fbbf24';
  * slasher with its one attack, named like a roster fighter's first.
  *
  * @param {?object} raw The `custom_character` payload (`FighterSheet::$customCharacter`, with its `name`).
+ * @param {string} [key] The roster key to give it (the draft preview uses its own).
  * @return {?{key: string, name: string, type: string, accent: string, anims: Object<string, {frames: number, rate: number, file: string}>}}
  */
-export function customRosterEntry(raw) {
+export function customRosterEntry(raw, key = CUSTOM_KEY) {
   const spec = normalizeCustomCharacter(raw);
   if (!spec) {
     return null;
@@ -44,7 +53,7 @@ export function customRosterEntry(raw) {
   const anim = state => ({ frames: spec.animations[state].frames, rate: spec.animations[state].rate, file: urls[state] });
 
   return {
-    key: CUSTOM_KEY,
+    key,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : DEFAULT_NAME,
     type: 'SLASH',
     accent: CUSTOM_ACCENT,
@@ -61,18 +70,19 @@ export function customRosterEntry(raw) {
  * @param {Object<string, object>} byKey The roster entries by key.
  * @param {Object<string, number[]>} box The body boxes by key.
  * @param {?object} raw The `custom_character` payload, or null.
+ * @param {string} [key] The roster key to register it under.
  * @return {boolean} Whether there is a custom fighter to show.
  */
-export function registerCustomRoster(byKey, box, raw) {
-  const entry = customRosterEntry(raw);
+export function registerCustomRoster(byKey, box, raw, key = CUSTOM_KEY) {
+  const entry = customRosterEntry(raw, key);
   if (!entry) {
-    delete byKey[CUSTOM_KEY];
-    delete box[CUSTOM_KEY];
+    delete byKey[key];
+    delete box[key];
 
     return false;
   }
-  byKey[CUSTOM_KEY] = entry;
-  box[CUSTOM_KEY] = CUSTOM_BOX;
+  byKey[key] = entry;
+  box[key] = CUSTOM_BOX;
 
   return true;
 }

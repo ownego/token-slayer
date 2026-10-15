@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\CustomCharacters;
 
+use App\Exceptions\CustomCharacterBusyException;
 use App\Filament\Resources\CustomCharacters\Pages\ListCustomCharacters;
 use App\Models\CustomCharacter;
 use App\Services\CustomCharacter\RemoveCustomCharacter;
@@ -89,7 +90,13 @@ class CustomCharacterResource extends Resource
                     ->modalDescription('The fighter and every version of it are deleted. The player goes back to the roster character they had equipped.')
                     ->authorize('delete')
                     ->action(function (CustomCharacter $record): void {
-                        app(RemoveCustomCharacter::class)->execute($record);
+                        try {
+                            app(RemoveCustomCharacter::class)->execute($record);
+                        } catch (CustomCharacterBusyException $exception) {
+                            Notification::make()->title($exception->getMessage())->danger()->send();
+
+                            return;
+                        }
 
                         Notification::make()->title('Fighter removed')->success()->send();
                     }),

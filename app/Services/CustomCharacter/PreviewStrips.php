@@ -3,9 +3,9 @@
 namespace App\Services\CustomCharacter;
 
 /**
- * Describes a fighter version's four strips for a preview: where each is served
- * from, its frame count and rate, and the name the player sees for it ("Defeated"
- * for the strip stored as `death`).
+ * Describes a fighter version for a preview: its four strips (where each is served
+ * from, its frame count and rate, and the name the player sees for it, the
+ * sheet's own words: "Death" for the strip stored as `death`) and the payload the sheet plays it from.
  */
 class PreviewStrips
 {
@@ -14,7 +14,7 @@ class PreviewStrips
      *
      * @var array<string, string>
      */
-    private const array LABELS = ['idle' => 'Idle', 'walk' => 'Walk', 'attack' => 'Attack', 'death' => 'Defeated'];
+    private const array LABELS = ['idle' => 'Idle', 'walk' => 'Walk', 'attack' => 'Attack', 'death' => 'Death'];
 
     /**
      * Create the describer.
@@ -44,5 +44,25 @@ class PreviewStrips
             'frames' => $animations[$name]['frames'],
             'rate' => $animations[$name]['rate'],
         ], CustomCharacterStore::ANIMATIONS);
+    }
+
+    /**
+     * The version as the `custom_character` payload the sheet's sprite helpers play from.
+     *
+     * @param  int  $userId  the owner
+     * @param  string  $hash  the version hash
+     * @param  array<string, array{frames: int, rate: int}>  $animations  the version's animation table
+     * @param  bool  $staged  whether the version is a staged draft
+     * @param  string  $name  what the fighter is called
+     * @return array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, name: string}
+     */
+    public function spec(int $userId, string $hash, array $animations, bool $staged, string $name): array
+    {
+        return [
+            'version' => $hash,
+            'url_base' => $this->store->baseUrl($userId, $hash, $staged),
+            'animations' => $animations,
+            'name' => $name,
+        ];
     }
 }

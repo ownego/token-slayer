@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import './custom-character-editor.css';
 
 /* Tailwind 4's preflight leaves buttons on the arrow cursor; a button you can press shows the hand. */
 @layer base {

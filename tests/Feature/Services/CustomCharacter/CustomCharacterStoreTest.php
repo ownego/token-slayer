@@ -166,3 +166,79 @@ test('a disk served from another host gives a full URL, so moving the strips to 
 
     expect(app(CustomCharacterStore::class)->baseUrl(7, 'abcdefabcdef'))->toBe('https://cdn.example.com/media/custom-characters/7/abcdefabcdef');
 });
+
+/**
+ * Wraps the faked public disk so some calls fail, everything else going to the real fake.
+ *
+ * @param  string  $method  the disk method to break
+ * @param  Closure  $when  receives the call's arguments; true makes that call fail
+ * @return void
+ */
+function breakDisk(string $method, Closure $when): void
+{
+    $real = Storage::disk('public');
+    $disk = Mockery::mock($real);
+    $disk->shouldReceive($method)->andReturnUsing(function (...$arguments) use ($real, $method, $when) {
+        if ($when(...$arguments)) {
+            return false;
+        }
+
+        return $real->{$method}(...$arguments);
+    });
+    Storage::set('public', $disk);
+}
+
+test('a failure while promoting keeps the staged draft whole and leaves no half-confirmed folder', function () {
+    $store = app(CustomCharacterStore::class);
+    $hash = $store->stage(7, builtStrips())['hash'];
+    breakDisk('copy', fn (string $from) => str_ends_with($from, 'walk.png'));
+
+    expect(fn () => $store->promote(7, $hash))->toThrow(CustomCharacterStorageException::class);
+
+    foreach (['idle', 'walk', 'attack', 'death'] as $animation) {
+        Storage::disk('public')->assertExists("custom-characters/7/staged/{$hash}/{$animation}.png");
+    }
+    Storage::disk('public')->assertMissing("custom-characters/7/{$hash}/idle.png");
+});
+
+test('a confirmed folder with only some of the strips is completed, not taken as done', function () {
+    $store = app(CustomCharacterStore::class);
+    $hash = $store->stage(7, builtStrips())['hash'];
+    Storage::disk('public')->put("custom-characters/7/{$hash}/idle.png", 'half');
+
+    $store->promote(7, $hash);
+
+    foreach (['idle', 'walk', 'attack', 'death'] as $animation) {
+        Storage::disk('public')->assertExists("custom-characters/7/{$hash}/{$animation}.png");
+    }
+    expect(imagecreatefromstring(Storage::disk('public')->get("custom-characters/7/{$hash}/idle.png")))->not->toBeFalse();
+    Storage::disk('public')->assertMissing("custom-characters/7/staged/{$hash}/idle.png");
+});
+
+test('a promote that fails never deletes a complete confirmed folder that was already there', function () {
+    $store = app(CustomCharacterStore::class);
+    $hash = $store->stage(7, builtStrips())['hash'];
+    $store->promote(7, $hash);
+    $store->stage(7, builtStrips());
+    breakDisk('deleteDirectory', fn (string $path) => str_contains($path, 'staged'));
+
+    $store->promote(7, $hash);
+
+    foreach (['idle', 'walk', 'attack', 'death'] as $animation) {
+        Storage::disk('public')->assertExists("custom-characters/7/{$hash}/{$animation}.png");
+    }
+});
+
+test('the base url is a same-origin path on the app\'s own host and a full url on another host', function () {
+    config(['app.url' => 'https://slayer.test']);
+    Storage::fake('own', ['url' => 'https://slayer.test/storage']);
+    Storage::fake('bucket', ['url' => 'https://cdn.example.com/media']);
+    $store = app(CustomCharacterStore::class);
+
+    config(['token_slayer.custom_character.disk' => 'own']);
+    expect($store->baseUrl(7, 'abcdefabcdef'))->toBe('/storage/custom-characters/7/abcdefabcdef')
+        ->and($store->stripUrls(7, 'abcdefabcdef', staged: true)['idle'])->toBe('/storage/custom-characters/7/staged/abcdefabcdef/idle.png');
+
+    config(['token_slayer.custom_character.disk' => 'bucket']);
+    expect($store->baseUrl(7, 'abcdefabcdef'))->toBe('https://cdn.example.com/media/custom-characters/7/abcdefabcdef');
+});

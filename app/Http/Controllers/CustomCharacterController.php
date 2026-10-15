@@ -7,8 +7,8 @@ use Illuminate\Contracts\View\View;
 
 /**
  * The /character page: the prompt guide (pick a character type, copy its costume
- * prompt into an image AI) with the editor below it, where the sheet it makes is
- * uploaded, previewed and managed.
+ * prompt into an image AI) and a link to the fighter sheet's Character tab, where the
+ * sheet it makes is uploaded, previewed and managed.
  */
 class CustomCharacterController extends Controller
 {

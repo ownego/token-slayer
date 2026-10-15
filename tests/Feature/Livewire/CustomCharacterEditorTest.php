@@ -38,28 +38,36 @@ function sheetUpload(string $bytes, string $name = 'sheet.png'): UploadedFile
 }
 
 /**
- * The editor for a user, as the page or the sheet mounts it.
+ * The editor for a user, as the fighter sheet mounts it.
  *
  * @param  User  $user  who is signed in
- * @param  string  $variant  'page' or 'sheet'
  * @return Livewire\Features\SupportTesting\Testable
  */
-function editorFor(User $user, string $variant = 'page')
+function editorFor(User $user)
 {
-    return Livewire::actingAs($user)->test(CustomCharacterEditor::class, ['variant' => $variant]);
+    return Livewire::actingAs($user)->test(CustomCharacterEditor::class);
 }
 
 test('the page sends guests to the slack login', function () {
     $this->get('/character')->assertRedirect();
 });
 
-test('the page leads with the guide and has the editor below it', function () {
+test('the page is the guide only: it explains the sheet and links to the sheet\'s Character tab in a new tab', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
-    $this->get('/character')->assertOk()
+    $html = $this->get('/character')->assertOk()
         ->assertSee('1. Ask an image AI for a pose sheet')
-        ->assertSee('2. Upload, preview and manage')
-        ->assertSeeLivewire(CustomCharacterEditor::class);
+        ->assertSee('2. Upload it in the game')
+        ->assertDontSeeLivewire(CustomCharacterEditor::class)
+        ->getContent();
+
+    expect($html)->toMatch('/<a [^>]*href="[^"]*\/battlefield\?sheet=character"[^>]*target="_blank"[^>]*rel="noopener"/');
+});
+
+test('the battlefield opens the sheet on the Character tab when asked to by the guide\'s link', function () {
+    $this->withoutVite()->actingAs(User::factory()->create());
+
+    $this->get('/battlefield')->assertOk()->assertSee("get('sheet') === 'character'", false);
 });
 
 test('the guide says to pick a costume by character type, then copy the prompt into ChatGPT with a picture of the character', function () {
@@ -119,7 +127,7 @@ test('the nav opens other pages in a new tab and shows the current page as plain
 
 test('the editor offers an upload and no fighter to a player who has none', function () {
     editorFor(User::factory()->create())
-        ->assertSee('Upload your sheet')
+        ->assertSee('Upload a sheet')
         ->assertSee('Build preview')
         ->assertDontSee('Your fighter')
         ->assertDontSee('Earlier versions');
@@ -135,12 +143,79 @@ test('the editor tells the player why Build is disabled, and the size limits the
     editorFor(User::factory()->create())
         ->assertSee('Choose a file first.')
         ->assertSee('2048 px a side')
-        ->assertSee('defeated (3)');
+        ->assertSee('death (3)');
 });
 
-test('the sheet variant only changes the look', function () {
-    editorFor(User::factory()->create(), 'sheet')->assertSeeHtml('cce--sheet');
-    editorFor(User::factory()->create())->assertSeeHtml('cce--page')->assertDontSeeHtml('cce--sheet');
+test('the editor is built from the sheet\'s own pieces: no browser dialogs, no pill progress, no second set of buttons', function () {
+    $character = CustomCharacter::factory()->create();
+
+    editorFor($character->user)
+        ->assertSeeHtml('class="btn primary"')
+        ->assertDontSeeHtml('wire:confirm')
+        ->assertDontSeeHtml('cce-btn')
+        ->assertDontSeeHtml('cce-card');
+});
+
+test('the name box says how much of the limit is used', function () {
+    $character = CustomCharacter::factory()->create();
+
+    editorFor($character->user)->assertSee('/ 24')->assertSeeHtml('maxlength="24"');
+});
+
+test('removing asks in the sheet first, naming what goes, with Cancel as the safe choice, and nothing is removed until it is confirmed', function () {
+    $user = User::factory()->create();
+    $confirm = app(ConfirmCustomCharacter::class);
+    $confirm->execute($user, stagedFor($user, 0)->version_hash);
+    $confirm->execute($user, stagedFor($user, 1)->version_hash);
+
+    editorFor($user)
+        ->assertDontSeeHtml('role="alertdialog"')
+        ->call('askToConfirm', 'remove')
+        ->assertSet('confirming', 'remove')
+        ->assertSeeHtml('role="alertdialog"')
+        ->assertSee('and its 2 versions?')
+        ->assertSeeHtml('x-init="$el.focus()"')
+        ->call('dismissConfirm')
+        ->assertSet('confirming', null)
+        ->assertDontSeeHtml('role="alertdialog"')
+        ->assertJs('setTimeout(() => document.getElementById("cce-remove-open-" + $wire.$id)?.focus(), 0)');
+
+    expect($user->fresh()->customCharacter)->not->toBeNull();
+});
+
+test('deleting a version asks first too, and the answer is forgotten once it is done', function () {
+    $user = User::factory()->create();
+    $confirm = app(ConfirmCustomCharacter::class);
+    $first = $confirm->execute($user, stagedFor($user, 0)->version_hash)->version_hash;
+    $confirm->execute($user, stagedFor($user, 1)->version_hash);
+
+    editorFor($user)
+        ->call('askToConfirm', "version-{$first}")
+        ->assertSee('Delete this version?')
+        ->call('deleteVersion', $first)
+        ->assertSet('confirming', null)
+        ->assertDontSee('Delete this version?');
+});
+
+test('only a remove or one of the player\'s own version hashes can be asked about', function () {
+    editorFor(CustomCharacter::factory()->create()->user)
+        ->call('askToConfirm', 'something else')
+        ->assertSet('confirming', null)
+        ->call('askToConfirm', 'version-../../etc')
+        ->assertSet('confirming', null);
+});
+
+test('removing the fighter clears the question', function () {
+    $character = CustomCharacter::factory()->create();
+
+    editorFor($character->user)->call('askToConfirm', 'remove')->call('remove')->assertSet('confirming', null);
+});
+
+test('the sheet loads the editor when its panel is first opened, not with every battlefield page', function () {
+    Livewire::actingAs(User::factory()->create())
+        ->test(App\Livewire\FighterSheet::class)
+        ->call('open', 'character')
+        ->assertSeeHtml('__lazyLoad');
 });
 
 test('building a valid sheet previews it as a draft: nothing goes live yet', function () {
@@ -151,11 +226,12 @@ test('building a valid sheet previews it as a draft: nothing goes live yet', fun
         ->set('sheet', sheetUpload(pngBytes(poseSheetImage(background: 'magenta'))))
         ->call('build')
         ->assertHasNoErrors()
-        ->assertSee('not live yet')
+        ->assertSee('Previewing')
+        ->assertSee('Not live yet')
         ->assertSee('Use this fighter')
-        ->assertSee('Discard')
-        ->assertSee('Built. Have a look below')
-        ->assertSee('Defeated')
+        ->assertSee('Discard preview')
+        ->assertSeeHtml('x-data="customDraftPreview(')
+        ->assertDispatched('sheet-toast', message: 'Built. It goes live only when you use it.')
         ->assertJs('document.getElementById("cce-draft-" + $wire.$id)?.scrollIntoView({ behavior: "smooth", block: "center" })');
 
     expect($user->fresh()->customCharacterDraft)->not->toBeNull()
@@ -220,8 +296,8 @@ test('confirming the previewed draft makes it the equipped fighter and tells the
     editorFor($user)
         ->call('confirm', $draft->version_hash)
         ->assertHasNoErrors()
-        ->assertSee('Your fighter is ready and equipped.')
-        ->assertSee('equipped')
+        ->assertDispatched('sheet-toast', message: 'Your fighter is equipped.')
+        ->assertSee('Equipped')
         ->assertDispatched('custom-character-changed', function (string $event, array $params) use ($user, $draft) {
             return $params['custom']['version'] === $draft->version_hash
                 && $params['custom']['name'] === 'Custom'
@@ -259,7 +335,7 @@ test('discarding the preview leaves the fighter as it was', function () {
     $character = CustomCharacter::factory()->create(['user_id' => $user->id]);
     app(StageCustomCharacter::class)->execute($user, pngBytes(poseSheetImage(background: 'magenta')));
 
-    editorFor($user)->call('discard')->assertSee('Discarded.')->assertDontSee('not live yet');
+    editorFor($user)->call('discard')->assertDispatched('sheet-toast', message: 'Preview discarded. Your fighter is unchanged.')->assertDontSee('Previewing');
 
     expect($user->fresh()->customCharacterDraft)->toBeNull()
         ->and($user->fresh()->customCharacter->version_hash)->toBe($character->version_hash);
@@ -295,9 +371,9 @@ test('the earlier versions list is there once there is more than one, with the o
 
     $confirm->execute($user, stagedFor($user, 1)->version_hash);
 
-    editorFor($user)->assertSee('Earlier versions')->assertSee('in use')->assertSee('Equip this one')
+    editorFor($user)->assertSee('Earlier versions')->assertSee('In use')->assertSee('Equip version')
         ->call('equipVersion', $first)
-        ->assertSee('Switched to that version and equipped it.');
+        ->assertDispatched('sheet-toast', message: 'Switched to that version and equipped it.');
 
     expect($user->fresh()->customCharacter->version_hash)->toBe($first);
 });
@@ -313,7 +389,7 @@ test('an earlier version can be deleted from the list, the one in use cannot', f
         ->assertHasErrors('action')
         ->call('deleteVersion', $first)
         ->assertHasNoErrors()
-        ->assertSee('Version deleted.');
+        ->assertDispatched('sheet-toast', message: 'Version deleted.');
 
     expect($user->fresh()->customCharacter->versions()->pluck('version_hash')->all())->toBe([$second]);
 });
@@ -324,7 +400,7 @@ test('removing the fighter returns the player to their roster character and tell
 
     editorFor($character->user)
         ->call('remove')
-        ->assertSee('You are back to your roster character.')
+        ->assertDispatched('sheet-toast', message: 'Fighter removed. Back to your roster fighter.')
         ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['custom'] === null && $params['equipped'] !== 'custom');
 
     expect(CustomCharacter::count())->toBe(0);
@@ -339,5 +415,40 @@ test('a draft of someone else is never shown', function () {
     $other = User::factory()->create();
     CustomCharacterDraft::create(['user_id' => $other->id, 'version_hash' => 'abcdefabcdef', 'animations' => CustomCharacter::factory()->make()->animations]);
 
-    editorFor(User::factory()->create())->assertDontSee('not live yet');
+    editorFor(User::factory()->create())->assertDontSee('Previewing');
+});
+
+test('confirming, switching or deleting while another change of the player\'s is running is turned away with a message', function () {
+    config(['token_slayer.custom_character.lock_seconds' => 0]);
+    $user = User::factory()->create();
+    $confirm = app(ConfirmCustomCharacter::class);
+    $first = $confirm->execute($user, stagedFor($user, 0)->version_hash)->version_hash;
+    $confirm->execute($user, stagedFor($user, 1)->version_hash);
+    $draft = stagedFor($user, 2);
+    Cache::lock(CacheKeys::customCharacterBuild($user->id), 30)->get();
+
+    editorFor($user)
+        ->call('confirm', $draft->version_hash)->assertHasErrors('action')->assertSee('still running')
+        ->call('equipVersion', $first)->assertHasErrors('action')
+        ->call('deleteVersion', $first)->assertHasErrors('action')
+        ->call('discard')->assertHasErrors('action')
+        ->call('remove')->assertHasErrors('action');
+
+    expect($user->fresh()->customCharacter->versions()->count())->toBe(2)
+        ->and($user->fresh()->customCharacterDraft)->not->toBeNull();
+});
+
+test('another player\'s draft or version hash does nothing when it is sent through the component', function () {
+    $user = User::factory()->create();
+    $theirs = CustomCharacter::factory()->create();
+    $theirDraft = stagedFor($theirs->user);
+
+    editorFor($user)
+        ->call('confirm', $theirDraft->version_hash)->assertHasErrors('action')
+        ->call('equipVersion', $theirs->version_hash)->assertHasErrors('action')
+        ->call('deleteVersion', $theirs->version_hash)->assertHasErrors('action');
+
+    expect($theirs->fresh())->not->toBeNull()
+        ->and($theirs->user->fresh()->customCharacterDraft)->not->toBeNull()
+        ->and($user->fresh()->customCharacter)->toBeNull();
 });

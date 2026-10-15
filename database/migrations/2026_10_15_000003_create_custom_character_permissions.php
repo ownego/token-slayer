@@ -2,13 +2,16 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
 
 return new class extends Migration
 {
     /**
      * Create the `ViewAny:CustomCharacter` and `Delete:CustomCharacter` permissions
      * gating the admin list of players' custom fighters: seeing it, and taking a
-     * fighter down. A player can always delete their own without either.
+     * fighter down. A player can always delete their own without either. Neither is
+     * granted to a role here (an admin does that in Shield); the cached permission
+     * list is reset so they exist for the next check.
      *
      * @return void
      */
@@ -16,6 +19,8 @@ return new class extends Migration
     {
         Permission::firstOrCreate(['name' => 'ViewAny:CustomCharacter', 'guard_name' => 'web']);
         Permission::firstOrCreate(['name' => 'Delete:CustomCharacter', 'guard_name' => 'web']);
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
     /**
@@ -29,5 +34,7 @@ return new class extends Migration
         Permission::whereIn('name', ['ViewAny:CustomCharacter', 'Delete:CustomCharacter'])
             ->where('guard_name', 'web')
             ->delete();
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 };

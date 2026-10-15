@@ -1,32 +1,56 @@
-<div class="cce cce--{{ $variant }}" id="cce-{{ $this->getId() }}">
-    @if ($notice)
-        <div class="cce-banner cce-banner--ok" role="status">
-            <svg class="cce-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.7-9.3a1 1 0 0 0-1.4-1.4L9 10.6 7.7 9.3a1 1 0 0 0-1.4 1.4l2 2a1 1 0 0 0 1.4 0l4-4Z" clip-rule="evenodd"/></svg>
-            <span>{{ $notice }}</span>
-        </div>
-    @endif
-
+{{-- The custom fighter editor, in the fighter sheet's Character tab. It is built from the sheet's own pieces
+     (.btn, .alert, .toast, .show-stage, .hotbar/.move, .show-state); the few new classes are in
+     fighter-sheet.css and listed in .ai/design/components.md. Results are announced as a `sheet-toast`. --}}
+{{-- No Alpine state on this root: a lazily mounted component is morphed into its placeholder, and bindings made on
+     that first render do not follow later changes. What is pending (a confirm row) lives in $confirming instead. --}}
+<div class="cce" id="cce-{{ $this->getId() }}">
     @error('action')
-        <p class="cce-banner cce-banner--error" role="alert">{{ $message }}</p>
+        <div class="alert crit" role="alert"><span>{{ $message }}</span></div>
     @enderror
 
     @if ($draft)
-        <section class="cce-card cce-draft" id="cce-draft-{{ $this->getId() }}" aria-labelledby="cce-draft-title-{{ $this->getId() }}">
-            <h3 class="cce-title" id="cce-draft-title-{{ $this->getId() }}">Preview <span class="cce-tag">not live yet</span></h3>
-            <p class="cce-dim">This is how your sheet came out. It only goes live when you use it; your current fighter stays until then.</p>
-            @include('partials.custom-character-strips', ['strips' => $draft['strips'], 'prefix' => 'draft'])
-            <div class="cce-actions">
-                <button type="button" class="cce-btn cce-btn--primary" wire:click="confirm('{{ $draft['hash'] }}')" wire:loading.attr="disabled" wire:target="confirm,discard">Use this fighter</button>
-                <button type="button" class="cce-btn" wire:click="discard" wire:loading.attr="disabled" wire:target="confirm,discard">Discard</button>
+        <section
+            class="cce-sec cce-draft"
+            id="cce-draft-{{ $this->getId() }}"
+            aria-labelledby="cce-draft-title-{{ $this->getId() }}"
+            wire:key="draft-{{ $draft['hash'] }}"
+            x-data="customDraftPreview(@js($draft['spec']))"
+        >
+            <div class="cce-head">
+                <h3 id="cce-draft-title-{{ $this->getId() }}">{{ $draft['spec']['name'] }}</h3>
+                <span class="show-state previewing">Previewing</span>
+            </div>
+            <div class="show-stage cce-stage" aria-hidden="true">
+                <span class="show-sprite" x-ref="sprite"></span>
+            </div>
+            <div class="hotbar" role="group" aria-label="Poses">
+                <template x-for="(move, i) in moves" :key="move.id">
+                    <button type="button" class="move" :aria-pressed="active === move.id ? 'true' : 'false'" :title="move.label" @click="select(move)">
+                        <span class="key" x-text="i + 1"></span>
+                        <div class="thumb"><span x-init="thumb($el, move)"></span></div>
+                        <span class="label" x-text="move.label"></span>
+                    </button>
+                </template>
+            </div>
+            <div class="cce-row">
+                <button type="button" class="btn" @click="toggle()" x-text="playing ? 'Pause' : 'Play'">Pause</button>
+                <button type="button" class="btn" @click="step(-1)" aria-label="Previous frame">&larr; Frame</button>
+                <button type="button" class="btn" @click="step(1)" aria-label="Next frame">Frame &rarr;</button>
+                <span class="cce-note" x-text="'Frame ' + (frame + 1) + ' · ' + (playing ? 'playing' : 'paused')"></span>
+            </div>
+            <div class="equip-row">
+                <span class="equip-note">Not live yet. Your fighter stays as it is until you use this one.</span>
+                <button type="button" class="btn" wire:click="discard" wire:loading.attr="disabled" wire:target="confirm,discard">Discard preview</button>
+                <button type="button" class="btn primary" wire:click="confirm('{{ $draft['hash'] }}')" wire:loading.attr="disabled" wire:target="confirm,discard">Use this fighter</button>
             </div>
         </section>
     @endif
 
-    <section class="cce-card" aria-labelledby="cce-upload-title-{{ $this->getId() }}">
-        <h3 class="cce-title" id="cce-upload-title-{{ $this->getId() }}">{{ $character ? 'Replace your sheet' : 'Upload your sheet' }}</h3>
-        <p class="cce-dim">PNG, JPEG or WebP, up to 4 MB and 2048 px a side. It needs four rows of poses on a solid magenta or transparent background: idle (2 to 4 poses), walk (4), attack (3) and defeated (3).</p>
+    <section class="cce-sec" aria-labelledby="cce-upload-title-{{ $this->getId() }}">
+        <h3 id="cce-upload-title-{{ $this->getId() }}">{{ $character ? 'Replace the sheet' : 'Upload a sheet' }}</h3>
+        <p class="cce-note">PNG, JPEG or WebP, up to 4 MB and 2048 px a side. Four rows of poses on solid magenta or a transparent background: idle (2 to 4), walk (4), attack (3) and death (3).</p>
 
-        {{-- Choosing a file (and sending it to the server) is its own step; the second button builds a preview from it. --}}
+        {{-- Choosing a file (and sending it to the server) is one step; building the preview from it is the next. --}}
         <form
             x-data="{ name: null, uploading: false, progress: 0, ready: false }"
             x-on:livewire-upload-start="uploading = true; ready = false; progress = 0"
@@ -40,80 +64,91 @@
             <input type="file" wire:model="sheet" x-ref="file" x-on:change="name = $event.target.files[0]?.name ?? null" accept="image/png,image/jpeg,image/webp" class="sr-only" tabindex="-1">
 
             <div class="cce-row">
-                <button type="button" x-on:click="$refs.file.click()" x-bind:disabled="uploading" class="cce-btn">
-                    <svg class="cce-icon" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4Z"/></svg>
+                <button type="button" x-on:click="$refs.file.click()" x-bind:disabled="uploading" class="btn">
                     <span x-text="name ? 'Choose another file' : 'Choose file'">Choose file</span>
                 </button>
-                <span class="cce-dim cce-filename" x-text="name ?? 'No file chosen'">No file chosen</span>
+                <span class="cce-file" x-text="name ?? 'No file chosen'">No file chosen</span>
             </div>
 
-            <div x-show="uploading" x-cloak class="cce-progress" role="status">
-                <div class="cce-row">
-                    <svg class="cce-icon cce-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle opacity=".25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path opacity=".75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z"/></svg>
-                    <span>Uploading <span x-text="progress + '%'"></span></span>
-                </div>
-                <div class="cce-bar"><div class="cce-bar-fill" x-bind:style="`width: ${progress}%`"></div></div>
+            <div x-show="uploading" x-cloak role="status">
+                <span class="cce-note">Uploading <span x-text="progress + '%'"></span></span>
+                <div class="upload-bar"><i x-bind:style="{ '--p': progress / 100 }"></i></div>
             </div>
 
-            <p x-show="ready && ! uploading" x-cloak class="cce-ok">File uploaded. Press the button below to build a preview.</p>
+            <p x-show="ready && ! uploading" x-cloak class="cce-note cce-ok" role="status">File uploaded.</p>
 
             @error('sheet')
-                <p class="cce-banner cce-banner--error" role="alert">{{ $message }}</p>
+                <div class="alert crit" role="alert"><span>{{ $message }}</span></div>
             @enderror
 
             <div class="cce-row">
-                <button type="submit" x-bind:disabled="! ready || uploading" aria-describedby="cce-hint-{{ $this->getId() }}" class="cce-btn cce-btn--primary" wire:loading.class="cce-busy" wire:target="build">
-                    <svg wire:loading wire:target="build" class="cce-icon cce-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle opacity=".25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path opacity=".75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z"/></svg>
+                <button type="submit" x-bind:disabled="! ready || uploading" aria-describedby="cce-hint-{{ $this->getId() }}" class="btn primary" wire:target="build">
                     <span wire:loading.remove wire:target="build">Build preview</span>
                     <span wire:loading wire:target="build">Building your fighter…</span>
                 </button>
-                <span class="cce-dim" id="cce-hint-{{ $this->getId() }}" x-show="! ready && ! uploading">Choose a file first.</span>
+                <span class="cce-note" id="cce-hint-{{ $this->getId() }}" x-show="! ready && ! uploading">Choose a file first.</span>
             </div>
         </form>
     </section>
 
     @if ($character)
-        <section class="cce-card" aria-labelledby="cce-fighter-title-{{ $this->getId() }}">
-            <h3 class="cce-title" id="cce-fighter-title-{{ $this->getId() }}">Your fighter <span class="cce-tag">{{ $character['active'] ? 'equipped' : 'not equipped' }}</span></h3>
-            @include('partials.custom-character-strips', ['strips' => $character['strips'], 'prefix' => 'current'])
+        <section class="cce-sec" aria-labelledby="cce-fighter-title-{{ $this->getId() }}">
+            <div class="cce-head">
+                <h3 id="cce-fighter-title-{{ $this->getId() }}">Your fighter</h3>
+                <span class="show-state {{ $character['active'] ? '' : 'previewing' }}">{{ $character['active'] ? 'Equipped' : 'Not equipped' }}</span>
+            </div>
 
             <form wire:submit="rename" class="cce-form">
-                <label class="cce-label" for="cce-name-{{ $this->getId() }}">Name</label>
-                <div class="cce-row">
-                    <input type="text" id="cce-name-{{ $this->getId() }}" wire:model="name" maxlength="{{ config('token_slayer.custom_character.name_max') }}" placeholder="{{ config('token_slayer.custom_character.default_name') }}" class="cce-input" autocomplete="off">
-                    <button type="submit" class="cce-btn" wire:loading.attr="disabled" wire:target="rename">Save name</button>
+                <div class="field">
+                    <label for="cce-name-{{ $this->getId() }}">Name</label>
+                    <div class="cce-row">
+                        <input type="text" id="cce-name-{{ $this->getId() }}" wire:model="name" maxlength="{{ config('token_slayer.custom_character.name_max') }}" placeholder="{{ config('token_slayer.custom_character.default_name') }}" autocomplete="off" aria-describedby="cce-count-{{ $this->getId() }}">
+                        <button type="submit" class="btn" wire:loading.attr="disabled" wire:target="rename">Save name</button>
+                    </div>
+                    <span class="field-count" id="cce-count-{{ $this->getId() }}"><span x-text="$wire.name.length">0</span> / {{ config('token_slayer.custom_character.name_max') }}</span>
                 </div>
                 @error('name')
-                    <p class="cce-banner cce-banner--error" role="alert">{{ $message }}</p>
+                    <div class="alert crit" role="alert"><span>{{ $message }}</span></div>
                 @enderror
             </form>
 
-            <div class="cce-actions">
-                <button type="button" class="cce-btn cce-btn--danger" wire:click="remove" wire:confirm="Remove your custom fighter and every version of it?" wire:loading.attr="disabled" wire:target="remove">Remove fighter</button>
+            <div>
+                @if ($confirming === 'remove')
+                    <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $character['name'] }}" wire:keydown.escape.stop.prevent="dismissConfirm">
+                        <span>Remove <b>{{ $character['name'] }}</b>{{ count($character['versions']) > 1 ? ' and its '.count($character['versions']).' versions' : '' }}? You go back to your roster fighter.</span>
+                        <button type="button" class="btn blood" wire:click="remove" wire:loading.attr="disabled" wire:target="remove">Remove</button>
+                        <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
+                    </div>
+                @else
+                    <button type="button" class="btn" id="cce-remove-open-{{ $this->getId() }}" wire:click="askToConfirm('remove')">Remove fighter</button>
+                @endif
             </div>
         </section>
 
         @if (count($character['versions']) > 1)
-            <section class="cce-card" aria-labelledby="cce-versions-title-{{ $this->getId() }}">
-                <h3 class="cce-title" id="cce-versions-title-{{ $this->getId() }}">Earlier versions</h3>
-                <ul class="cce-versions">
+            <section class="cce-sec" aria-labelledby="cce-versions-title-{{ $this->getId() }}">
+                <h3 id="cce-versions-title-{{ $this->getId() }}">Earlier versions</h3>
+                <ul class="versions">
                     @foreach ($character['versions'] as $version)
-                        <li class="cce-version" wire:key="version-{{ $version['hash'] }}">
-                            <div class="cce-thumb">
-                                <div class="cce-sprite cce-sprite--small" style="background-image: url('{{ $version['idle']['url'] }}'); --frames: {{ $version['idle']['frames'] }}; --rate: {{ $version['idle']['rate'] }};"></div>
-                            </div>
-                            <div class="cce-version-info">
-                                <span>{{ $version['at']?->diffForHumans() }}</span>
-                                @if ($version['current'])
-                                    <span class="cce-tag">in use</span>
+                        <li class="version {{ $version['current'] ? 'current' : '' }}" wire:key="version-{{ $version['hash'] }}">
+                            <span class="vsprite" aria-hidden="true" style="background-image: url('{{ $version['idle']['url'] }}'); --frames: {{ $version['idle']['frames'] }}; --rate: {{ $version['idle']['rate'] }};"></span>
+                            <span class="cce-note">{{ $version['at']?->diffForHumans() }}</span>
+                            @if ($version['current'])
+                                <span class="show-state">In use</span>
+                            @else
+                                @if ($confirming === 'version-'.$version['hash'])
+                                    <div class="alert crit confirm-row" role="alertdialog" aria-label="Delete this version" wire:keydown.escape.stop.prevent="dismissConfirm">
+                                        <span>Delete this version?</span>
+                                        <button type="button" class="btn blood" wire:click="deleteVersion('{{ $version['hash'] }}')" wire:loading.attr="disabled" wire:target="equipVersion,deleteVersion">Delete</button>
+                                        <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
+                                    </div>
+                                @else
+                                    <div class="cce-row">
+                                        <button type="button" class="btn" wire:click="equipVersion('{{ $version['hash'] }}')" wire:loading.attr="disabled" wire:target="equipVersion,deleteVersion">Equip version</button>
+                                        <button type="button" class="btn" id="cce-version-open-{{ $version['hash'] }}-{{ $this->getId() }}" wire:click="askToConfirm('version-{{ $version['hash'] }}')">Delete version</button>
+                                    </div>
                                 @endif
-                            </div>
-                            @unless ($version['current'])
-                                <div class="cce-actions">
-                                    <button type="button" class="cce-btn" wire:click="equipVersion('{{ $version['hash'] }}')" wire:loading.attr="disabled" wire:target="equipVersion,deleteVersion">Equip this one</button>
-                                    <button type="button" class="cce-btn cce-btn--danger" wire:click="deleteVersion('{{ $version['hash'] }}')" wire:confirm="Delete this version?" wire:loading.attr="disabled" wire:target="equipVersion,deleteVersion">Delete</button>
-                                </div>
-                            @endunless
+                            @endif
                         </li>
                     @endforeach
                 </ul>

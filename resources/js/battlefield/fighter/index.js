@@ -437,7 +437,7 @@ export class Fighter {
       const gone = this.scene.fighters.get(entry.id) !== entry || entry.sprite?.active === false;
       if (gone || this.scene.isShuttingDown || isStale(request, key, entry.ftype?.key)) {
         // a version nobody wants and nothing shows must not stay in the game
-        if (entry.ftype?.key !== key && request.wantedKey !== key) {
+        if (entry.ftype?.key !== key && request.wantedKey !== key && !this._lookInUse(entry.id, key)) {
           releaseCustomFighter(this.scene, ftype);
         }
 
@@ -503,28 +503,36 @@ export class Fighter {
    */
   _swapCharacter(entry, ftype) {
     const previous = entry.ftype;
+    entry.swapTarget = ftype;
     entry.body.play(`${entry.ftype.key}-death`);
     entry.body.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      if (this.scene.isShuttingDown) {
+      // a fighter that left the field while it played is not touched (its looks are released when its fade ends)
+      if (this.scene.isShuttingDown || this.scene.fighters.get(entry.id) !== entry) {
         return;
       }
       // the swap takes a second or two: a newer choice made meanwhile (or a direct apply) wins over it
       if (entry.ftype !== previous || !this._swapStillWanted(entry, ftype)) {
         this._releaseIfUnused(entry, ftype);
+        if (entry.ftype === previous) {
+          // the choice flipped back while the death played: stand the old fighter up again
+          this._applyCharacter(entry, previous);
+        }
 
         return;
       }
       this.scene.necromancer?.spawnSummonCircle(entry.pos.x, entry.pos.y);
       entry.ftype = ftype;
-      entry.releaseOnApply = previous;
+      this._leaveBehind(entry, previous);
       this._fitBody(entry, ftype);
       entry.body.setTexture(textureOf(ftype), `${ftype.key}-death-0`);
       entry.body.play(`${ftype.key}-summon`);
       entry.body.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-        if (this.scene.isShuttingDown) {
+        if (this.scene.isShuttingDown || this.scene.fighters.get(entry.id) !== entry) {
           return;
         }
-        if (entry.ftype !== ftype || !this._swapStillWanted(entry, ftype)) {
+        // a newer look already took over: nothing left to land. Otherwise land this one,
+        // even if it is no longer the wanted look, so the body never stays on a summon frame
+        if (entry.ftype !== ftype) {
           return;
         }
         this._applyCharacter(entry, ftype, previous);
@@ -544,6 +552,7 @@ export class Fighter {
    */
   _applyCharacter(entry, ftype, previous = entry.ftype) {
     entry.ftype = ftype;
+    entry.swapTarget = null;
     if (!ftype.custom) {
       entry.rosterKey = ftype.key;
     }
@@ -556,7 +565,7 @@ export class Fighter {
       cacheHeel(this.scene, ftype);
     }
     if (previous?.custom && previous.key !== ftype.key) {
-      entry.releaseOnApply = previous;
+      this._leaveBehind(entry, previous);
     }
     if (entry.animState === AnimState.ATTACK) {
       // the playing attack still draws from the look being left: it is let go of once that attack ends
@@ -600,16 +609,68 @@ export class Fighter {
   }
 
   /**
-   * Releases the custom look this fighter left behind, once nothing is drawing from it.
+   * Notes a custom look the fighter has just left, to be released once nothing draws
+   * from it. Several can pile up while one attack plays (two swaps in a row).
+   *
+   * @param {object} entry A scene.fighters entry.
+   * @param {object} left The custom type being left.
+   * @return {void}
+   */
+  _leaveBehind(entry, left) {
+    if (!left?.custom) {
+      return;
+    }
+    entry.releaseOnApply ??= [];
+    if (!entry.releaseOnApply.some(look => look.key === left.key)) {
+      entry.releaseOnApply.push(left);
+    }
+  }
+
+  /**
+   * Releases the custom looks this fighter left behind, once nothing is drawing from them.
    *
    * @param {object} entry A scene.fighters entry.
    * @return {void}
    */
   _releasePending(entry) {
-    const left = entry.releaseOnApply;
-    entry.releaseOnApply = null;
-    if (left?.custom && left.key !== entry.ftype?.key) {
-      releaseCustomFighter(this.scene, left);
+    const left = entry.releaseOnApply ?? [];
+    entry.releaseOnApply = [];
+    for (const look of left) {
+      if (look.custom && look.key !== entry.ftype?.key) {
+        releaseCustomFighter(this.scene, look);
+      }
+    }
+  }
+
+  /**
+   * Whether a player's fighter on the field shows, or is about to show, this custom look.
+   *
+   * @param {number|string} userId The player.
+   * @param {string} key The custom fighter key.
+   * @return {boolean}
+   */
+  _lookInUse(userId, key) {
+    const live = this.scene.fighters.get(userId);
+
+    return Boolean(live) && (live.ftype?.key === key || live.customRequest?.wantedKey === key);
+  }
+
+  /**
+   * Releases every custom look a fighter that has left the field still held (the
+   * one it showed and any left behind mid-attack), except one that a fighter of the
+   * same player who came back is using.
+   *
+   * @param {object} entry The entry that was removed from scene.fighters.
+   * @return {void}
+   */
+  _releaseLeft(entry) {
+    const looks = [entry.ftype, entry.swapTarget, ...(entry.releaseOnApply ?? [])];
+    entry.swapTarget = null;
+    entry.releaseOnApply = [];
+    for (const look of looks) {
+      if (look?.custom && !this._lookInUse(entry.id, look.key)) {
+        releaseCustomFighter(this.scene, look);
+      }
     }
   }
 
@@ -1307,11 +1368,17 @@ export class Fighter {
     }
     this.scene.fighters.delete(userId);
     this.destroyFlair(entry);
+    // a custom look still loading for this fighter must not stay in the game once it lands
+    withdraw(this._requests(entry));
     this.scene.tweens.add({
       targets: entry.sprite,
       alpha: 0,
       duration: 300,
-      onComplete: () => { if (entry.sprite?.scene) entry.sprite.destroy(); },
+      onComplete: () => {
+        if (entry.sprite?.scene) entry.sprite.destroy();
+        // the fade is over: nothing draws from the fighter's custom looks any more
+        this._releaseLeft(entry);
+      },
     });
     if (entry.handle?.scene) {
       this.scene.tweens.add({

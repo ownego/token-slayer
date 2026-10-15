@@ -371,3 +371,29 @@ test('arrow keys walk the fighters and skip the + Custom tile', () => {
 
   expect(document.activeElement.dataset.key).toBe('soldier');
 });
+
+test('a result line from the editor shows in the sheet\'s toast, as text', () => {
+  vi.useFakeTimers();
+  mount();
+
+  window.dispatchEvent(new CustomEvent('sheet-toast', { detail: { message: 'Name saved <b>x</b>' } }));
+
+  const toast = document.getElementById('toast');
+  expect(toast.classList.contains('show')).toBe(true);
+  expect(toast.textContent).toBe('Name saved <b>x</b>');
+  expect(toast.querySelector('b')).toBeNull();
+});
+
+test('an equip the server turned away puts the sheet back on the fighter it still has, and says why', () => {
+  const { equip } = mount({ equipped: 'orc-rider' });
+  document.querySelector('.slot[data-key="wizard"]').click();
+  document.getElementById('equip-btn').click();
+  expect(document.querySelector('.slot[data-key="wizard"] .tag')).not.toBeNull();
+
+  window.dispatchEvent(new CustomEvent('sheet-equip-failed', { detail: { message: 'Another build of yours is still running. Try again in a moment.', equipped: 'orc-rider' } }));
+
+  expect(document.querySelector('.slot[data-key="orc-rider"] .tag')?.textContent).toBe('YOU');
+  expect(document.querySelector('.slot[data-key="wizard"] .tag')).toBeNull();
+  expect(document.getElementById('toast').textContent).toContain('Another build of yours is still running');
+  expect(equip).not.toHaveBeenCalledWith('wizard');
+});

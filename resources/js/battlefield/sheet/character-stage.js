@@ -759,6 +759,24 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   }
   on(window, 'custom-character-changed', onCustomChanged);
 
+  // A result line from the editor (a Livewire component) shows in the sheet's own toast.
+  on(window, 'sheet-toast', event => toast(escapeHtml(String(event.detail?.message ?? '')), false));
+
+  // The server turned an equip away (the player has another change running): the sheet had already
+  // moved on optimistically, so it goes back to the fighter the server still has.
+  on(window, 'sheet-equip-failed', event => {
+    const { message = '', equipped: still } = event.detail ?? {};
+    clearTimeout(persistTimer);
+    if (still && known(still)) {
+      equipped = still;
+      markYou(equipped);
+      if (!editing) {
+        select(previewing);
+      }
+    }
+    toast(escapeHtml(String(message)), false);
+  });
+
   // ---- one tooltip for every icon-only button (roster slots and moves) ----
   const TYPE_NAMES = { SLASH: 'Slash', BLADE: 'Blade', SHURIKEN: 'Shuriken', ARROW: 'Arrow', BLAST: 'Blast' };
   const tipShow = e => {

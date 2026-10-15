@@ -846,3 +846,204 @@ describe('custom fighters: stale swaps and releases', () => {
     expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
   });
 });
+
+describe('custom fighters: leaving the field and aborted swaps', () => {
+  const WIRE = (version = 'abc') => ({ version, url_base: '/storage/custom-characters/1/' + version, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const typeFor = async version => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE(version)));
+  };
+  const makeBody = () => ({
+    play: vi.fn(),
+    setTexture: vi.fn(),
+    setScale: vi.fn(function () { return this; }),
+    setY: vi.fn(function () { return this; }),
+    setFlipX: vi.fn(),
+    off: vi.fn(),
+    once: vi.fn(),
+    scene: {},
+  });
+  const makeScene = entry => ({
+    fighters: new Map([[1, entry]]),
+    charges: new Map(),
+    textures: { getFrame: () => null, remove: vi.fn() },
+    anims: { exists: () => true, get: () => ({ frames: [1] }), remove: vi.fn() },
+    necromancer: { spawnSummonCircle: vi.fn() },
+    tweens: { add: vi.fn(cfg => cfg) },
+    reducedMotion: false,
+    isShuttingDown: false,
+    time: { now: 0, delayedCall() {} },
+    layout: LAYOUTS.landscape,
+  });
+
+  test('a fighter that leaves lets go of its custom look once the fade is over, not before', async () => {
+    const look = await typeFor('mine');
+    const entry = { id: 1, ftype: look, baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() }, bodyFitted: true };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.removeFighter(1);
+
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+    scene.tweens.add.mock.calls[0][0].onComplete();
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-mine');
+  });
+
+  test('a look left behind while an attack played goes with the fighter that leaves', async () => {
+    const left = await typeFor('left');
+    const look = await typeFor('mine');
+    const entry = { id: 1, ftype: look, releaseOnApply: [left], baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.removeFighter(1);
+    scene.tweens.add.mock.calls[0][0].onComplete();
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-left');
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-mine');
+  });
+
+  test('a fighter who rejoins before the fade ends keeps the look it came back with', async () => {
+    const look = await typeFor('mine');
+    const entry = { id: 1, ftype: look, baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.removeFighter(1);
+    scene.fighters.set(1, { id: 1, ftype: look, customRequest: { wantedKey: look.key } });
+    scene.tweens.add.mock.calls[0][0].onComplete();
+
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+  });
+
+  test('a custom look that finishes loading for a fighter who has left is let go of at once', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const next = await typeFor('next');
+    let land;
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE('next') }]);
+    fighter.removeFighter(1);
+    land(next);
+    await settle();
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-next');
+  });
+
+  test('when the wanted look flips back while the death plays, the old fighter stands up again', async () => {
+    const completions = [];
+    const old = await typeFor('old');
+    const next = await typeFor('next');
+    const body = { ...makeBody(), once: vi.fn((event, callback) => completions.push(callback)) };
+    const entry = { id: 1, ftype: old, baseSize: 36, displaySize: 48, pos: { x: 1, y: 2 }, body, animState: 'idle', bodyFitted: true, sprite: { active: true } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+
+    fighter._requests(entry).wantedKey = next.key;
+    fighter._swapCharacter(entry, next);
+    fighter._requests(entry).wantedKey = old.key;
+    body.play.mockClear();
+    completions.shift()();
+
+    expect(entry.ftype).toBe(old);
+    expect(body.setTexture).toHaveBeenLastCalledWith(old.texture, 'custom-1-old-idle-0');
+    expect(body.play).toHaveBeenCalledWith('custom-1-old-idle');
+  });
+
+  test('two looks left behind during one attack are both let go of when it ends', async () => {
+    const a = await typeFor('a');
+    const b = await typeFor('b');
+    const c = await typeFor('c');
+    const entry = { id: 1, ftype: a, baseSize: 36, displaySize: 48, body: makeBody(), animState: 'attack', bodyFitted: true, sprite: { active: true } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+
+    fighter._applyCharacter(entry, b);
+    fighter._applyCharacter(entry, c);
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+
+    fighter._releasePending(entry);
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-a');
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-b');
+    expect(scene.textures.remove).not.toHaveBeenCalledWith('custom-1-c');
+  });
+});
+
+describe('custom fighters: a swap running while the fighter leaves', () => {
+  const WIRE = (version = 'abc') => ({ version, url_base: '/storage/custom-characters/1/' + version, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } });
+  const typeFor = async version => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE(version)));
+  };
+  const makeBody = completions => ({
+    play: vi.fn(),
+    setTexture: vi.fn(),
+    setScale: vi.fn(function () { return this; }),
+    setY: vi.fn(function () { return this; }),
+    once: vi.fn((event, callback) => completions.push(callback)),
+    scene: {},
+  });
+  const makeScene = entry => ({
+    fighters: new Map([[1, entry]]),
+    charges: new Map(),
+    textures: { getFrame: () => null, remove: vi.fn() },
+    anims: { exists: () => true, get: () => ({ frames: [1] }), remove: vi.fn() },
+    necromancer: { spawnSummonCircle: vi.fn() },
+    tweens: { add: vi.fn(cfg => cfg) },
+    reducedMotion: false,
+    isShuttingDown: false,
+    time: { now: 0, delayedCall() {} },
+    layout: LAYOUTS.landscape,
+  });
+
+  test('a death that ends after the fighter left does nothing to it, nor to the look a returning fighter wants', async () => {
+    const completions = [];
+    const old = await typeFor('old');
+    const next = await typeFor('next');
+    const entry = { id: 1, ftype: old, baseSize: 36, displaySize: 48, pos: { x: 1, y: 2 }, body: makeBody(completions), animState: 'idle', bodyFitted: true, sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+    fighter._requests(entry).wantedKey = next.key;
+    fighter._swapCharacter(entry, next);
+
+    fighter.removeFighter(1);
+    scene.fighters.set(1, { id: 1, ftype: next, customRequest: { wantedKey: next.key } });
+    entry.body.setTexture.mockClear();
+    completions.shift()();
+
+    expect(entry.body.setTexture).not.toHaveBeenCalled();
+    expect(scene.necromancer.spawnSummonCircle).not.toHaveBeenCalled();
+    expect(scene.textures.remove).not.toHaveBeenCalledWith('custom-1-next');
+  });
+
+  test('a swap target that never became the look on show is released when the fighter leaves', async () => {
+    const completions = [];
+    const old = await typeFor('old');
+    const next = await typeFor('next');
+    const entry = { id: 1, ftype: old, baseSize: 36, displaySize: 48, pos: { x: 1, y: 2 }, body: makeBody(completions), animState: 'idle', bodyFitted: true, sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+    fighter._requests(entry).wantedKey = next.key;
+    fighter._swapCharacter(entry, next);
+
+    fighter.removeFighter(1);
+    scene.tweens.add.mock.calls[0][0].onComplete();
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-next');
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
+  });
+});

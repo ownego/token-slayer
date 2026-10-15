@@ -4,9 +4,9 @@ Statements with "must" / "never" are rules for new work; existing code may not f
 
 ## Confirm and destructive actions
 
-The sheet and the HUD have no confirm component today (no modal, confirm or danger class exists in `fighter-sheet.css`); a native `window.confirm` / Livewire `wire:confirm` is the browser's own dialog, in another font, outside the game, blocking, and it cannot name the thing being deleted well. Never use it in the game world.
+The first confirm row is the custom fighter editor's (`confirm-row`, `.btn.blood`; see `components.md`): reuse it rather than building another. A native `window.confirm` / Livewire `wire:confirm` is the browser's own dialog, in another font, outside the game, blocking, and it cannot name the thing being deleted well. Never use it in the game world.
 
-Pattern for new work, built once as a shared piece and reused:
+Pattern, as the editor builds it (the pending question is component state, `$confirming`, so it survives re-renders and can be tested; Remove fighter and Delete version):
 1. The destructive control is an ordinary `.btn` (or `.link`) labelled with the verb and the object: "Remove fighter".
 2. Pressing it swaps that row in place (no second modal) for a confirm row on the same panel: an `.alert.crit` style bar with the object's name ("Remove Ember Knight and all 3 versions?"), a `.btn` "Remove" with `--blood` text, and a `.btn` "Cancel". Focus moves to "Cancel" (the safe choice); Escape cancels; the row never auto-confirms.
 3. After confirming: a `.toast` ("Fighter removed") and the view goes to the next sensible state (`Fallback` below).
