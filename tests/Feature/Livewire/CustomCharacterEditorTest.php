@@ -534,3 +534,20 @@ test('a failed action tells the sheet, and refreshes it so a stale draft slot co
         ->assertDispatched('sheet-error', fn (string $event, array $params) => str_contains($params['message'], 'no built fighter'))
         ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null && $params['ceremony'] === false);
 });
+
+test('after a discard focus goes to the file button, and after a remove back to what opened the editor', function () {
+    $character = CustomCharacter::factory()->create();
+    stagedFor($character->user);
+
+    editorFor($character->user)
+        ->call('discard')
+        ->assertDispatched('sheet-focus', target: 'upload')
+        ->call('remove')
+        ->assertDispatched('sheet-focus', target: 'opener');
+});
+
+test('the file button and the name box carry the hooks the stage focuses by', function () {
+    $character = CustomCharacter::factory()->create();
+
+    editorFor($character->user)->assertSeeHtml('data-focus="upload"')->assertSeeHtml('data-focus="name"');
+});

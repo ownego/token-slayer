@@ -14,8 +14,9 @@ beforeEach(() => {
     <aside class="roster"><span id="roster-count"></span>
       <div class="chips"><button class="chip" data-type="">All</button><button class="chip" data-type="CUSTOM" hidden>Custom</button><button class="chip" data-type="ARROW">Arrow</button></div>
       <div id="roster-grid"></div></aside>
-    <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div></section>
-    <section class="custom-panel" id="custom-panel" hidden><button type="button" id="panel-back">Back</button></section>
+    <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div>
+      <section class="cce-drawer" id="custom-panel" hidden><button type="button" id="panel-back">Back</button><div class="cce-row"><button type="button" data-focus="upload">Choose file</button></div><input type="text" data-focus="name"></section>
+    </section>
   </div></div><div id="toast"></div><div id="tipbox"></div>`;
   // the stage's own floor lives inside #show-stage in the real markup
   document.getElementById('show-stage').appendChild(document.querySelector('.floor'));
@@ -185,7 +186,8 @@ test('the roster starts with a Create tile that opens the editor panel in place,
   tile.click();
 
   expect(document.getElementById('custom-panel').hidden).toBe(false);
-  expect(document.querySelector('.showcase').hidden).toBe(true);
+  expect(document.querySelector('.showcase').hidden).toBe(false);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
   expect(tile.getAttribute('aria-pressed')).toBe('true');
 });
 
@@ -202,12 +204,12 @@ test('the back button, and picking any fighter, bring the stage back', () => {
   tile.click();
   document.getElementById('panel-back').click();
   expect(document.getElementById('custom-panel').hidden).toBe(true);
-  expect(document.querySelector('.showcase').hidden).toBe(false);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(false);
 
   tile.click();
   document.querySelector('.slot[data-key="wizard"]').click();
   expect(document.getElementById('custom-panel').hidden).toBe(true);
-  expect(document.querySelector('.showcase').hidden).toBe(false);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(false);
   expect(document.getElementById('show-name').textContent).toBe('Wizard');
 });
 
@@ -433,4 +435,81 @@ test('an equip the server turned away puts the sheet back on the fighter it stil
   expect(document.querySelector('.slot[data-key="wizard"] .tag')).toBeNull();
   expect(document.getElementById('toast').textContent).toContain('Another build of yours is still running');
   expect(equip).not.toHaveBeenCalledWith('wizard');
+});
+
+test('opening the editor keeps the stage in view and opens the drawer under it, with focus inside', () => {
+  mount({ custom: CUSTOM });
+  const tile = document.querySelector('.slot-add');
+  tile.focus();
+
+  tile.click();
+
+  const showcase = document.querySelector('.showcase');
+  expect(showcase.classList.contains('editing')).toBe(true);
+  expect(showcase.hidden).toBe(false);
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+  expect(tile.getAttribute('aria-expanded')).toBe('true');
+  expect(tile.getAttribute('aria-controls')).toBe('custom-panel');
+  expect(document.activeElement.id).toBe('panel-back');
+});
+
+test('closing the drawer puts focus back on what opened it', () => {
+  mount({ custom: CUSTOM });
+  const tile = document.querySelector('.slot-add');
+  tile.focus();
+  tile.click();
+
+  document.getElementById('panel-back').click();
+
+  expect(tile.getAttribute('aria-expanded')).toBe('false');
+  expect(document.activeElement).toBe(tile);
+});
+
+test('once the lazy editor has mounted, focus moves to its file button, but only if it is still in the drawer', async () => {
+  mount();
+  const panel = document.getElementById('custom-panel');
+  panel.querySelector('[data-focus="upload"]').remove(); // the editor is not mounted yet
+  document.querySelector('.slot-add').click();
+
+  panel.insertAdjacentHTML('beforeend', '<button type="button" data-focus="upload" id="late">Choose file</button>');
+  await Promise.resolve();
+
+  expect(document.activeElement.id).toBe('late');
+});
+
+test('Escape closes the drawer first: the shell offers it, only an open drawer takes it, a second Escape is left for the sheet', () => {
+  mount({ custom: CUSTOM });
+  const tile = document.querySelector('.slot-add');
+  tile.focus();
+  tile.click();
+
+  const first = new CustomEvent('sheet-escape', { cancelable: true });
+  window.dispatchEvent(first);
+  expect(first.defaultPrevented).toBe(true);
+  expect(document.getElementById('custom-panel').hidden).toBe(true);
+  expect(document.activeElement).toBe(tile);
+
+  const second = new CustomEvent('sheet-escape', { cancelable: true });
+  window.dispatchEvent(second);
+  expect(second.defaultPrevented).toBe(false);
+});
+
+test('sheet-focus moves focus to a usable target, opening the drawer when the target lives in it', () => {
+  mount({ custom: CUSTOM, equipped: 'custom' });
+  const focus = target => window.dispatchEvent(new CustomEvent('sheet-focus', { detail: { target } }));
+
+  focus('upload');
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+  expect(document.activeElement.dataset.focus).toBe('upload');
+
+  focus('name');
+  expect(document.activeElement.dataset.focus).toBe('name');
+
+  document.getElementById('panel-back').click();
+  focus('equipped-slot');
+  expect(document.activeElement).toBe(document.querySelector('.slot[data-key="custom"]'));
+
+  focus('opener');
+  focus('nonsense');
+  expect(document.activeElement).not.toBe(document.body);
 });
