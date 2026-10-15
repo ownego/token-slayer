@@ -71,8 +71,8 @@
             <div class="hotbar" id="hotbar"></div>
             <div class="inspector" id="inspector" role="group" aria-label="Inspect fighter frames" hidden>
                 <button class="btn" type="button" id="inspect-toggle">Pause</button>
-                <button class="btn" type="button" id="inspect-prev" aria-label="Previous frame">&larr; Frame</button>
-                <button class="btn" type="button" id="inspect-next" aria-label="Next frame">Frame &rarr;</button>
+                <button class="btn" type="button" id="inspect-prev" aria-label="Previous frame">&#9664;</button>
+                <button class="btn" type="button" id="inspect-next" aria-label="Next frame">&#9654;</button>
                 <span id="inspect-label" aria-live="off"></span>
             </div>
             <div class="move-name" id="move-name" aria-live="polite"></div>

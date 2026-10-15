@@ -340,7 +340,7 @@
 @keyframes fs-slot-pop { from { opacity: 0; scale: .8; } }
 .fs .inspector { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .fs .inspector[hidden] { display: none; }
-.fs .inspector .btn { min-height: 44px; }
+
 /* the editor is a drawer under the stage: the stage keeps showing the fighter, the roster stays beside it */
 .fs .cce-drawer { display: none; min-width: 0; padding: 8px 14px 12px; container-type: inline-size; }
 .fs .showcase.editing > .moves-head, .fs .showcase.editing > .hotbar, .fs .showcase.editing > .move-name,
@@ -1431,3 +1431,16 @@
 .fs .cce-thumb { padding: 6px 0 0; }
 /* while the drawer is open the stage is a preview strip, so the drawer has the room */
 .fs .showcase.editing > .show-stage { flex: none; height: 230px; min-height: 0; }
+
+/* button weight: one gold action per view. Tools (the frame inspector) and the secondary actions beside Use are
+   dim-bordered and small; gold shows only on hover, focus and the pressed state. 44 px only for a touch pointer. */
+.fs .inspector { gap: 0; padding: 2px 0; }
+.fs .inspector .btn { min-height: 30px; padding: 0 12px; font: 600 12px var(--display); color: var(--parchment); background: #0e1a31; border-width: 1px; border-color: #2e3d63; margin-left: -1px; transition: border-color 0.15s ease, color 0.15s ease; }
+.fs .inspector .btn:first-child { margin-left: 0; }
+.fs .inspector .btn:hover, .fs .inspector .btn:focus-visible { border-color: var(--rivet); color: var(--rivet); position: relative; z-index: 1; }
+.fs .inspector .btn:active { transform: scale(0.96); }
+#inspect-label { margin-left: 12px; font: 500 12px var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
+.fs .equip-row .btn:not(.primary) { min-height: 36px; padding: 0 14px; border-width: 1px; border-color: #2e3d63; color: var(--parchment); background: transparent; transition: border-color 0.15s ease, color 0.15s ease; }
+.fs .equip-row .btn:not(.primary):hover, .fs .equip-row .btn:not(.primary):focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .equip-row .btn:not(.primary):active { transform: scale(0.97); }
+@media (pointer: coarse) { .fs .inspector .btn, .fs .equip-row .btn { min-height: 44px; } }
