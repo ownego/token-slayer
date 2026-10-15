@@ -757,3 +757,13 @@ test('opening Manage shows the player\'s own fighter on the stage', () => {
   expect(document.getElementById('show-name').textContent).toBe('Sir Pixel');
   expect(document.querySelector('.showcase').classList.contains('blank')).toBe(false);
 });
+
+test('Manage shows the player\'s fighter even when a draft is waiting', () => {
+  mount({ equipped: 'orc-rider', custom: { ...CUSTOM, name: 'Sir Pixel' }, draft: { hash: 'd'.repeat(12), spec: { ...CUSTOM, name: 'Sir Pixel' } } });
+  document.querySelector('.slot[data-key="wizard"]').click();
+
+  document.querySelector('.slot-add').click();
+
+  expect(document.getElementById('show-name').textContent).toBe('Sir Pixel');
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('custom');
+});

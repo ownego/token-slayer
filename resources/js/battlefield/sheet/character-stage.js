@@ -895,12 +895,12 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   }
   let blankFrom = null;
   /**
-   * The stage shows what the drawer is about: the player's built draft, else their
-   * fighter, else (nothing made yet) an empty stage, never whichever roster fighter
+   * The stage shows what the drawer is about: the player's fighter, else their built
+   * draft (a fresh build selects its own draft), else (nothing made yet) an empty stage, never whichever roster fighter
    * happened to be selected.
    */
   function showOwn() {
-    const own = known(DRAFT_KEY) ? DRAFT_KEY : known(CUSTOM_KEY) ? CUSTOM_KEY : null;
+    const own = known(CUSTOM_KEY) ? CUSTOM_KEY : known(DRAFT_KEY) ? DRAFT_KEY : null;
     if (own) {
       if (previewing !== own) {
         select(own);
