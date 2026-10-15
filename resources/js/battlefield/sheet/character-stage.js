@@ -538,7 +538,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     h2.style.animation = 'none';
     void h2.offsetWidth;
     h2.style.animation = '';
-    $$('show-type').textContent = c.author ? `${TYPE_LINE[c.type]} · by ${c.author}` : TYPE_LINE[c.type];
+    const author = c.author ?? (key === DRAFT_KEY ? handle : null);
+    $$('show-type').textContent = author ? `${TYPE_LINE[c.type]} · by ${author}` : TYPE_LINE[c.type];
     const mine = key === equipped;
     const isDraft = key === DRAFT_KEY;
     const isPeek = isDraft && previewMode === 'peek';

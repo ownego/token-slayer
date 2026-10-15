@@ -334,7 +334,7 @@
 }
 .fs .slot-add[aria-pressed="true"] { border-style: solid; border-color: var(--rivet); color: var(--rivet); background: #15233f; }
 /* the custom fighter is marked in the roster whatever its name is */
-.fs .slot .badge { position: absolute; top: 0; left: 0; padding: 1px 4px; font: 700 8px var(--display); letter-spacing: 0.04em; background: #7c3aed; color: #fff; }
+.fs .slot .badge { position: absolute; bottom: 0; left: 0; right: 0; padding: 1px 0; text-align: center; font: 700 8px var(--display); letter-spacing: 0.06em; background: #7c3aed; color: #fff; }
 .fs .slot .badge.draft { background: var(--rivet); color: var(--night-deep); }
 .fs .slot.pop { animation: fs-slot-pop 0.35s cubic-bezier(.2,.8,.2,1); }
 @keyframes fs-slot-pop { from { opacity: 0; scale: .8; } }
@@ -1406,7 +1406,6 @@
 /* the CUSTOM marker is the sheet's own gold corner label */
 .fs .slot .badge { background: var(--rivet); color: var(--night-deep); }
 /* the CUSTOM marker and YOU share the corner: YOU drops to the second row instead of covering it */
-.fs .slot:has(.badge) .tag { top: 12px; }
 
 /* a wide drawer puts upload and fighter side by side, the version strip under both: less scrolling */
 @container (min-width: 600px) {
@@ -1415,3 +1414,18 @@
     .fs .cce-sec + .cce-sec { padding-top: 0; border-top: 0; padding-left: 16px; border-left: 1px solid rgba(251,191,36,0.18); }
     .fs .cce > .cce-sec:nth-of-type(3) { grid-column: 1 / -1; padding-left: 0; border-left: 0; padding-top: 12px; border-top: 1px solid rgba(251,191,36,0.18); }
 }
+
+/* the editor drawer: quiet chrome, one primary action per step, no heavy outlines */
+.fs .cce-drawer .panel-head { margin-bottom: 8px; }
+.fs .cce-drawer .btn { min-height: 36px; padding: 0 14px; }
+@media (pointer: coarse) { .fs .cce-drawer .btn, .fs .cce-link { min-height: 44px; } }
+.fs .cce-drawer #panel-back { border-color: transparent; background: transparent; color: var(--dim); padding: 0 8px; }
+.fs .cce-drawer #panel-back:hover { color: var(--rivet); }
+.fs .cce .btn:not(.primary):not(.blood) { border-color: #2e3d63; background: #0e1a31; }
+.fs .cce-pick { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 8px 10px; border: 1px dashed #3a4a70; background: rgba(14,26,49,0.6); }
+.fs .cce-file-line { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.fs .cce-file-line .cce-file { flex: 1; color: var(--parchment); }
+.fs .cce-link { background: none; border: 0; padding: 0 4px; color: var(--rivet); font: 500 12px var(--body); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.fs .cce-link.danger { color: var(--blood); justify-self: start; }
+.fs .cce-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.fs .cce-thumb { padding: 6px 0 0; }

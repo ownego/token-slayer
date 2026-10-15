@@ -142,7 +142,7 @@ test('the form submits to an action the browser can reach, not Livewire\'s built
 
 test('the editor tells the player why Build is disabled, and the size limits the decoder enforces', function () {
     editorFor(User::factory()->create())
-        ->assertSee('Choose a file first.')
+        ->assertSee('Then build a preview and try it on the stage before you use it.')
         ->assertSee('2048 px')
         ->assertSee('death 3');
 });
@@ -224,7 +224,7 @@ test('a new player sees the pose layout and a file preview flow before building'
 
     editorFor($user)
         ->assertSee('Make your own fighter')
-        ->assertSee('Open the prompt guide')
+        ->assertSee('Prompt guide')
         ->assertSeeHtml('<svg role="img"')
         ->assertSeeHtml('phase:')
         ->assertSeeHtml('destroy()')
@@ -564,4 +564,10 @@ test('the file button and the name box carry the hooks the stage focuses by', fu
     $character = CustomCharacter::factory()->create();
 
     editorFor($character->user)->assertSeeHtml('data-focus="upload"')->assertSeeHtml('data-focus="name"');
+});
+
+test('the prompt guide stays one click away for a player who already has a fighter', function () {
+    $character = CustomCharacter::factory()->create();
+
+    editorFor($character->user)->assertSee('Prompt guide')->assertSeeHtml(route('custom-character'));
 });

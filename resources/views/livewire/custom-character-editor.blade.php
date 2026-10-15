@@ -9,11 +9,13 @@
     @enderror
 
     <section class="cce-sec" aria-labelledby="cce-upload-title-{{ $this->getId() }}">
-        <h3 id="cce-upload-title-{{ $this->getId() }}">{{ $character ? 'Make a new version' : 'Make your own fighter' }}</h3>
-        <p class="cce-note">PNG, JPEG or WebP, up to 4 MB and 2048 px. Four rows on magenta or transparent: idle 2–4, walk 4, attack 3, death 3.</p>
+        <div class="cce-head">
+            <h3 id="cce-upload-title-{{ $this->getId() }}">{{ $character ? 'Make a new version' : 'Make your own fighter' }}</h3>
+            <a class="panel-link" href="{{ route('custom-character') }}" target="_blank" rel="noopener">Prompt guide &#8599;</a>
+        </div>
+        <p class="cce-note">PNG, JPEG or WebP · up to 4 MB and 2048 px · four rows on magenta or transparent: idle 2–4, walk 4, attack 3, death 3</p>
         @if (! $character && ! $draft)
             @include('partials.custom-character-sheet-diagram')
-            <a class="panel-link" href="{{ route('custom-character') }}" target="_blank" rel="noopener">Open the prompt guide</a>
         @endif
 
         {{-- Choosing a file (and sending it to the server) is one step; building the preview from it is the next. --}}
@@ -30,11 +32,12 @@
         >
             <input type="file" wire:model="sheet" x-ref="file" x-on:change="choose($event.target.files[0] ?? null)" accept="image/png,image/jpeg,image/webp" class="sr-only" tabindex="-1">
 
-            <div class="cce-row">
-                <button type="button" x-on:click="$refs.file.click()" x-bind:disabled="phase === 'uploading' || phase === 'building'" class="btn" data-focus="upload">
-                    <span x-text="info ? 'Choose another file' : 'Choose file'">Choose file</span>
-                </button>
-                <span class="cce-file" x-text="info ?? 'No file chosen'">No file chosen</span>
+            <div class="cce-pick">
+                <div class="cce-file-line" x-show="info" x-cloak>
+                    <span class="cce-file" x-text="info"></span>
+                    <button type="button" class="cce-link" x-on:click="$refs.file.click()" x-bind:disabled="phase === 'uploading' || phase === 'building'" data-focus="upload-again">Change</button>
+                </div>
+                <button type="button" x-show="!info" x-on:click="$refs.file.click()" class="btn primary" data-focus="upload">Choose pose sheet</button>
             </div>
 
             <div x-show="thumb" x-cloak class="cce-thumb">
@@ -59,10 +62,10 @@
             @enderror
 
             <div class="cce-row">
-                <button type="submit" x-bind:disabled="phase !== 'ready'" aria-describedby="cce-hint-{{ $this->getId() }}" class="btn primary" wire:target="build">
-                    <span>Build preview</span>
+                <button type="submit" x-show="phase === 'ready' || phase === 'building'" x-cloak x-bind:disabled="phase !== 'ready'" class="btn primary" wire:target="build">
+                    <span x-text="phase === 'building' ? 'Building…' : 'Build preview'">Build preview</span>
                 </button>
-                <span class="cce-note" id="cce-hint-{{ $this->getId() }}" x-show="phase === 'idle'">Choose a file first.</span>
+                <span class="cce-note" x-show="phase === 'idle'">Then build a preview and try it on the stage before you use it.</span>
             </div>
         </form>
     </section>
@@ -96,7 +99,7 @@
                         <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
                     </div>
                 @else
-                    <button type="button" class="btn" id="cce-remove-open-{{ $this->getId() }}" wire:click="askToConfirm('remove')">Remove fighter</button>
+                    <button type="button" class="cce-link danger" id="cce-remove-open-{{ $this->getId() }}" wire:click="askToConfirm('remove')">Remove fighter</button>
                 @endif
             </div>
         </section>
