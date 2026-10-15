@@ -1,0 +1,59 @@
+<?php
+
+use App\Events\FighterCharacterChanged;
+use App\Filament\Resources\CustomCharacters\Pages\ListCustomCharacters;
+use App\Models\CustomCharacter;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    Storage::fake('public');
+    Event::fake([FighterCharacterChanged::class]);
+});
+
+test('a non-admin cannot open the page', function () {
+    Livewire::actingAs(User::factory()->create())->test(ListCustomCharacters::class)->assertForbidden();
+});
+
+test('an admin sees every player\'s fighter with its name and owner', function () {
+    $admin = User::factory()->admin()->create();
+    $one = CustomCharacter::factory()->create(['name' => 'Sir Pixel']);
+    $two = CustomCharacter::factory()->create(['name' => 'Moss']);
+
+    Livewire::actingAs($admin)->test(ListCustomCharacters::class)
+        ->assertCanSeeTableRecords([$one, $two])
+        ->assertTableColumnStateSet('name', 'Sir Pixel', $one);
+});
+
+test('an admin can take a fighter down: the player falls back to their roster character and the field drops it live', function () {
+    $admin = User::factory()->admin()->create();
+    $character = CustomCharacter::factory()->create();
+    Storage::disk('public')->put("custom-characters/{$character->user_id}/{$character->version_hash}/idle.png", 'x');
+
+    Livewire::actingAs($admin)->test(ListCustomCharacters::class)
+        ->callTableAction('remove', $character)
+        ->assertHasNoTableActionErrors();
+
+    expect(CustomCharacter::count())->toBe(0);
+    Storage::disk('public')->assertMissing("custom-characters/{$character->user_id}/{$character->version_hash}/idle.png");
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->is($character->user) && $event->user->customFighterState() === null);
+});
+
+test('a role that may view the list but not delete cannot take a fighter down', function () {
+    $viewer = User::factory()->create();
+    $viewer->assignRole(Role::create(['name' => 'viewer', 'guard_name' => 'web'])->givePermissionTo(Permission::findByName('ViewAny:CustomCharacter')));
+    $character = CustomCharacter::factory()->create();
+
+    Livewire::actingAs($viewer)->test(ListCustomCharacters::class)
+        ->assertCanSeeTableRecords([$character])
+        ->assertTableActionHidden('remove', $character);
+
+    expect(CustomCharacter::count())->toBe(1);
+});

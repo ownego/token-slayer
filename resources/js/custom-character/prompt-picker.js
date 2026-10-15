@@ -39,6 +39,8 @@ export function characterPrompt(types, prompts, thumbs = '') {
       const typed = this.text ? readItems(this.text) : {};
       this.type = key;
       this.text = fillItems(this.prompts[key], typed);
+      // on a phone the prompt sits below the whole grid: bring it into view (never steal focus from the tiles)
+      this.$nextTick?.(() => this.$refs?.prompt?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }));
     },
 
     /**

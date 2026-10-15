@@ -328,13 +328,23 @@
 .fs .slot:hover { border-color: rgba(251,191,36,0.55); background: #12213d; }
 /* the "+ Custom" tile: sits in the roster grid like a slot, but is a link to the page that makes a custom fighter */
 .fs .slot-add {
-    position: relative; aspect-ratio: 1; display: grid; place-items: center; align-content: center; gap: 2px; text-decoration: none;
+    position: relative; aspect-ratio: 1; display: grid; place-items: center; align-content: center; gap: 2px; padding: 0;
     background: transparent; border: 1px dashed #3a4a70; color: var(--dim); cursor: pointer;
     transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
+.fs .slot-add[aria-pressed="true"] { border-style: solid; border-color: var(--rivet); color: var(--rivet); background: #15233f; }
+/* the custom fighter is marked in the roster whatever its name is */
+.fs .slot .badge { position: absolute; top: 0; left: 0; padding: 1px 4px; font: 700 8px var(--display); letter-spacing: 0.04em; background: #7c3aed; color: #fff; }
+/* the editor takes the stage's place; the roster stays beside it */
+.fs .custom-panel { min-width: 0; padding: 12px; overflow: auto; }
+.fs .custom-panel[hidden] { display: none; }
+.fs .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.fs .panel-link { color: var(--rivet); font: 500 12px var(--body); text-decoration: underline; text-underline-offset: 2px; }
+.fs .panel-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 .fs .slot-add .plus { font: 700 22px/1 var(--display); }
 .fs .slot-add .nm { font: 500 10px/1 var(--body); }
-.fs .slot-add:hover, .fs .slot-add:focus-visible { border-color: rgba(251,191,36,0.7); color: var(--rivet); background: #12213d; outline: none; }
+.fs .slot-add:hover, .fs .slot-add:focus-visible { border-color: rgba(251,191,36,0.7); color: var(--rivet); background: #12213d; }
+.fs .slot-add:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 .fs .slot-add:active { transform: scale(0.96); }
 .fs .slot:active { transform: scale(0.96); }
 .fs .slot[aria-selected="true"] { border: 2px solid var(--rivet); background: #15233f; box-shadow: 0 0 0 3px rgba(251,191,36,0.12); }

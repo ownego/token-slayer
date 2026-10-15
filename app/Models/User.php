@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\FighterCharacter;
 use App\Enums\MembershipStatus;
+use App\Services\CustomCharacter\CustomCharacterStore;
 use App\Services\Roles\DefaultRolePermissions;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
@@ -81,6 +82,19 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
+     * The key of the fighter the user plays now, as the fighter sheet names it:
+     * `custom` while their own custom fighter is equipped, else the roster
+     * character they chose (or the one assigned for the boss).
+     *
+     * @param  ?int  $bossId  the boss being fought, or null when no boss context applies
+     * @return string
+     */
+    public function equippedFighterKey(?int $bossId): string
+    {
+        return $this->customFighterState() !== null ? 'custom' : $this->characterForBoss($bossId);
+    }
+
+    /**
      * Org accounts this user is a member of.
      *
      * @return BelongsToMany<Account, $this>
@@ -138,6 +152,27 @@ class User extends Authenticatable implements FilamentUser
     public function customCharacter(): HasOne
     {
         return $this->hasOne(CustomCharacter::class);
+    }
+
+    /**
+     * The fighter this user has built but not yet confirmed (their preview), if any.
+     *
+     * @return HasOne<CustomCharacterDraft, $this>
+     */
+    public function customCharacterDraft(): HasOne
+    {
+        return $this->hasOne(CustomCharacterDraft::class);
+    }
+
+    /**
+     * Deleting a user cascades their fighter's rows away in the database; this
+     * clears the files the rows pointed at, which the database cannot.
+     *
+     * @return void
+     */
+    protected static function booted(): void
+    {
+        static::deleted(fn (User $user) => app(CustomCharacterStore::class)->forget($user->id));
     }
 
     /**

@@ -325,3 +325,26 @@ function imageBytes(int $width, int $height, string $format = 'png'): string
 
     return (string) ob_get_clean();
 }
+
+/**
+ * Stages one of three different synthetic sheets as the user's draft.
+ *
+ * @param  User  $user  the owner
+ * @param  int  $variant  0, 1 or 2: each gives different strips (a magenta background alone gives the same ones as a transparent one)
+ * @return App\Models\CustomCharacterDraft the staged draft
+ */
+function stagedFor(User $user, int $variant = 0): App\Models\CustomCharacterDraft
+{
+    $sheet = match ($variant) {
+        0 => poseSheetImage(background: 'transparent'),
+        1 => markedPoseSheet(poseSheetImage(background: 'transparent')),
+        default => (function (): GdImage {
+            $image = poseSheetImage(background: 'transparent');
+            imagefilledrectangle($image, 40, 340, 100, 390, imagecolorallocate($image, 30, 160, 60));
+
+            return $image;
+        })(),
+    };
+
+    return app(App\Services\CustomCharacter\StageCustomCharacter::class)->execute($user, pngBytes($sheet));
+}

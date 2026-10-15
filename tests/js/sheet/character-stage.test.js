@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { characterStage, mountCharacterStage } from '@battlefield/sheet/character-stage.js';
 
-const IDS = ['show-stage', 'flames', 'tick-ring', 'shock', 'fx-circle', 'fx-burst', 'show-sprite', 'stage-avatar', 'show-effect', 'boss', 'hit-spark', 'flashbang', 'dmg-layer', 'banner', 'show-name', 'show-type', 'also', 'show-state', 'hotbar', 'move-name', 'equip-note', 'back-equipped', 'equip-btn', 'equip-label'];
+const IDS = ['show-stage', 'flames', 'tick-ring', 'shock', 'fx-circle', 'fx-burst', 'show-sprite', 'stage-avatar', 'show-effect', 'boss', 'hit-spark', 'flashbang', 'dmg-layer', 'banner', 'show-name', 'show-type', 'also', 'show-state', 'hotbar', 'move-name', 'equip-note', 'back-equipped', 'edit-custom', 'equip-btn', 'equip-label'];
 
 let cleanup = [];
 
@@ -15,6 +15,7 @@ beforeEach(() => {
       <div class="chips"><button class="chip" data-type="">All</button><button class="chip" data-type="ARROW">Arrow</button></div>
       <div id="roster-grid"></div></aside>
     <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div></section>
+    <section class="custom-panel" id="custom-panel" hidden><button type="button" id="panel-back">Back</button></section>
   </div></div><div id="toast"></div><div id="tipbox"></div>`;
   // the stage's own floor lives inside #show-stage in the real markup
   document.getElementById('show-stage').appendChild(document.querySelector('.floor'));
@@ -169,15 +170,144 @@ const CUSTOM = {
   },
 };
 
-test('the roster starts with a + Custom tile that opens the guide in a new tab, and it is not a fighter slot', () => {
+test('the roster starts with a Create tile that opens the editor panel in place, and it is not a fighter slot', () => {
   mount();
 
   const tile = document.querySelector('#roster-grid').firstElementChild;
-  expect(tile.textContent).toContain('Custom');
-  expect(tile.getAttribute('href')).toBe('/character');
-  expect(tile.getAttribute('target')).toBe('_blank');
+  expect(tile.tagName).toBe('BUTTON');
+  expect(tile.classList.contains('slot-add')).toBe(true);
   expect(tile.classList.contains('slot')).toBe(false);
+  expect(tile.textContent).toContain('Create');
+  expect(tile.getAttribute('href')).toBeNull();
   expect(document.querySelectorAll('.slot')).toHaveLength(20);
+  expect(document.getElementById('custom-panel').hidden).toBe(true);
+
+  tile.click();
+
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+  expect(document.querySelector('.showcase').hidden).toBe(true);
+  expect(tile.getAttribute('aria-pressed')).toBe('true');
+});
+
+test('the tile reads Manage once there is a custom fighter', () => {
+  mount({ custom: CUSTOM });
+
+  expect(document.querySelector('.slot-add').textContent).toContain('Manage');
+});
+
+test('the back button, and picking any fighter, bring the stage back', () => {
+  mount({ custom: CUSTOM });
+  const tile = document.querySelector('.slot-add');
+
+  tile.click();
+  document.getElementById('panel-back').click();
+  expect(document.getElementById('custom-panel').hidden).toBe(true);
+  expect(document.querySelector('.showcase').hidden).toBe(false);
+
+  tile.click();
+  document.querySelector('.slot[data-key="wizard"]').click();
+  expect(document.getElementById('custom-panel').hidden).toBe(true);
+  expect(document.querySelector('.showcase').hidden).toBe(false);
+  expect(document.getElementById('show-name').textContent).toBe('Wizard');
+});
+
+test('the tile toggles the panel: pressing it again closes it', () => {
+  mount();
+  const tile = document.querySelector('.slot-add');
+
+  tile.click();
+  tile.click();
+
+  expect(document.getElementById('custom-panel').hidden).toBe(true);
+  expect(tile.getAttribute('aria-pressed')).toBe('false');
+});
+
+test('the custom slot carries the name the player gave and an always-visible CUSTOM badge', () => {
+  mount({ custom: { ...CUSTOM, name: 'Sir Pixel' } });
+
+  const slot = document.querySelector('.slot[data-key="custom"]');
+  expect(slot.querySelector('.nm').textContent).toBe('Sir Pixel');
+  expect(slot.querySelector('.badge')?.textContent).toBe('CUSTOM');
+  expect(slot.getAttribute('aria-label')).toBe('Sir Pixel (custom)');
+});
+
+test('a name is shown as text, never as markup', () => {
+  mount({ custom: { ...CUSTOM, name: '<img src=x onerror=alert(1)>' } });
+
+  const slot = document.querySelector('.slot[data-key="custom"]');
+  expect(slot.querySelector('.nm').textContent).toBe('<img src=x onerror=alert(1)>');
+  expect(slot.querySelector('.nm img')).toBeNull();
+});
+
+test('the stage names the custom fighter by its name, and offers to edit it', () => {
+  mount({ equipped: 'custom', custom: { ...CUSTOM, name: 'Sir Pixel' } });
+
+  expect(document.getElementById('show-name').textContent).toBe('Sir Pixel');
+  expect(document.getElementById('edit-custom').hidden).toBe(false);
+
+  document.querySelector('.slot[data-key="wizard"]').click();
+  expect(document.getElementById('edit-custom').hidden).toBe(true);
+
+  document.querySelector('.slot[data-key="custom"]').click();
+  document.getElementById('edit-custom').click();
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+});
+
+const changed = detail => window.dispatchEvent(new CustomEvent('custom-character-changed', { detail }));
+
+test('a fighter made in the editor appears as a slot, equipped, with no reload', () => {
+  mount({ equipped: 'orc-rider' });
+  expect(document.querySelector('.slot[data-key="custom"]')).toBeNull();
+
+  changed({ custom: { ...CUSTOM, name: 'Moss', active: true }, equipped: 'custom' });
+
+  const slot = document.querySelector('.slot[data-key="custom"]');
+  expect(slot).not.toBeNull();
+  expect(slot.querySelector('.nm').textContent).toBe('Moss');
+  expect(slot.querySelector('.tag')?.textContent).toBe('YOU');
+  expect(document.querySelector('.slot[data-key="orc-rider"] .tag')).toBeNull();
+  expect(document.querySelector('.slot-add').textContent).toContain('Manage');
+  expect(document.getElementById('roster-count').textContent).toBe('21 fighters');
+});
+
+test('renaming or replacing the fighter updates its slot in place, never adding a second one', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+
+  changed({ custom: { ...CUSTOM, version: 'newversion123', name: 'Renamed', active: true }, equipped: 'custom' });
+
+  expect(document.querySelectorAll('.slot[data-key="custom"]')).toHaveLength(1);
+  expect(document.querySelector('.slot[data-key="custom"] .nm').textContent).toBe('Renamed');
+  expect(document.getElementById('show-name').textContent).toBe('Renamed');
+});
+
+test('removing the fighter drops the slot and puts the player back on their roster character', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+
+  changed({ custom: null, equipped: 'knight' });
+
+  expect(document.querySelector('.slot[data-key="custom"]')).toBeNull();
+  expect(document.querySelector('.slot[data-key="knight"] .tag')?.textContent).toBe('YOU');
+  expect(document.getElementById('show-name').textContent).toBe('Knight');
+  expect(document.querySelector('.slot-add').textContent).toContain('Create');
+});
+
+test('a fighter that is not equipped keeps its slot but not the YOU tag', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+
+  changed({ custom: { ...CUSTOM, active: false }, equipped: 'orc-rider' });
+
+  expect(document.querySelector('.slot[data-key="custom"]')).not.toBeNull();
+  expect(document.querySelector('.slot[data-key="custom"] .tag')).toBeNull();
+  expect(document.querySelector('.slot[data-key="orc-rider"] .tag')?.textContent).toBe('YOU');
+});
+
+test('the event is ignored once the sheet is gone (torn down), so a stale listener cannot touch a later one', () => {
+  mount({ equipped: 'orc-rider' });
+  cleanup.forEach(fn => fn());
+  cleanup = [];
+
+  expect(() => changed({ custom: CUSTOM, equipped: 'custom' })).not.toThrow();
+  expect(document.querySelector('.slot[data-key="custom"]')).toBeNull();
 });
 
 test('someone with no custom fighter gets no custom slot', () => {

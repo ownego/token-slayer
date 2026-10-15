@@ -133,6 +133,25 @@ export function textureOf(ftype) {
 }
 
 /**
+ * Takes a custom fighter's texture and animations out of the game, once nothing
+ * shows it any more. Each version is its own texture and set of animations, so
+ * without this a long session collects one canvas per rebuild.
+ *
+ * @param {{remove: function(string): *}} textures The game's texture manager (or a scene's).
+ * @param {{remove: function(string): *, exists: function(string): boolean}} anims The game's animation manager.
+ * @param {{key: string, texture: string}} ftype The custom type being released.
+ * @return {void}
+ */
+export function releaseCustomFighter({ textures, anims }, ftype) {
+  for (const state of [...STATES, 'summon']) {
+    if (anims.exists(`${ftype.key}-${state}`)) {
+      anims.remove(`${ftype.key}-${state}`);
+    }
+  }
+  textures.remove(ftype.texture);
+}
+
+/**
  * A FIGHTER_TYPES-shaped entry for a user's custom fighter. Everything that
  * reads a roster type (animations, `attackType`, the heel, the anim keys) reads
  * this one the same way; `texture` says it lives in its own texture rather than

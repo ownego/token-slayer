@@ -63,3 +63,9 @@ test('rejects an image above the pixel budget even when each side is allowed', f
 
     expect(decoderRejection(imageBytes(800, 800)))->toBe(PoseSheetProblem::DimensionsTooLarge);
 });
+
+test('rejects a file whose header is fine but whose pixels are cut short', function () {
+    $bytes = imageBytes(640, 512);
+
+    expect(decoderRejection(substr($bytes, 0, intdiv(strlen($bytes), 2))))->toBe(PoseSheetProblem::NotAnImage);
+});

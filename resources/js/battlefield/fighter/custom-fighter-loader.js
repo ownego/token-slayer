@@ -16,6 +16,10 @@ const pending = new Map();
 const BROWSER = {
   loadImage: url => new Promise((resolve, reject) => {
     const image = new Image();
+    // strips on a bucket or CDN are another origin: without CORS the stacked canvas could not be read back (the heel probe)
+    if (/^https?:\/\//.test(url)) {
+      image.crossOrigin = 'anonymous';
+    }
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error(`custom fighter strip failed to load: ${url}`));
     image.src = url;

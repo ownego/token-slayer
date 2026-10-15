@@ -24,6 +24,7 @@ return new class extends Migration
         Schema::create('custom_characters', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
+            $table->string('name', 32)->default('Custom');
             $table->string('version_hash', 16);
             $table->json('animations');
             $table->boolean('active')->default(true);

@@ -40,7 +40,7 @@ Not broadcast: `AccountTokenRejected` is a plain server-side event (listener `Se
 
 ## Payload rules
 
-- `broadcastWith()` sends scalars in snake_case. Never send whole Eloquent models. The nested values are `BossSpawned.fighters`, a list of scalar rows, and `custom_character`, a small object of scalars plus an animation table, null unless the custom fighter is equipped (see `custom-characters.md`).
+- `broadcastWith()` sends scalars in snake_case. Never send whole Eloquent models. The nested values are `BossSpawned.fighters`, a list of scalar rows, and `custom_character`, a small object of scalars plus an animation table, null unless the custom fighter is equipped (see `custom-characters.md`). Its `url_base` is a same-origin path, or a full URL when the strips live on another host (then they need CORS).
 - Every key a JS handler reads must exist in `broadcastWith()`. Removals and renames must update both sides (and `ide-bridge.js`) in the same commit.
 - User display fields: `displayHandle()` for `slack_handle`. `avatar_url` is the raw Slack URL everywhere **except** `FighterJoined`, which sends `route('avatar', $user)` (the `/avatars/{user}` CORS proxy).
 - `character` comes from `$user->characterForBoss($bossId)`. `position` comes from `FighterPositionCache::get()` (null when the user has never moved).

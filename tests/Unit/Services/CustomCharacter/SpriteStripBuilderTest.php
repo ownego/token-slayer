@@ -100,3 +100,72 @@ test('holds each walk, attack and death pose in order', function () {
         ->and(array_map(fn (int $f) => $colourOfFrame('death', $f), range(0, 2)))
         ->toBe([0x400000, 0x400001, 0x400002]);
 });
+
+/**
+ * Whether any pixel of the strip's columns from $from up to (not including) $to is drawn.
+ *
+ * @param  GdImage  $strip  the strip
+ * @param  int  $from  first column
+ * @param  int  $to  column to stop before
+ * @return bool
+ */
+function inkBetween(GdImage $strip, int $from, int $to): bool
+{
+    for ($x = $from; $x < $to; $x++) {
+        for ($y = 0; $y < imagesy($strip); $y++) {
+            if (stripPixelAt($strip, $x, $y) !== -1) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * The colour at a strip's absolute x, y, or -1 when transparent.
+ *
+ * @param  GdImage  $strip  the strip
+ * @param  int  $x  column
+ * @param  int  $y  row
+ * @return int
+ */
+function stripPixelAt(GdImage $strip, int $x, int $y): int
+{
+    $rgba = imagecolorat($strip, $x, $y);
+
+    return (($rgba >> 24) & 0x7F) === 127 ? -1 : $rgba & 0xFFFFFF;
+}
+
+test('a pose wider than its frame is shrunk to fit, not left to bleed into the next frame', function () {
+    $poses = colouredPoses();
+    $poses['attack'][0] = solidSprite(140, 30, 0x300000);
+
+    $attack = app(SpriteStripBuilder::class)->build($poses)['attack']['image'];
+
+    // frames 0 and 1 show the wide pose; frame 2 shows a 10 px one, so its left edge must be clear of overflow
+    expect(inkBetween($attack, 200, 240))->toBeFalse()
+        ->and(inkBetween($attack, 0, 100))->toBeTrue();
+});
+
+test('a pose taller than the frame above the foot line is shrunk to fit, not cropped at the top', function () {
+    $poses = colouredPoses();
+    $poses['attack'][0] = solidSprite(20, 90, 0x300000);
+
+    $attack = app(SpriteStripBuilder::class)->build($poses)['attack']['image'];
+
+    $rows = 0;
+    for ($y = 0; $y < 100; $y++) {
+        $rows += stripPixelAt($attack, 50, $y) === -1 ? 0 : 1;
+    }
+    // scaled to the 58 rows between the top of the frame and the foot line, feet still on row 58
+    expect($rows)->toBeGreaterThanOrEqual(56)->and($rows)->toBeLessThanOrEqual(58)
+        ->and(stripPixelAt($attack, 50, 58))->not->toBe(-1)
+        ->and(stripPixelAt($attack, 50, 59))->toBe(-1);
+});
+
+test('a pose that already fits is placed untouched', function () {
+    $idle = app(SpriteStripBuilder::class)->build(colouredPoses())['idle']['image'];
+
+    expect(stripPixelAt($idle, 45, 50))->not->toBe(-1)->and(stripPixelAt($idle, 44, 50))->toBe(-1);
+});

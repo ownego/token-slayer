@@ -4,8 +4,9 @@
 // crew Clawd per subagent the viewer has working right now.
 import { BusEvent } from '../constants.js';
 import { BOX } from './sheet-roster.js';
-import { BY_KEY, paint, paintCharge, pretty, standOn } from './sprite-strip.js';
-import { heelOf, sparkField, sparkPoint } from './stage-sparks.js';
+import { BY_KEY, nameOf, paint, paintCharge, standOn } from './sprite-strip.js';
+import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
+import { registerCustomRoster } from './custom-roster.js';
 import { draw, ENTRANCES, ON_CLICK, play, SEQ } from './clawd-kit.js';
 import { crewCounts, crewReducer } from './sheet-ui.js';
 
@@ -80,9 +81,14 @@ function busyOnField(me) {
  * @param {string} equipped The viewer's equipped fighter key.
  * @param {number} total Live subagents when the sheet rendered.
  * @param {number} me The viewer's user id, for filtering bus events.
+ * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
+ *   Registered here, not left to the Character tab: this tab mounts first, and until the custom fighter
+ *   is known to the sheet it cannot be shown.
  * @return {object}
  */
-export function miniStage(equipped, total, me) {
+export function miniStage(equipped, total, me, custom = null) {
+  registerCustomRoster(BY_KEY, BOX, custom);
+
   return {
     key: BY_KEY[equipped] ? equipped : Object.keys(BY_KEY)[0],
     crew: { total, busy: new Set() },
@@ -90,7 +96,7 @@ export function miniStage(equipped, total, me) {
     unbind: null,
     tabObserver: null,
     get name() {
-      return pretty(this.key);
+      return nameOf(this.key);
     },
     get counts() {
       return crewCounts(this.crew);
@@ -144,14 +150,50 @@ export function miniStage(equipped, total, me) {
             }
           },
           [BusEvent.CHARACTER_CHANGED]: p => {
-            if (Number(p.user_id) === Number(me) && BY_KEY[p.character]) {
-              this.key = p.character;
+            const next = Number(p.user_id) === Number(me) ? this.keyFor(p) : null;
+            if (next) {
+              this.key = next;
               this.paintFighter();
             }
           },
         });
       };
       attach();
+      // the editor in the Character tab says what the fighter is after every change
+      this.onCustomEvent = event => this.onCustomChanged(event.detail ?? {});
+      window.addEventListener('custom-character-changed', this.onCustomEvent);
+    },
+    /**
+     * The fighter to show for a CHARACTER_CHANGED broadcast: the custom one while the player
+     * plays it, else the roster character; null for a key this sheet does not know.
+     *
+     * @param {{character?: string, custom_character?: ?object}} payload The broadcast.
+     * @return {?string}
+     */
+    keyFor(payload) {
+      if (payload.custom_character && BY_KEY.custom) {
+        return 'custom';
+      }
+
+      return BY_KEY[payload.character] ? payload.character : null;
+    },
+    /**
+     * Follows the editor: the fighter was made, replaced, renamed, switched or removed.
+     *
+     * @param {{custom?: ?object, equipped?: string}} detail What `custom-character-changed` carries.
+     * @return {void}
+     */
+    onCustomChanged({ custom = null, equipped: now } = {}) {
+      forgetHeel('custom');
+      registerCustomRoster(BY_KEY, BOX, custom);
+      if (now && BY_KEY[now]) {
+        this.key = now;
+      } else if (this.key === 'custom' && !BY_KEY.custom) {
+        this.key = Object.keys(BY_KEY)[0];
+      }
+      if (this.$refs?.fighter) {
+        this.paintFighter();
+      }
     },
     /**
      * Runs the equipped fighter on the stage, framed like the Character stage.
@@ -204,6 +246,7 @@ export function miniStage(equipped, total, me) {
       }
     },
     destroy() {
+      window.removeEventListener('custom-character-changed', this.onCustomEvent);
       this.tabObserver?.disconnect();
       this.stopSparks?.();
       this.unbind?.();

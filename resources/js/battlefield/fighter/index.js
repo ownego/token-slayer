@@ -14,8 +14,9 @@ import { loadAvatarTexture, makeFallbackAvatarTexture, makePermanentFallbackAvat
 import { ensureFlairFont, isFlairFontReady } from './flair-font.js';
 import { NAME_DEPTH, NAME_FONT_PX, NAME_STYLE, YOU_NAME_COLOR, refreshNameWhenFontLoads, youRingSparks } from './name-ring.js';
 import { avatarCenterY, avatarSrc } from './avatar-stack.js';
-import { customFighterKey, customFighterType, normalizeCustomCharacter, textureOf } from './custom-fighter.js';
+import { customFighterKey, customFighterType, normalizeCustomCharacter, releaseCustomFighter, textureOf } from './custom-fighter.js';
 import { loadCustomFighter } from './custom-fighter-loader.js';
+import { begin, fail, isStale, newRequestState, settle, shouldRequest, want, withdraw } from './custom-fighter-requests.js';
 import {
   buildRingChars,
   clearFlair,
@@ -34,8 +35,6 @@ const SPRITE_HALF_FRAME  = 50;
 const SPRITE_CHAR_BOT    = 56;
 
 const HANDLE_MAX_CHARS = 12;
-// How long after a custom fighter's strips fail to load before it is tried again.
-const CUSTOM_RETRY_MS = 30_000;
 // The name under the feet: plain outlined text (no pill), above the YOU ring
 // — see ./name-ring.js.
 const NAME_PLATE_FONT_PX = NAME_FONT_PX;
@@ -386,13 +385,16 @@ export class Fighter {
       if (!entry) {
         continue;
       }
+      // the roster character a custom fighter falls back to, kept for a rotate's snapshot
+      if (character && FIGHTER_TYPES.some(ft => ft.key === character)) {
+        entry.rosterKey = character;
+      }
       const custom = normalizeCustomCharacter(rest.custom_character ?? rest.customCharacter);
       if (custom) {
         this._requestCustomFighter(entry, custom, { animate });
         continue;
       }
-      entry.wantedCustomKey = null;
-      entry.wantedCustom = null;
+      withdraw(this._requests(entry));
       if (!character || entry.ftype?.key === character) {
         continue;
       }
@@ -422,18 +424,23 @@ export class Fighter {
    */
   _requestCustomFighter(entry, spec, { animate }) {
     const key = customFighterKey(entry.id, spec.version);
+    const request = this._requests(entry);
     const now = this.scene.time?.now ?? 0;
-    if (entry.ftype?.key === key || entry.customLoading === key || now < (entry.customRetryAt ?? 0)) {
+    want(request, key, spec);
+    if (!shouldRequest(request, entry.ftype?.key ?? null, key, now)) {
       return;
     }
-    entry.wantedCustomKey = key;
-    entry.wantedCustom = spec;
-    entry.customLoading = key;
+    begin(request, key);
     loadCustomFighter(this.scene, entry.id, spec).then(ftype => {
       // The fighter may have left, or the scene restarted under a fresh entry, while
       // the strips were loading: only the live entry still wanting this version acts.
       const gone = this.scene.fighters.get(entry.id) !== entry || entry.sprite?.active === false;
-      if (gone || this.scene.isShuttingDown || entry.wantedCustomKey !== key || entry.ftype?.key === key) {
+      if (gone || this.scene.isShuttingDown || isStale(request, key, entry.ftype?.key)) {
+        // a version nobody wants and nothing shows must not stay in the game
+        if (entry.ftype?.key !== key && request.wantedKey !== key) {
+          releaseCustomFighter(this.scene, ftype);
+        }
+
         return;
       }
       const oldKey = entry.ftype?.key;
@@ -443,17 +450,27 @@ export class Fighter {
         this._applyCharacter(entry, ftype);
       }
     }).catch(error => {
-      // Keeps the roster look and tries again on a later update, not at once: a
-      // strip that is down would otherwise be re-fetched on every charge event.
-      entry.customRetryAt = (this.scene.time?.now ?? 0) + CUSTOM_RETRY_MS;
+      // Keeps the current look and tries that version again on a later update, not at once
+      fail(request, key, now);
       console.warn('[battlefield]', error.message);
     }).finally(() => {
       // Only the load in flight blocks a repeat request: a swap that a hit cut
       // short, or a load that failed, is requested again by the next update.
-      if (entry.customLoading === key) {
-        entry.customLoading = null;
-      }
+      settle(request, key);
     });
+  }
+
+  /**
+   * The entry's custom-fighter request state, made on first use (an entry built
+   * before a custom fighter was ever asked for has none).
+   *
+   * @param {object} entry A scene.fighters entry.
+   * @return {object} The request state (see custom-fighter-requests.js).
+   */
+  _requests(entry) {
+    entry.customRequest ??= newRequestState();
+
+    return entry.customRequest;
   }
 
   /**
@@ -485,46 +502,114 @@ export class Fighter {
    * @return {void}
    */
   _swapCharacter(entry, ftype) {
+    const previous = entry.ftype;
     entry.body.play(`${entry.ftype.key}-death`);
     entry.body.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       if (this.scene.isShuttingDown) {
         return;
       }
+      // the swap takes a second or two: a newer choice made meanwhile (or a direct apply) wins over it
+      if (entry.ftype !== previous || !this._swapStillWanted(entry, ftype)) {
+        this._releaseIfUnused(entry, ftype);
+
+        return;
+      }
       this.scene.necromancer?.spawnSummonCircle(entry.pos.x, entry.pos.y);
       entry.ftype = ftype;
+      entry.releaseOnApply = previous;
       this._fitBody(entry, ftype);
       entry.body.setTexture(textureOf(ftype), `${ftype.key}-death-0`);
       entry.body.play(`${ftype.key}-summon`);
       entry.body.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-        if (!this.scene.isShuttingDown) {
-          this._applyCharacter(entry, ftype);
+        if (this.scene.isShuttingDown) {
+          return;
         }
+        if (entry.ftype !== ftype || !this._swapStillWanted(entry, ftype)) {
+          return;
+        }
+        this._applyCharacter(entry, ftype, previous);
       });
     });
   }
 
   /**
-   * Shows a fighter as the given character, idling.
+   * Shows a fighter as the given character, in the state it is in: walking if it is
+   * charging, idle otherwise. An attack that is playing is not cut: the type changes
+   * under it and the attack's own completion hands over to the new look.
    *
    * @param {object} entry A scene.fighters entry.
    * @param {object} ftype The FIGHTER_TYPES entry.
+   * @param {object} [previous] The type being left (defaults to the entry's current one).
    * @return {void}
    */
-  _applyCharacter(entry, ftype) {
+  _applyCharacter(entry, ftype, previous = entry.ftype) {
     entry.ftype = ftype;
+    if (!ftype.custom) {
+      entry.rosterKey = ftype.key;
+    }
     // the avatar follows the new body's own head height
     entry.head?.setY(Math.round(avatarCenterY(ftype.key, (entry.baseSize ?? 48) / SPRITE_CHAR_HEIGHT)));
     // a charging ring is placed on the avatar once, when it's made: move it along
     this.scene.charges?.get(entry.id)?.ring?.setY(entry.head?.y ?? 0);
-    entry.animState = AnimState.IDLE;
     this._fitBody(entry, ftype);
     if (ftype.custom) {
       cacheHeel(this.scene, ftype);
     }
+    if (previous?.custom && previous.key !== ftype.key) {
+      entry.releaseOnApply = previous;
+    }
+    if (entry.animState === AnimState.ATTACK) {
+      // the playing attack still draws from the look being left: it is let go of once that attack ends
+      return;
+    }
+    const state = this.scene.charges?.has(entry.id) ? AnimState.WALK : AnimState.IDLE;
+    entry.animState = state;
     entry.body.setTexture(textureOf(ftype), `${ftype.key}-idle-0`);
-    const idleAnim = this.scene.anims.get(`${ftype.key}-idle`);
-    if (idleAnim?.frames?.length) {
-      entry.body.play(`${ftype.key}-idle`);
+    const anim = this.scene.anims.get(`${ftype.key}-${state}`);
+    if (anim?.frames?.length) {
+      entry.body.play(`${ftype.key}-${state}`);
+    }
+    this._releasePending(entry);
+  }
+
+  /**
+   * Whether a swap to this type is still what the fighter's player asked for: the
+   * custom version is the newest one wanted, or (a roster type) no custom one is.
+   *
+   * @param {object} entry A scene.fighters entry.
+   * @param {object} ftype The type being swapped to.
+   * @return {boolean}
+   */
+  _swapStillWanted(entry, ftype) {
+    const wanted = this._requests(entry).wantedKey;
+
+    return ftype.custom ? wanted === ftype.key : !wanted;
+  }
+
+  /**
+   * Lets go of a loaded custom version that nothing shows and nobody wants.
+   *
+   * @param {object} entry A scene.fighters entry.
+   * @param {object} ftype The custom type that was loaded.
+   * @return {void}
+   */
+  _releaseIfUnused(entry, ftype) {
+    if (ftype.custom && entry.ftype?.key !== ftype.key && this._requests(entry).wantedKey !== ftype.key) {
+      releaseCustomFighter(this.scene, ftype);
+    }
+  }
+
+  /**
+   * Releases the custom look this fighter left behind, once nothing is drawing from it.
+   *
+   * @param {object} entry A scene.fighters entry.
+   * @return {void}
+   */
+  _releasePending(entry) {
+    const left = entry.releaseOnApply;
+    entry.releaseOnApply = null;
+    if (left?.custom && left.key !== entry.ftype?.key) {
+      releaseCustomFighter(this.scene, left);
     }
   }
 
@@ -548,9 +633,9 @@ export class Fighter {
     const loadedCustom = custom && this.scene.textures.exists(customFighterKey(fighter.id, custom.version))
       ? customFighterType(fighter.id, custom)
       : null;
-    const ftype = loadedCustom
-      ?? (ftypeKey && FIGHTER_TYPES.find(ft => ft.key === ftypeKey))
+    const rosterType = (ftypeKey && FIGHTER_TYPES.find(ft => ft.key === ftypeKey))
       ?? FIGHTER_TYPES[Math.abs(Number(fighter.id) || 0) % FIGHTER_TYPES.length];
+    const ftype = loadedCustom ?? rosterType;
     // Scale so the visible character (18px of the 100px frame) fills `size` logical px
     const scale     = size / SPRITE_CHAR_HEIGHT;
     const legH      = Math.round((SPRITE_CHAR_BOT - SPRITE_HALF_FRAME) * scale);
@@ -665,10 +750,8 @@ export class Fighter {
       hasCustomPosition: false,
       rescaleTween: null,
       bodyFitted: Boolean(ftype.custom),
-      wantedCustomKey: null,
-      wantedCustom: null,
-      customLoading: null,
-      customRetryAt: 0,
+      rosterKey: rosterType.key,
+      customRequest: newRequestState(),
     });
     if (custom && !loadedCustom) {
       this._requestCustomFighter(this.scene.fighters.get(fighter.id), custom, { animate: false });
@@ -1432,7 +1515,9 @@ export class Fighter {
         const next = this.scene.charges.has(fighter.id) ? AnimState.WALK : AnimState.IDLE;
         fighter.animState = next;
         fighter.body.setFlipX(next === AnimState.WALK ? flipTowardBoss : false);
-        fighter.body.play(`${key}-${next}`);
+        // the live type, not the one the attack began with: a custom fighter may have swapped in meanwhile
+        fighter.body.play(`${fighter.ftype.key}-${next}`);
+        this._releasePending(fighter);
       });
     }
     // A dedicated, always-synchronous HP tracker: `this.scene.bossState.currentHp`

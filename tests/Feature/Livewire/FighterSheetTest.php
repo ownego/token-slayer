@@ -626,7 +626,7 @@ test('a user with a custom fighter has it equipped, and the sheet hands the Char
 
     Livewire::actingAs($character->user)->test(FighterSheet::class)
         ->assertSet('equipped', 'custom')
-        ->assertSet('customCharacter', $character->broadcastState());
+        ->assertSet('customCharacter', $character->sheetState());
 });
 
 test('a user whose custom fighter is not equipped sees their roster character equipped, and still gets the strips', function () {
@@ -634,7 +634,7 @@ test('a user whose custom fighter is not equipped sees their roster character eq
 
     Livewire::actingAs($character->user)->test(FighterSheet::class)
         ->assertSet('equipped', $character->user->characterForBoss(Boss::first()->id))
-        ->assertSet('customCharacter', $character->broadcastState());
+        ->assertSet('customCharacter', $character->fresh()->sheetState());
 });
 
 test('equipping custom turns the custom fighter on and tells the battlefield', function () {
@@ -670,4 +670,32 @@ test('equipping custom without having built one does nothing', function () {
 
     expect($user->refresh()->equipped_character)->toBeNull();
     Event::assertNotDispatched(FighterCharacterChanged::class);
+});
+
+test('the sheet follows the editor: a fighter made while it was closed is there when it opens again', function () {
+    $user = User::factory()->create();
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class)->assertSet('customCharacter', null);
+
+    $character = CustomCharacter::factory()->create(['user_id' => $user->id]);
+    $sheet->dispatch('custom-character-changed')
+        ->assertSet('customCharacter', $character->fresh()->sheetState())
+        ->assertSet('equipped', 'custom');
+});
+
+test('the sheet follows the editor when the fighter is removed: the roster character comes back', function () {
+    $character = CustomCharacter::factory()->create();
+    $sheet = Livewire::actingAs($character->user)->test(FighterSheet::class)->assertSet('equipped', 'custom');
+
+    $character->delete();
+    $sheet->dispatch('custom-character-changed')
+        ->assertSet('customCharacter', null)
+        ->assertSet('equipped', $character->user->fresh()->characterForBoss(Boss::first()->id));
+});
+
+test('a rename in the editor reaches the sheet', function () {
+    $character = CustomCharacter::factory()->create();
+    $sheet = Livewire::actingAs($character->user)->test(FighterSheet::class);
+
+    $character->update(['name' => 'Sir Pixel']);
+    $sheet->dispatch('custom-character-changed')->assertSet('customCharacter.name', 'Sir Pixel');
 });

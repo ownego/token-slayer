@@ -6,8 +6,8 @@
 // persists through $wire.equip and then dispatches `fighter-equipped`, which
 // fighterSheetShell answers by folding the sheet and focusing the camera.
 import { BOX, ROSTER, TYPE_LINE } from './sheet-roster.js';
-import { BY_KEY, faceColor, frameIn, moves, paint, paintCharge, playAnim, pretty, standOn, strip, wait } from './sprite-strip.js';
-import { heelOf, sparkField, sparkPoint } from './stage-sparks.js';
+import { BY_KEY, faceColor, frameIn, moves, nameOf, paint, paintCharge, playAnim, standOn, strip, wait } from './sprite-strip.js';
+import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
 import { CUSTOM_KEY, registerCustomRoster } from './custom-roster.js';
 
 /**
@@ -115,6 +115,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   // before anything reads the roster lookups: puts the custom fighter in, or clears an earlier mount's
   const hasCustom = registerCustomRoster(BY_KEY, BOX, custom);
   const known = key => Boolean(BY_KEY[key]);
+  let editing = false;
 
   let equipped = known(startingKey) ? startingKey : ROSTER[0].key;
   let previewing = equipped;
@@ -159,26 +160,31 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   const grid = $$('roster-grid');
   // the real avatar over the initial; the initial stays underneath if the image fails
   const mateFace = (mate, cls = 'mate') => `<span class="${cls}" style="background:${faceColor(mate.user_id)}" title="${escapeHtml(mate.handle)}">${escapeHtml(mate.handle.charAt(0).toUpperCase())}${mate.avatar ? `<img src="${escapeHtml(mate.avatar)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
-  // the tile that opens the guide: not a fighter, so not a .slot (selection, filters, keys and tooltips ignore it)
-  const add = document.createElement('a');
+  // The tile that opens the editor panel in place: an action, not a fighter, so not a .slot
+  // (selection, filters, keys and tooltips ignore it). It reads Create until there is a custom fighter, then Manage.
+  const add = document.createElement('button');
+  add.type = 'button';
   add.className = 'slot-add';
-  add.href = '/character';
-  add.target = '_blank';
-  add.rel = 'noopener';
-  add.setAttribute('aria-label', 'Make or replace your custom fighter');
-  add.innerHTML = '<span class="plus" aria-hidden="true">+</span><span class="nm">Custom</span>';
+  add.setAttribute('aria-pressed', 'false');
   grid.appendChild(add);
-  const entries = hasCustom ? [BY_KEY[CUSTOM_KEY], ...ROSTER] : ROSTER;
-  entries.forEach(c => {
+  function paintAddTile() {
+    const manage = known(CUSTOM_KEY);
+    add.setAttribute('aria-label', manage ? 'Manage your custom fighter' : 'Create a custom fighter');
+    add.innerHTML = `<span class="plus" aria-hidden="true">${manage ? '✎' : '+'}</span><span class="nm">${manage ? 'Manage' : 'Create'}</span>`;
+  }
+  paintAddTile();
+
+  function makeSlot(c) {
     const b = document.createElement('button');
+    const custom = c.key === CUSTOM_KEY;
     b.className = 'slot';
     b.type = 'button';
     b.setAttribute('role', 'option');
     b.dataset.key = c.key;
     b.dataset.type = c.type;
     b.style.setProperty('--d', grid.children.length);
-    b.setAttribute('aria-label', pretty(c.key));
-    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${pretty(c.key)}</span>${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
+    b.setAttribute('aria-label', custom ? `${nameOf(c.key)} (custom)` : nameOf(c.key));
+    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
     paint(b.querySelector('.face-sprite'), c.key, 'idle', { hoverOnly: true });
     frameIn(b.querySelector('.face-sprite'), c.key, { maxW: 46, maxH: 36, cyPct: 40 });
     const mates = roommates[c.key] || [];
@@ -187,9 +193,15 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       b.dataset.mates = mates.map(m => m.handle).join(', ');
     }
     on(b, 'click', () => select(c.key));
-    grid.appendChild(b);
-  });
-  $$('roster-count').textContent = `${entries.length} fighters`;
+
+    return b;
+  }
+  const entries = hasCustom ? [BY_KEY[CUSTOM_KEY], ...ROSTER] : ROSTER;
+  entries.forEach(c => grid.appendChild(makeSlot(c)));
+  const countFighters = () => {
+    $$('roster-count').textContent = `${grid.querySelectorAll('.slot').length} fighters`;
+  };
+  countFighters();
 
   function paintAlso(key) {
     const mates = roommates[key] || [];
@@ -456,6 +468,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
 
   // ---- selection ----
   function select(key) {
+    leaveEditor();
     previewing = key;
     const c = BY_KEY[key];
     root.querySelectorAll('.slot').forEach(el => el.setAttribute('aria-selected', String(el.dataset.key === key)));
@@ -465,7 +478,11 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     ['fx-circle', 'fx-burst'].forEach(id => { $$(id).style.scale = ''; });
     root.querySelector('.showcase').style.setProperty('--acc', c.accent);
     restart($$('show-sprite'), 'swap');
-    $$('show-name').textContent = pretty(key);
+    $$('show-name').textContent = nameOf(key);
+    const edit = $$('edit-custom');
+    if (edit) {
+      edit.hidden = key !== CUSTOM_KEY;
+    }
     const h2 = $$('show-name');
     h2.style.animation = 'none';
     void h2.offsetWidth;
@@ -475,7 +492,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     $$('show-state').textContent = mine ? 'Equipped' : 'Previewing';
     $$('show-state').classList.toggle('previewing', !mine);
     $$('equip-btn').disabled = mine;
-    $$('equip-label').textContent = mine ? 'Equipped' : `Equip ${pretty(key)}`;
+    $$('equip-label').textContent = mine ? 'Equipped' : `Equip ${nameOf(key)}`;
     $$('back-equipped').hidden = mine;
 
     const hb = $$('hotbar');
@@ -632,7 +649,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     addTrauma(TIER.large.trauma * 0.7);
     squash($$('show-sprite'), TIER.large.squash, 'land');
     const banner = $$('banner');
-    banner.textContent = `Now fighting as ${pretty(equipped)}`;
+    banner.textContent = `Now fighting as ${nameOf(equipped)}`;
     restart(banner, 'show');
     const first = moves(equipped).find(m => m.id.startsWith('attack'));
     if (first) {
@@ -647,7 +664,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       persisted = true;
       equip(chosen);
     }, EQUIP_PERSIST_DELAY_MS);
-    const t = toast(`<span>Now fighting as ${pretty(chosen)}.</span><button class="undo" type="button">Undo</button>`, true);
+    const t = toast(`<span>Now fighting as ${escapeHtml(nameOf(chosen))}.</span><button class="undo" type="button">Undo</button>`, true);
     t?.querySelector('.undo')?.addEventListener('click', () => {
       if (persisted) {
         equip(previous);
@@ -657,7 +674,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       equipped = previous;
       markYou(equipped);
       select(equipped);
-      toast(`Back to ${pretty(equipped)}.`, false);
+      toast(`Back to ${escapeHtml(nameOf(equipped))}.`, false);
     });
     // let the in-sheet shockwave + banner land first, then the sheet folds onto the real battlefield
     setTimeout(() => dispatch('fighter-equipped'), EQUIP_FOLD_DELAY_MS);
@@ -666,6 +683,81 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     select(equipped);
     root.querySelector(`.slot[data-key="${equipped}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   });
+
+  // ---- the custom fighter editor, in place of the stage ----
+  const panel = $$('custom-panel');
+  const showcase = root.querySelector('.showcase');
+  function enterEditor() {
+    if (!panel || editing) {
+      return;
+    }
+    editing = true;
+    seq++; // stop whatever the stage was playing
+    showcase.hidden = true;
+    panel.hidden = false;
+    add.setAttribute('aria-pressed', 'true');
+  }
+  function leaveEditor() {
+    if (!editing) {
+      return;
+    }
+    editing = false;
+    showcase.hidden = false;
+    panel.hidden = true;
+    add.setAttribute('aria-pressed', 'false');
+  }
+  on(add, 'click', () => {
+    if (editing) {
+      leaveEditor();
+      select(previewing);
+    } else {
+      enterEditor();
+    }
+  });
+  const panelBack = $$('panel-back');
+  if (panelBack) {
+    on(panelBack, 'click', () => {
+      leaveEditor();
+      select(previewing);
+    });
+  }
+  const editButton = $$('edit-custom');
+  if (editButton) {
+    on(editButton, 'click', enterEditor);
+  }
+
+  // The editor (a Livewire component inside the panel) says what the fighter is now after every change; the
+  // roster follows without a reload: the slot appears, is renamed or goes, and the YOU tag moves.
+  function renderCustomSlot() {
+    grid.querySelector('.slot[data-key="custom"]')?.remove();
+    if (known(CUSTOM_KEY)) {
+      const slot = makeSlot(BY_KEY[CUSTOM_KEY]);
+      add.after(slot);
+    }
+    paintAddTile();
+    countFighters();
+  }
+  function onCustomChanged(event) {
+    const { custom = null, equipped: now } = event.detail ?? {};
+    forgetHeel(CUSTOM_KEY);
+    registerCustomRoster(BY_KEY, BOX, custom);
+    if (now && known(now)) {
+      equipped = now;
+    } else if (equipped === CUSTOM_KEY && !known(CUSTOM_KEY)) {
+      equipped = ROSTER[0].key;
+    }
+    renderCustomSlot();
+    markYou(equipped);
+    if (previewing === CUSTOM_KEY && !known(CUSTOM_KEY)) {
+      previewing = equipped;
+    }
+    if (!editing) {
+      select(previewing);
+    } else {
+      $$('show-name').textContent = nameOf(previewing);
+    }
+  }
+  on(window, 'custom-character-changed', onCustomChanged);
 
   // ---- one tooltip for every icon-only button (roster slots and moves) ----
   const TYPE_NAMES = { SLASH: 'Slash', BLADE: 'Blade', SHURIKEN: 'Shuriken', ARROW: 'Arrow', BLAST: 'Blast' };
@@ -676,7 +768,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       return;
     }
     const isSlot = el.classList.contains('slot');
-    const name = isSlot ? pretty(el.dataset.key) : el.title;
+    const name = isSlot ? nameOf(el.dataset.key) : el.title;
     const sub = isSlot ? TYPE_NAMES[el.dataset.type] + (el.dataset.key === equipped ? ' · yours' : '') + (el.dataset.mates ? ` · ${el.dataset.mates}` : '') : `key ${[...root.querySelectorAll('.move')].indexOf(el) + 1}`;
     tip.innerHTML = `${escapeHtml(name)}<small>${escapeHtml(sub)}</small>`;
     const r = el.getBoundingClientRect();

@@ -18,14 +18,14 @@ class SpriteStripBuilder
      *
      * @var int
      */
-    private const int FRAME = 100;
+    public const int FRAME = 100;
 
     /**
      * Row of the lowest ink pixel in a standing frame, matching the roster fighters.
      *
      * @var int
      */
-    private const int FOOT_ROW = 58;
+    public const int FOOT_ROW = 58;
 
     /**
      * Share of the sprite's height, from the bottom, that decides where it is centred.
@@ -109,10 +109,39 @@ class SpriteStripBuilder
      */
     private function placeFrame(GdImage $strip, int $frame, Sprite $sprite, int $lift): void
     {
+        $sprite = $this->fitted($sprite);
         $left = $frame * self::FRAME + intdiv(self::FRAME, 2) - $this->anchorColumn($sprite);
         $top = self::FOOT_ROW - $sprite->height + 1 + $lift;
 
         imagecopy($strip, $sprite->image, $left, $top, 0, 0, $sprite->width, $sprite->height);
+    }
+
+    /**
+     * The sprite shrunk, if it needs it, to what a frame can hold: a little inside
+     * the frame's width, and the rows between its top edge and the foot line (one
+     * spare for the idle bob). A wide attack pose or a tall raised weapon is made
+     * smaller instead of bleeding into the next frame or being cropped at the top.
+     *
+     * @param  Sprite  $sprite  the pose
+     * @return Sprite the same sprite when it fits, a shrunk copy when it does not
+     */
+    private function fitted(Sprite $sprite): Sprite
+    {
+        $maxWidth = self::FRAME - 2;
+        $maxHeight = self::FOOT_ROW;
+
+        if ($sprite->width <= $maxWidth && $sprite->height <= $maxHeight) {
+            return $sprite;
+        }
+
+        $scale = min($maxWidth / $sprite->width, $maxHeight / $sprite->height);
+        $width = max(1, (int) round($sprite->width * $scale));
+        $height = max(1, (int) round($sprite->height * $scale));
+        $image = imagescale($sprite->image, $width, $height, IMG_NEAREST_NEIGHBOUR);
+        imagealphablending($image, false);
+        imagesavealpha($image, true);
+
+        return new Sprite($width, $height, $image);
     }
 
     /**

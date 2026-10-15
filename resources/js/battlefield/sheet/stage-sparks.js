@@ -56,9 +56,21 @@ export function sparkPoint({ width, height, cxRatio, floor, lift = 0, box, heel,
 const HEEL = {};
 
 /**
+ * Forgets a fighter's cached heel, so the next heelOf() reads it again. Only the
+ * custom fighter needs this: its strips change when its player replaces them.
+ *
+ * @param {string} key Fighter key.
+ * @return {void}
+ */
+export function forgetHeel(key) {
+  delete HEEL[key];
+}
+
+/**
  * The real back heel of a fighter, read off its idle frame: the rear-most
  * inked pixel in the rows just above the feet, within the body box (so a
  * spear tip or a mount's tail doesn't count). Null until the strip loads.
+ * Found once and kept.
  *
  * @param {string} key Fighter key.
  * @return {?{x: number, y: number}}
@@ -70,6 +82,11 @@ export function heelOf(key) {
   HEEL[key] = null;
   const [x0, , x1] = BOX[key];
   const img = new Image();
+  // a strip on another origin (a bucket, a CDN) needs CORS for its pixels to be read back
+  const url = stripUrl(BY_KEY[key].anims.idle.file);
+  if (/^https?:\/\//.test(url)) {
+    img.crossOrigin = 'anonymous';
+  }
   img.onload = () => {
     const c = document.createElement('canvas');
     c.width = 100;
@@ -83,7 +100,7 @@ export function heelOf(key) {
     // the ground below the feet never counts
     HEEL[key] = findHeel(ctx.getImageData(0, 0, 100, 100).data, { x0, x1 });
   };
-  img.src = stripUrl(BY_KEY[key].anims.idle.file);
+  img.src = url;
 
   return null;
 }

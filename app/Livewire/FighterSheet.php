@@ -142,9 +142,33 @@ class FighterSheet extends Component
             return;
         }
 
-        $this->equipped = $user->customFighterState() ? self::CUSTOM_KEY : $user->characterForBoss($arena->current()->id);
+        $this->equipped = $user->equippedFighterKey($arena->current()->id);
         $this->equippedKey = $user->equipped_character?->value;
-        $this->customCharacter = $user->customCharacter?->broadcastState();
+        $this->customCharacter = $user->customCharacter()->first()?->sheetState();
+    }
+
+    /**
+     * Follows the editor: a custom fighter made, renamed, replaced, switched or
+     * removed there is what the Character tab and the Profile mini-stage show the
+     * next time the sheet opens (their markup is rebuilt from these properties).
+     *
+     * @param  BossArena  $arena  supplies the current boss for the roster fallback
+     * @return void
+     */
+    #[On('custom-character-changed')]
+    #[Renderless]
+    public function refreshCustomCharacter(BossArena $arena): void
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return;
+        }
+
+        $user->unsetRelation('customCharacter');
+        $this->customCharacter = $user->customCharacter()->first()?->sheetState();
+        $this->equipped = $user->equippedFighterKey($arena->current()->id);
+        $this->equippedKey = $user->equipped_character?->value;
     }
 
     /**
@@ -328,9 +352,10 @@ class FighterSheet extends Component
         }
 
         $user->forceFill(['equipped_character' => $character])->save();
-        $user->customCharacter?->update(['active' => false]);
+        $user->customCharacter()->update(['active' => false]);
         $user->unsetRelation('customCharacter');
         $this->equipped = $character->value;
+        $this->customCharacter = $user->customCharacter()->first()?->sheetState();
         $this->equippedKey = $character->value;
 
         FighterCharacterChanged::dispatch($user);
@@ -346,7 +371,7 @@ class FighterSheet extends Component
      */
     private function equipCustom(User $user): void
     {
-        $custom = $user->customCharacter;
+        $custom = $user->customCharacter()->first();
 
         if ($custom === null) {
             return;
@@ -355,6 +380,7 @@ class FighterSheet extends Component
         $custom->update(['active' => true]);
         $user->unsetRelation('customCharacter');
         $this->equipped = self::CUSTOM_KEY;
+        $this->customCharacter = $custom->fresh()->sheetState();
 
         FighterCharacterChanged::dispatch($user);
     }

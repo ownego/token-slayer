@@ -75,3 +75,13 @@ test('lets attack and death poses differ in height, as a raised sword or a falle
 
     expect(validatorRejection($poses))->toBeNull();
 });
+
+test('rejects poses drawn smaller than the sprite they are shrunk to, rather than blowing them up', function () {
+    $smallest = (int) config('token_slayer.custom_character.sprite_height') - 1;
+
+    expect(validatorRejection(evenPoses($smallest)))->toBe(PoseSheetProblem::PosesTooSmall);
+});
+
+test('accepts poses exactly as tall as the sprite', function () {
+    expect(validatorRejection(evenPoses((int) config('token_slayer.custom_character.sprite_height'))))->toBeNull();
+});

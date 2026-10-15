@@ -4,6 +4,7 @@
 // so a sprite is a plain <span> the mockup's CSS already styles.
 import { FIGHTER_TYPES } from '../config/fighters.js';
 import { BOX, LABELS, ROSTER, stripUrl } from './sheet-roster.js';
+import { CUSTOM_KEY } from './custom-roster.js';
 
 /**
  * Roster entries by key.
@@ -56,6 +57,17 @@ function keyframes(name, from, to) {
  */
 export function pretty(key) {
   return key.replace(/-/g, ' ').replace(/^./, c => c.toUpperCase());
+}
+
+/**
+ * What a fighter is called on the sheet: its roster name, or for the custom fighter the
+ * name its player gave it (Custom until that is known).
+ *
+ * @param {string} key Fighter key.
+ * @return {string}
+ */
+export function nameOf(key) {
+  return key === CUSTOM_KEY ? (BY_KEY[CUSTOM_KEY]?.name ?? 'Custom') : pretty(key);
 }
 
 /**

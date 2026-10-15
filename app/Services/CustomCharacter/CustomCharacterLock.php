@@ -1,0 +1,51 @@
+<?php
+
+namespace App\Services\CustomCharacter;
+
+use App\Exceptions\CustomCharacterBusyException;
+use App\Support\CacheKeys;
+use Closure;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
+
+/**
+ * Serialises the changes one player makes to their fighter. The rate limiter
+ * counts attempts, it does not stop two tabs from building at once, and two
+ * builds that overlap can each delete the other's files and leave the database
+ * pointing at a folder that is gone. Different players never wait on each other.
+ */
+class CustomCharacterLock
+{
+    /**
+     * Longest a holder keeps the lock if its request dies without releasing it.
+     *
+     * @var int
+     */
+    private const int HOLD_SECONDS = 120;
+
+    /**
+     * Runs the callback with the player's lock held, waiting a few seconds for it.
+     *
+     * @param  int  $userId  the player
+     * @param  Closure  $callback  what to do while holding the lock
+     * @return mixed whatever the callback returns
+     *
+     * @throws CustomCharacterBusyException when another change by the same player does not finish in time
+     */
+    public function within(int $userId, Closure $callback): mixed
+    {
+        $lock = Cache::lock(CacheKeys::customCharacterBuild($userId), self::HOLD_SECONDS);
+
+        try {
+            $lock->block((int) config('token_slayer.custom_character.lock_seconds'));
+        } catch (LockTimeoutException) {
+            throw new CustomCharacterBusyException;
+        }
+
+        try {
+            return $callback();
+        } finally {
+            $lock->release();
+        }
+    }
+}

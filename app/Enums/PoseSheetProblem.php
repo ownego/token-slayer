@@ -59,6 +59,11 @@ enum PoseSheetProblem: string
     case PoseSizeMismatch = 'pose_size_mismatch';
 
     /**
+     * The idle and walk poses are drawn smaller than the sprite they are shrunk to.
+     */
+    case PosesTooSmall = 'poses_too_small';
+
+    /**
      * Human-readable explanation shown to the uploader.
      *
      * @return string
@@ -76,6 +81,7 @@ enum PoseSheetProblem: string
             self::WrongPoseCount => 'A row has the wrong number of poses.',
             self::PoseTouchesEdge => 'A pose touches the edge of the sheet and looks cropped.',
             self::PoseSizeMismatch => 'The idle and walk poses are not drawn at the same size.',
+            self::PosesTooSmall => 'The characters are drawn too small. Ask for a bigger sheet, or for the characters to fill their cells.',
         };
     }
 }

@@ -1,0 +1,135 @@
+<?php
+
+use App\Events\FighterCharacterChanged;
+use App\Exceptions\CustomCharacterVersionException;
+use App\Models\CustomCharacter;
+use App\Models\User;
+use App\Services\CustomCharacter\ConfirmCustomCharacter;
+use App\Services\CustomCharacter\DeleteCustomCharacterVersion;
+use App\Services\CustomCharacter\EquipCustomCharacterVersion;
+use App\Services\CustomCharacter\RemoveCustomCharacter;
+use App\Services\CustomCharacter\RenameCustomCharacter;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
+
+uses(RefreshDatabase::class);
+
+beforeEach(function () {
+    Storage::fake('public');
+    Event::fake([FighterCharacterChanged::class]);
+});
+
+/**
+ * A user with two confirmed versions, the second current.
+ *
+ * @return array{0: User, 1: string, 2: string} the user, the first (older) hash and the current hash
+ */
+function userWithTwoVersions(): array
+{
+    $user = User::factory()->create();
+    $confirm = app(ConfirmCustomCharacter::class);
+    $first = $confirm->execute($user, stagedFor($user, 0)->version_hash)->version_hash;
+    $second = $confirm->execute($user, stagedFor($user, 1)->version_hash)->version_hash;
+    Event::fake([FighterCharacterChanged::class]);
+
+    return [$user->fresh(), $first, $second];
+}
+
+test('renames the fighter, trimming spaces', function () {
+    $character = CustomCharacter::factory()->create();
+
+    $renamed = app(RenameCustomCharacter::class)->execute($character->user, '  Sir Pixel  ');
+
+    expect($renamed->name)->toBe('Sir Pixel')
+        ->and($character->fresh()->name)->toBe('Sir Pixel');
+});
+
+test('an empty name goes back to the default, and a long one is cut to the limit', function () {
+    $character = CustomCharacter::factory()->create(['name' => 'Old']);
+    $rename = app(RenameCustomCharacter::class);
+
+    expect($rename->execute($character->user, '   ')->name)->toBe('Custom')
+        ->and(mb_strlen($rename->execute($character->user, str_repeat('é', 80))->name))->toBe(24);
+});
+
+test('renaming is for someone who has a fighter', function () {
+    expect(fn () => app(RenameCustomCharacter::class)->execute(User::factory()->create(), 'Nobody'))
+        ->toThrow(CustomCharacterVersionException::class);
+});
+
+test('equipping an earlier version makes it current and equipped, and tells the battlefield', function () {
+    [$user, $first, $second] = userWithTwoVersions();
+    $user->customCharacter->update(['active' => false]);
+
+    $character = app(EquipCustomCharacterVersion::class)->execute($user, $first);
+
+    expect($character->version_hash)->toBe($first)
+        ->and($character->active)->toBeTrue()
+        ->and($character->animations['walk']['frames'])->toBe(8)
+        ->and($character->versions()->count())->toBe(2);
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->customFighterState()['version'] === $first);
+});
+
+test('a player cannot equip a version they do not have, nor someone else\'s', function () {
+    [$user, , $second] = userWithTwoVersions();
+    $other = CustomCharacter::factory()->create();
+
+    expect(fn () => app(EquipCustomCharacterVersion::class)->execute($user, 'abcdefabcdef'))->toThrow(CustomCharacterVersionException::class)
+        ->and(fn () => app(EquipCustomCharacterVersion::class)->execute($user, $other->version_hash))->toThrow(CustomCharacterVersionException::class);
+
+    expect($user->fresh()->customCharacter->version_hash)->toBe($second);
+});
+
+test('deleting an earlier version removes its row and its files, and does not touch the battlefield', function () {
+    [$user, $first, $second] = userWithTwoVersions();
+
+    app(DeleteCustomCharacterVersion::class)->execute($user, $first);
+
+    expect($user->customCharacter->versions()->pluck('version_hash')->all())->toBe([$second]);
+    Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$first}/idle.png");
+    Storage::disk('public')->assertExists("custom-characters/{$user->id}/{$second}/idle.png");
+    Event::assertNotDispatched(FighterCharacterChanged::class);
+});
+
+test('the version in use cannot be deleted, and neither can one the player does not have', function () {
+    [$user, , $second] = userWithTwoVersions();
+
+    expect(fn () => app(DeleteCustomCharacterVersion::class)->execute($user, $second))->toThrow(CustomCharacterVersionException::class)
+        ->and(fn () => app(DeleteCustomCharacterVersion::class)->execute($user, 'abcdefabcdef'))->toThrow(CustomCharacterVersionException::class);
+
+    Storage::disk('public')->assertExists("custom-characters/{$user->id}/{$second}/idle.png");
+});
+
+test('removing the fighter deletes the row, every version and every file, and tells the battlefield', function () {
+    [$user, $first, $second] = userWithTwoVersions();
+    $character = $user->customCharacter;
+
+    app(RemoveCustomCharacter::class)->execute($character);
+
+    expect(CustomCharacter::count())->toBe(0)
+        ->and(DB::table('custom_character_versions')->count())->toBe(0)
+        ->and($user->fresh()->customCharacter)->toBeNull();
+    Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$first}/idle.png");
+    Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$second}/idle.png");
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->is($user) && $event->user->customFighterState() === null);
+});
+
+test('removing keeps the roster character the player had equipped, as the fallback', function () {
+    $character = CustomCharacter::factory()->create();
+    $character->user->forceFill(['equipped_character' => App\Enums\FighterCharacter::Werebear])->save();
+
+    app(RemoveCustomCharacter::class)->execute($character);
+
+    expect($character->user->fresh()->equipped_character)->toBe(App\Enums\FighterCharacter::Werebear)
+        ->and($character->user->fresh()->characterForBoss(null))->toBe('werebear');
+});
+
+test('deleting a user leaves no files of theirs behind', function () {
+    [$user, $first, $second] = userWithTwoVersions();
+
+    $user->delete();
+
+    Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$first}/idle.png");
+    Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$second}/idle.png");
+});

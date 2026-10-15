@@ -21,6 +21,19 @@ final class CacheKeys
     public const string CHARACTER_ROOMMATES = 'profile:character-roommates';
 
     /**
+     * Lock a player's custom-fighter build holds, so two builds by one player
+     * never interleave their writes. Held for the build only (released when it
+     * ends, expiring on its own if the request dies).
+     *
+     * @param  int  $userId  the player
+     * @return string
+     */
+    public static function customCharacterBuild(int $userId): string
+    {
+        return "custom-character:build:{$userId}";
+    }
+
+    /**
      * Global damage-totals aggregate key.
      *
      * @var string

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\SlackController;
 use App\Http\Controllers\AvatarProxyController;
+use App\Http\Controllers\CustomCharacterController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\SlayerWheelController;
 use App\Services\Client\ReleaseArtifacts;
@@ -100,5 +101,5 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/history', [HistoryController::class, 'index'])->name('history');
 
-    Route::get('/character', fn () => view('custom-character'))->name('custom-character');
+    Route::get('/character', CustomCharacterController::class)->name('custom-character');
 });

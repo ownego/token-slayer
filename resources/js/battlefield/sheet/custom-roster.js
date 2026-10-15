@@ -16,6 +16,12 @@ export const CUSTOM_KEY = 'custom';
 export const CUSTOM_BOX = [36, 30, 64, 58];
 
 /**
+ * What the fighter is called until its player names it (`custom_character.default_name`).
+ * @type {string}
+ */
+const DEFAULT_NAME = 'Custom';
+
+/**
  * The accent the stage and slot take for the custom fighter (the roster's gold).
  * @type {string}
  */
@@ -26,8 +32,8 @@ const CUSTOM_ACCENT = '#fbbf24';
  * animation's `file` a served URL instead of a bundled strip. It fights as a
  * slasher with its one attack, named like a roster fighter's first.
  *
- * @param {?object} raw The `custom_character` payload (`FighterSheet::$customCharacter`).
- * @return {?{key: string, type: string, accent: string, anims: Object<string, {frames: number, rate: number, file: string}>}}
+ * @param {?object} raw The `custom_character` payload (`FighterSheet::$customCharacter`, with its `name`).
+ * @return {?{key: string, name: string, type: string, accent: string, anims: Object<string, {frames: number, rate: number, file: string}>}}
  */
 export function customRosterEntry(raw) {
   const spec = normalizeCustomCharacter(raw);
@@ -39,6 +45,7 @@ export function customRosterEntry(raw) {
 
   return {
     key: CUSTOM_KEY,
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : DEFAULT_NAME,
     type: 'SLASH',
     accent: CUSTOM_ACCENT,
     anims: { idle: anim('idle'), walk: anim('walk'), attack1: anim('attack'), death: anim('death') },

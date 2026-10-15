@@ -98,8 +98,8 @@ export const TYPE_LINE = {
  * @return {string}
  */
 export function stripUrl(file) {
-  // a custom fighter's strips are served files, not bundled ones
-  if (file.startsWith('/')) {
+  // a custom fighter's strips are served files (a path, or a full URL on a bucket), not bundled ones
+  if (file.startsWith('/') || /^https?:\/\//.test(file)) {
     return file;
   }
 

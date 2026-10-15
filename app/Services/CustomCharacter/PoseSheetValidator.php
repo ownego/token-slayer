@@ -8,7 +8,8 @@ use App\Exceptions\InvalidPoseSheetException;
 /**
  * Sanity checks on poses that were already located: none may touch the sheet
  * edge (a sign of cropping), and the idle and walk poses must be drawn at a
- * similar height so one shared scale suits them all. Attack and death poses
+ * similar height so one shared scale suits them all, and at least as tall as the
+ * sprite they are shrunk to. Attack and death poses
  * are exempt from the size check because a raised sword or a fallen body
  * legitimately changes their height.
  */
@@ -87,6 +88,12 @@ class PoseSheetValidator
 
         sort($heights);
         $median = $heights[intdiv(count($heights), 2)];
+
+        // poses are only ever shrunk to sprite size: blowing smaller ones up would be blurry
+        if ($median < (int) config('token_slayer.custom_character.sprite_height')) {
+            throw new InvalidPoseSheetException(PoseSheetProblem::PosesTooSmall);
+        }
+
         $tolerance = (float) config('token_slayer.custom_character.size_tolerance');
 
         foreach ($heights as $height) {

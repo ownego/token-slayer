@@ -156,8 +156,21 @@ return [
     'custom_character' => [
         'max_bytes' => 4 * 1024 * 1024,
         'min_side' => 512,
-        'max_side' => 4096,
-        'max_pixels' => 16_000_000,
+        // The build runs in the request on PHP arrays that grow with the pixel count: measured with a 256M
+        // memory_limit, a noisy 2048 px sheet peaks near 115 MB and a 4000 px one near 230 MB (a fatal on a
+        // busier sheet). Image AIs draw 1.5k-2k px sheets, so 2048 / 4.2 MP leaves ample headroom.
+        'max_side' => 2048,
+        'max_pixels' => 4_194_304,
+        // The filesystem disk the strips live on. Served from the app's own origin ('public') they are a path;
+        // on a disk with another host (a bucket, a CDN) the fighter payload carries a full URL instead.
+        'disk' => env('TOKEN_SLAYER_CUSTOM_CHARACTER_DISK', 'public'),
+        // How many confirmed versions of a fighter a player keeps to switch back to.
+        'max_versions' => 5,
+        // How long a second build by the same player waits for the first before being turned away.
+        'lock_seconds' => 10,
+        // What a fighter is called until its player names it, and the longest name.
+        'default_name' => 'Custom',
+        'name_max' => 24,
         // Uploads a user may attempt per hour; building a sheet costs about a second of CPU.
         'uploads_per_hour' => 10,
         // Bump when the sheet layout or the prompt below changes in a way that invalidates sheets made with the old one.

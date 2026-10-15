@@ -29,6 +29,7 @@ hooks on dev machines ──POST /api/events──▶ EventController
 | `Services/` (root, accounts) | Claude: `AnthropicOAuthClient`, `AccountTokenRefresher`, `UsageProber`, `SessionAnchorer`, `AccountProfileSyncer`, `AccountConnectService`, `AccountProvisioningService`. Codex: `CodexOAuthClient`, `CodexConnectService`, `CodexProvisioningService`, `CodexUsageProber` |
 | `Services/Accounts/` | Membership recording/caching + the rebalance/capacity model (`AccountRebalanceRecommender`, `RebalancePlanner`, `FleetSnapshot`, capacity/demand estimators) — see `.ai/domain/accounts.md` |
 | `Services/Analytics/` | One query class per `/dashboard` analytics widget (`*Query`), shared `UsageFilters` + `Concerns/ScopesEventsByFilters` |
+| `Services/CustomCharacter/` | Players' own fighters: the pose-sheet pipeline (decode → key → locate → strip stray marks → validate → pixelate → outline → strips), `CustomCharacterStore` (every path and write, on the configured disk), the single-action flow services (`Stage`/`Confirm`/`Discard`/`Rename`/`EquipVersion`/`DeleteVersion`/`Remove`), `CustomCharacterLock`, `CharacterPromptBuilder` — see `.ai/domain/custom-characters.md` |
 | `Services/Attribution/` | Unrecognized/unattached/expiring-account queries + `EventAttributionBackfiller` |
 | `Services/Battlefield/` | Model flair (`ModelFlairResolver`, `AiModelSyncer`) |
 | `Services/Events/` | `ModelUsageParser` / `TurnUsage` — hook `models` map → `events.model` |

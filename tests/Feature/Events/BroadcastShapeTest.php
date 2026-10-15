@@ -311,3 +311,25 @@ test('FighterCharging carries the custom character, so a synthetic client-side r
     expect((new FighterCharging($plain, 'thinking…'))->broadcastWith())->toHaveKey('custom_character', null)
         ->and((new FighterCharging($custom, 'thinking…'))->broadcastWith()['custom_character'])->toBe($custom->customFighterState());
 });
+
+test('the custom character payload has exactly these keys, so a rename on either side is caught', function () {
+    $character = CustomCharacter::factory()->create(['version_hash' => 'abc123def456']);
+    $folder = '/storage/custom-characters/'.$character->user_id.'/abc123def456';
+
+    foreach ([
+        new FighterJoined($character->user),
+        new FighterCharacterChanged($character->user),
+        new FighterCharging($character->user, 'thinking'),
+    ] as $event) {
+        expect($event->broadcastWith()['custom_character'])->toBe([
+            'version' => 'abc123def456',
+            'url_base' => $folder,
+            'animations' => [
+                'idle' => ['frames' => 6, 'rate' => 8],
+                'walk' => ['frames' => 8, 'rate' => 10],
+                'attack' => ['frames' => 6, 'rate' => 12],
+                'death' => ['frames' => 3, 'rate' => 6],
+            ],
+        ]);
+    }
+});

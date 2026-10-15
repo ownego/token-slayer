@@ -142,3 +142,37 @@ describe('characterPrompt', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('characterPrompt: moving the player to the prompt', () => {
+  test('after a pick, scrolls the prompt into view only as far as needed, without taking focus from the tiles', async () => {
+    const scrollIntoView = vi.fn();
+    const focus = vi.fn();
+    const picker = characterPrompt(TYPES, PROMPTS);
+    picker.$refs = { prompt: { scrollIntoView }, copy: { focus } };
+    picker.$nextTick = callback => Promise.resolve().then(callback);
+
+    picker.choose('wizard');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'nearest' });
+    expect(focus).not.toHaveBeenCalled();
+  });
+
+  test('picking an unknown type moves nothing', async () => {
+    const scrollIntoView = vi.fn();
+    const picker = characterPrompt(TYPES, PROMPTS);
+    picker.$refs = { prompt: { scrollIntoView } };
+    picker.$nextTick = callback => Promise.resolve().then(callback);
+
+    picker.choose('jester');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  test('works where Alpine has not provided $nextTick or $refs (a bare component)', () => {
+    expect(() => characterPrompt(TYPES, PROMPTS).choose('wizard')).not.toThrow();
+  });
+});

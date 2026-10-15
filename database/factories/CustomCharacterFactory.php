@@ -12,6 +12,21 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 class CustomCharacterFactory extends Factory
 {
     /**
+     * A fighter always has a history row for the version in use.
+     *
+     * @return static
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (CustomCharacter $character): void {
+            $character->versions()->firstOrCreate(
+                ['version_hash' => $character->version_hash],
+                ['animations' => $character->animations],
+            );
+        });
+    }
+
+    /**
      * Define the model's default state.
      *
      * @return array<string, mixed>
@@ -20,6 +35,7 @@ class CustomCharacterFactory extends Factory
     {
         return [
             'user_id' => User::factory(),
+            'name' => 'Custom',
             'version_hash' => fake()->regexify('[a-f0-9]{12}'),
             'active' => true,
             'animations' => [
