@@ -1430,7 +1430,7 @@
 .fs .cce-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 .fs .cce-thumb { padding: 6px 0 0; }
 /* while the drawer is open the stage is a preview strip, so the drawer has the room */
-.fs .showcase.editing > .show-stage { flex: none; height: 230px; min-height: 0; }
+.fs .showcase.editing > .show-stage { flex: none; height: 270px; min-height: 0; }
 
 /* button weight: one gold action per view. Tools (the frame inspector) and the secondary actions beside Use are
    dim-bordered and small; gold shows only on hover, focus and the pressed state. 44 px only for a touch pointer. */
@@ -1454,3 +1454,11 @@
 .fs .cce .btn:not(.primary):not(.blood) { border-width: 1px; color: var(--parchment); transition: border-color 0.15s ease, color 0.15s ease; }
 .fs .cce .btn:not(.primary):not(.blood):hover, .fs .cce .btn:not(.primary):not(.blood):focus-visible { border-color: var(--rivet); color: var(--rivet); }
 @media (pointer: coarse) { .fs .cce .field input { height: 44px; } }
+
+/* what the lazy editor shows while it loads: the shape of what is coming, not a line of text */
+.fs .cce-skel { display: grid; gap: 10px; padding: 4px 0; }
+.fs .cce-skel i { display: block; height: 14px; background: #12213d; animation: fs-skel 1.2s ease-in-out infinite alternate; }
+.fs .cce-skel i:nth-child(1) { width: 40%; }
+.fs .cce-skel i:nth-child(2) { width: 90%; height: 40px; border: 1px dashed #3a4a70; background: transparent; }
+.fs .cce-skel i:nth-child(3) { width: 25%; }
+@keyframes fs-skel { from { opacity: 0.45; } to { opacity: 1; } }

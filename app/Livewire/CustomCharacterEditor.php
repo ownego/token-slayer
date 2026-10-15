@@ -308,7 +308,7 @@ class CustomCharacterEditor extends Component
     public function placeholder(): string
     {
         return <<<'HTML'
-        <p class="cce-note" role="status">Loading your fighter…</p>
+        <div class="cce-skel" role="status" aria-label="Loading your fighter"><i></i><i></i><i></i></div>
         HTML;
     }
 
