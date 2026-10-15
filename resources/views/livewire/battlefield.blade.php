@@ -21,7 +21,7 @@
                  it predates `tok update` too -- a hook that CAN report a
                  version already self-updates on its own and never sets
                  $hookOutdated in the first place. --}}
-            <a href="{{ route('update') }}" class="text-amber-100 underline hover:text-white">Re-run the installer</a>
+            <a href="{{ route('update') }}" target="_blank" rel="noopener" class="text-amber-100 underline hover:text-white">Re-run the installer</a>
             <button type="button" @click="dismiss()" class="ml-2 text-amber-300/70 hover:text-amber-100" aria-label="Dismiss">&times;</button>
         </div>
     @endif
@@ -79,8 +79,8 @@
                 {{-- The Profile pill opens the fighter sheet in place; there is no
                      separate profile page any more. A guest is sent to log in. --}}
                 @auth
-                    {{-- /battlefield?sheet=character opens the sheet on the Character tab (the guide links there). --}}
-                    <button type="button" aria-label="Profile" x-init="if (new URLSearchParams(location.search).get('sheet') === 'character') { $nextTick(() => $dispatch('open-fighter-sheet', { tab: 'character' })) }" @click="$dispatch('open-fighter-sheet', { tab: 'profile' })" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
+                    {{-- A deep link waits for the arena before opening the sheet or editor. --}}
+                    <button type="button" aria-label="Profile" x-init="if (new URLSearchParams(location.search).get('sheet') === 'character') { window.whenBattlefieldReady(() => { if (new URLSearchParams(location.search).get('editor') === '1') { window.__openCustomEditor = true; window.dispatchEvent(new Event('open-custom-editor')) } $dispatch('open-fighter-sheet', { tab: 'character' }) }) }" @click="$dispatch('open-fighter-sheet', { tab: 'profile' })" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
                         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
                     </svg>
@@ -96,6 +96,7 @@
                 @endauth
                 <a
                     href="{{ route('filament.admin.pages.dashboard') }}"
+                    target="_blank" rel="noopener"
                     aria-label="Dashboard"
                     class="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300"
                 >

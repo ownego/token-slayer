@@ -90,14 +90,24 @@ test('guide reflects the configured hook namespace in the custom.sh path', funct
         ->assertDontSee('token_slayer');
 });
 
-test('guide shows the shared account nav: other pages are links that open in a new tab, the current page is plain text', function () {
+test('guide shows same-tab account links and the current page as plain text', function () {
     $this->actingAs(User::factory()->create());
 
     $this->get('/guide')
         ->assertOk()
-        ->assertSee('href="'.route('battlefield').'" target="_blank" rel="noopener"', escape: false)
-        ->assertSee('href="'.route('filament.admin.pages.dashboard').'" target="_blank" rel="noopener"', escape: false)
-        ->assertSee('href="'.route('setup').'" target="_blank" rel="noopener"', escape: false)
+        ->assertSee('href="'.route('battlefield').'"', escape: false)
+        ->assertSee('href="'.route('filament.admin.pages.dashboard').'"', escape: false)
+        ->assertSee('href="'.route('setup').'"', escape: false)
+        ->assertDontSee('target="_blank"', escape: false)
         ->assertDontSee('href="'.route('guide').'"', escape: false)
         ->assertSee('aria-current="page"', escape: false);
+});
+
+test('character guide opens the editor deep link in the same tab', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/character')
+        ->assertOk()
+        ->assertSee('href="'.route('battlefield').'?sheet=character&amp;editor=1"', escape: false)
+        ->assertDontSee('target="_blank"', escape: false);
 });
