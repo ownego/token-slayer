@@ -938,6 +938,9 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   });
   function openEditorFromLink() {
     window.__openCustomEditor = false;
+    if (!editing) {
+      showOwn();
+    }
     enterEditor();
   }
   on(window, 'open-custom-editor', openEditorFromLink);

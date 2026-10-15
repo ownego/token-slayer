@@ -11,7 +11,7 @@ export const READY_CEILING_MS = 15000;
  * @return {void}
  */
 export function announceReady() {
-  if (window.__battlefieldReady) {
+  if (typeof window === 'undefined' || window.__battlefieldReady) {
     return;
   }
   window.__battlefieldReady = true;
