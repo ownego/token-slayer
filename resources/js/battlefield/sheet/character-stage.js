@@ -8,7 +8,7 @@
 import { BOX, ROSTER, TYPE_LINE } from './sheet-roster.js';
 import { BY_KEY, faceColor, frameIn, moves, nameOf, paint, paintCharge, playAnim, standOn, strip, wait } from './sprite-strip.js';
 import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
-import { CUSTOM_KEY, registerCustomRoster } from './custom-roster.js';
+import { CUSTOM_KEY, DRAFT_KEY, groupOf, matchesChip, registerCustomRoster } from './custom-roster.js';
 
 /**
  * The stage FX strips, all existing battlefield assets.
@@ -183,7 +183,12 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     b.dataset.key = c.key;
     b.dataset.type = c.type;
     b.style.setProperty('--d', grid.children.length);
-    b.setAttribute('aria-label', custom ? `${nameOf(c.key)} (custom)` : nameOf(c.key));
+    b.dataset.group = groupOf(c);
+    const label = custom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : nameOf(c.key);
+    b.setAttribute('aria-label', label);
+    if (custom) {
+      b.title = label;
+    }
     b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
     paint(b.querySelector('.face-sprite'), c.key, 'idle', { hoverOnly: true });
     frameIn(b.querySelector('.face-sprite'), c.key, { maxW: 46, maxH: 36, cyPct: 40 });
@@ -202,6 +207,20 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     $$('roster-count').textContent = `${grid.querySelectorAll('.slot').length} fighters`;
   };
   countFighters();
+
+  // the Custom chip only exists while there is a player-made fighter (or a draft of one) to filter to
+  const customChip = root.querySelector('.chip[data-type="CUSTOM"]');
+  function syncCustomChip() {
+    if (!customChip) {
+      return;
+    }
+    const present = known(CUSTOM_KEY) || known(DRAFT_KEY);
+    customChip.hidden = !present;
+    if (!present && customChip.getAttribute('aria-pressed') === 'true') {
+      root.querySelector('.chip[data-type=""]')?.click();
+    }
+  }
+  syncCustomChip();
 
   function paintAlso(key) {
     const mates = roommates[key] || [];
@@ -487,7 +506,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     h2.style.animation = 'none';
     void h2.offsetWidth;
     h2.style.animation = '';
-    $$('show-type').textContent = TYPE_LINE[c.type];
+    $$('show-type').textContent = c.author ? `${TYPE_LINE[c.type]} · by ${c.author}` : TYPE_LINE[c.type];
     const mine = key === equipped;
     $$('show-state').textContent = mine ? 'Equipped' : 'Previewing';
     $$('show-state').classList.toggle('previewing', !mine);
@@ -568,8 +587,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     root.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', String(x === ch)));
     let n = 0;
     root.querySelectorAll('.slot').forEach(sl => {
-      // the custom fighter fights as nothing in particular, so no style filter hides it
-      const hide = Boolean(ch.dataset.type) && sl.dataset.type !== ch.dataset.type && sl.dataset.key !== CUSTOM_KEY;
+      const hide = !matchesChip(ch.dataset.type, sl.dataset.group);
       sl.classList.toggle('filtered-out', hide);
       if (!hide) {
         n++;
@@ -736,6 +754,9 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
     paintAddTile();
     countFighters();
+    syncCustomChip();
+    // a slot that just appeared obeys the chip that is already on
+    root.querySelector('.chip[aria-pressed="true"]')?.click();
   }
   function onCustomChanged(event) {
     const { custom = null, equipped: now } = event.detail ?? {};

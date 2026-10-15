@@ -8,6 +8,7 @@
             </div>
             <div class="chips" role="group" aria-label="Filter by fighting style">
                 <button class="chip" aria-pressed="true" data-type="">All</button>
+                <button class="chip" aria-pressed="false" data-type="CUSTOM" hidden>Custom</button>
                 <button class="chip" aria-pressed="false" data-type="SLASH">Slash</button>
                 <button class="chip" aria-pressed="false" data-type="BLADE">Blade</button>
                 <button class="chip" aria-pressed="false" data-type="ARROW">Arrow</button>
