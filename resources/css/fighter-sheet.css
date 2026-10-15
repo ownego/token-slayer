@@ -1504,16 +1504,20 @@
 .fs .cce-fileinfo .cce-file { color: var(--parchment); max-width: 100%; }
 .fs .cce-fileinfo > div, .fs .cce-fileinfo .upload-bar, .fs .cce-fileinfo .build-bar { width: 100%; }
 .fs .cce-ok { display: flex; align-items: center; gap: 6px; }
-.fs .cce-build-row { justify-content: flex-end; }
 @media (max-width: 640px) { .fs .cce-steps span { display: none; } .fs .cce-steps li.now span { display: inline; } }
 
-/* no scrolling for the first-run flow: the stage follows the viewport height, the section spans the drawer when it is
-   the only one, and the pose map sits beside the drop zone on a wide drawer */
-.fs .showcase.editing > .show-stage { height: clamp(170px, 28vh, 270px); }
+/* layout per state, measured on the real page so no state needs a scroll bar at a normal height:
+   first run: steps on top, pose map beside the drop zone; with a fighter: a compact one-row drop zone;
+   file chosen: one card with the Build action in it; the stage follows the viewport height */
+.fs .showcase.editing > .show-stage { height: clamp(150px, 24vh, 240px); }
+.fs .cce > .cce-sec:only-of-type { grid-column: 1 / -1; }
+.fs .cce-pick { display: grid; gap: 10px; }
+.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon title btn" "icon chips btn"; justify-items: start; align-items: center; text-align: left; column-gap: 12px; row-gap: 4px; padding: 10px 14px; }
+.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop-icon { grid-area: icon; }
+.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop-title { grid-area: title; }
+.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-chips { grid-area: chips; justify-content: flex-start; }
+.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop .btn { grid-area: btn; }
+.fs .cce-filecard > .cce-build { flex: none; align-self: center; }
 @container (min-width: 600px) {
-    .fs .cce > .cce-sec:only-of-type { grid-column: 1 / -1; }
-    .fs .cce-form:has(.cce-sheet-diagram) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
-    .fs .cce-form:has(.cce-sheet-diagram) > .cce-steps, .fs .cce-form:has(.cce-sheet-diagram) > .alert, .fs .cce-form:has(.cce-sheet-diagram) > .cce-filecard, .fs .cce-form:has(.cce-sheet-diagram) > .cce-build-row { grid-column: 1 / -1; }
-    .fs .cce-form:has(.cce-sheet-diagram) > .cce-sheet-diagram { grid-column: 1; width: 100%; }
-    .fs .cce-form:has(.cce-sheet-diagram) > .cce-drop { grid-column: 2; }
+    .fs .cce-pick:has(.cce-sheet-diagram) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
 }

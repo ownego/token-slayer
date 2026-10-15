@@ -789,3 +789,11 @@ test('the author gets a line of its own on the stage for a custom fighter, its d
   document.querySelector('.slot[data-key="wizard"]').click();
   expect(line.hidden).toBe(true);
 });
+
+test('opening Manage makes the fighter walk instead of standing still', () => {
+  mount({ equipped: 'orc-rider', custom: { ...CUSTOM, name: 'Sir Pixel' } });
+
+  document.querySelector('.slot-add').click();
+
+  expect(document.getElementById('move-name').textContent).toContain('Walk');
+});

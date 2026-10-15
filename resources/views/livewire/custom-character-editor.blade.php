@@ -26,22 +26,23 @@
             wire:submit="build"
             class="cce-form"
         >
+            @if (! $character && ! $draft)
             <ol class="cce-steps" aria-label="How it works">
                 <li x-bind:class="{ now: step === 1, past: step > 1 }"><b>1</b><span>Make a sheet</span></li>
                 <li x-bind:class="{ now: step === 2, past: step > 2 }"><b>2</b><span>Upload and build</span></li>
                 <li x-bind:class="{ now: step === 3 }"><b>3</b><span>Try it, then use it</span></li>
             </ol>
-
-            @if (! $character && ! $draft)
-                @include('partials.custom-character-sheet-diagram')
             @endif
 
             <input type="file" wire:model="sheet" x-ref="file" x-on:change="choose($event.target.files[0] ?? null)" accept="image/png,image/jpeg,image/webp" class="sr-only" tabindex="-1">
 
+            <div class="cce-pick" x-show="phase === 'idle' || phase === 'failed' || phase === 'done'">
+            @if (! $character && ! $draft)
+                @include('partials.custom-character-sheet-diagram')
+            @endif
             <div
                 class="cce-drop"
                 x-bind:class="{ over: over }"
-                x-show="phase === 'idle' || phase === 'failed' || phase === 'done'"
                 x-on:dragover.prevent="over = true"
                 x-on:dragleave="over = false"
                 x-on:drop.prevent="drop($event)"
@@ -55,6 +56,7 @@
                     <li>up to 2048 px</li>
                     <li>on magenta or transparent</li>
                 </ul>
+            </div>
             </div>
 
             <div class="cce-filecard" x-show="info && (phase === 'uploading' || phase === 'ready' || phase === 'building')" x-cloak>
@@ -75,17 +77,15 @@
                     </div>
                     <button type="button" class="cce-link" x-show="phase === 'ready'" x-on:click="$refs.file.click()" data-focus="upload-again">Choose another file</button>
                 </div>
+                <button type="submit" x-bind:disabled="phase !== 'ready'" class="btn primary cce-build" wire:target="build">
+                    <span x-text="phase === 'building' ? 'Building…' : 'Build preview'">Build preview</span>
+                </button>
             </div>
 
             @error('sheet')
                 <div class="alert crit" role="alert" x-init="phase = 'failed'"><span>{{ $message }}</span></div>
             @enderror
 
-            <div class="cce-row cce-build-row" x-show="phase === 'ready' || phase === 'building'" x-cloak>
-                <button type="submit" x-bind:disabled="phase !== 'ready'" class="btn primary cce-build" wire:target="build">
-                    <span x-text="phase === 'building' ? 'Building…' : 'Build preview'">Build preview</span>
-                </button>
-            </div>
         </form>
     </section>
 

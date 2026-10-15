@@ -910,6 +910,10 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       if (previewing !== own) {
         select(own);
       }
+      const walk = moves(own).find(m => m.id === 'walk');
+      if (walk) {
+        playMove(walk);
+      }
 
       return;
     }
