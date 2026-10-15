@@ -878,6 +878,12 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     mountWatch?.disconnect();
     mountWatch = null;
     showcase.classList.remove('editing');
+    if (blankFrom !== null) {
+      const back = blankFrom;
+      blankFrom = null;
+      showcase.classList.remove('blank');
+      select(back);
+    }
     panel.hidden = true;
     updateBarHeight();
     add.setAttribute('aria-pressed', 'false');
@@ -886,10 +892,32 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       openerEl?.focus();
     }
   }
+  let blankFrom = null;
+  /**
+   * The stage shows what the drawer is about: the player's built draft, else their
+   * fighter, else (nothing made yet) an empty stage, never whichever roster fighter
+   * happened to be selected.
+   */
+  function showOwn() {
+    const own = known(DRAFT_KEY) ? DRAFT_KEY : known(CUSTOM_KEY) ? CUSTOM_KEY : null;
+    if (own) {
+      if (previewing !== own) {
+        select(own);
+      }
+
+      return;
+    }
+    blankFrom = previewing;
+    showcase.classList.add('blank');
+    $$('show-name').textContent = 'Your fighter';
+    $$('show-type').textContent = 'Upload a pose sheet and it appears here';
+    $$('show-state').textContent = '';
+  }
   on(add, 'click', () => {
     if (editing) {
       leaveEditor();
     } else {
+      showOwn();
       enterEditor();
     }
   });

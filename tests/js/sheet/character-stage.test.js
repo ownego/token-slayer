@@ -733,3 +733,27 @@ test('sheet-focus moves focus to a usable target, opening the drawer when the ta
   focus('nonsense');
   expect(document.activeElement).not.toBe(document.body);
 });
+
+test('opening Create with nothing built shows an empty stage, not the selected roster fighter, and closing brings it back', () => {
+  mount({ equipped: 'orc-rider' });
+  document.querySelector('.slot[data-key="wizard"]').click();
+  expect(document.getElementById('show-name').textContent).toBe('Wizard');
+
+  document.querySelector('.slot-add').click();
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
+  expect(document.getElementById('show-name').textContent).toBe('Your fighter');
+
+  document.getElementById('panel-back').click();
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(false);
+  expect(document.getElementById('show-name').textContent).toBe('Wizard');
+});
+
+test('opening Manage shows the player\'s own fighter on the stage', () => {
+  mount({ equipped: 'orc-rider', custom: { ...CUSTOM, name: 'Sir Pixel' } });
+  document.querySelector('.slot[data-key="wizard"]').click();
+
+  document.querySelector('.slot-add').click();
+
+  expect(document.getElementById('show-name').textContent).toBe('Sir Pixel');
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(false);
+});

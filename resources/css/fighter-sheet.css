@@ -347,6 +347,7 @@
 .fs .showcase.editing > .equip-row, .fs .showcase.editing > .inspector { display: none; }
 .fs .showcase.editing > .cce-drawer { display: block; flex: 1 1 0; min-height: 0; overflow-y: auto; border-top: 1px solid rgba(251,191,36,0.18); }
 .fs .slot-add { min-height: 44px; }
+.fs .showcase.blank .show-sprite, .fs .showcase.blank .show-effect, .fs .showcase.blank .show-state { visibility: hidden; }
 .fs .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .fs .panel-link { color: var(--rivet); font: 500 12px var(--body); text-decoration: underline; text-underline-offset: 2px; }
 .fs .panel-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
