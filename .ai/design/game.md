@@ -41,7 +41,7 @@ Consequences that shape every decision:
 | Boss arena | the current boss, HP (1,000,000 base), overflow to the next boss, kill chain, rotation, ThaNode and stones | moment, progress | damage lands on the boss only; overflow rolls over |
 | Fighter | one per user on the field, assigned by user and boss, or the equipped one; charge ring, bubble, model flair ring | moment, session, social | keyed by user id; sprites are 100 px frames, never upscaled |
 | Roster and fighter sheet | the 20 fighters, filters by attack style, a Character tab with Equip and undo, a Profile tab with damage, tokens by model, quota gauges, alerts, the combo buddy, a mini stage | session, social | the sheet is a modal over the live battlefield |
-| Custom fighter | a player's own fighter built from an uploaded pose sheet | social | strips served per version; every client shows the same fighter; cosmetic only |
+| Custom fighter | a player's own fighter built from an uploaded pose sheet, previewed as a draft slot and managed in a stage drawer | social | strips served per version; every client shows the same fighter; cosmetic only; admin Rename and Remove follow policy |
 | Minions and companions | subagent swarm, bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
 | HUD | team totals, your damage, the damage board with rank changes, boss plate, feed, herald, nav | session, social | follows the screen: landscape and portrait layouts, a phone stats sheet |
 | Ceremonies | join, kill, boss spawn | social | slow motion and shake are for kills; reduced motion is honoured |

@@ -37,11 +37,11 @@ Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness
 
 ## Show stage (preview of a fighter)
 
-`.show-stage` (270 px tall, accent glow floor line, sprite at `scale: 4`, the boss on the right), `.show-info` (name `h2` 24 px, type, `.show-state` badge: `Equipped` green, `Previewing` gold), `.hotbar`, `.equip-row` (`.equip-note` + `.btn.primary`). Any fighter (roster or custom) is previewed here, with the same stage, scale, moves and equip row; do not build a second preview widget (see `motion.md` for rates and `patterns.md` for the flow).
+`.show-stage` (270 px desktop, 190 px portrait, 120 px landscape; accent glow floor line, sprite at `scale: 4`, boss on the right), `.show-info` (name, type and `.show-state`), `.hotbar`, `.inspector` (Pause, Frame, Play for a draft or version peek), and `.equip-row`. A draft is a `.slot .badge.draft` roster entry, using the same stage and moves as a saved fighter. Do not build a second preview widget.
 
 ## Editor panel (the custom fighter editor, `.cce`)
 
-An in-place editor in the Character tab (it replaces the stage; `custom-character-editor.blade.php`). It is made of the pieces above plus a few small ones:
+An in-place `.cce-drawer` below the stage (`custom-character-editor.blade.php`). The stage stays visible; on a phone the roster hides while the drawer is open.
 
 | Class | Look | Use |
 |---|---|---|
@@ -50,8 +50,9 @@ An in-place editor in the Character tab (it replaces the stage; `custom-characte
 | `.cce-note`, `.cce-ok` | 13 px `--dim` / `--life` | a hint or a status line next to a control: the reason a button is disabled, "File uploaded." |
 | `.field` + `.field-count` | label above (12 px `--display` `--dim`), 44 px input on the tile fill, a `n / max` counter | a text field whose length is limited and read by others |
 | `.upload-bar` | 6 px bar, fills by `transform: scaleX(var(--p))` | upload progress (never animate `width`) |
-| `.cce-stage` | the shared `.show-stage`, 280 px, sprite centred | the draft preview, with the `.hotbar`/`.move` poses, play/pause and frame step (`custom-draft-preview.js`) |
-| `.versions` > `.version` | auto-fill grid of 150 px tiles, `.current` has the gold border; `.vsprite` is the idle strip at 1x | earlier versions of something the player owns |
+| `.cce-sheet-diagram`, `.cce-thumb` | four-row pose map and a 96 x 72 chosen-file image | first-time explanation and file confirmation |
+| `.build-bar` | 6 px indeterminate transform animation, stopped under reduced motion | server-side build progress after upload finishes |
+| `.versions` > `.version` | auto-fill grid of 150 px tiles, `.current` has the gold border; `.vsprite` is the idle strip at 1x | numbered versions with Preview, Equip and Delete actions |
 | `.confirm-row` | an `.alert.crit` row that replaces the control in place, with a `.btn.blood` (the verb) and a `.btn` Cancel | confirming a destructive action (see `patterns.md`): names the thing, Cancel focused, Escape cancels |
 | `.btn.blood` | `.btn` with `--blood` text and border | the confirming button of a destructive action, only on the confirm step |
 

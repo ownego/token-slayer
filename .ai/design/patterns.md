@@ -32,7 +32,7 @@ If the deleted thing was the one in use, the view and every client switch to a d
 ## Forms and uploads
 
 - One panel, labels above fields, 44 px high controls, errors under the field they belong to, the submit button disabled with a reason until the input is valid.
-- An upload shows progress, then a build/processing state, then the result; a failure keeps the chosen file name and says what to change.
+- A pose-sheet upload shows the chosen-file thumbnail and dimensions, percentage while transferring, "File uploaded" when Build is enabled, then an indeterminate build bar. A failure keeps the chosen file and gives one `PoseSheetProblem` hint about what to change. First-time players see the four-row diagram.
 - A file the player will use is previewed before it counts: the result appears as a normal item the player can select and inspect on the show stage, and nothing is applied or broadcast until the player picks "Equip" (or the equivalent). Creating something is not using it: a player can make a thing for someone else or just to try.
 - Text the player types that other players will read (a name) has a length limit, is shown with a visible counter or hint, and is escaped everywhere it is rendered.
 
@@ -40,9 +40,11 @@ If the deleted thing was the one in use, the view and every client switch to a d
 
 Preview any thing the player must judge on the shared show stage (`components.md`): real size, all poses, play/pause or step, in-game rates (`motion.md`). The create, edit and equip steps happen on the same screen as the roster, in place of the stage or beside it, so the player keeps their place; they do not navigate to another page for it.
 
+A built draft is a `DRAFT` roster slot. Selecting it keeps the editor available in a drawer below the stage and offers Use or Discard. Numbered saved versions may be previewed on that stage without equipping; closing a peek returns to the prior selection. Opening the drawer focuses Back, then the upload control once its lazy component mounts; Escape closes the innermost region and returns focus to its opener.
+
 ## Links and buttons that leave the view
 
-A link or button that goes to another page opens a new tab (`target="_blank" rel="noopener"`), so the running battlefield, an unsaved form or a build in progress is never lost. This includes the nav in `partials/account-nav.blade.php`; the current page is shown as plain text, not a link. In-page actions (switching a tab, opening a panel) stay in the page.
+Links from the live battlefield (including its HUD and fighter sheet) to another page open a new tab (`target="_blank" rel="noopener"`) so the arena and any edit in progress remain open. Links between outer pages, including `partials/account-nav.blade.php` and the `/character` guide, stay in the same tab; the current page is plain text. In-page actions stay in the page. A `/battlefield?sheet=character&editor=1` deep link waits for `battlefield-ready` before opening the sheet and editor, with a 15-second ceiling if the arena does not load.
 
 ## Who made it
 
