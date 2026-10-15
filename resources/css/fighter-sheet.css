@@ -1427,7 +1427,7 @@
 .fs .cce-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 .fs .cce-thumb { padding: 6px 0 0; }
 /* while the drawer is open the stage is a preview strip, so the drawer has the room */
-.fs .showcase.editing > .show-stage { flex: none; height: 270px; min-height: 0; }
+.fs .showcase.editing > .show-stage { flex: none; min-height: 0; }
 
 /* button weight: one gold action per view. Tools (the frame inspector) and the secondary actions beside Use are
    dim-bordered and small; gold shows only on hover, focus and the pressed state. 44 px only for a touch pointer. */
@@ -1506,3 +1506,14 @@
 .fs .cce-ok { display: flex; align-items: center; gap: 6px; }
 .fs .cce-build-row { justify-content: flex-end; }
 @media (max-width: 640px) { .fs .cce-steps span { display: none; } .fs .cce-steps li.now span { display: inline; } }
+
+/* no scrolling for the first-run flow: the stage follows the viewport height, the section spans the drawer when it is
+   the only one, and the pose map sits beside the drop zone on a wide drawer */
+.fs .showcase.editing > .show-stage { height: clamp(170px, 28vh, 270px); }
+@container (min-width: 600px) {
+    .fs .cce > .cce-sec:only-of-type { grid-column: 1 / -1; }
+    .fs .cce-form:has(.cce-sheet-diagram) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+    .fs .cce-form:has(.cce-sheet-diagram) > .cce-steps, .fs .cce-form:has(.cce-sheet-diagram) > .alert, .fs .cce-form:has(.cce-sheet-diagram) > .cce-filecard, .fs .cce-form:has(.cce-sheet-diagram) > .cce-build-row { grid-column: 1 / -1; }
+    .fs .cce-form:has(.cce-sheet-diagram) > .cce-sheet-diagram { grid-column: 1; width: 100%; }
+    .fs .cce-form:has(.cce-sheet-diagram) > .cce-drop { grid-column: 2; }
+}
