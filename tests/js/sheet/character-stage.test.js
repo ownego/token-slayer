@@ -12,7 +12,7 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', () => {});
   document.body.innerHTML = `<div class="tab-panel"><div id="root">
     <aside class="roster"><span id="roster-count"></span>
-      <div class="chips"><button class="chip" data-type="">All</button><button class="chip" data-type="ARROW">Arrow</button></div>
+      <div class="chips"><button class="chip" data-type="">All</button><button class="chip" data-type="CUSTOM" hidden>Custom</button><button class="chip" data-type="ARROW">Arrow</button></div>
       <div id="roster-grid"></div></aside>
     <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div></section>
     <section class="custom-panel" id="custom-panel" hidden><button type="button" id="panel-back">Back</button></section>
@@ -347,12 +347,49 @@ test('its moves are idle, walk, its one attack, death and summon', () => {
   expect([...document.querySelectorAll('#hotbar .move')].map(m => m.dataset.id)).toEqual(['idle', 'walk', 'attack1', 'death', 'summon']);
 });
 
-test('a style chip leaves the custom slot showing, since it fights as nothing in particular', () => {
+test('a style chip hides the custom fighter: it has a chip of its own now', () => {
   mount({ custom: CUSTOM });
 
   document.querySelector('.chip[data-type="ARROW"]').click();
 
+  expect(document.querySelector('.slot[data-key="custom"]').classList.contains('filtered-out')).toBe(true);
+  expect(document.getElementById('roster-count').textContent).toBe('3 fighters');
+});
+
+test('the Custom chip shows only the custom fighter and counts it', () => {
+  mount({ custom: CUSTOM });
+
+  document.querySelector('.chip[data-type="CUSTOM"]').click();
+
   expect(document.querySelector('.slot[data-key="custom"]').classList.contains('filtered-out')).toBe(false);
+  expect(document.querySelector('.slot[data-key="wizard"]').classList.contains('filtered-out')).toBe(true);
+  expect(document.getElementById('roster-count').textContent).toBe('1 fighter');
+
+  document.querySelector('.chip[data-type=""]').click();
+  expect(document.getElementById('roster-count').textContent).toBe('21 fighters');
+});
+
+test('the Custom chip appears only when there is a custom fighter, and goes with it', () => {
+  mount();
+  expect(document.querySelector('.chip[data-type="CUSTOM"]').hidden).toBe(true);
+
+  changed({ custom: { ...CUSTOM, name: 'Sir Pixel' }, equipped: 'custom' });
+  expect(document.querySelector('.chip[data-type="CUSTOM"]').hidden).toBe(false);
+
+  changed({ custom: null, equipped: 'orc-rider' });
+  expect(document.querySelector('.chip[data-type="CUSTOM"]').hidden).toBe(true);
+});
+
+test('the stage and the slot name the author of a custom fighter, as plain text', () => {
+  mount({ equipped: 'custom', custom: { ...CUSTOM, name: 'Sir Pixel', author: 'a&b' } });
+
+  expect(document.getElementById('show-type').textContent).toBe('Slash fighter. Hits up close with sweeping cuts. · by a&b');
+  const slot = document.querySelector('.slot[data-key="custom"]');
+  expect(slot.getAttribute('aria-label')).toBe('Sir Pixel (custom, by a&b)');
+  expect(slot.title).toBe('Sir Pixel (custom, by a&b)');
+
+  document.querySelector('.slot[data-key="wizard"]').click();
+  expect(document.getElementById('show-type').textContent).not.toContain('by a&b');
 });
 
 test('an equipped key the roster does not know falls back to the first fighter, not a crash', () => {
