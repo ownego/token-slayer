@@ -65,9 +65,10 @@ const EQUIP_PERSIST_DELAY_MS = EQUIP_FOLD_DELAY_MS + 350 + 950;
  * @param {string} handle The viewer's own display handle.
  * @param {number} me The viewer's user id, left out of the teammates.
  * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
+ * @param {?{hash: string, spec: object}} draft The fighter the viewer built and has not used yet (`FighterSheet::$customDraft`).
  * @return {object}
  */
-export function characterStage(startingKey, roommates, handle, me, custom = null) {
+export function characterStage(startingKey, roommates, handle, me, custom = null, draft = null) {
   return {
     cleanup: [],
     init() {
@@ -81,6 +82,7 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
         handle,
         me,
         custom,
+        draft,
         equip: key => window.Livewire.find(componentId)?.equip(key),
         dispatch: (name, detail) => this.$dispatch(name, detail),
       });
@@ -99,10 +101,10 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
  * (key `custom`) beside the fighters; a "+ Custom" tile always opens the page
  * where one is made or replaced.
  *
- * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
+ * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, draft?: ?{hash: string, spec: object}, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
  * @return {Array<function(): void>} Teardown callbacks.
  */
-export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, equip, dispatch }) {
+export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, draft = null, equip, dispatch }) {
   // teammates only: CharacterRoommates lists everyone on a fighter, the viewer included
   const roommates = Object.fromEntries(Object.entries(everyone).map(([key, users]) => [key, users.filter(u => Number(u.user_id) !== Number(me))]));
   const $$ = id => root.querySelector(`#${id}`);

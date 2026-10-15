@@ -2,6 +2,8 @@
 
 namespace App\Services\CustomCharacter;
 
+use App\Models\User;
+
 /**
  * Describes a fighter version for a preview: its four strips (where each is served
  * from, its frame count and rate, and the name the player sees for it, the
@@ -63,6 +65,30 @@ class PreviewStrips
             'url_base' => $this->store->baseUrl($userId, $hash, $staged),
             'animations' => $animations,
             'name' => $name,
+        ];
+    }
+
+    /**
+     * The player's pending draft as the sheet's stage takes it: its hash and its
+     * staged spec, named like the player's fighter (or the default name before there
+     * is one). Null when nothing is waiting.
+     *
+     * @param  User  $user  the owner
+     * @return array{hash: string, spec: array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, name: string}}|null
+     */
+    public function draftPayload(User $user): ?array
+    {
+        $draft = $user->customCharacterDraft()->first();
+
+        if ($draft === null) {
+            return null;
+        }
+
+        $name = $user->customCharacter()->value('name') ?? (string) config('token_slayer.custom_character.default_name');
+
+        return [
+            'hash' => $draft->version_hash,
+            'spec' => $this->spec($user->id, $draft->version_hash, $draft->animations, staged: true, name: $name),
         ];
     }
 }

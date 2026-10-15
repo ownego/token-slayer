@@ -11,6 +11,7 @@ use App\Services\Analytics\FleetUsageRefresher;
 use App\Services\BossArena;
 use App\Services\CustomCharacter\EquipCustomCharacter;
 use App\Services\CustomCharacter\EquipRosterCharacter;
+use App\Services\CustomCharacter\PreviewStrips;
 use App\Services\DamageTotals;
 use App\Services\GitHub\CachedLatestVersion;
 use App\Services\Profile\AccountAlerts;
@@ -118,6 +119,15 @@ class FighterSheet extends Component
     public ?array $customCharacter = null;
 
     /**
+     * The draft the player built and has not used yet (`PreviewStrips::draftPayload`),
+     * handed to the Character tab's stage so a draft saved in an earlier session shows
+     * as a slot without the editor ever mounting.
+     *
+     * @var array{hash: string, spec: array<string, mixed>}|null
+     */
+    public ?array $customDraft = null;
+
+    /**
      * The roster key the Character tab uses for the custom fighter's slot, in
      * $equipped and in equip().
      *
@@ -148,6 +158,7 @@ class FighterSheet extends Component
         $this->equipped = $user->equippedFighterKey($arena->current()->id);
         $this->equippedKey = $user->equipped_character?->value;
         $this->customCharacter = $user->customCharacter()->first()?->sheetState();
+        $this->customDraft = app(PreviewStrips::class)->draftPayload($user);
     }
 
     /**
@@ -170,8 +181,32 @@ class FighterSheet extends Component
 
         $user->unsetRelation('customCharacter');
         $this->customCharacter = $user->customCharacter()->first()?->sheetState();
+        $this->customDraft = app(PreviewStrips::class)->draftPayload($user);
         $this->equipped = $user->equippedFighterKey($arena->current()->id);
         $this->equippedKey = $user->equipped_character?->value;
+    }
+
+    /**
+     * Answers the stage's request for the current state (a live change of the player's
+     * own fighter arrived from elsewhere): re-reads it and hands it back as
+     * `custom-character-state`, which the stage applies without a ceremony. It is not
+     * `custom-character-changed`, which the editor sends and this component listens to.
+     *
+     * @param  BossArena  $arena  supplies the current boss for the roster fallback
+     * @return void
+     */
+    #[On('custom-character-refresh')]
+    #[Renderless]
+    public function publishCustomCharacter(BossArena $arena): void
+    {
+        $this->refreshCustomCharacter($arena);
+
+        $this->dispatch(
+            'custom-character-state',
+            custom: $this->customCharacter,
+            draft: $this->customDraft,
+            equipped: $this->equipped,
+        );
     }
 
     /**
