@@ -93,7 +93,6 @@
             <section class="cce-drawer" id="custom-panel" aria-label="Your custom fighter" hidden>
                 <div class="panel-head">
                     <button class="btn" type="button" id="panel-back">&larr; Back to roster</button>
-                    <a class="panel-link" href="{{ route('custom-character') }}" target="_blank" rel="noopener">How to make a pose sheet &#8599;</a>
                 </div>
                 @livewire('custom-character-editor', ['lazy' => true])
             </section>
