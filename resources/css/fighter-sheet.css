@@ -1429,3 +1429,5 @@
 .fs .cce-link.danger { color: var(--blood); justify-self: start; }
 .fs .cce-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
 .fs .cce-thumb { padding: 6px 0 0; }
+/* while the drawer is open the stage is a preview strip, so the drawer has the room */
+.fs .showcase.editing > .show-stage { flex: none; height: 230px; min-height: 0; }
