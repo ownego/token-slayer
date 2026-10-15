@@ -4,6 +4,7 @@ How anything a player sees in token-slayer is built so it looks and behaves like
 
 | File | Covers |
 |---|---|
+| `game.md` | The game itself: the idea, who plays, the loops, the systems map, the flows that exist, the knobs, the feel inventory, pacing, fairness, and what is not designed yet |
 | `tokens.md` | The three visual worlds, colours, fonts and where each is loaded, shapes, spacing, the known drift between token sets |
 | `components.md` | Every shared piece: panel, buttons, tabs, tiles, chips, tags, alerts, tips, toast, scrollbars, stat tiles, with real class names and states |
 | `patterns.md` | Confirming and destructive actions, empty/loading/error/success states, forms and uploads, previews, links that leave the view, copy |
@@ -22,6 +23,8 @@ How anything a player sees in token-slayer is built so it looks and behaves like
 Rules: anything a player does while the battlefield is open (choose, create, edit, confirm, delete a fighter) belongs to the **game** world and lives inside the sheet. A page in the **app** world only explains or links; it does not duplicate a game-world editor. Never build a third look.
 
 ## Before you build UI (checklist)
+
+0. For a new feature or a change to a flow, start from a short design brief (`.claude/skills/game-design/`) placed on the map in `game.md`: journeys, flows, feel, rules, states, edge cases. The steps below are what the brief's answers are built from.
 
 1. Pick the world above and reuse its classes and tokens; do not add colours, fonts, radii or shadows that are not in `tokens.md`.
 2. Look for the piece in `components.md` first; if it does not exist, build it from the same tokens and add it there in the same PR.
