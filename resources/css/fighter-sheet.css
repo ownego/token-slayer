@@ -1444,3 +1444,13 @@
 .fs .equip-row .btn:not(.primary):hover, .fs .equip-row .btn:not(.primary):focus-visible { border-color: var(--rivet); color: var(--rivet); }
 .fs .equip-row .btn:not(.primary):active { transform: scale(0.97); }
 @media (pointer: coarse) { .fs .inspector .btn, .fs .equip-row .btn { min-height: 44px; } }
+
+/* editor drawer: controls keep their natural width and share one height and edge weight with the fields beside them */
+.fs .cce-drawer .panel-head { justify-content: flex-start; }
+.fs .cce-drawer #panel-back { flex: 0 0 auto; width: auto; border: 0; }
+.fs .cce-pick .btn { flex: 0 0 auto; width: auto; }
+.fs .cce .field input { height: 36px; border-color: #2e3d63; transition: border-color 0.15s ease; }
+.fs .cce .field input:focus-visible { border-color: var(--rivet); }
+.fs .cce .btn:not(.primary):not(.blood) { border-width: 1px; color: var(--parchment); transition: border-color 0.15s ease, color 0.15s ease; }
+.fs .cce .btn:not(.primary):not(.blood):hover, .fs .cce .btn:not(.primary):not(.blood):focus-visible { border-color: var(--rivet); color: var(--rivet); }
+@media (pointer: coarse) { .fs .cce .field input { height: 44px; } }
