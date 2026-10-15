@@ -6,11 +6,14 @@ use App\Exceptions\CustomCharacterBusyException;
 use App\Filament\Resources\CustomCharacters\Pages\ListCustomCharacters;
 use App\Models\CustomCharacter;
 use App\Services\CustomCharacter\RemoveCustomCharacter;
+use App\Services\CustomCharacter\RenameCustomCharacter;
+use App\Services\CustomCharacter\AnnounceCustomCharacter;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
+use Filament\Forms\Components\TextInput;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -82,6 +85,26 @@ class CustomCharacterResource extends Resource
             ])
             ->defaultSort('updated_at', 'desc')
             ->recordActions([
+                Action::make('rename')
+                    ->label('Rename')
+                    ->icon(Heroicon::OutlinedPencil)
+                    ->authorize('update')
+                    ->schema([
+                        TextInput::make('name')->required()->maxLength((int) config('token_slayer.custom_character.name_max')),
+                    ])
+                    ->fillForm(fn (CustomCharacter $record): array => ['name' => $record->name])
+                    ->action(function (CustomCharacter $record, array $data): void {
+                        try {
+                            app(RenameCustomCharacter::class)->execute($record->user, (string) $data['name']);
+                        } catch (CustomCharacterBusyException $exception) {
+                            Notification::make()->title($exception->getMessage())->danger()->send();
+
+                            return;
+                        }
+
+                        app(AnnounceCustomCharacter::class)->execute($record->user);
+                        Notification::make()->title('Fighter renamed')->success()->send();
+                    }),
                 Action::make('remove')
                     ->label('Remove')
                     ->icon(Heroicon::OutlinedTrash)

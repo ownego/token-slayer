@@ -29,7 +29,20 @@ test('an admin sees every player\'s fighter with its name and owner', function (
 
     Livewire::actingAs($admin)->test(ListCustomCharacters::class)
         ->assertCanSeeTableRecords([$one, $two])
+        ->assertTableActionVisible('rename', $one)
         ->assertTableColumnStateSet('name', 'Sir Pixel', $one);
+});
+
+test('an admin can rename a fighter with controls removed and announce the change', function () {
+    $admin = User::factory()->admin()->create();
+    $character = CustomCharacter::factory()->create();
+
+    Livewire::actingAs($admin)->test(ListCustomCharacters::class)
+        ->callTableAction('rename', $character, ['name' => "Pixel\u{202E}\n Hero"])
+        ->assertHasNoTableActionErrors();
+
+    expect($character->fresh()->name)->toBe('Pixel Hero');
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->is($character->user));
 });
 
 test('an admin can take a fighter down: the player falls back to their roster character and the field drops it live', function () {
@@ -53,9 +66,35 @@ test('a role that may view the list but not delete cannot take a fighter down', 
 
     Livewire::actingAs($viewer)->test(ListCustomCharacters::class)
         ->assertCanSeeTableRecords([$character])
+        ->assertTableActionHidden('rename', $character)
         ->assertTableActionHidden('remove', $character);
 
     expect(CustomCharacter::count())->toBe(1);
+});
+
+test('a viewer cannot invoke Rename directly', function () {
+    $viewer = User::factory()->create();
+    $viewer->assignRole(Role::create(['name' => 'rename-viewer', 'guard_name' => 'web'])->givePermissionTo(Permission::findByName('ViewAny:CustomCharacter')));
+    $character = CustomCharacter::factory()->create(['name' => 'Original']);
+
+    expect(fn () => Livewire::actingAs($viewer)->test(ListCustomCharacters::class)
+        ->callTableAction('rename', $character, ['name' => 'Unauthorized']))
+        ->toThrow(PHPUnit\Framework\ExpectationFailedException::class, 'action with name [rename] is visible');
+
+    expect($character->fresh()->name)->toBe('Original');
+});
+
+test('renaming while the owner is busy keeps the old name and shows a notice', function () {
+    config(['token_slayer.custom_character.lock_seconds' => 0]);
+    $admin = User::factory()->admin()->create();
+    $character = CustomCharacter::factory()->create(['name' => 'Before']);
+    Cache::lock(App\Support\CacheKeys::customCharacterBuild($character->user_id), 30)->get();
+
+    Livewire::actingAs($admin)->test(ListCustomCharacters::class)
+        ->callTableAction('rename', $character, ['name' => 'After'])
+        ->assertNotified();
+
+    expect($character->fresh()->name)->toBe('Before');
 });
 
 test('taking a fighter down while its owner has a change running is turned away with a message, and nothing is removed', function () {
