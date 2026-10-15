@@ -8,19 +8,15 @@
         <div class="alert crit" role="alert"><span>{{ $message }}</span></div>
     @enderror
 
-    <section class="cce-sec" aria-labelledby="cce-upload-title-{{ $this->getId() }}">
+    <section class="cce-sec cce-make" aria-labelledby="cce-upload-title-{{ $this->getId() }}">
         <div class="cce-head">
             <h3 id="cce-upload-title-{{ $this->getId() }}">{{ $character ? 'Make a new version' : 'Make your own fighter' }}</h3>
             <a class="panel-link" href="{{ route('custom-character') }}" target="_blank" rel="noopener">Prompt guide &#8599;</a>
         </div>
-        <p class="cce-note">PNG, JPEG or WebP · up to 4 MB and 2048 px · four rows on magenta or transparent: idle 2–4, walk 4, attack 3, death 3</p>
-        @if (! $character && ! $draft)
-            @include('partials.custom-character-sheet-diagram')
-        @endif
 
         {{-- Choosing a file (and sending it to the server) is one step; building the preview from it is the next. --}}
         <form
-            x-data="{ phase: 'idle', thumb: null, info: null, baseInfo: null, thumbError: false, progress: 0, choose(file) { if (this.thumb) URL.revokeObjectURL(this.thumb); this.thumb = file ? URL.createObjectURL(file) : null; this.baseInfo = file ? file.name + ' · ' + Math.ceil(file.size / 1024) + ' KB' : null; this.info = this.baseInfo; this.thumbError = false; this.phase = file ? 'uploading' : 'idle'; }, showDimensions(image) { if (this.baseInfo) this.info = this.baseInfo + ' · ' + image.naturalWidth + '×' + image.naturalHeight; }, clearThumb() { if (this.thumb) URL.revokeObjectURL(this.thumb); this.thumb = null; this.baseInfo = null; this.info = null; }, destroy() { this.clearThumb(); } }"
+            x-data="{ phase: 'idle', over: false, thumb: null, info: null, baseInfo: null, thumbError: false, progress: 0, get step() { return this.phase === 'done' ? 3 : (this.phase === 'idle' || this.phase === 'failed') ? 1 : 2; }, busy() { return this.phase === 'uploading' || this.phase === 'building'; }, choose(file) { if (this.thumb) URL.revokeObjectURL(this.thumb); this.thumb = file ? URL.createObjectURL(file) : null; this.baseInfo = file ? file.name + ' · ' + Math.ceil(file.size / 1024) + ' KB' : null; this.info = this.baseInfo; this.thumbError = false; this.phase = file ? 'uploading' : 'idle'; }, drop(event) { this.over = false; if (this.busy() || ! event.dataTransfer.files.length) return; this.$refs.file.files = event.dataTransfer.files; this.$refs.file.dispatchEvent(new Event('change', { bubbles: true })); }, showDimensions(image) { if (this.baseInfo) this.info = this.baseInfo + ' · ' + image.naturalWidth + '×' + image.naturalHeight; }, clearThumb() { if (this.thumb) URL.revokeObjectURL(this.thumb); this.thumb = null; this.baseInfo = null; this.info = null; }, destroy() { this.clearThumb(); } }"
             x-on:livewire-upload-start="phase = 'uploading'; progress = 0"
             x-on:livewire-upload-progress="progress = $event.detail.progress"
             x-on:livewire-upload-finish="phase = 'ready'"
@@ -30,42 +26,65 @@
             wire:submit="build"
             class="cce-form"
         >
+            <ol class="cce-steps" aria-label="How it works">
+                <li x-bind:class="{ now: step === 1, past: step > 1 }"><b>1</b><span>Make a sheet</span></li>
+                <li x-bind:class="{ now: step === 2, past: step > 2 }"><b>2</b><span>Upload and build</span></li>
+                <li x-bind:class="{ now: step === 3 }"><b>3</b><span>Try it, then use it</span></li>
+            </ol>
+
+            @if (! $character && ! $draft)
+                @include('partials.custom-character-sheet-diagram')
+            @endif
+
             <input type="file" wire:model="sheet" x-ref="file" x-on:change="choose($event.target.files[0] ?? null)" accept="image/png,image/jpeg,image/webp" class="sr-only" tabindex="-1">
 
-            <div class="cce-pick">
-                <div class="cce-file-line" x-show="info" x-cloak>
-                    <span class="cce-file" x-text="info"></span>
-                    <button type="button" class="cce-link" x-on:click="$refs.file.click()" x-bind:disabled="phase === 'uploading' || phase === 'building'" data-focus="upload-again">Change</button>
+            <div
+                class="cce-drop"
+                x-bind:class="{ over: over }"
+                x-show="phase === 'idle' || phase === 'failed' || phase === 'done'"
+                x-on:dragover.prevent="over = true"
+                x-on:dragleave="over = false"
+                x-on:drop.prevent="drop($event)"
+            >
+                <svg class="cce-drop-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 19h14" fill="none" stroke="currentColor" stroke-width="2" /></svg>
+                <p class="cce-drop-title">Drop your pose sheet here</p>
+                <button type="button" x-on:click="$refs.file.click()" class="btn primary" data-focus="upload">Choose pose sheet</button>
+                <ul class="cce-chips" aria-label="File requirements">
+                    <li>PNG · JPG · WebP</li>
+                    <li>up to 4 MB</li>
+                    <li>up to 2048 px</li>
+                    <li>on magenta or transparent</li>
+                </ul>
+            </div>
+
+            <div class="cce-filecard" x-show="info && (phase === 'uploading' || phase === 'ready' || phase === 'building')" x-cloak>
+                <div class="cce-thumb">
+                    <img x-bind:src="thumb" x-on:load="showDimensions($el)" x-on:error="thumbError = true" alt="Selected pose sheet thumbnail">
                 </div>
-                <button type="button" x-show="!info" x-on:click="$refs.file.click()" class="btn primary" data-focus="upload">Choose pose sheet</button>
+                <div class="cce-fileinfo">
+                    <span class="cce-file" x-text="info"></span>
+                    <span x-show="thumbError" role="status" class="cce-note">This file can't be previewed</span>
+                    <div x-show="phase === 'uploading'" role="status">
+                        <span class="cce-note">Uploading <span x-text="progress + '%'"></span></span>
+                        <div class="upload-bar"><i x-bind:style="{ '--p': progress / 100 }"></i></div>
+                    </div>
+                    <p x-show="phase === 'ready'" class="cce-note cce-ok" role="status"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="2" /></svg> Uploaded. Build it to try it on the stage.</p>
+                    <div x-show="phase === 'building'" role="status">
+                        <span class="cce-note">Building your fighter…</span>
+                        <div class="build-bar"><i></i></div>
+                    </div>
+                    <button type="button" class="cce-link" x-show="phase === 'ready'" x-on:click="$refs.file.click()" data-focus="upload-again">Choose another file</button>
+                </div>
             </div>
-
-            <div x-show="thumb" x-cloak class="cce-thumb">
-                <img x-bind:src="thumb" x-on:load="showDimensions($el)" x-on:error="thumbError = true" alt="Selected pose sheet thumbnail">
-                <span x-show="thumbError" role="status">This file can't be previewed</span>
-            </div>
-
-            <div x-show="phase === 'uploading'" x-cloak role="status">
-                <span class="cce-note">Uploading <span x-text="progress + '%'"></span></span>
-                <div class="upload-bar"><i x-bind:style="{ '--p': progress / 100 }"></i></div>
-            </div>
-
-            <div x-show="phase === 'building'" x-cloak role="status">
-                <span class="cce-note">Building your fighter…</span>
-                <div class="build-bar"><i></i></div>
-            </div>
-
-            <p x-show="phase === 'ready'" x-cloak class="cce-note cce-ok" role="status">File uploaded.</p>
 
             @error('sheet')
                 <div class="alert crit" role="alert" x-init="phase = 'failed'"><span>{{ $message }}</span></div>
             @enderror
 
-            <div class="cce-row">
-                <button type="submit" x-show="phase === 'ready' || phase === 'building'" x-cloak x-bind:disabled="phase !== 'ready'" class="btn primary cce-build" wire:target="build">
+            <div class="cce-row cce-build-row" x-show="phase === 'ready' || phase === 'building'" x-cloak>
+                <button type="submit" x-bind:disabled="phase !== 'ready'" class="btn primary cce-build" wire:target="build">
                     <span x-text="phase === 'building' ? 'Building…' : 'Build preview'">Build preview</span>
                 </button>
-                <span class="cce-note" x-show="phase === 'idle'">Then build a preview and try it on the stage before you use it.</span>
             </div>
         </form>
     </section>

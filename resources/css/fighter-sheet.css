@@ -1422,9 +1422,6 @@
 .fs .cce-drawer #panel-back { border-color: transparent; background: transparent; color: var(--dim); padding: 0 8px; }
 .fs .cce-drawer #panel-back:hover { color: var(--rivet); }
 .fs .cce .btn:not(.primary):not(.blood) { border-color: #2e3d63; background: #0e1a31; }
-.fs .cce-pick { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 8px 10px; border: 1px dashed #3a4a70; background: rgba(14,26,49,0.6); }
-.fs .cce-file-line { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-.fs .cce-file-line .cce-file { flex: 1; color: var(--parchment); }
 .fs .cce-link { background: none; border: 0; padding: 0 4px; color: var(--rivet); font: 500 12px var(--body); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .fs .cce-link.danger { color: var(--blood); justify-self: start; }
 .fs .cce-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
@@ -1448,7 +1445,6 @@
 /* editor drawer: controls keep their natural width and share one height and edge weight with the fields beside them */
 .fs .cce-drawer .panel-head { justify-content: flex-start; }
 .fs .cce-drawer #panel-back { flex: 0 0 auto; width: auto; border: 0; }
-.fs .cce-pick .btn { flex: 0 0 auto; width: auto; }
 .fs .cce .field input { height: 36px; border-color: #2e3d63; transition: border-color 0.15s ease; }
 .fs .cce .field input:focus-visible { border-color: var(--rivet); }
 .fs .cce .btn:not(.primary):not(.blood) { border-width: 1px; color: var(--parchment); transition: border-color 0.15s ease, color 0.15s ease; }
@@ -1480,3 +1476,33 @@
 /* the author of a custom fighter: its own line under the description, so credit is never lost in the caption */
 .fs .show-author { margin: 4px 0 0; font: 600 12px var(--display); color: var(--rivet); letter-spacing: 0.02em; }
 .fs .show-author[hidden] { display: none; }
+
+/* the make-a-fighter flow: three steps, a drop zone, a file card, one build action */
+.fs .cce-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fs .cce-steps li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #0e1a31; border: 1px solid #243150; color: var(--dim); font: 600 12px var(--display); transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease; min-width: 0; }
+.fs .cce-steps b { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid currentColor; font: 700 11px var(--display); }
+.fs .cce-steps span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs .cce-steps li.now { color: var(--rivet); border-color: var(--rivet); background: #15233f; }
+.fs .cce-steps li.past { color: var(--life); border-color: rgba(74,222,128,0.4); }
+.fs .cce-steps li.past b::before { content: "\2713"; }
+.fs .cce-steps li.past b { font-size: 0; }
+.fs .cce-steps li.past b::before { font-size: 12px; }
+.fs .cce-sheet-diagram { width: min(100%, 360px); justify-self: center; }
+.fs .cce-cell { animation: fs-cell 3.2s ease-in-out infinite; animation-delay: calc(var(--i) * 0.12s); }
+@keyframes fs-cell { 0%, 70%, 100% { opacity: 1; } 35% { opacity: 0.35; } }
+.fs .cce-drop { display: grid; justify-items: center; gap: 8px; padding: 16px 12px; border: 1px dashed #3a4a70; background: rgba(14,26,49,0.6); text-align: center; transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease; }
+.fs .cce-drop.over { border-style: solid; border-color: var(--rivet); background: #15233f; transform: scale(1.01); }
+.fs .cce-drop-icon { color: var(--rivet); animation: fs-bob 2s ease-in-out infinite; }
+@keyframes fs-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.fs .cce-drop.over .cce-drop-icon { animation-duration: 0.6s; }
+.fs .cce-drop-title { margin: 0; font: 600 14px var(--display); color: var(--parchment); }
+.fs .cce-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fs .cce-chips li { padding: 2px 8px; border: 1px solid #2e3d63; font: 500 11px var(--display); color: var(--dim); }
+.fs .cce-filecard { display: flex; gap: 12px; align-items: flex-start; padding: 10px; border: 1px solid #2e3d63; background: #0e1a31; animation: fs-rise 0.22s ease; }
+@keyframes fs-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.fs .cce-fileinfo { display: grid; gap: 6px; min-width: 0; flex: 1; justify-items: start; }
+.fs .cce-fileinfo .cce-file { color: var(--parchment); max-width: 100%; }
+.fs .cce-fileinfo > div, .fs .cce-fileinfo .upload-bar, .fs .cce-fileinfo .build-bar { width: 100%; }
+.fs .cce-ok { display: flex; align-items: center; gap: 6px; }
+.fs .cce-build-row { justify-content: flex-end; }
+@media (max-width: 640px) { .fs .cce-steps span { display: none; } .fs .cce-steps li.now span { display: inline; } }

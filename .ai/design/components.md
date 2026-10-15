@@ -58,7 +58,10 @@ An in-place `.cce-drawer` below the stage (`custom-character-editor.blade.php`).
 | `.cce-note`, `.cce-ok` | 13 px `--dim` / `--life` | a hint or a status line next to a control: the reason a button is disabled, "File uploaded." |
 | `.field` + `.field-count` | label above (12 px `--display` `--dim`), 44 px input on the tile fill, a `n / max` counter | a text field whose length is limited and read by others |
 | `.upload-bar` | 6 px bar, fills by `transform: scaleX(var(--p))` | upload progress (never animate `width`) |
-| `.cce-sheet-diagram`, `.cce-thumb` | four-row pose map and a 96 x 72 chosen-file image | first-time explanation and file confirmation |
+| `.cce-steps` | three numbered steps (Make a sheet, Upload and build, Try it then use it); the current one gold, finished ones green with a check | where the player is in the flow |
+| `.cce-drop` + `.cce-chips` | dashed drop zone with an icon, one primary button and requirement chips; solid gold on drag-over | choosing the pose sheet (drag and drop or button) |
+| `.cce-filecard` | thumbnail, file name and size, progress or build bar, Uploaded check | the chosen file after it is picked |
+| `.cce-sheet-diagram`, `.cce-thumb` | animated four-row pose map (cells pulse in sequence) and a 96 x 72 chosen-file image | first-time explanation and file confirmation |
 | `.build-bar` | 6 px indeterminate transform animation, stopped under reduced motion | server-side build progress after upload finishes |
 | `.versions` > `.version` | auto-fill grid of 150 px tiles, `.current` has the gold border; `.vsprite` is the idle strip at 1x | numbered versions with Preview, Equip and Delete actions |
 | `.confirm-row` | an `.alert.crit` row that replaces the control in place, with a `.btn.blood` (the verb) and a `.btn` Cancel | confirming a destructive action (see `patterns.md`): names the thing, Cancel focused, Escape cancels |

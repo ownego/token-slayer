@@ -140,11 +140,12 @@ test('the form submits to an action the browser can reach, not Livewire\'s built
         ->assertDontSeeHtml('wire:submit="upload"');
 });
 
-test('the editor tells the player why Build is disabled, and the size limits the decoder enforces', function () {
+test('the editor lays out the three steps, the file limits the decoder enforces, and the pose counts per row', function () {
     editorFor(User::factory()->create())
-        ->assertSee('Then build a preview and try it on the stage before you use it.')
-        ->assertSee('2048 px')
-        ->assertSee('death 3');
+        ->assertSee('Drop your pose sheet here')->assertSee('Upload and build')
+        ->assertSee('up to 2048 px')
+        ->assertSee('up to 4 MB')
+        ->assertSee('2–4 poses');
 });
 
 test('the editor is built from the sheet\'s own pieces: no browser dialogs, no pill progress, no second set of buttons', function () {
