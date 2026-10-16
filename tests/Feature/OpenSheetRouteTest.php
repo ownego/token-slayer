@@ -36,15 +36,10 @@ test('the sheet opens once after the link, and a reload shows the plain arena', 
     $this->get(route('battlefield'))->assertDontSee('data-open-sheet', escape: false);
 });
 
-test('the old character link still opens the editor once and clears its URL parameters', function () {
+test('an old ?sheet= URL no longer opens anything: only the one-time flash does', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
     $this->get(route('battlefield').'?sheet=character&editor=1')
-        ->assertRedirect(route('battlefield.open-sheet', 'editor'));
-
-    $this->get(route('battlefield.open-sheet', 'editor'))->assertRedirect(route('battlefield'));
-    $this->get(route('battlefield'))
-        ->assertSee('data-open-sheet="character"', escape: false)
-        ->assertSee('data-open-editor="1"', escape: false);
-    $this->get(route('battlefield'))->assertDontSee('data-open-sheet', escape: false);
+        ->assertOk()
+        ->assertDontSee('data-open-sheet', escape: false);
 });

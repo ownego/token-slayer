@@ -6,7 +6,6 @@ use App\Http\Controllers\CustomCharacterController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\SlayerWheelController;
 use App\Services\Client\ReleaseArtifacts;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -96,15 +95,7 @@ Route::get('/tracker.user.js', fn () => response(
 // still get in — EstablishIdeSession (web group) signs their one-time
 // `?_t=` session URL in before this `auth` runs.
 Route::middleware('auth')->group(function (): void {
-    Route::get('/battlefield', function (Request $request) {
-        if ($request->query('sheet') === 'character') {
-            $target = $request->query('editor') === '1' ? 'editor' : 'character';
-
-            return redirect()->route('battlefield.open-sheet', $target);
-        }
-
-        return view('battlefield');
-    })->name('battlefield');
+    Route::get('/battlefield', fn () => view('battlefield'))->name('battlefield');
 
     // A one-time "open the fighter sheet" request: flashed for the next request only, so a reload shows the arena.
     Route::get('/battlefield/open/{target}', function (string $target) {
