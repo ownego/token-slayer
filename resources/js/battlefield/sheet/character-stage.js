@@ -951,7 +951,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (!editing) {
       showOwn();
     }
-    enterEditor();
+    enterEditor({ focus: false });
+    add.focus();
   }
   on(window, 'open-custom-editor', openEditorFromLink);
 

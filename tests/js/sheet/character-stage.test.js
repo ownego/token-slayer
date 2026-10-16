@@ -797,3 +797,28 @@ test('opening Manage makes the fighter walk instead of standing still', () => {
 
   expect(document.getElementById('move-name').textContent).toContain('Walk');
 });
+
+test('opening from the guide link selects the Manage tile, shows the player\'s fighter walking, and leaves focus on the tile', () => {
+  mount({ equipped: 'orc-rider', custom: { ...CUSTOM, name: 'Sir Pixel' } });
+  const tile = document.querySelector('.slot-add');
+
+  window.dispatchEvent(new Event('open-custom-editor'));
+
+  expect(tile.getAttribute('aria-pressed')).toBe('true');
+  expect(tile.getAttribute('aria-expanded')).toBe('true');
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+  expect(document.getElementById('show-name').textContent).toBe('Sir Pixel');
+  expect(document.getElementById('move-name').textContent).toContain('Walk');
+  expect(document.activeElement).toBe(tile);
+});
+
+test('opening from the guide link with no fighter yet selects Create and shows the empty stage', () => {
+  mount({ equipped: 'orc-rider' });
+  const tile = document.querySelector('.slot-add');
+
+  window.dispatchEvent(new Event('open-custom-editor'));
+
+  expect(tile.getAttribute('aria-pressed')).toBe('true');
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
+  expect(document.activeElement).toBe(tile);
+});
