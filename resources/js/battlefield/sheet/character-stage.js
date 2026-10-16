@@ -8,7 +8,8 @@
 import { BOX, ROSTER, TYPE_LINE } from './sheet-roster.js';
 import { BY_KEY, faceColor, frameIn, moves, nameOf, paint, paintCharge, playAnim, standOn, strip, wait } from './sprite-strip.js';
 import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
-import { CUSTOM_KEY, registerCustomRoster } from './custom-roster.js';
+import { CUSTOM_KEY, DRAFT_KEY, groupOf, matchesChip, registerCustomRoster } from './custom-roster.js';
+import { frameOffset, inspectorLabel, inspectorStart, inspectorStep, inspectorToggle } from './frame-inspector.js';
 
 /**
  * The stage FX strips, all existing battlefield assets.
@@ -58,6 +59,21 @@ const EQUIP_FOLD_DELAY_MS = 900;
 const EQUIP_PERSIST_DELAY_MS = EQUIP_FOLD_DELAY_MS + 350 + 950;
 
 /**
+ * Recovery window while waiting for the editor to acknowledge a draft equip.
+ * Revisit against the measured staging duration before release.
+ *
+ * @type {number}
+ */
+const EQUIP_TIMEOUT_MS = 30000;
+
+/**
+ * Coalesces repeated broadcasts and the echo of a local editor action.
+ *
+ * @type {number}
+ */
+const REFRESH_DEBOUNCE_MS = 150;
+
+/**
  * Alpine.data() component for the Character tab.
  *
  * @param {string} startingKey The viewer's equipped fighter key.
@@ -65,9 +81,11 @@ const EQUIP_PERSIST_DELAY_MS = EQUIP_FOLD_DELAY_MS + 350 + 950;
  * @param {string} handle The viewer's own display handle.
  * @param {number} me The viewer's user id, left out of the teammates.
  * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
+ * @param {?{hash: string, spec: object}} draft The fighter the viewer built and has not used yet (`FighterSheet::$customDraft`).
+ * @param {Array<object>} otherCustomCharacters Active fighters made by other players, for preview only.
  * @return {object}
  */
-export function characterStage(startingKey, roommates, handle, me, custom = null) {
+export function characterStage(startingKey, roommates, handle, me, custom = null, draft = null, otherCustomCharacters = []) {
   return {
     cleanup: [],
     init() {
@@ -81,6 +99,8 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
         handle,
         me,
         custom,
+        draft,
+        otherCustomCharacters,
         equip: key => window.Livewire.find(componentId)?.equip(key),
         dispatch: (name, detail) => this.$dispatch(name, detail),
       });
@@ -99,10 +119,10 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
  * (key `custom`) beside the fighters; a "+ Custom" tile always opens the page
  * where one is made or replaced.
  *
- * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
+ * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, draft?: ?{hash: string, spec: object}, otherCustomCharacters?: Array<object>, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
  * @return {Array<function(): void>} Teardown callbacks.
  */
-export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, equip, dispatch }) {
+export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, draft = null, otherCustomCharacters = [], equip, dispatch }) {
   // teammates only: CharacterRoommates lists everyone on a fighter, the viewer included
   const roommates = Object.fromEntries(Object.entries(everyone).map(([key, users]) => [key, users.filter(u => Number(u.user_id) !== Number(me))]));
   const $$ = id => root.querySelector(`#${id}`);
@@ -114,12 +134,32 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   // before anything reads the roster lookups: puts the custom fighter in, or clears an earlier mount's
   const hasCustom = registerCustomRoster(BY_KEY, BOX, custom);
+  const hasDraft = registerCustomRoster(BY_KEY, BOX, draft?.spec ?? null, DRAFT_KEY);
+  let otherKeys = otherCustomCharacters
+    .filter(raw => Number.isInteger(Number(raw.user_id)) && Number(raw.user_id) !== Number(me))
+    .map(raw => {
+      const key = `custom-user-${raw.user_id}`;
+      forgetHeel(key);
+      return registerCustomRoster(BY_KEY, BOX, raw, key) ? key : null;
+    })
+    .filter(Boolean);
+  cleanup.push(() => otherKeys.forEach(key => {
+    forgetHeel(key);
+    registerCustomRoster(BY_KEY, BOX, null, key);
+  }));
   const known = key => Boolean(BY_KEY[key]);
   let editing = false;
+  let draftHash = draft?.hash ?? null;
+  let currentDraft = draft;
+  let previewMode = hasDraft ? 'draft' : null;
+  let previewNumber = null;
+  let lastLocalAnnouncementAt = -Infinity;
+  let refreshTimer = null;
 
   let equipped = known(startingKey) ? startingKey : ROSTER[0].key;
   let previewing = equipped;
   let activeMove = 'idle';
+  let inspectorState = inspectorStart();
   let seq = 0; // bumps on every new selection so stale chains stop
   let beforeEquip = equipped;
 
@@ -177,14 +217,25 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   function makeSlot(c) {
     const b = document.createElement('button');
     const custom = c.key === CUSTOM_KEY;
+    const isDraft = c.key === DRAFT_KEY;
+    const isOtherCustom = otherKeys.includes(c.key);
     b.className = 'slot';
     b.type = 'button';
     b.setAttribute('role', 'option');
     b.dataset.key = c.key;
     b.dataset.type = c.type;
     b.style.setProperty('--d', grid.children.length);
-    b.setAttribute('aria-label', custom ? `${nameOf(c.key)} (custom)` : nameOf(c.key));
-    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
+    b.dataset.group = groupOf(c);
+    const label = custom || isOtherCustom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : isDraft ? `${nameOf(c.key)} (draft)` : nameOf(c.key);
+    b.setAttribute('aria-label', label);
+    if (custom || isOtherCustom) {
+      b.title = label;
+    }
+    if (c.author) {
+      b.dataset.author = c.author;
+    }
+    const badge = isDraft ? (previewMode === 'peek' ? `Version ${previewNumber}` : 'DRAFT') : null;
+    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : isOtherCustom ? `<span class="badge other">@${escapeHtml(c.author ?? '')}</span>` : badge ? `<span class="badge draft">${badge}</span>` : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
     paint(b.querySelector('.face-sprite'), c.key, 'idle', { hoverOnly: true });
     frameIn(b.querySelector('.face-sprite'), c.key, { maxW: 46, maxH: 36, cyPct: 40 });
     const mates = roommates[c.key] || [];
@@ -192,16 +243,34 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       b.insertAdjacentHTML('beforeend', `<span class="mates">${mates.slice(0, 2).map(m => mateFace(m)).join('')}${mates.length > 2 ? `<span class="mate more">+${mates.length - 2}</span>` : ''}</span>`);
       b.dataset.mates = mates.map(m => m.handle).join(', ');
     }
-    on(b, 'click', () => select(c.key));
-
     return b;
   }
-  const entries = hasCustom ? [BY_KEY[CUSTOM_KEY], ...ROSTER] : ROSTER;
+  const entries = [...(hasCustom ? [BY_KEY[CUSTOM_KEY]] : []), ...(hasDraft ? [BY_KEY[DRAFT_KEY]] : []), ...otherKeys.map(key => BY_KEY[key]), ...ROSTER];
   entries.forEach(c => grid.appendChild(makeSlot(c)));
+  on(grid, 'click', event => {
+    const slot = event.target.closest('.slot');
+    if (slot && grid.contains(slot)) {
+      select(slot.dataset.key);
+    }
+  });
   const countFighters = () => {
     $$('roster-count').textContent = `${grid.querySelectorAll('.slot').length} fighters`;
   };
   countFighters();
+
+  // the Custom chip only exists while there is a player-made fighter (or a draft of one) to filter to
+  const customChip = root.querySelector('.chip[data-type="CUSTOM"]');
+  function syncCustomChip() {
+    if (!customChip) {
+      return;
+    }
+    const present = known(CUSTOM_KEY) || known(DRAFT_KEY) || otherKeys.length > 0;
+    customChip.hidden = !present;
+    if (!present && customChip.getAttribute('aria-pressed') === 'true') {
+      root.querySelector('.chip[data-type=""]')?.click();
+    }
+  }
+  syncCustomChip();
 
   function paintAlso(key) {
     const mates = roommates[key] || [];
@@ -399,6 +468,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   async function playMove(m) {
     const my = ++seq;
     activeMove = m.id;
+    inspectorState = inspectorStart();
+    updateInspector();
     root.querySelectorAll('.move').forEach(el => el.setAttribute('aria-pressed', String(el.dataset.id === m.id)));
     const idx = moves(previewing).findIndex(x => x.id === m.id) + 1;
     $$('move-name').innerHTML = `${m.label}<small>key ${idx}</small>`;
@@ -467,10 +538,15 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   }
 
   // ---- selection ----
-  function select(key) {
-    leaveEditor();
+  function select(key, { keepEditor = false } = {}) {
+    if (!keepEditor) {
+      leaveEditor({ restoreFocus: false });
+    }
     previewing = key;
+    inspectorState = inspectorStart();
+    updateInspector();
     const c = BY_KEY[key];
+    const isOtherCustom = otherKeys.includes(key);
     root.querySelectorAll('.slot').forEach(el => el.setAttribute('aria-selected', String(el.dataset.key === key)));
     $$('show-stage').style.setProperty('--acc', c.accent);
     frameStage($$('show-sprite'), key);
@@ -483,17 +559,30 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (edit) {
       edit.hidden = key !== CUSTOM_KEY;
     }
+    $$('stage-avatar').hidden = isOtherCustom;
     const h2 = $$('show-name');
     h2.style.animation = 'none';
     void h2.offsetWidth;
     h2.style.animation = '';
+    const author = c.author ?? (key === DRAFT_KEY ? handle : null);
     $$('show-type').textContent = TYPE_LINE[c.type];
+    const authorLine = $$('show-author');
+    if (authorLine) {
+      authorLine.hidden = !author;
+      authorLine.textContent = author ? `Created by ${author}` : '';
+    }
     const mine = key === equipped;
-    $$('show-state').textContent = mine ? 'Equipped' : 'Previewing';
+    const isDraft = key === DRAFT_KEY;
+    const isPeek = isDraft && previewMode === 'peek';
+    $$('show-state').textContent = isDraft ? 'Preview' : mine ? 'Equipped' : 'Previewing';
     $$('show-state').classList.toggle('previewing', !mine);
-    $$('equip-btn').disabled = mine;
-    $$('equip-label').textContent = mine ? 'Equipped' : `Equip ${nameOf(key)}`;
-    $$('back-equipped').hidden = mine;
+    $$('equip-btn').hidden = isOtherCustom;
+    $$('equip-btn').disabled = mine || isOtherCustom;
+    $$('equip-label').textContent = isPeek ? `Equip version ${previewNumber}` : isDraft ? 'Use this fighter' : mine ? 'Equipped' : `Equip ${nameOf(key)}`;
+    $$('back-equipped').hidden = mine || isDraft;
+    $$('discard-draft').hidden = !isDraft;
+    $$('discard-draft').textContent = isPeek ? 'Close preview' : 'Discard';
+    $$('equip-note').textContent = isOtherCustom ? 'Preview only · made by another player' : isPeek ? 'Saved version, not in use' : isDraft ? 'Not live yet. Your fighter stays as it is until you use this one.' : '';
 
     const hb = $$('hotbar');
     hb.innerHTML = '';
@@ -520,6 +609,40 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const my = ++seq;
     summonIn(my).then(ok => { if (ok) { playMove(ms[0]); } });
   }
+
+  function updateInspector() {
+    const inspector = $$('inspector');
+    if (!inspector) {
+      return;
+    }
+    inspector.hidden = previewing !== DRAFT_KEY;
+    $$('inspect-toggle').textContent = inspectorState.playing ? 'Pause' : 'Play';
+    $$('inspect-label').textContent = inspectorLabel(inspectorState);
+  }
+
+  function inspectStep(direction) {
+    const move = moves(previewing).find(candidate => candidate.id === activeMove);
+    const anim = BY_KEY[previewing].anims[move.anim ?? move.id];
+    ++seq;
+    inspectorState = inspectorStep(inspectorState, direction, anim.frames);
+    const sprite = $$('show-sprite');
+    sprite.style.animation = 'none';
+    sprite.style.backgroundPosition = `${frameOffset(move.reverse ? anim.frames - 1 - inspectorState.frame : inspectorState.frame)}px 0`;
+    updateInspector();
+  }
+  on($$('inspect-toggle'), 'click', () => {
+    const result = inspectorToggle(inspectorState);
+    inspectorState = result.state;
+    const sprite = $$('show-sprite');
+    if (result.restart) {
+      const move = moves(previewing).find(candidate => candidate.id === activeMove);
+      playAnim(sprite, previewing, move.anim ?? move.id, { loop: true, reverse: move.reverse });
+    }
+    sprite.style.animationPlayState = inspectorState.playing ? 'running' : 'paused';
+    updateInspector();
+  });
+  on($$('inspect-prev'), 'click', () => inspectStep(-1));
+  on($$('inspect-next'), 'click', () => inspectStep(1));
 
   // hover a slot to peek at that fighter on the stage; leaving the roster puts back the one you picked
   let peekTimer = null;
@@ -568,8 +691,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     root.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', String(x === ch)));
     let n = 0;
     root.querySelectorAll('.slot').forEach(sl => {
-      // the custom fighter fights as nothing in particular, so no style filter hides it
-      const hide = Boolean(ch.dataset.type) && sl.dataset.type !== ch.dataset.type && sl.dataset.key !== CUSTOM_KEY;
+      const hide = !matchesChip(ch.dataset.type, sl.dataset.group);
       sl.classList.toggle('filtered-out', hide);
       if (!hide) {
         n++;
@@ -636,11 +758,23 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     return t;
   }
   let persistTimer = null;
-  on($$('equip-btn'), 'click', () => {
-    beforeEquip = equipped;
-    equipped = previewing;
-    markYou(equipped);
-    select(equipped);
+  let equippingTimer = null;
+  function setEquipping(on) {
+    clearTimeout(equippingTimer);
+    equippingTimer = null;
+    const button = $$('equip-btn');
+    button.setAttribute('aria-busy', String(on));
+    button.disabled = on || previewing === equipped || otherKeys.includes(previewing);
+    $$('equip-label').textContent = on ? 'Equipping…' : previewing === DRAFT_KEY && previewMode === 'peek' ? `Equip version ${previewNumber}` : previewing === DRAFT_KEY ? 'Use this fighter' : previewing === equipped ? 'Equipped' : `Equip ${nameOf(previewing)}`;
+    if (on) {
+      equippingTimer = setTimeout(() => {
+        setEquipping(false);
+        toast('The equip did not finish. Check your fighter and try again.', false);
+        window.Livewire?.dispatch('custom-character-refresh');
+      }, EQUIP_TIMEOUT_MS);
+    }
+  }
+  function celebrateEquip(key) {
     restart($$('equip-btn'), 'flash');
     const shock = $$('shock');
     shock.classList.add('gold');
@@ -649,12 +783,28 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     addTrauma(TIER.large.trauma * 0.7);
     squash($$('show-sprite'), TIER.large.squash, 'land');
     const banner = $$('banner');
-    banner.textContent = `Now fighting as ${nameOf(equipped)}`;
+    banner.textContent = `Now fighting as ${nameOf(key)}`;
     restart(banner, 'show');
-    const first = moves(equipped).find(m => m.id.startsWith('attack'));
+    const first = moves(key).find(m => m.id.startsWith('attack'));
     if (first) {
       setTimeout(() => playMove(first), 700);
     }
+  }
+  on($$('equip-btn'), 'click', () => {
+    if (otherKeys.includes(previewing)) {
+      return;
+    }
+    if (previewing === DRAFT_KEY) {
+      setEquipping(true);
+      window.Livewire?.dispatch(previewMode === 'peek' ? 'custom-version-equip' : 'custom-draft-confirm', { hash: draftHash });
+
+      return;
+    }
+    beforeEquip = equipped;
+    equipped = previewing;
+    markYou(equipped);
+    select(equipped);
+    celebrateEquip(equipped);
     const previous = beforeEquip;
     const chosen = equipped;
     clearTimeout(persistTimer);
@@ -679,52 +829,194 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     // let the in-sheet shockwave + banner land first, then the sheet folds onto the real battlefield
     setTimeout(() => dispatch('fighter-equipped'), EQUIP_FOLD_DELAY_MS);
   });
+  on($$('discard-draft'), 'click', () => {
+    if (previewMode === 'peek') {
+      previewMode = currentDraft ? 'draft' : null;
+      draftHash = currentDraft?.hash ?? null;
+      registerCustomRoster(BY_KEY, BOX, currentDraft?.spec ?? null, DRAFT_KEY);
+      renderDraftSlot();
+      select(equipped);
+
+      return;
+    }
+    window.Livewire?.dispatch('custom-draft-discard');
+  });
   on($$('back-equipped'), 'click', () => {
     select(equipped);
     root.querySelector(`.slot[data-key="${equipped}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   });
 
-  // ---- the custom fighter editor, in place of the stage ----
+  // ---- the custom fighter editor: a drawer under the stage, which keeps showing the fighter ----
   const panel = $$('custom-panel');
   const showcase = root.querySelector('.showcase');
-  function enterEditor() {
+  const actionRow = showcase.querySelector('.equip-row');
+  const inspectorRow = $$('inspector');
+  function updateBarHeight() {
+    const actionHeight = editing ? 0 : (actionRow?.offsetHeight ?? 0);
+    const inspectorHeight = editing || inspectorRow?.hidden ? 0 : (inspectorRow?.offsetHeight ?? 0);
+    const drawerFooterHeight = editing ? (panel.querySelector('.cce-form .cce-row:last-child')?.offsetHeight ?? 0) : 0;
+    showcase.style.setProperty('--actions-h', `${actionHeight}px`);
+    document.getElementById('toast')?.style.setProperty('--bar-h', `${actionHeight + inspectorHeight + drawerFooterHeight}px`);
+  }
+  updateBarHeight();
+  let openerEl = null;
+  let mountWatch = null;
+  add.setAttribute('aria-controls', 'custom-panel');
+  add.setAttribute('aria-expanded', 'false');
+
+  /**
+   * The editor is a lazily mounted Livewire component: when its file button first
+   * appears and focus is still inside the drawer, focus moves there (it is the control the
+   * player came for); focus the player has moved elsewhere is left alone.
+   */
+  function watchEditorMount() {
+    const fileButton = () => panel.querySelector('[data-focus="upload"]');
+    if (fileButton() || typeof MutationObserver !== 'function') {
+      return;
+    }
+    mountWatch?.disconnect();
+    mountWatch = new MutationObserver(() => {
+      const target = fileButton();
+      if (!target) {
+        return;
+      }
+      mountWatch.disconnect();
+      mountWatch = null;
+      if (editing && panel.contains(document.activeElement)) {
+        target.focus();
+      }
+    });
+    mountWatch.observe(panel, { childList: true, subtree: true });
+    cleanup.push(() => mountWatch?.disconnect());
+  }
+  function enterEditor({ focus = true } = {}) {
     if (!panel || editing) {
       return;
     }
     editing = true;
-    seq++; // stop whatever the stage was playing
-    showcase.hidden = true;
+    const active = document.activeElement;
+    openerEl = active instanceof HTMLElement && active !== document.body ? active : add;
+    root.classList.add('forging');
+    showcase.classList.add('editing');
     panel.hidden = false;
+    updateBarHeight();
     add.setAttribute('aria-pressed', 'true');
+    add.setAttribute('aria-expanded', 'true');
+    if (focus) {
+      $$('panel-back')?.focus();
+      watchEditorMount();
+    }
   }
-  function leaveEditor() {
+  function leaveEditor({ restoreFocus = true } = {}) {
     if (!editing) {
       return;
     }
     editing = false;
-    showcase.hidden = false;
+    mountWatch?.disconnect();
+    mountWatch = null;
+    root.classList.remove('forging');
+    showcase.classList.remove('editing');
+    delete showcase.dataset.forgePhase;
+    if (blankFrom !== null) {
+      const back = blankFrom;
+      blankFrom = null;
+      showcase.classList.remove('blank');
+      select(back);
+    }
     panel.hidden = true;
+    updateBarHeight();
     add.setAttribute('aria-pressed', 'false');
+    add.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) {
+      openerEl?.focus();
+    }
+  }
+  let blankFrom = null;
+  /**
+   * The stage shows what the drawer is about: the player's fighter, else their built
+   * draft (a fresh build selects its own draft), else (nothing made yet) an empty stage, never whichever roster fighter
+   * happened to be selected.
+   */
+  function showOwn() {
+    const own = known(CUSTOM_KEY) ? CUSTOM_KEY : known(DRAFT_KEY) ? DRAFT_KEY : null;
+    if (own) {
+      if (previewing !== own) {
+        select(own);
+      }
+      const walk = moves(own).find(m => m.id === 'walk');
+      if (walk) {
+        playMove(walk);
+      }
+
+      return;
+    }
+    blankFrom = previewing;
+    showcase.classList.add('blank');
+    $$('show-name').textContent = 'Your fighter';
+    $$('show-type').textContent = 'Upload a pose sheet and it appears here';
+    $$('show-state').textContent = '';
   }
   on(add, 'click', () => {
     if (editing) {
       leaveEditor();
-      select(previewing);
     } else {
+      showOwn();
       enterEditor();
     }
   });
   const panelBack = $$('panel-back');
   if (panelBack) {
-    on(panelBack, 'click', () => {
-      leaveEditor();
-      select(previewing);
-    });
+    on(panelBack, 'click', () => leaveEditor());
   }
+  on(window, 'custom-forge-phase', (event) => {
+    if (editing && ['idle', 'uploading', 'ready', 'building', 'done', 'failed'].includes(event.detail?.phase)) {
+      showcase.dataset.forgePhase = event.detail.phase;
+    }
+  });
   const editButton = $$('edit-custom');
   if (editButton) {
-    on(editButton, 'click', enterEditor);
+    on(editButton, 'click', () => enterEditor());
   }
+  // Escape closes the drawer before it closes the sheet: the shell offers the event, only an open drawer takes it
+  on(window, 'sheet-escape', event => {
+    if (editing) {
+      event.preventDefault();
+      leaveEditor();
+    }
+  });
+  function openEditorFromLink() {
+    window.__openCustomEditor = false;
+    if (!editing) {
+      showOwn();
+    }
+    enterEditor({ focus: false });
+    add.focus();
+  }
+  on(window, 'open-custom-editor', openEditorFromLink);
+
+  // ---- where focus goes after an action re-renders what had it ----
+  const usable = el => Boolean(el) && !el.disabled && !el.closest('[hidden]');
+  const FOCUS_TARGETS = {
+    'draft-slot': () => root.querySelector('.slot[data-key="custom-draft"]'),
+    'equipped-slot': () => root.querySelector(`.slot[data-key="${equipped}"]`),
+    upload: () => panel?.querySelector('[data-focus="upload"]'),
+    name: () => panel?.querySelector('[data-focus="name"]'),
+    opener: () => openerEl,
+  };
+  function focusTarget(name) {
+    const find = FOCUS_TARGETS[name];
+    if (!find) {
+      return;
+    }
+    if ((name === 'upload' || name === 'name') && !editing) {
+      enterEditor({ focus: false });
+    }
+    const el = find();
+    if (usable(el)) {
+      el.focus();
+    }
+  }
+  on(window, 'sheet-focus', event => focusTarget(event.detail?.target));
 
   // The editor (a Livewire component inside the panel) says what the fighter is now after every change; the
   // roster follows without a reload: the slot appears, is renamed or goes, and the YOU tag moves.
@@ -736,31 +1028,180 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
     paintAddTile();
     countFighters();
+    syncCustomChip();
+    // a slot that just appeared obeys the chip that is already on
+    root.querySelector('.chip[aria-pressed="true"]')?.click();
+  }
+  function renderDraftSlot({ announce = false } = {}) {
+    grid.querySelector(`.slot[data-key="${DRAFT_KEY}"]`)?.remove();
+    if (known(DRAFT_KEY)) {
+      const slot = makeSlot(BY_KEY[DRAFT_KEY]);
+      (grid.querySelector(`.slot[data-key="${CUSTOM_KEY}"]`) ?? add).after(slot);
+      if (announce) {
+        if (!reduced) {
+          slot.classList.add('slot-new');
+        }
+        $$('draft-status').textContent = `Draft ready: ${nameOf(DRAFT_KEY)}`;
+      }
+    }
+    countFighters();
+    syncCustomChip();
+    root.querySelector('.chip[aria-pressed="true"]')?.click();
+  }
+  function renderOtherCustomSlots(characters) {
+    clearTimeout(peekTimer);
+    unpeek();
+    const focusedKey = otherKeys.includes(document.activeElement?.dataset.key) ? document.activeElement.dataset.key : null;
+    const nextKeys = [];
+    const seen = new Set();
+    for (const raw of Array.isArray(characters) ? characters : []) {
+      const userId = Number(raw?.user_id);
+      if (!Number.isInteger(userId) || userId <= 0 || userId === Number(me) || seen.has(userId)) {
+        continue;
+      }
+      seen.add(userId);
+      const key = `custom-user-${userId}`;
+      forgetHeel(key);
+      if (registerCustomRoster(BY_KEY, BOX, raw, key)) {
+        nextKeys.push(key);
+      }
+    }
+    for (const key of otherKeys) {
+      if (!nextKeys.includes(key)) {
+        forgetHeel(key);
+        registerCustomRoster(BY_KEY, BOX, null, key);
+      }
+    }
+    otherKeys = nextKeys;
+    grid.querySelectorAll('.slot[data-key^="custom-user-"]').forEach(slot => slot.remove());
+    const firstRoster = grid.querySelector(`.slot[data-key="${ROSTER[0].key}"]`);
+    otherKeys.forEach(key => grid.insertBefore(makeSlot(BY_KEY[key]), firstRoster));
+    countFighters();
+    syncCustomChip();
+    root.querySelector('.chip[aria-pressed="true"]')?.click();
+    if (blankFrom !== null && !known(blankFrom)) {
+      blankFrom = equipped;
+    }
+    if (previewing.startsWith('custom-user-') && !known(previewing)) {
+      if (editing) {
+        previewing = equipped;
+      } else {
+        root.querySelector('.chip[data-type=""]')?.click();
+        select(equipped);
+      }
+    } else if (otherKeys.includes(previewing) && !editing) {
+      select(previewing);
+    }
+    if (focusedKey) {
+      const previousSlot = grid.querySelector(`.slot[data-key="${focusedKey}"]`);
+      const equippedSlot = grid.querySelector(`.slot[data-key="${equipped}"]`);
+      const visible = slot => slot && !slot.classList.contains('filtered-out');
+      const fallback = [previousSlot, equippedSlot, grid.querySelector('.slot:not(.filtered-out)'), add].find(visible);
+      fallback?.focus({ preventScroll: true });
+    }
   }
   function onCustomChanged(event) {
-    const { custom = null, equipped: now } = event.detail ?? {};
+    if (event.type === 'custom-character-changed') {
+      lastLocalAnnouncementAt = Date.now();
+      clearTimeout(refreshTimer);
+    }
+    const { custom = null, draft: nextDraft = null, equipped: now, ceremony = false } = event.detail ?? {};
+    setEquipping(false);
+    const nextDraftHash = nextDraft?.hash ?? null;
+    const isNewDraft = nextDraftHash !== null && nextDraftHash !== currentDraft?.hash;
+    currentDraft = nextDraft;
+    const preservePeek = previewMode === 'peek' && nextDraft === null && !ceremony;
+    if (!preservePeek) {
+      draftHash = nextDraftHash;
+      previewMode = nextDraftHash ? 'draft' : null;
+      previewNumber = null;
+    }
     forgetHeel(CUSTOM_KEY);
     registerCustomRoster(BY_KEY, BOX, custom);
+    if (!preservePeek) {
+      registerCustomRoster(BY_KEY, BOX, nextDraft?.spec ?? null, DRAFT_KEY);
+    }
     if (now && known(now)) {
       equipped = now;
     } else if (equipped === CUSTOM_KEY && !known(CUSTOM_KEY)) {
       equipped = ROSTER[0].key;
     }
     renderCustomSlot();
+    if (isNewDraft && !['', 'CUSTOM'].includes(root.querySelector('.chip[aria-pressed="true"]')?.dataset.type)) {
+      root.querySelector('.chip[data-type=""]')?.click();
+    }
+    renderDraftSlot({ announce: isNewDraft });
     markYou(equipped);
+    if (isNewDraft) {
+      leaveEditor({ restoreFocus: false });
+      select(DRAFT_KEY);
+      focusTarget('draft-slot');
+
+      return;
+    }
+    if (previewing === DRAFT_KEY && !known(DRAFT_KEY)) {
+      previewing = equipped;
+    }
     if (previewing === CUSTOM_KEY && !known(CUSTOM_KEY)) {
       previewing = equipped;
     }
     if (!editing) {
       select(previewing);
     } else {
-      $$('show-name').textContent = nameOf(previewing);
+      const own = known(CUSTOM_KEY) ? CUSTOM_KEY : known(DRAFT_KEY) ? DRAFT_KEY : null;
+      if (own) {
+        blankFrom = null;
+        showcase.classList.remove('blank');
+        select(own, { keepEditor: true });
+      } else {
+        showOwn();
+      }
+    }
+    if (ceremony && equipped === CUSTOM_KEY) {
+      select(equipped);
+      celebrateEquip(equipped);
+      setTimeout(() => dispatch('fighter-equipped'), EQUIP_FOLD_DELAY_MS);
+      focusTarget('equipped-slot');
     }
   }
   on(window, 'custom-character-changed', onCustomChanged);
+  on(window, 'custom-character-state', onCustomChanged);
+  on(window, 'other-custom-characters-state', event => renderOtherCustomSlots(event.detail?.characters));
+  let otherRefreshTimer = null;
+  on(window, 'sheet-other-character-broadcast', event => {
+    if (Number(event.detail?.user_id) === Number(me)) {
+      return;
+    }
+    clearTimeout(otherRefreshTimer);
+    otherRefreshTimer = setTimeout(() => window.Livewire?.dispatch('other-custom-characters-refresh'), REFRESH_DEBOUNCE_MS);
+  });
+  on(window, 'sheet-own-character-broadcast', event => {
+    if (Number(event.detail?.user_id) !== Number(me) || Date.now() - lastLocalAnnouncementAt <= REFRESH_DEBOUNCE_MS) {
+      return;
+    }
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => window.Livewire?.dispatch('custom-character-refresh'), REFRESH_DEBOUNCE_MS);
+  });
+  on(window, 'custom-version-peek', event => {
+    const { hash, spec, number } = event.detail ?? {};
+    if (!hash || !spec || !Number.isInteger(number)) {
+      return;
+    }
+    previewMode = 'peek';
+    previewNumber = number;
+    draftHash = hash;
+    registerCustomRoster(BY_KEY, BOX, spec, DRAFT_KEY);
+    renderDraftSlot();
+    select(DRAFT_KEY);
+    focusTarget('draft-slot');
+  });
 
   // A result line from the editor (a Livewire component) shows in the sheet's own toast.
   on(window, 'sheet-toast', event => toast(escapeHtml(String(event.detail?.message ?? '')), false));
+  on(window, 'sheet-error', event => {
+    setEquipping(false);
+    toast(escapeHtml(String(event.detail?.message ?? '')), false);
+  });
 
   // The server turned an equip away (the player has another change running): the sheet had already
   // moved on optimistically, so it goes back to the fighter the server still has.
@@ -787,7 +1228,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
     const isSlot = el.classList.contains('slot');
     const name = isSlot ? nameOf(el.dataset.key) : el.title;
-    const sub = isSlot ? TYPE_NAMES[el.dataset.type] + (el.dataset.key === equipped ? ' · yours' : '') + (el.dataset.mates ? ` · ${el.dataset.mates}` : '') : `key ${[...root.querySelectorAll('.move')].indexOf(el) + 1}`;
+    const sub = isSlot ? TYPE_NAMES[el.dataset.type] + (el.dataset.key === equipped ? ' · yours' : '') + (el.dataset.author ? ` · by ${el.dataset.author}` : '') + (el.dataset.mates ? ` · ${el.dataset.mates}` : '') : `key ${[...root.querySelectorAll('.move')].indexOf(el) + 1}`;
     tip.innerHTML = `${escapeHtml(name)}<small>${escapeHtml(sub)}</small>`;
     const r = el.getBoundingClientRect();
     tip.style.left = `${Math.round(r.left + r.width / 2)}px`;
@@ -819,6 +1260,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     });
     ro.observe($$('show-stage'));
     cleanup.push(() => ro.disconnect());
+    const barObserver = new ResizeObserver(updateBarHeight);
+    for (const row of [actionRow, inspectorRow, panel]) {
+      if (row) {
+        barObserver.observe(row);
+      }
+    }
+    cleanup.push(() => barObserver.disconnect());
   }
 
   // opening the Character tab replays the roster pop-in and summons the picked fighter
@@ -852,8 +1300,11 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   }), () => parseFloat($$('show-sprite').style.scale)));
 
   $$('stage-avatar')?.setAttribute('title', handle);
-  select(equipped);
-  cleanup.push(() => { seq++; clearTimeout(peekTimer); });
+  select(hasDraft ? DRAFT_KEY : equipped);
+  if (window.__openCustomEditor) {
+    openEditorFromLink();
+  }
+  cleanup.push(() => { seq++; clearTimeout(peekTimer); clearTimeout(equippingTimer); clearTimeout(refreshTimer); clearTimeout(otherRefreshTimer); });
 
   return cleanup;
 }

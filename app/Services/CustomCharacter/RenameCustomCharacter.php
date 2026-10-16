@@ -19,9 +19,13 @@ class RenameCustomCharacter
      * Create the action.
      *
      * @param  CustomCharacterLock  $lock  keeps one player's changes from interleaving
+     * @param  AnnounceCustomCharacter  $announce  refreshes other viewers' previews
      * @return void
      */
-    public function __construct(private readonly CustomCharacterLock $lock) {}
+    public function __construct(
+        private readonly CustomCharacterLock $lock,
+        private readonly AnnounceCustomCharacter $announce,
+    ) {}
 
     /**
      * Renames the player's fighter.
@@ -35,7 +39,7 @@ class RenameCustomCharacter
      */
     public function execute(User $user, string $name): CustomCharacter
     {
-        return $this->lock->within($user->id, function () use ($user, $name): CustomCharacter {
+        $character = $this->lock->within($user->id, function () use ($user, $name): CustomCharacter {
             $character = $user->customCharacter()->first() ?? throw new CustomCharacterVersionException;
             $clean = trim((string) preg_replace('/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u', '', $name));
             $clean = mb_substr($clean, 0, (int) config('token_slayer.custom_character.name_max'));
@@ -44,5 +48,9 @@ class RenameCustomCharacter
 
             return $character;
         });
+
+        $this->announce->execute($user);
+
+        return $character;
     }
 }

@@ -29,3 +29,9 @@ test('Livewire turns a temporary upload away above the sheet size limit, before 
 
     expect(config('livewire.temporary_file_upload.rules'))->toContain("max:{$kilobytes}");
 });
+
+test('the custom fighter lock outlasts its acquisition wait', function () {
+    expect(config('token_slayer.custom_character.lock_hold_seconds'))
+        ->toBeInt()
+        ->toBeGreaterThan(config('token_slayer.custom_character.lock_seconds'));
+});

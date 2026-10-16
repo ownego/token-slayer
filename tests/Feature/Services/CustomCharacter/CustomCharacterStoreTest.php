@@ -4,6 +4,7 @@ use App\Exceptions\CustomCharacterStorageException;
 use App\Services\CustomCharacter\CustomCharacterBuilder;
 use App\Services\CustomCharacter\CustomCharacterStore;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Exceptions;
 
 /**
  * Strips built from a synthetic sheet.
@@ -199,6 +200,41 @@ test('a failure while promoting keeps the staged draft whole and leaves no half-
         Storage::disk('public')->assertExists("custom-characters/7/staged/{$hash}/{$animation}.png");
     }
     Storage::disk('public')->assertMissing("custom-characters/7/{$hash}/idle.png");
+});
+
+test('a slow copy aborts before the lock expires and preserves the staged draft for retry', function () {
+    config(['token_slayer.custom_character.lock_hold_seconds' => 6]);
+    $store = app(CustomCharacterStore::class);
+    $hash = $store->stage(7, builtStrips())['hash'];
+    $real = Storage::disk('public');
+    $slow = Mockery::mock($real);
+    $slow->shouldReceive('copy')->andReturnUsing(function (string $from, string $to) use ($real): bool {
+        usleep(1_100_000);
+
+        return $real->copy($from, $to);
+    });
+    Storage::set('public', $slow);
+
+    expect(fn () => $store->promote(7, $hash))->toThrow(CustomCharacterStorageException::class, 'The storage is too slow right now');
+    $real->assertExists("custom-characters/7/staged/{$hash}/idle.png");
+    $real->assertMissing("custom-characters/7/{$hash}/idle.png");
+
+    Storage::set('public', $real);
+    $store->promote(7, $hash);
+    $real->assertExists("custom-characters/7/{$hash}/idle.png");
+});
+
+test('cleanup failures are reported while successful database work may continue', function () {
+    Exceptions::fake();
+    $store = app(CustomCharacterStore::class);
+    $real = Storage::disk('public');
+    $broken = Mockery::mock($real);
+    $broken->shouldReceive('deleteDirectory')->andThrow(new RuntimeException('storage unavailable'));
+    Storage::set('public', $broken);
+
+    $store->discardStaged(7);
+
+    Exceptions::assertReported(RuntimeException::class);
 });
 
 test('a confirmed folder with only some of the strips is completed, not taken as done', function () {

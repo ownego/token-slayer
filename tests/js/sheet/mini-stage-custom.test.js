@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { miniStage } from '@battlefield/sheet/mini-stage.js';
 import { BY_KEY, nameOf } from '@battlefield/sheet/sprite-strip.js';
 import { BOX } from '@battlefield/sheet/sheet-roster.js';
@@ -85,5 +86,27 @@ describe('miniStage with a custom fighter', () => {
     expect(stage.keyFor({ user_id: 7, character: 'knight', custom_character: { version: 'abc' } })).toBe('custom');
     expect(stage.keyFor({ user_id: 7, character: 'wizard', custom_character: null })).toBe('wizard');
     expect(stage.keyFor({ user_id: 7, character: 'not-a-fighter', custom_character: null })).toBeNull();
+  });
+
+  test('the existing battlefield bus handler forwards this player\'s change to the character stage', () => {
+    const stage = miniStage('knight', 0, 7);
+    stage.paintFighter = vi.fn();
+    const events = [];
+    window.addEventListener('sheet-own-character-broadcast', event => events.push(event.detail));
+
+    stage.onCharacterBroadcast({ user_id: 8, character: 'wizard', custom_character: null });
+    stage.onCharacterBroadcast({ user_id: 7, character: 'knight', custom_character: null });
+
+    expect(events).toEqual([{ user_id: 7 }]);
+  });
+
+  test('a teammate changing their fighter asks the open character stage to refresh its previews', () => {
+    const stage = miniStage('knight', 0, 7);
+    const changed = vi.fn();
+    window.addEventListener('sheet-other-character-broadcast', changed, { once: true });
+
+    stage.onCharacterBroadcast({ user_id: 8, character: 'wizard', custom_character: null });
+
+    expect(changed).toHaveBeenCalledOnce();
   });
 });

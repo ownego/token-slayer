@@ -21,6 +21,7 @@ import { domToWorld } from './shared/hud-zones.js';
 import { boardHitHandler, createBoardRenderer, createBoardView } from './hud/board-view.js';
 import { onSceneReady } from './shared/scene-ready.js';
 import { revealHud } from './hud/reveal.js';
+import { announceReady } from './ready-signal.js';
 
 // A small fixed palette for the TOP DAMAGE board's avatar swatch, shown
 // behind the real /avatars/{id} image (and left visible if that 404s).
@@ -487,6 +488,7 @@ function showBfLoader() {
 function hideBfLoader() {
   const el = document.getElementById('bf-loader');
   if (el) el.style.display = 'none';
+  announceReady();
 }
 
 window.bootBattlefield = bootBattlefield;

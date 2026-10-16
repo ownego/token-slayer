@@ -17,13 +17,6 @@ use Illuminate\Support\Facades\Cache;
 class CustomCharacterLock
 {
     /**
-     * Longest a holder keeps the lock if its request dies without releasing it.
-     *
-     * @var int
-     */
-    private const int HOLD_SECONDS = 120;
-
-    /**
      * Runs the callback with the player's lock held, waiting a few seconds for it.
      *
      * @param  int  $userId  the player
@@ -34,7 +27,7 @@ class CustomCharacterLock
      */
     public function within(int $userId, Closure $callback): mixed
     {
-        $lock = Cache::lock(CacheKeys::customCharacterBuild($userId), self::HOLD_SECONDS);
+        $lock = Cache::lock(CacheKeys::customCharacterBuild($userId), (int) config('token_slayer.custom_character.lock_hold_seconds'));
 
         try {
             $lock->block((int) config('token_slayer.custom_character.lock_seconds'));

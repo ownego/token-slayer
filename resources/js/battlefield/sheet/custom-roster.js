@@ -24,6 +24,13 @@ export const DRAFT_KEY = 'custom-draft';
 export const CUSTOM_BOX = [36, 30, 64, 58];
 
 /**
+ * The filter group of a player-made fighter: the roster's style chips never show it,
+ * the `Custom` chip shows only it.
+ * @type {string}
+ */
+export const CUSTOM_GROUP = 'CUSTOM';
+
+/**
  * What the fighter is called until its player names it (`custom_character.default_name`).
  * @type {string}
  */
@@ -42,7 +49,7 @@ const CUSTOM_ACCENT = '#fbbf24';
  *
  * @param {?object} raw The `custom_character` payload (`FighterSheet::$customCharacter`, with its `name`).
  * @param {string} [key] The roster key to give it (the draft preview uses its own).
- * @return {?{key: string, name: string, type: string, accent: string, anims: Object<string, {frames: number, rate: number, file: string}>}}
+ * @return {?{key: string, name: string, type: string, group: string, author: ?string, accent: string, anims: Object<string, {frames: number, rate: number, file: string}>}}
  */
 export function customRosterEntry(raw, key = CUSTOM_KEY) {
   const spec = normalizeCustomCharacter(raw);
@@ -56,6 +63,8 @@ export function customRosterEntry(raw, key = CUSTOM_KEY) {
     key,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : DEFAULT_NAME,
     type: 'SLASH',
+    group: CUSTOM_GROUP,
+    author: typeof raw.author === 'string' && raw.author.trim() ? raw.author.trim() : null,
     accent: CUSTOM_ACCENT,
     anims: { idle: anim('idle'), walk: anim('walk'), attack1: anim('attack'), death: anim('death') },
   };
@@ -85,4 +94,25 @@ export function registerCustomRoster(byKey, box, raw, key = CUSTOM_KEY) {
   box[key] = CUSTOM_BOX;
 
   return true;
+}
+
+/**
+ * The group a roster entry is filtered under: its own `group`, else its attack style.
+ *
+ * @param {{type: string, group?: string}} entry A roster-shaped entry.
+ * @return {string}
+ */
+export function groupOf(entry) {
+  return entry.group ?? entry.type;
+}
+
+/**
+ * Whether a style chip shows a slot of the given group (the All chip, whose type is '', shows everything).
+ *
+ * @param {string} chipType The chip's `data-type`.
+ * @param {string} group The slot's group.
+ * @return {boolean}
+ */
+export function matchesChip(chipType, group) {
+  return chipType === '' || chipType === group;
 }

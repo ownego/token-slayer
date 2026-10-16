@@ -52,7 +52,7 @@ test('the page sends guests to the slack login', function () {
     $this->get('/character')->assertRedirect();
 });
 
-test('the page is the guide only: it explains the sheet and links to the sheet\'s Character tab in a new tab', function () {
+test('the page is the guide only and links to the editor in the same tab', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
     $html = $this->get('/character')->assertOk()
@@ -61,13 +61,15 @@ test('the page is the guide only: it explains the sheet and links to the sheet\'
         ->assertDontSeeLivewire(CustomCharacterEditor::class)
         ->getContent();
 
-    expect($html)->toMatch('/<a [^>]*href="[^"]*\/battlefield\?sheet=character"[^>]*target="_blank"[^>]*rel="noopener"/');
+    expect($html)->toContain('href="'.route('battlefield.open-sheet', 'editor').'"')
+        ->not->toContain('target="_blank"');
 });
 
-test('the battlefield opens the sheet on the Character tab when asked to by the guide\'s link', function () {
+test('the battlefield opens the sheet on the Character tab only when the guide\'s link flashed the request', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
-    $this->get('/battlefield')->assertOk()->assertSee("get('sheet') === 'character'", false);
+    $this->withSession(['open_sheet' => ['tab' => 'character', 'editor' => false]])
+        ->get('/battlefield')->assertOk()->assertSee('data-open-sheet="character"', false);
 });
 
 test('the guide says to pick a costume by character type, then copy the prompt into ChatGPT with a picture of the character', function () {
@@ -112,22 +114,22 @@ test('the picker shows each type with its thumbnail', function () {
         ->assertSee('x-bind:src="thumbs + \'/\' + key + \'.png\'"', false);
 });
 
-test('the nav opens other pages in a new tab and shows the current page as plain text, not a link', function () {
+test('the nav opens other pages in the same tab and shows the current page as plain text', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
     $html = $this->get('/character')->assertOk()->getContent();
 
-    expect($html)->toContain('target="_blank" rel="noopener"')
-        ->and(preg_match_all('/<a [^>]*href="[^"]*\/(?:setup|guide|battlefield|dashboard)[^"]*"[^>]*>/', $html, $links))->toBeGreaterThan(0);
+    expect($html)->not->toContain('target="_blank"');
+    expect(preg_match_all('/<a [^>]*href="[^"]*\/(?:setup|guide|battlefield|dashboard)[^"]*"[^>]*>/', $html, $links))->toBeGreaterThan(0);
     foreach ($links[0] as $link) {
-        expect($link)->toContain('target="_blank"');
+        expect($link)->not->toContain('target="_blank"');
     }
     expect($html)->toContain('aria-current="page"');
 });
 
 test('the editor offers an upload and no fighter to a player who has none', function () {
     editorFor(User::factory()->create())
-        ->assertSee('Upload a sheet')
+        ->assertSee('Make your own fighter')
         ->assertSee('Build preview')
         ->assertDontSee('Your fighter')
         ->assertDontSee('Earlier versions');
@@ -139,11 +141,12 @@ test('the form submits to an action the browser can reach, not Livewire\'s built
         ->assertDontSeeHtml('wire:submit="upload"');
 });
 
-test('the editor tells the player why Build is disabled, and the size limits the decoder enforces', function () {
+test('the editor lays out the three steps and the file requirements', function () {
     editorFor(User::factory()->create())
-        ->assertSee('Choose a file first.')
-        ->assertSee('2048 px a side')
-        ->assertSee('death (3)');
+        ->assertSee('Drop your pose sheet here')->assertSee('Upload and build')
+        ->assertSee('up to 2048 px')
+        ->assertSee('up to 4 MB')
+        ->assertSee('on magenta or transparent');
 });
 
 test('the editor is built from the sheet\'s own pieces: no browser dialogs, no pill progress, no second set of buttons', function () {
@@ -218,7 +221,20 @@ test('the sheet loads the editor when its panel is first opened, not with every 
         ->assertSeeHtml('__lazyLoad');
 });
 
-test('building a valid sheet previews it as a draft: nothing goes live yet', function () {
+test('a new player sees the prompt guide and a file preview flow before building', function () {
+    $user = User::factory()->create();
+
+    editorFor($user)
+        ->assertSee('Make your own fighter')
+        ->assertSee('prompt guide')
+        ->assertSeeHtml('class="cce-drop-icon"')
+        ->assertSeeHtml('phase:')
+        ->assertSeeHtml('destroy()')
+        ->assertDontSeeHtml('x-on:alpine:destroy')
+        ->assertDontSeeHtml('info +=');
+});
+
+test('building a valid sheet sends a draft to the stage without equipping it', function () {
     Event::fake([FighterCharacterChanged::class]);
     $user = User::factory()->create();
 
@@ -226,13 +242,8 @@ test('building a valid sheet previews it as a draft: nothing goes live yet', fun
         ->set('sheet', sheetUpload(pngBytes(poseSheetImage(background: 'magenta'))))
         ->call('build')
         ->assertHasNoErrors()
-        ->assertSee('Previewing')
-        ->assertSee('Not live yet')
-        ->assertSee('Use this fighter')
-        ->assertSee('Discard preview')
-        ->assertSeeHtml('x-data="customDraftPreview(')
-        ->assertDispatched('sheet-toast', message: 'Built. It goes live only when you use it.')
-        ->assertJs('document.getElementById("cce-draft-" + $wire.$id)?.scrollIntoView({ behavior: "smooth", block: "center" })');
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft']['hash'] === $user->fresh()->customCharacterDraft->version_hash)
+        ->assertDispatched('sheet-toast', message: 'Built. It goes live only when you use it.');
 
     expect($user->fresh()->customCharacterDraft)->not->toBeNull()
         ->and($user->fresh()->customCharacter)->toBeNull();
@@ -246,6 +257,7 @@ test('a sheet that breaks the contract is refused with the reason, and nothing i
         ->set('sheet', sheetUpload(pngBytes(poseSheetImage(background: 'white'))))
         ->call('build')
         ->assertHasErrors('sheet')
+        ->assertSee('Ask the image AI for one flat magenta (#FF00FF) background')
         ->assertSee('The background must be solid magenta');
 
     expect($user->fresh()->customCharacterDraft)->toBeNull();
@@ -371,7 +383,10 @@ test('the earlier versions list is there once there is more than one, with the o
 
     $confirm->execute($user, stagedFor($user, 1)->version_hash);
 
-    editorFor($user)->assertSee('Earlier versions')->assertSee('In use')->assertSee('Equip version')
+    editorFor($user)->assertSee('Earlier versions')->assertSee('In use')
+        ->assertSee('Version 1')->assertSee('Version 2')
+        ->assertSee('Preview')->assertSee('Equip version 1')
+        ->assertSeeHtml('custom-version-peek')
         ->call('equipVersion', $first)
         ->assertDispatched('sheet-toast', message: 'Switched to that version and equipped it.');
 
@@ -451,4 +466,110 @@ test('another player\'s draft or version hash does nothing when it is sent throu
     expect($theirs->fresh())->not->toBeNull()
         ->and($theirs->user->fresh()->customCharacterDraft)->not->toBeNull()
         ->and($user->fresh()->customCharacter)->toBeNull();
+});
+
+test('building announces the draft to the stage, with no ceremony', function () {
+    $user = User::factory()->create();
+
+    editorFor($user)
+        ->set('sheet', sheetUpload(pngBytes(poseSheetImage(background: 'magenta'))))
+        ->call('build')
+        ->assertDispatched('custom-character-changed', function (string $event, array $params) use ($user) {
+            return $params['draft']['hash'] === $user->fresh()->customCharacterDraft->version_hash
+                && $params['draft']['spec']['version'] === $params['draft']['hash']
+                && $params['ceremony'] === false
+                && $params['custom'] === null;
+        });
+});
+
+test('confirming announces the new fighter with a ceremony and no draft left', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+
+    editorFor($user)
+        ->call('confirm', $draft->version_hash)
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null
+            && $params['ceremony'] === true
+            && $params['equipped'] === 'custom'
+            && $params['custom']['version'] === $draft->version_hash)
+        ->assertDispatched('sheet-focus', target: 'equipped-slot');
+});
+
+test('renaming or discarding is announced without a ceremony', function () {
+    $character = CustomCharacter::factory()->create();
+    stagedFor($character->user);
+
+    editorFor($character->user)
+        ->call('discard')
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null && $params['ceremony'] === false);
+});
+
+test('the stage can equip its draft by hash through an event, and only the player\'s own', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+
+    editorFor($user)
+        ->dispatch('custom-draft-confirm', hash: 'abcdefabcdef')
+        ->assertHasErrors('action')
+        ->dispatch('custom-draft-confirm', hash: $draft->version_hash)
+        ->assertHasNoErrors();
+
+    expect($user->fresh()->customCharacter->version_hash)->toBe($draft->version_hash);
+});
+
+test('the stage can discard its draft through an event', function () {
+    $user = User::factory()->create();
+    stagedFor($user);
+
+    editorFor($user)->dispatch('custom-draft-discard');
+
+    expect($user->fresh()->customCharacterDraft)->toBeNull();
+});
+
+test('the stage can equip a saved version through an event, never another player\'s', function () {
+    $user = User::factory()->create();
+    $first = app(ConfirmCustomCharacter::class)->execute($user, stagedFor($user, 0)->version_hash)->version_hash;
+    app(ConfirmCustomCharacter::class)->execute($user, stagedFor($user, 1)->version_hash);
+    $theirs = CustomCharacter::factory()->create();
+
+    editorFor($user)
+        ->dispatch('custom-version-equip', hash: $theirs->version_hash)
+        ->assertHasErrors('action');
+    expect($user->fresh()->customCharacter->version_hash)->not->toBe($theirs->version_hash);
+
+    editorFor($user)->dispatch('custom-version-equip', hash: $first)->assertHasNoErrors();
+    expect($user->fresh()->customCharacter->version_hash)->toBe($first);
+});
+
+test('a failed action tells the sheet, and refreshes it so a stale draft slot corrects itself', function () {
+    $user = User::factory()->create();
+
+    editorFor($user)
+        ->call('confirm', 'abcdefabcdef')
+        ->assertHasErrors('action')
+        ->assertDispatched('sheet-error', fn (string $event, array $params) => str_contains($params['message'], 'no built fighter'))
+        ->assertDispatched('custom-character-changed', fn (string $event, array $params) => $params['draft'] === null && $params['ceremony'] === false);
+});
+
+test('after a discard focus goes to the file button, and after a remove back to what opened the editor', function () {
+    $character = CustomCharacter::factory()->create();
+    stagedFor($character->user);
+
+    editorFor($character->user)
+        ->call('discard')
+        ->assertDispatched('sheet-focus', target: 'upload')
+        ->call('remove')
+        ->assertDispatched('sheet-focus', target: 'opener');
+});
+
+test('the file button and the name box carry the hooks the stage focuses by', function () {
+    $character = CustomCharacter::factory()->create();
+
+    editorFor($character->user)->assertSeeHtml('data-focus="upload"')->assertSeeHtml('data-focus="name"');
+});
+
+test('the prompt guide stays one click away for a player who already has a fighter', function () {
+    $character = CustomCharacter::factory()->create();
+
+    editorFor($character->user)->assertSee('prompt guide')->assertSeeHtml(route('custom-character'));
 });

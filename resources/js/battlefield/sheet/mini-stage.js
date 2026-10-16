@@ -149,13 +149,7 @@ export function miniStage(equipped, total, me, custom = null) {
               this.drawCrew();
             }
           },
-          [BusEvent.CHARACTER_CHANGED]: p => {
-            const next = Number(p.user_id) === Number(me) ? this.keyFor(p) : null;
-            if (next) {
-              this.key = next;
-              this.paintFighter();
-            }
-          },
+          [BusEvent.CHARACTER_CHANGED]: p => this.onCharacterBroadcast(p),
         });
       };
       attach();
@@ -176,6 +170,25 @@ export function miniStage(equipped, total, me, custom = null) {
       }
 
       return BY_KEY[payload.character] ? payload.character : null;
+    },
+    /**
+     * Reuses the Profile stage's bus subscription to refresh the player's Character tab.
+     * The broadcast has no custom fighter name, so the sheet fetches its own state.
+     *
+     * @param {{user_id: number, character?: string, custom_character?: ?object}} payload The public fighter change.
+     * @return {void}
+     */
+    onCharacterBroadcast(payload) {
+      if (Number(payload.user_id) !== Number(me)) {
+        window.dispatchEvent(new CustomEvent('sheet-other-character-broadcast', { detail: { user_id: payload.user_id } }));
+        return;
+      }
+      const next = this.keyFor(payload);
+      if (next) {
+        this.key = next;
+        this.paintFighter();
+      }
+      window.dispatchEvent(new CustomEvent('sheet-own-character-broadcast', { detail: { user_id: payload.user_id } }));
     },
     /**
      * Follows the editor: the fighter was made, replaced, renamed, switched or removed.

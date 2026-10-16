@@ -36,3 +36,12 @@ test('an unequipped custom character is not what the battlefield shows', functio
     expect($character->user->customFighterState())->toBeNull()
         ->and($character->broadcastState())->toBeArray();
 });
+
+test('the sheet state names the author, and the public broadcast state never does', function () {
+    $character = CustomCharacter::factory()->create(['name' => 'Sir Pixel']);
+
+    expect($character->sheetState())->toMatchArray([
+        'name' => 'Sir Pixel',
+        'author' => $character->user->displayHandle(),
+    ])->and($character->broadcastState())->not->toHaveKey('author');
+});

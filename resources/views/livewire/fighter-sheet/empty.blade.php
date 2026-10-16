@@ -5,5 +5,5 @@
         <li>Run the installer from Setup on the machine you code on.</li>
         <li>Finish one Claude Code turn. Your first hit lands a few seconds later.</li>
     </ol>
-    <a class="btn primary" href="{{ route('setup') }}">Open setup</a>
+    <a class="btn primary" href="{{ route('setup') }}" target="_blank" rel="noopener">Open setup</a>
 </div>

@@ -20,6 +20,7 @@ use App\Services\CustomCharacter\StageCustomCharacter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Livewire\Attributes\On;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
@@ -63,6 +64,14 @@ class CustomCharacterEditor extends Component
      * @var string|null
      */
     public ?string $confirming = null;
+
+    /**
+     * Whether the change in flight should play the equip ceremony on the stage
+     * (set by `confirm()` only; read and reset by `run()`).
+     *
+     * @var bool
+     */
+    private bool $ceremony = false;
 
     /**
      * Fills the name box from the player's fighter.
@@ -117,7 +126,7 @@ class CustomCharacterEditor extends Component
         try {
             $stage->execute($user, (string) file_get_contents($this->sheet->getRealPath()));
             $this->toast('Built. It goes live only when you use it.');
-            $this->js('document.getElementById("cce-draft-" + $wire.$id)?.scrollIntoView({ behavior: "smooth", block: "center" })');
+            $this->announce();
         } catch (Throwable $exception) {
             $this->fail($exception, 'sheet');
         } finally {
@@ -136,9 +145,11 @@ class CustomCharacterEditor extends Component
      */
     public function confirm(string $hash, ConfirmCustomCharacter $confirm): void
     {
+        $this->ceremony = true;
         $this->run(function () use ($hash, $confirm): void {
             $confirm->execute(auth()->user(), $hash);
             $this->toast('Your fighter is equipped.');
+            $this->dispatch('sheet-focus', target: 'equipped-slot');
         });
     }
 
@@ -177,6 +188,7 @@ class CustomCharacterEditor extends Component
         $this->run(function () use ($discard): void {
             $discard->execute(auth()->user());
             $this->toast('Preview discarded. Your fighter is unchanged.');
+            $this->dispatch('sheet-focus', target: 'upload');
         });
     }
 
@@ -232,6 +244,8 @@ class CustomCharacterEditor extends Component
      *
      * @param  RemoveCustomCharacter  $remove  removes the fighter
      * @return void
+     *
+     * @throws CustomCharacterVersionException when the fighter is already gone, handled by run()
      */
     public function remove(RemoveCustomCharacter $remove): void
     {
@@ -242,7 +256,48 @@ class CustomCharacterEditor extends Component
             $remove->execute($character);
             $this->name = '';
             $this->toast('Fighter removed. Back to your roster fighter.');
+            $this->dispatch('sheet-focus', target: 'opener');
         });
+    }
+
+    /**
+     * Equips the draft the stage previewed ("Use this fighter"). Takes only the hash;
+     * everything acts on the signed-in player, so a forged hash changes nothing.
+     *
+     * @param  string  $hash  the draft's version hash
+     * @param  ConfirmCustomCharacter  $confirm  makes the draft the fighter
+     * @return void
+     */
+    #[On('custom-draft-confirm')]
+    public function onDraftConfirm(string $hash, ConfirmCustomCharacter $confirm): void
+    {
+        $this->confirm($hash, $confirm);
+    }
+
+    /**
+     * Throws the previewed draft away (the stage's "Discard").
+     *
+     * @param  DiscardCustomCharacterDraft  $discard  removes the draft
+     * @return void
+     */
+    #[On('custom-draft-discard')]
+    public function onDraftDiscard(DiscardCustomCharacterDraft $discard): void
+    {
+        $this->discard($discard);
+    }
+
+    /**
+     * Equips a saved version the stage previewed. Only the player's own versions
+     * resolve; any other hash is turned away with the `action` error.
+     *
+     * @param  string  $hash  the version's hash
+     * @param  EquipCustomCharacterVersion  $equip  makes the version the fighter
+     * @return void
+     */
+    #[On('custom-version-equip')]
+    public function onVersionEquip(string $hash, EquipCustomCharacterVersion $equip): void
+    {
+        $this->equipVersion($hash, $equip);
     }
 
     /**
@@ -253,7 +308,7 @@ class CustomCharacterEditor extends Component
     public function placeholder(): string
     {
         return <<<'HTML'
-        <p class="cce-note" role="status">Loading your fighter…</p>
+        <div class="cce-skel" role="status" aria-label="Loading your fighter"><i></i><i></i><i></i></div>
         HTML;
     }
 
@@ -266,23 +321,21 @@ class CustomCharacterEditor extends Component
     public function render(PreviewStrips $previews): View
     {
         $user = auth()->user();
-        $draft = $user->customCharacterDraft()->first();
         $character = $user->customCharacter()->with('versions')->first();
 
         return view('livewire.custom-character-editor', [
-            'draft' => $draft === null ? null : [
-                'hash' => $draft->version_hash,
-                'spec' => $previews->spec($user->id, $draft->version_hash, $draft->animations, staged: true, name: $character?->name ?? ($this->name ?: (string) config('token_slayer.custom_character.default_name'))),
-            ],
+            'draft' => $previews->draftPayload($user),
             'character' => $character === null ? null : [
                 'name' => $character->name,
                 'active' => $character->active,
-                'versions' => $character->versions->reverse()->map(fn ($version): array => [
+                'versions' => $character->versions->map(fn ($version, int $index): array => [
                     'hash' => $version->version_hash,
+                    'number' => $index + 1,
                     'current' => $version->version_hash === $character->version_hash,
                     'at' => $version->created_at,
                     'idle' => $previews->execute($user->id, $version->version_hash, $version->animations)[0],
-                ])->values()->all(),
+                    'spec' => $previews->spec($user->id, $version->version_hash, $version->animations, staged: false, name: $character->name),
+                ])->reverse()->values()->all(),
             ],
         ]);
     }
@@ -313,12 +366,15 @@ class CustomCharacterEditor extends Component
         try {
             $change();
         } catch (Throwable $exception) {
+            $this->ceremony = false;
             $this->fail($exception, 'action');
 
             return;
         }
 
-        $this->announce();
+        $ceremony = $this->ceremony;
+        $this->ceremony = false;
+        $this->announce($ceremony);
     }
 
     /**
@@ -335,7 +391,7 @@ class CustomCharacterEditor extends Component
     private function fail(Throwable $exception, string $field): void
     {
         if ($exception instanceof InvalidPoseSheetException) {
-            $this->addError('sheet', $exception->getMessage());
+            $this->addError('sheet', $exception->getMessage().' '.$exception->problem->hint());
 
             return;
         }
@@ -345,6 +401,8 @@ class CustomCharacterEditor extends Component
             || $exception instanceof CustomCharacterDraftMissingException
             || $exception instanceof CustomCharacterVersionException) {
             $this->addError($field, $exception->getMessage());
+            $this->dispatch('sheet-error', message: $exception->getMessage());
+            $this->announce();
 
             return;
         }
@@ -353,12 +411,14 @@ class CustomCharacterEditor extends Component
     }
 
     /**
-     * Tells the page around the editor what the player's fighter is now, so the
-     * fighter sheet's roster follows without a reload.
+     * Tells the page around the editor what the player has now: their fighter, the
+     * draft waiting to be used, and which one is equipped. A ceremony plays only
+     * after an equip the player asked for.
      *
+     * @param  bool  $ceremony  whether the stage should play the equip ceremony
      * @return void
      */
-    private function announce(): void
+    private function announce(bool $ceremony = false): void
     {
         $user = auth()->user()->fresh();
         $character = $user->customCharacter()->first();
@@ -366,7 +426,9 @@ class CustomCharacterEditor extends Component
         $this->dispatch(
             'custom-character-changed',
             custom: $character?->sheetState(),
+            draft: app(PreviewStrips::class)->draftPayload($user),
             equipped: $user->equippedFighterKey(app(BossArena::class)->current()->id),
+            ceremony: $ceremony,
         );
     }
 }

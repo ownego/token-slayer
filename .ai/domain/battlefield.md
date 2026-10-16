@@ -210,9 +210,10 @@ and the `/profile` page (the route is gone, not redirected). Its markup and CSS
 are a **verbatim port of the approved mockup**
 `docs/superpowers/mockups/2026-09-27-battlefield-redesign/fighter-sheet.html` (local
 only) — port its behaviour, don't re-derive it. Embedded in `battlefield.blade.php`,
-opened only by the nav's Profile button (`$dispatch('open-fighter-sheet', {tab})` →
-`#[On('open-fighter-sheet')] open($tab)`); there is no `?sheet=` link and no Loadout
-pill any more. It starts **closed** and runs no aggregate `events` query until
+opened by the nav's Profile button (`$dispatch('open-fighter-sheet', {tab})` →
+`#[On('open-fighter-sheet')] open($tab)`) and, once, by `/battlefield/open/{character|editor}`
+(a session flash that redirects to the clean `/battlefield`; see `custom-characters.md`); there is
+no `?sheet=` link and no Loadout pill any more. It starts **closed** and runs no aggregate `events` query until
 opened — the header's attribution/hook chip is the one exception.
 It is wrapped in an always-rendered frame (`sheetFrame`, x-show + x-transition):
 the nav's `open-fighter-sheet` window event shows it at once — a skeleton

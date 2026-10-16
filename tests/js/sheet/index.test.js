@@ -41,6 +41,26 @@ test('Escape closes and focus returns to the opener', () => {
   shell.destroy();
 });
 
+test('Escape is offered to whatever is open inside the sheet first: a listener that handles it keeps the sheet open', () => {
+  const { opener, root } = buildDom();
+  const onClose = vi.fn();
+  opener.focus();
+  const shell = createSheetShell(root, { onClose });
+  shell.open(opener);
+  const handled = vi.fn(event => event.preventDefault());
+  window.addEventListener('sheet-escape', handled);
+
+  root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(handled).toHaveBeenCalledTimes(1);
+  expect(onClose).not.toHaveBeenCalled();
+
+  window.removeEventListener('sheet-escape', handled);
+  root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+
+  shell.destroy();
+});
+
 test('clicking a tab or pressing an arrow key switches the active tab', () => {
   const { root } = buildDom();
   const onTab = vi.fn();

@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { DRAFT_KEY, registerCustomRoster, CUSTOM_KEY } from '@battlefield/sheet/custom-roster.js';
-import { frameOffset, stepFrame } from '@battlefield/sheet/custom-draft-preview.js';
+import { frameOffset, inspectorStart, inspectorStep } from '@battlefield/sheet/frame-inspector.js';
 
 const WIRE = {
   version: 'abc123def456',
@@ -49,10 +49,10 @@ describe('a draft registered next to the player\'s fighter', () => {
 
 describe('stepping through a strip a frame at a time', () => {
   test('goes forward and back, wrapping at both ends', () => {
-    expect(stepFrame(0, 6, 1)).toBe(1);
-    expect(stepFrame(5, 6, 1)).toBe(0);
-    expect(stepFrame(0, 6, -1)).toBe(5);
-    expect(stepFrame(3, 6, -1)).toBe(2);
+    expect(inspectorStep(inspectorStart(), 1, 6).frame).toBe(1);
+    expect(inspectorStep({ ...inspectorStart(), frame: 5 }, 1, 6).frame).toBe(0);
+    expect(inspectorStep(inspectorStart(), -1, 6).frame).toBe(5);
+    expect(inspectorStep({ ...inspectorStart(), frame: 3 }, -1, 6).frame).toBe(2);
   });
 
   test('puts a frame on the stage by its 100 px slot', () => {

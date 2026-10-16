@@ -33,7 +33,7 @@ class CustomCharacterStore
      *
      * @var string
      */
-    private const string STAGED = 'staged';
+    public const string STAGED = 'staged';
 
     /**
      * The animations a fighter ships, one strip (png) each.
@@ -133,6 +133,7 @@ class CustomCharacterStore
      */
     public function stage(int $userId, array $strips): array
     {
+        $startedAt = microtime(true);
         $encoded = array_map(fn (array $strip): string => $this->encode($strip['image']), $strips);
         $hash = substr(sha1(implode('', $encoded)), 0, self::HASH_LENGTH);
         $folder = self::stagedFolder($userId, $hash);
@@ -141,8 +142,10 @@ class CustomCharacterStore
 
         try {
             foreach ($encoded as $animation => $png) {
+                $this->guardDeadline($startedAt);
                 $this->write($disk, "{$folder}/{$animation}.png", $png);
             }
+            $this->guardDeadline($startedAt);
         } catch (CustomCharacterStorageException $exception) {
             if (! $existed) {
                 $this->safely(fn () => $disk->deleteDirectory($folder));
@@ -172,11 +175,13 @@ class CustomCharacterStore
      */
     public function promote(int $userId, string $hash): void
     {
+        $startedAt = microtime(true);
         $disk = $this->usableDisk();
         $from = self::stagedFolder($userId, $hash);
         $to = self::folder($userId, $hash);
 
         if ($this->isComplete($disk, $to)) {
+            $this->guardDeadline($startedAt);
             $this->safely(fn () => $disk->deleteDirectory($from));
 
             return;
@@ -188,6 +193,7 @@ class CustomCharacterStore
 
         try {
             foreach (self::ANIMATIONS as $animation) {
+                $this->guardDeadline($startedAt);
                 if (! $disk->copy("{$from}/{$animation}.png", "{$to}/{$animation}.png")) {
                     throw new CustomCharacterStorageException;
                 }
@@ -196,12 +202,14 @@ class CustomCharacterStore
             if (! $this->isComplete($disk, $to)) {
                 throw new CustomCharacterStorageException;
             }
+            $this->guardDeadline($startedAt);
         } catch (Throwable $exception) {
             $this->safely(fn () => $disk->deleteDirectory($to));
 
             throw $exception instanceof CustomCharacterStorageException ? $exception : new CustomCharacterStorageException;
         }
 
+        $this->guardDeadline($startedAt);
         $this->safely(fn () => $disk->deleteDirectory($from));
     }
 
@@ -348,10 +356,21 @@ class CustomCharacterStore
      */
     private function safely(callable $call, mixed $fallback = false): mixed
     {
-        try {
-            return $call();
-        } catch (Throwable) {
-            return $fallback;
+        return rescue($call, $fallback, report: true);
+    }
+
+    /**
+     * Aborts a slow storage operation before another request can acquire the player's lock.
+     *
+     * @param  float  $startedAt  when this operation began
+     * @return void
+     *
+     * @throws CustomCharacterStorageException when too little lock lifetime remains
+     */
+    private function guardDeadline(float $startedAt): void
+    {
+        if (microtime(true) - $startedAt >= (int) config('token_slayer.custom_character.lock_hold_seconds') - 5) {
+            throw new CustomCharacterStorageException('The storage is too slow right now. Try again in a moment.');
         }
     }
 

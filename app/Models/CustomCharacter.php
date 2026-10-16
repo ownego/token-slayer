@@ -80,13 +80,20 @@ class CustomCharacter extends Model
 
     /**
      * What the fighter sheet's Character tab needs: the broadcast state plus the
-     * name the player gave the fighter and whether it is the equipped one.
+     * name the player gave the fighter, whether it is the equipped one and who made
+     * it. The author travels only here (the authenticated sheet payload), never in
+     * `broadcastState()`, which goes out on the public battlefield channel.
      *
-     * @return array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, name: string, active: bool}
+     * @return array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, name: string, active: bool, author: string}
      */
     public function sheetState(): array
     {
-        return [...$this->broadcastState(), 'name' => $this->name, 'active' => (bool) $this->active];
+        return [
+            ...$this->broadcastState(),
+            'name' => $this->name,
+            'active' => (bool) $this->active,
+            'author' => $this->loadMissing('user')->user->displayHandle(),
+        ];
     }
 
     /**
