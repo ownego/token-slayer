@@ -46,7 +46,7 @@ test('each prompt keeps the sheet layout the converter needs', function (string 
 
     expect($prompt)->toContain('#FF00FF')
         ->toContain('Row 1: idle')
-        ->toContain('Row 2: walk cycle')
+        ->toContain('Row 2: run cycle')
         ->toContain('Row 3: ')
         ->toContain('Row 4: defeated')
         ->toContain('facing RIGHT');
@@ -103,9 +103,29 @@ test('every prompt carries the pixel art style block', function (string $type) {
         ->toContain('Small, compact, chibi-like sprite proportions')
         ->toContain('No anti-aliasing')
         ->toContain('approximately 2–4 shades per material')
-        ->toContain('strict side profile')
+        ->toContain('same slightly angled view for the idle and run poses')
         ->toContain('NOT a modern high-resolution illustration')
         ->toContain('consistent pixel scale, outline thickness, palette, proportions, and detail density');
+})->with(PROMPT_TYPES);
+
+test('the second row is a fast run, drawn at the same angle as the idle poses, not in a strict side profile', function (string $type) {
+    $prompt = app(CharacterPromptBuilder::class)->execute()[$type];
+
+    expect($prompt)->toContain('Row 2: run cycle (a fast run, not a walk: leaning forward, long strides, arms pumping), in the same slightly angled view as the idle poses, exactly 4 poses')
+        ->not->toContain('pure side profile')
+        ->not->toContain('strict side profile')
+        ->toContain('never draw the run cycle in a strict side-on profile');
+})->with(PROMPT_TYPES);
+
+test('the run cycle spells out the leg swap, so the legs alternate and it reads as running', function (string $type) {
+    expect(app(CharacterPromptBuilder::class)->execute()[$type])
+        ->toContain('The legs must clearly alternate')
+        ->toContain('pose 1: one leg stretched far forward and the other far back')
+        ->toContain('pose 2: both feet off the ground')
+        ->toContain('pose 3: the same as pose 1 with the legs swapped')
+        ->toContain('pose 4: both feet off the ground again')
+        ->toContain('arms swing opposite to the legs')
+        ->toContain('No two poses may look alike');
 })->with(PROMPT_TYPES);
 
 test('the pixel art style block is identical for every type', function () {

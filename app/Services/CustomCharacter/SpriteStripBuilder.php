@@ -39,7 +39,7 @@ class SpriteStripBuilder
      *
      * @var array<string, int>
      */
-    private const array RATES = ['idle' => 8, 'walk' => 10, 'attack' => 12, 'death' => 6];
+    private const array RATES = ['idle' => 8, 'walk' => 16, 'attack' => 12, 'death' => 6];
 
     /**
      * Builds one strip per animation.

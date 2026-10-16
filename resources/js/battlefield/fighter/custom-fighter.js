@@ -17,10 +17,18 @@ const STATES = ['idle', 'walk', 'attack', 'death'];
  * How tall a custom fighter's body is inside its frame. The server pixelates the
  * sheet to `config('token_slayer.custom_character.sprite_height')`, which is
  * taller than the 18 px the roster fighters occupy, so the body is scaled down by
- * `ROSTER_BODY_PX / CUSTOM_BODY_PX` to stand as tall as one on the field.
+ * `CUSTOM_STAND_PX / CUSTOM_BODY_PX` to stand `CUSTOM_STAND_PX` tall on the field.
  * @type {number}
  */
 const CUSTOM_BODY_PX = 28;
+
+/**
+ * How tall a custom fighter stands on the field, in the roster fighters' pixels: a little
+ * taller than their `ROSTER_BODY_PX` (18), because at 18 a fighter drawn from a player's own
+ * sheet read as small next to the roster. The one number to change to make them bigger or smaller.
+ * @type {number}
+ */
+const CUSTOM_STAND_PX = 22;
 
 /**
  * The roster fighters' body height inside their frame (`fighter/index.js` scales
@@ -161,11 +169,11 @@ export function releaseCustomFighter({ textures, anims }, ftype) {
  *
  * @param {number|string} userId
  * @param {{version: string, animations: Object<string, {frames: number, rate: number}>}} spec A normalised custom character.
- * @return {{key: string, texture: string, custom: true, spec: object, attackType: string, animations: object, bodyScale: number, bodyOffsetY: number}}
+ * @return {{key: string, texture: string, custom: true, spec: object, attackType: string, animations: object, bodyScale: number, bodyPx: number, headTop: number, bodyOffsetY: number}}
  */
 export function customFighterType(userId, spec) {
   const key = customFighterKey(userId, spec.version);
-  const bodyScale = ROSTER_BODY_PX / CUSTOM_BODY_PX;
+  const bodyScale = CUSTOM_STAND_PX / CUSTOM_BODY_PX;
 
   return {
     key,
@@ -175,6 +183,8 @@ export function customFighterType(userId, spec) {
     attackType: AttackType.SLASH,
     animations: spec.animations,
     bodyScale,
+    bodyPx: CUSTOM_STAND_PX,
+    headTop: CUSTOM_FOOT_ROW - CUSTOM_STAND_PX,
     bodyOffsetY: (CUSTOM_FOOT_ROW - FRAME_CENTRE_ROW) * (1 - bodyScale),
   };
 }

@@ -57,7 +57,7 @@ test('builds one strip per animation, every frame 100 px square', function () {
 
     expect(array_keys($strips))->toBe(['idle', 'walk', 'attack', 'death'])
         ->and(array_map(fn (array $strip) => $strip['frames'], $strips))->toBe(['idle' => 6, 'walk' => 8, 'attack' => 6, 'death' => 3])
-        ->and(array_map(fn (array $strip) => $strip['rate'], $strips))->toBe(['idle' => 8, 'walk' => 10, 'attack' => 12, 'death' => 6]);
+        ->and(array_map(fn (array $strip) => $strip['rate'], $strips))->toBe(['idle' => 8, 'walk' => 16, 'attack' => 12, 'death' => 6]);
 
     foreach ($strips as $strip) {
         expect(imagesx($strip['image']))->toBe($strip['frames'] * 100)
