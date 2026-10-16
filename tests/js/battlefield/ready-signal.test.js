@@ -38,3 +38,21 @@ test('a waiting callback runs once at readiness, or at its ceiling if the arena 
   vi.advanceTimersByTime(15000);
   expect(stalled).toHaveBeenCalledTimes(1);
 });
+
+test('a sheet deep link is read once and stripped from the address bar, keeping other params and the hash', async () => {
+  const { consumeSheetLink } = await import('@battlefield/ready-signal.js');
+  const replaceState = vi.fn();
+
+  const link = consumeSheetLink({ href: 'https://ts.test/battlefield?sheet=character&editor=1&x=2#top' }, { state: null, replaceState });
+
+  expect(link).toEqual({ sheet: 'character', editor: true });
+  expect(replaceState).toHaveBeenCalledWith(null, '', '/battlefield?x=2#top');
+});
+
+test('a page with no deep link is left alone', async () => {
+  const { consumeSheetLink } = await import('@battlefield/ready-signal.js');
+  const replaceState = vi.fn();
+
+  expect(consumeSheetLink({ href: 'https://ts.test/battlefield' }, { state: null, replaceState })).toEqual({ sheet: null, editor: false });
+  expect(replaceState).not.toHaveBeenCalled();
+});

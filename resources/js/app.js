@@ -8,9 +8,10 @@ import { modelPicker, periodTabs } from './battlefield/sheet/pickers.js';
 import { miniStage } from './battlefield/sheet/mini-stage.js';
 import { characterStage } from './battlefield/sheet/character-stage.js';
 import { characterPrompt } from './custom-character/prompt-picker.js';
-import { whenReady } from './battlefield/ready-signal.js';
+import { consumeSheetLink, whenReady } from './battlefield/ready-signal.js';
 
 window.whenBattlefieldReady = whenReady;
+window.consumeSheetLink = () => consumeSheetLink(window.location, window.history);
 
 // Registered before Livewire's bundled Alpine calls Alpine.start() (this
 // script loads via @vite in <head>; @livewireScripts starts Alpine later in
