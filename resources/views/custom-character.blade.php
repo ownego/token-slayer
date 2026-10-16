@@ -15,7 +15,7 @@
         <section class="space-y-2">
             <h2 class="font-bold text-gray-900">2. Upload it in the game</h2>
             <p class="text-sm text-gray-600">Upload the sheet, preview your fighter and use it from the <b>Character</b> tab of your profile: <b>Create</b> opens the editor next to the roster, and <b>Manage</b> replaces the sheet, renames the fighter and switches between versions.</p>
-            <a href="{{ route('battlefield') }}?sheet=character&amp;editor=1" class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-orange-400 hover:text-orange-600">Open the Character editor</a>
+            <a href="{{ route('battlefield.open-sheet', 'editor') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-orange-400 hover:text-orange-600">Open the Character editor</a>
         </section>
     </div>
 @endsection

@@ -61,14 +61,15 @@ test('the page is the guide only and links to the editor in the same tab', funct
         ->assertDontSeeLivewire(CustomCharacterEditor::class)
         ->getContent();
 
-    expect($html)->toContain('href="'.route('battlefield').'?sheet=character&amp;editor=1"')
+    expect($html)->toContain('href="'.route('battlefield.open-sheet', 'editor').'"')
         ->not->toContain('target="_blank"');
 });
 
-test('the battlefield opens the sheet on the Character tab when asked to by the guide\'s link', function () {
+test('the battlefield opens the sheet on the Character tab only when the guide\'s link flashed the request', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
-    $this->get('/battlefield')->assertOk()->assertSee("get('sheet') === 'character'", false);
+    $this->withSession(['open_sheet' => ['tab' => 'character', 'editor' => false]])
+        ->get('/battlefield')->assertOk()->assertSee('data-open-sheet="character"', false);
 });
 
 test('the guide says to pick a costume by character type, then copy the prompt into ChatGPT with a picture of the character', function () {

@@ -2,7 +2,7 @@
 
 A player can make their own fighter from a **pose sheet** they generated with an image AI (from the prompt of the character type they picked — see "The prompt"). Nothing calls an AI from the server: the player does that step, and the app validates and converts the result. The sheet is built into a **draft** the player previews; only when they use it does it become their equipped fighter, which everyone then sees on the battlefield.
 
-Two places: the `/character` page (`CustomCharacterController`) is the **prompt guide only** (pick a type, copy the prompt, the requirements) with a same-tab link to `/battlefield?sheet=character&editor=1`. The link waits for `battlefield-ready` (at most `READY_CEILING_MS`) before opening the Character tab and editor. The editor (`Livewire\CustomCharacterEditor`) is a drawer under the shared show stage. Everything a player does while the battlefield is open belongs to the game world (`.ai/design/README.md`).
+Two places: the `/character` page (`CustomCharacterController`) is the **prompt guide only** (pick a type, copy the prompt, the requirements) with a same-tab link to `/battlefield/open/editor` (it flashes the request once and redirects to the clean `/battlefield`, so a reload never reopens the sheet). The link waits for `battlefield-ready` (at most `READY_CEILING_MS`) before opening the Character tab and editor. The editor (`Livewire\CustomCharacterEditor`) is a drawer under the shared show stage. Everything a player does while the battlefield is open belongs to the game world (`.ai/design/README.md`).
 
 ## The flow
 

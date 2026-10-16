@@ -108,6 +108,6 @@ test('character guide opens the editor deep link in the same tab', function () {
 
     $this->get('/character')
         ->assertOk()
-        ->assertSee('href="'.route('battlefield').'?sheet=character&amp;editor=1"', escape: false)
+        ->assertSee('href="'.route('battlefield.open-sheet', 'editor').'"', escape: false)
         ->assertDontSee('target="_blank"', escape: false);
 });
