@@ -442,6 +442,38 @@ test('character tab passes roommates to the Alpine component', function () {
         ->assertSee($mate->displayHandle(), false);
 });
 
+test('character tab passes another player’s active custom fighter without duplicating the viewer’s own', function () {
+    $viewer = User::factory()->create();
+    CustomCharacter::factory()->create(['user_id' => $viewer->id]);
+    $other = CustomCharacter::factory()->create(['name' => 'Copy for review']);
+    CustomCharacter::factory()->create(['active' => false]);
+
+    Livewire::actingAs($viewer)
+        ->test(FighterSheet::class)
+        ->call('open', 'character')
+        ->assertViewHas('otherCustomCharacters', function (array $characters) use ($other, $viewer): bool {
+            return count($characters) === 1
+                && $characters[0]['user_id'] === $other->user_id
+                && $characters[0]['name'] === 'Copy for review'
+                && $characters[0]['author'] === $other->user->displayHandle()
+                && $characters[0]['user_id'] !== $viewer->id;
+        });
+});
+
+test('an open character sheet can refresh another player’s custom fighter after it changes', function () {
+    $viewer = User::factory()->create();
+    $other = CustomCharacter::factory()->create(['name' => 'First look']);
+    $sheet = Livewire::actingAs($viewer)->test(FighterSheet::class)->call('open', 'character');
+
+    $other->update(['name' => 'Second look']);
+    $sheet->dispatch('other-custom-characters-refresh')
+        ->assertDispatched('other-custom-characters-state', function (string $event, array $params) use ($other): bool {
+            return count($params['characters']) === 1
+                && $params['characters'][0]['user_id'] === $other->user_id
+                && $params['characters'][0]['name'] === 'Second look';
+        });
+});
+
 test('charactersWithMeta() entries each carry an attackType', function () {
     $user = User::factory()->create();
 
@@ -713,4 +745,44 @@ test('equipping while another change of the player is running changes nothing an
 
     expect($user->refresh()->equipped_character)->toBe(FighterCharacter::Soldier);
     Event::assertNotDispatched(FighterCharacterChanged::class);
+});
+
+test('a pending draft is handed to the stage on load, without the editor ever mounting', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+
+    Livewire::actingAs($user)->test(FighterSheet::class)
+        ->assertSet('customDraft.hash', $draft->version_hash)
+        ->assertSet('customDraft.spec.version', $draft->version_hash);
+});
+
+test('a player with no draft hands the stage none', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)->assertSet('customDraft', null);
+});
+
+test('the sheet follows a draft discarded or built in the editor', function () {
+    $user = User::factory()->create();
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class)->assertSet('customDraft', null);
+
+    $draft = stagedFor($user);
+    $sheet->dispatch('custom-character-changed')->assertSet('customDraft.hash', $draft->version_hash);
+
+    $user->customCharacterDraft()->delete();
+    $sheet->dispatch('custom-character-changed')->assertSet('customDraft', null);
+});
+
+test('a refresh request is answered with the current state and no ceremony, and never loops back as a change', function () {
+    $character = CustomCharacter::factory()->create(['name' => 'Sir Pixel']);
+    $draft = stagedFor($character->user);
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->dispatch('custom-character-refresh')
+        ->assertDispatched('custom-character-state', function (string $event, array $params) use ($character, $draft) {
+            return $params['custom']['name'] === 'Sir Pixel'
+                && $params['custom']['version'] === $character->version_hash
+                && $params['draft']['hash'] === $draft->version_hash
+                && $params['equipped'] === 'custom'
+                && ! array_key_exists('ceremony', $params);
+        })
+        ->assertNotDispatched('custom-character-changed');
 });

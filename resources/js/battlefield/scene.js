@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { announceReady } from './ready-signal.js';
 import { BAT_CONFIG, LAYOUTS, BOSS_TYPES, MINION_TYPES, MINION_CLASH_EFFECTS, NECROMANCER_CONFIG } from '@battlefield/config.js';
 import { BusEvent, TextureKey, SCENE_KEY, WORLD_ZOOM } from '@battlefield/constants.js';
 import { bindBus } from '@battlefield/shared/bus-bindings.js';
@@ -77,6 +78,7 @@ export class BattlefieldScene extends Phaser.Scene {
     // `_applyBossFilter`/`ensureBossIdleAnim`.
     this.load.once('complete', () => {
       if (loader) loader.style.display = 'none';
+      announceReady();
       const pixelArtKeys = [
         ...BOSS_TYPES.filter(b => b.pixelArt !== false).flatMap(b =>
           b.animFiles ? Object.keys(b.animFiles).map(anim => `${b.key}-${anim}`) : [b.key]

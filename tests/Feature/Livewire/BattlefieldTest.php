@@ -63,6 +63,7 @@ test('a signed-in player\'s Profile pill opens the fighter sheet in place', func
 test('battlefield shows a link to the dashboard panel', function () {
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('href="'.route('filament.admin.pages.dashboard').'"')
+        ->assertSeeHtml('target="_blank" rel="noopener"')
         ->assertSee('Dashboard');
 });
 

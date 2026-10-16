@@ -170,6 +170,9 @@ return [
         'max_versions' => 5,
         // How long a second build by the same player waits for the first before being turned away.
         'lock_seconds' => 10,
+        // Hold must outlast the slowest build, including storage calls and their timeout; the store aborts
+        // before this deadline so another request cannot enter while the first is still deleting files.
+        'lock_hold_seconds' => 150,
         // How long a built-but-unused draft (and its staged files) is kept before custom-characters:prune-drafts removes it.
         'draft_ttl_hours' => 24,
         // What a fighter is called until its player names it, and the longest name.

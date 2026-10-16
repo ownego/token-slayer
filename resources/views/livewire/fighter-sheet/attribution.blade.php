@@ -1,5 +1,5 @@
 @if ($attribution['hookOutdated'])
-    <a href="{{ route('update') }}" class="inline-block rounded bg-amber-500/20 px-2.5 py-1 text-xs text-amber-200">Hook v{{ $attribution['latestHookVersion'] }} ↑</a>
+    <a href="{{ route('update') }}" target="_blank" rel="noopener" class="inline-block rounded bg-amber-500/20 px-2.5 py-1 text-xs text-amber-200">Hook v{{ $attribution['latestHookVersion'] }} ↑</a>
 @endif
 {{-- The CLI-outdated pill moved to header.blade.php's .cli-pill --}}
 @if ($attribution['event'])

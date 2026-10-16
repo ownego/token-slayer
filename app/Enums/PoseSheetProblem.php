@@ -84,4 +84,25 @@ enum PoseSheetProblem: string
             self::PosesTooSmall => 'The characters are drawn too small. Ask for a bigger sheet, or for the characters to fill their cells.',
         };
     }
+
+    /**
+     * Tells the player which change could make the rejected sheet usable.
+     *
+     * @return string
+     */
+    public function hint(): string
+    {
+        return match ($this) {
+            self::NotAnImage, self::UnsupportedType => 'Export the sheet as PNG, JPEG or WebP.',
+            self::FileTooLarge => 'Keep the file under '.intdiv((int) config('token_slayer.custom_character.max_bytes'), 1024 * 1024).' MB.',
+            self::DimensionsTooSmall => 'Make each side at least '.config('token_slayer.custom_character.min_side').' pixels.',
+            self::DimensionsTooLarge => 'Keep each side at most '.config('token_slayer.custom_character.max_side').' pixels.',
+            self::BackgroundNotSupported => 'Ask the image AI for one flat magenta (#FF00FF) background, or export with transparency.',
+            self::WrongRowCount => 'Leave a clear empty gap between the four rows and keep every pose inside its own row.',
+            self::WrongPoseCount => 'Idle takes 2 to 4 poses, walk 4, attack 3 and death 3. Count the poses in each row.',
+            self::PoseTouchesEdge => 'Leave a margin around every pose so nothing is cut at the sheet edge.',
+            self::PoseSizeMismatch => 'Draw the idle and walk poses at the same size.',
+            self::PosesTooSmall => 'Ask for a bigger sheet or for the characters to fill their cells.',
+        };
+    }
 }

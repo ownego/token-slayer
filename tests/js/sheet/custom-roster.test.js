@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { CUSTOM_BOX, CUSTOM_KEY, customRosterEntry, registerCustomRoster } from '@battlefield/sheet/custom-roster.js';
+import { CUSTOM_BOX, CUSTOM_GROUP, CUSTOM_KEY, customRosterEntry, groupOf, matchesChip, registerCustomRoster } from '@battlefield/sheet/custom-roster.js';
 import { stripUrl } from '@battlefield/sheet/sheet-roster.js';
 
 const WIRE = {
@@ -36,6 +36,28 @@ describe('customRosterEntry', () => {
   test('is null for a payload that is not a whole custom character', () => {
     expect(customRosterEntry(null)).toBeNull();
     expect(customRosterEntry({ version: 'x' })).toBeNull();
+  });
+
+  test('belongs to the custom group and carries its author, null when none is sent', () => {
+    expect(entry.group).toBe(CUSTOM_GROUP);
+    expect(entry.author).toBeNull();
+    expect(customRosterEntry({ ...WIRE, author: '  tungot.work ' }).author).toBe('tungot.work');
+    expect(customRosterEntry({ ...WIRE, author: 42 }).author).toBeNull();
+  });
+});
+
+describe('filter groups', () => {
+  test('an entry is filtered under its own group, else its attack style', () => {
+    expect(groupOf({ key: 'custom', type: 'SLASH', group: CUSTOM_GROUP })).toBe('CUSTOM');
+    expect(groupOf({ key: 'knight', type: 'BLADE' })).toBe('BLADE');
+  });
+
+  test('All matches everything; a chip matches only its group, so the custom fighter is no longer exempt', () => {
+    expect(matchesChip('', 'CUSTOM')).toBe(true);
+    expect(matchesChip('ARROW', 'CUSTOM')).toBe(false);
+    expect(matchesChip('CUSTOM', 'CUSTOM')).toBe(true);
+    expect(matchesChip('ARROW', 'ARROW')).toBe(true);
+    expect(matchesChip('CUSTOM', 'ARROW')).toBe(false);
   });
 });
 

@@ -19,6 +19,8 @@ class CustomCharacterPolicy
     use HandlesAuthorization;
 
     /**
+     * Checks whether the admin list is available to this user.
+     *
      * @param  AuthUser  $authUser
      * @return bool
      */
@@ -28,6 +30,20 @@ class CustomCharacterPolicy
     }
 
     /**
+     * Checks whether an admin may rename a player's custom fighter.
+     *
+     * @param  AuthUser  $authUser
+     * @param  CustomCharacter  $customCharacter
+     * @return bool
+     */
+    public function update(AuthUser $authUser, CustomCharacter $customCharacter): bool
+    {
+        return $authUser->can('Update:CustomCharacter');
+    }
+
+    /**
+     * Checks whether the owner or a moderator may remove this fighter.
+     *
      * @param  AuthUser  $authUser
      * @param  CustomCharacter  $customCharacter
      * @return bool
