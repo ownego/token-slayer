@@ -14,28 +14,17 @@ export const CUSTOM_FRAME = 100;
 const STATES = ['idle', 'walk', 'attack', 'death'];
 
 /**
- * How tall a custom fighter's body is inside its frame. The server pixelates the
- * sheet to `config('token_slayer.custom_character.sprite_height')`, which is
- * taller than the 18 px the roster fighters occupy, so the body is scaled down by
- * `CUSTOM_STAND_PX / CUSTOM_BODY_PX` to stand `CUSTOM_STAND_PX` tall on the field.
+ * How tall a custom fighter's body is inside its frame, and so how tall it stands on the
+ * field in the roster fighters' pixels (their body is 18, a custom one a little taller
+ * because a fighter from a player's own sheet read as small next to them). The server
+ * pixelates the sheet straight to this height
+ * (`config('token_slayer.custom_character.sprite_height')`) and the strips are drawn as
+ * they are: scaling them (they used to be built 28 tall and drawn at 22) resampled the
+ * pixel art, which made its detail soft next to the roster's. To change the size, change
+ * the server's number: this one follows it (`CustomCharacterConfigTest`).
  * @type {number}
  */
-const CUSTOM_BODY_PX = 28;
-
-/**
- * How tall a custom fighter stands on the field, in the roster fighters' pixels: a little
- * taller than their `ROSTER_BODY_PX` (18), because at 18 a fighter drawn from a player's own
- * sheet read as small next to the roster. The one number to change to make them bigger or smaller.
- * @type {number}
- */
-const CUSTOM_STAND_PX = 22;
-
-/**
- * The roster fighters' body height inside their frame (`fighter/index.js` scales
- * every fighter so these pixels fill its display size).
- * @type {number}
- */
-const ROSTER_BODY_PX = 18;
+const CUSTOM_BODY_PX = 22;
 
 /**
  * Row of a standing custom fighter's lowest pixel (the server's `FOOT_ROW`).
@@ -173,7 +162,7 @@ export function releaseCustomFighter({ textures, anims }, ftype) {
  */
 export function customFighterType(userId, spec) {
   const key = customFighterKey(userId, spec.version);
-  const bodyScale = CUSTOM_STAND_PX / CUSTOM_BODY_PX;
+  const bodyScale = 1;
 
   return {
     key,
@@ -183,8 +172,8 @@ export function customFighterType(userId, spec) {
     attackType: AttackType.SLASH,
     animations: spec.animations,
     bodyScale,
-    bodyPx: CUSTOM_STAND_PX,
-    headTop: CUSTOM_FOOT_ROW - CUSTOM_STAND_PX,
+    bodyPx: CUSTOM_BODY_PX,
+    headTop: CUSTOM_FOOT_ROW - CUSTOM_BODY_PX,
     bodyOffsetY: (CUSTOM_FOOT_ROW - FRAME_CENTRE_ROW) * (1 - bodyScale),
   };
 }

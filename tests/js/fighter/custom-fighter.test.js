@@ -104,16 +104,16 @@ describe('customFighterType', () => {
     expect(type.attackType).toBe(AttackType.SLASH);
   });
 
-  test('is drawn smaller than its frame suggests, standing a little taller than a roster fighter', () => {
-    // the strips are built at 28px tall; the roster fighters are 18px tall in their frame and a custom one stands 22
-    expect(type.bodyScale).toBeCloseTo(22 / 28);
+  test('is drawn at its strips\' own pixel size, a little taller than a roster fighter', () => {
+    // built 22px tall (a roster fighter is 18) and drawn as it is: no resampling, the same pixel size as the roster
+    expect(type.bodyScale).toBe(1);
     expect(type.bodyPx).toBe(22);
     expect(type.headTop).toBe(58 - 22);
   });
 
-  test('keeps its feet where a roster fighter\'s are once scaled down about the frame centre', () => {
-    // feet at row 58, frame centre at row 50: scaling about the centre lifts them by this many frame px
-    expect(type.bodyOffsetY).toBeCloseTo((58 - 50) * (1 - 22 / 28));
+  test('keeps its feet where a roster fighter\'s are, with nothing to nudge', () => {
+    // feet at row 58 like the roster; an unscaled body needs no offset
+    expect(type.bodyOffsetY).toBe(0);
   });
 });
 

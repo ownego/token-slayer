@@ -377,8 +377,10 @@ PROMPT,
                 'attack' => 'a wild two-handed sweeping axe chop with the berserker\'s battle axe',
             ],
         ],
-        // Height in px the idle/walk poses are shrunk to, before the outline is added.
-        'sprite_height' => 28,
+        // Height in px the idle/walk poses are shrunk to, before the outline is added. It is also how tall the
+        // fighter stands on the field in the roster's pixels (their body is 18): the strips are drawn unscaled, so
+        // the pixel size matches the roster's. JS twin: CUSTOM_BODY_PX in fighter/custom-fighter.js.
+        'sprite_height' => 22,
         // Colours shared by every pose after quantising.
         'palette_colors' => 24,
         'outline_color' => '#16121f',
