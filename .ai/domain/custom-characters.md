@@ -106,3 +106,5 @@ The picker is `resources/js/custom-character/prompt-picker.js` (Alpine `characte
 ## Deploying
 
 `php artisan migrate` creates `Update:CustomCharacter` and grants the complete fighter permission set to `super_admin`. Assign any other admin role in Shield. If strips move to R2, copy first (`custom-characters:copy-disk public r2`), then set `TOKEN_SLAYER_CUSTOM_CHARACTER_DISK=r2` and configure bucket CORS (`Access-Control-Allow-Origin`, `Vary: Origin`). Post-deploy check should return no rows: `SELECT c.id FROM custom_characters c LEFT JOIN custom_character_versions v ON v.custom_character_id = c.id AND v.version_hash = c.version_hash WHERE v.id IS NULL`.
+
+**Author.** `CustomCharacter::sheetState()` carries `author` (the owner's `displayHandle()`); `broadcastState()` never does. The stage shows it as "Created by …" on `#show-author`, set as text.

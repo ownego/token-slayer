@@ -47,6 +47,8 @@ Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness
 
 `.show-stage` (270 px desktop, 190 px portrait, 120 px landscape; accent glow floor line, sprite at `scale: 4`, boss on the right), `.show-info` (name, type and `.show-state`), `.hotbar`, `.inspector` (Pause, Frame, Play for a draft or version peek), and `.equip-row`. A draft is a `.slot .badge.draft` roster entry, using the same stage and moves as a saved fighter. Do not build a second preview widget.
 
+`.show-author` (12 px `--display` gold, hidden when empty): its own line under `.show-type` reading "Created by <handle>" for a custom fighter and its draft; never merged into the description line, never shown for a roster fighter. The author is plain text (`textContent`), and it lives only in `sheetState()`, never in the public broadcast.
+
 ## Editor panel (the custom fighter editor, `.cce`)
 
 An in-place `.cce-drawer` below the stage (`custom-character-editor.blade.php`). The stage stays visible; on a phone the roster hides while the drawer is open.
