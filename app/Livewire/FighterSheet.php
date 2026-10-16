@@ -3,11 +3,15 @@
 namespace App\Livewire;
 
 use App\Enums\FighterCharacter;
-use App\Events\FighterCharacterChanged;
+use App\Exceptions\CustomCharacterBusyException;
+use App\Models\CustomCharacter;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Analytics\FleetUsageRefresher;
 use App\Services\BossArena;
+use App\Services\CustomCharacter\EquipCustomCharacter;
+use App\Services\CustomCharacter\EquipRosterCharacter;
+use App\Services\CustomCharacter\PreviewStrips;
 use App\Services\DamageTotals;
 use App\Services\GitHub\CachedLatestVersion;
 use App\Services\Profile\AccountAlerts;
@@ -19,6 +23,7 @@ use App\Services\Profile\CharacterRoommates;
 use App\Services\Profile\DamageByModel;
 use App\Services\Profile\DamageByPeriod;
 use App\Services\Profile\HourlyDamage;
+use App\Services\Profile\OtherCustomCharacters;
 use App\Services\Profile\Period;
 use App\Services\Profile\PeriodStats;
 use App\Services\SubagentCountCache;
@@ -106,6 +111,32 @@ class FighterSheet extends Component
     public ?string $equippedKey = null;
 
     /**
+     * The user's own custom fighter, equipped or not (the Character tab shows it
+     * as a slot either way), or null when they have not built one. Its shape is
+     * CustomCharacter::broadcastState().
+     *
+     * @var array<string, mixed>|null
+     */
+    public ?array $customCharacter = null;
+
+    /**
+     * The draft the player built and has not used yet (`PreviewStrips::draftPayload`),
+     * handed to the Character tab's stage so a draft saved in an earlier session shows
+     * as a slot without the editor ever mounting.
+     *
+     * @var array{hash: string, spec: array<string, mixed>}|null
+     */
+    public ?array $customDraft = null;
+
+    /**
+     * The roster key the Character tab uses for the custom fighter's slot, in
+     * $equipped and in equip().
+     *
+     * @var string
+     */
+    public const string CUSTOM_KEY = CustomCharacter::SHEET_KEY;
+
+    /**
      * Seeds $equipped/$equippedKey from the current boss context, same as
      * the old CharacterSelect::mount(), and prefills the custom range.
      *
@@ -125,8 +156,77 @@ class FighterSheet extends Component
             return;
         }
 
-        $this->equipped = $user->characterForBoss($arena->current()->id);
+        $this->equipped = $user->equippedFighterKey($arena->current()->id);
         $this->equippedKey = $user->equipped_character?->value;
+        $this->customCharacter = $user->customCharacter()->first()?->sheetState();
+        $this->customDraft = app(PreviewStrips::class)->draftPayload($user);
+    }
+
+    /**
+     * Follows the editor: a custom fighter made, renamed, replaced, switched or
+     * removed there is what the Character tab and the Profile mini-stage show the
+     * next time the sheet opens (their markup is rebuilt from these properties).
+     *
+     * @param  BossArena  $arena  supplies the current boss for the roster fallback
+     * @return void
+     */
+    #[On('custom-character-changed')]
+    #[Renderless]
+    public function refreshCustomCharacter(BossArena $arena): void
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return;
+        }
+
+        $user->unsetRelation('customCharacter');
+        $this->customCharacter = $user->customCharacter()->first()?->sheetState();
+        $this->customDraft = app(PreviewStrips::class)->draftPayload($user);
+        $this->equipped = $user->equippedFighterKey($arena->current()->id);
+        $this->equippedKey = $user->equipped_character?->value;
+    }
+
+    /**
+     * Answers the stage's request for the current state (a live change of the player's
+     * own fighter arrived from elsewhere): re-reads it and hands it back as
+     * `custom-character-state`, which the stage applies without a ceremony. It is not
+     * `custom-character-changed`, which the editor sends and this component listens to.
+     *
+     * @param  BossArena  $arena  supplies the current boss for the roster fallback
+     * @return void
+     */
+    #[On('custom-character-refresh')]
+    #[Renderless]
+    public function publishCustomCharacter(BossArena $arena): void
+    {
+        $this->refreshCustomCharacter($arena);
+
+        $this->dispatch(
+            'custom-character-state',
+            custom: $this->customCharacter,
+            draft: $this->customDraft,
+            equipped: $this->equipped,
+        );
+    }
+
+    /**
+     * Sends the current previews after another player changes their fighter.
+     *
+     * @param  OtherCustomCharacters  $otherCustomCharacters
+     * @return void
+     */
+    #[On('other-custom-characters-refresh')]
+    #[Renderless]
+    public function publishOtherCustomCharacters(OtherCustomCharacters $otherCustomCharacters): void
+    {
+        $viewer = auth()->user();
+
+        if (! $viewer) {
+            return;
+        }
+
+        $this->dispatch('other-custom-characters-state', characters: $otherCustomCharacters->for($viewer));
     }
 
     /**
@@ -286,28 +386,66 @@ class FighterSheet extends Component
      * CharacterSelect::equip(), whose own docblock this repeats. Unknown
      * keys are silently rejected.
      *
-     * @param  string  $key  a FighterCharacter enum value
+     * @param  string  $key  a FighterCharacter enum value, or CUSTOM_KEY
+     * @param  EquipCustomCharacter  $equipCustom  equips the custom fighter
+     * @param  EquipRosterCharacter  $equipRoster  equips a roster character
      * @return void
      */
-    public function equip(string $key): void
+    public function equip(string $key, EquipCustomCharacter $equipCustom, EquipRosterCharacter $equipRoster): void
     {
-        $character = FighterCharacter::tryFrom($key);
-
-        if ($character === null) {
-            return;
-        }
-
         $user = auth()->user();
 
         if (! $user) {
             return;
         }
 
-        $user->forceFill(['equipped_character' => $character])->save();
-        $this->equipped = $character->value;
-        $this->equippedKey = $character->value;
+        try {
+            if ($key === self::CUSTOM_KEY) {
+                $this->equipCustom($user, $equipCustom);
 
-        FighterCharacterChanged::dispatch($user);
+                return;
+            }
+
+            $character = FighterCharacter::tryFrom($key);
+
+            if ($character === null) {
+                return;
+            }
+
+            $equipRoster->execute($user, $character);
+        } catch (CustomCharacterBusyException $exception) {
+            // the sheet moved on optimistically: tell it to go back to what the server still has
+            $this->dispatch('sheet-equip-failed', message: $exception->getMessage(), equipped: $this->equipped);
+
+            return;
+        }
+
+        $this->equipped = $character->value;
+        $this->customCharacter = $user->customCharacter()->first()?->sheetState();
+        $this->equippedKey = $character->value;
+    }
+
+    /**
+     * Equips the user's custom fighter, if they built one, and broadcasts the
+     * change. The roster character they had equipped is left as it is, so
+     * picking it again later puts them back.
+     *
+     * @param  User  $user  the authenticated user
+     * @param  EquipCustomCharacter  $equipCustom  equips the fighter
+     * @return void
+     *
+     * @throws CustomCharacterBusyException when another change of the player's is still running
+     */
+    private function equipCustom(User $user, EquipCustomCharacter $equipCustom): void
+    {
+        $custom = $equipCustom->execute($user);
+
+        if ($custom === null) {
+            return;
+        }
+
+        $this->equipped = self::CUSTOM_KEY;
+        $this->customCharacter = $custom->fresh()->sheetState();
     }
 
     /**
@@ -407,6 +545,7 @@ class FighterSheet extends Component
      * @param  CachedLatestVersion  $latest
      * @param  AccountAlerts  $alertsService
      * @param  CharacterRoommates  $roommatesService
+     * @param  OtherCustomCharacters  $otherCustomCharacters
      * @param  SubagentCountCache  $minionCache
      * @param  PeriodStats  $statsService
      * @param  AccountCardSummaries  $cardSummaries
@@ -422,6 +561,7 @@ class FighterSheet extends Component
         CachedLatestVersion $latest,
         AccountAlerts $alertsService,
         CharacterRoommates $roommatesService,
+        OtherCustomCharacters $otherCustomCharacters,
         SubagentCountCache $minionCache,
         PeriodStats $statsService,
         AccountCardSummaries $cardSummaries,
@@ -458,6 +598,7 @@ class FighterSheet extends Component
             'attribution' => $attribution,
             'alerts' => $alertsService->for($accounts, $attribution),
             'roommates' => $roommatesService->for(),
+            'otherCustomCharacters' => $otherCustomCharacters->for($user),
             'minions' => $minionCache->countFor($user->id),
         ]);
     }

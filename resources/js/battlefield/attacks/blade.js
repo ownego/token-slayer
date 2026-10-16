@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { AttackType, TextureKey } from '@battlefield/constants.js';
+import { AttackType } from '@battlefield/constants.js';
+import { textureOf } from '@battlefield/fighter/custom-fighter.js';
 import { restScale, swingArc, slashBurst } from './fx.js';
 
 /**
@@ -18,6 +19,9 @@ export function blade(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
   const bossY      = scene.layout.boss.anchor.y;
   const towardBoss = fx <= bossX ? 1 : -1;
   const ds         = fighter.displaySize;
+  // the look the dash began with: a custom fighter may swap in meanwhile, and its frames are not in the shared atlas
+  const ghostLook  = fighter.ftype;
+  const ghostTexture = textureOf(ghostLook);
 
   const dashX   = bossX + towardBoss * ds * 0.2;
   const dashY   = bossY + ds * 0.3;
@@ -38,11 +42,11 @@ export function blade(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
       if (ghostCount < numGhosts && tween.elapsed >= ghostCount * ghostEvery) {
         const curX  = fighter.sprite.x;
         const curY  = fighter.sprite.y;
-        const frame = fighter.body?.anims?.currentFrame?.textureFrame ?? `${fighter.ftype.key}-walk-0`;
+        const frame = fighter.body?.anims?.currentFrame?.textureFrame ?? `${ghostLook.key}-walk-0`;
         const alpha = 0.55 - ghostCount * 0.08;
         const tint  = ghostCount % 2 === 0 ? 0x4c1d95 : 0x7c3aed;
         ghostCount++;
-        const ghost = scene.add.sprite(curX, curY, TextureKey.FIGHTERS, frame)
+        const ghost = scene.add.sprite(curX, curY, ghostTexture, frame)
           .setScale(bodyScale)
           .setFlipX(flipX)
           .setTint(tint)
@@ -93,7 +97,7 @@ export function blade(scene, fighter, { isKillShot, damage, maxHp, onImpact, onE
         const ghostX = dashX + (fx - dashX) * t;
         const ghostY = dashY + (fy - dashY) * t;
         scene.time.delayedCall(i * 30 + 55, () => {
-          const g2 = scene.add.sprite(ghostX, ghostY, TextureKey.FIGHTERS, `${fighter.ftype.key}-idle-0`)
+          const g2 = scene.add.sprite(ghostX, ghostY, ghostTexture, `${ghostLook.key}-idle-0`)
             .setScale(bodyScale)
             .setFlipX(false)
             .setTint(0x3b0764)

@@ -19,6 +19,8 @@ vi.mock('@battlefield/fighter/flair-font.js', () => ({
   FLAIR_FONT_FAMILY: 'x', FLAIR_FONT_WEIGHT: 400, ensureFlairFont() {}, isFlairFontReady: () => true,
 }));
 
+vi.mock('@battlefield/fighter/custom-fighter-loader.js', () => ({ loadCustomFighter: vi.fn() }));
+
 import { Fighter } from '@battlefield/fighter.js';
 import { LAYOUTS } from '@battlefield/config.js';
 
@@ -188,7 +190,7 @@ describe('updateCharacters', () => {
     const entry = { id: 1, ftype: { key: 'soldier' }, pos: { x: 100, y: 200 }, body, animState: 'idle' };
     const scene = {
       fighters: new Map([[1, entry]]),
-      anims: { exists: () => true, get: () => ({ frames: [1, 2, 3] }) },
+      anims: { exists: () => true, remove() {}, get: () => ({ frames: [1, 2, 3] }) },
       necromancer: { spawnSummonCircle: vi.fn() },
       reducedMotion,
       isShuttingDown: false,
@@ -254,5 +256,794 @@ describe('changing character while charging', () => {
     fighter._applyCharacter(entry, b);
 
     expect(ring.y).toBe(entry.head.y);
+  });
+});
+
+describe('custom fighters', () => {
+  const WIRE = {
+    version: 'abc',
+    url_base: '/storage/custom-characters/1/abc',
+    animations: {
+      idle: { frames: 6, rate: 8 },
+      walk: { frames: 8, rate: 10 },
+      attack: { frames: 6, rate: 12 },
+      death: { frames: 3, rate: 6 },
+    },
+  };
+
+  const makeScene = ({ ftype = { key: 'soldier' }, reducedMotion = true } = {}) => {
+    const onceHandlers = [];
+    const body = {
+      play: vi.fn(),
+      setTexture: vi.fn(),
+      setScale: vi.fn(function () { return this; }),
+      setY: vi.fn(function () { return this; }),
+      once: vi.fn((event, cb) => onceHandlers.push(cb)),
+    };
+    const entry = { id: 1, ftype, baseSize: 36, pos: { x: 100, y: 200 }, body, animState: 'idle', bodyFitted: Boolean(ftype.custom) };
+    const scene = {
+      fighters: new Map([[1, entry]]),
+      textures: { getFrame: () => null, remove() {} },
+      anims: { exists: () => true, remove() {}, get: () => ({ frames: [1, 2, 3] }) },
+      necromancer: { spawnSummonCircle: vi.fn() },
+      reducedMotion,
+      isShuttingDown: false,
+    };
+
+    return { scene, entry, body, finishAnim: () => onceHandlers.shift()?.() };
+  };
+
+  /** Lets the loader's promise chain settle. */
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  const loaded = async () => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE));
+  };
+
+  test('loads the strips a payload names, then shows the fighter as that character', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const ftype = await loaded();
+    loadCustomFighter.mockResolvedValue(ftype);
+    const { scene, entry, body } = makeScene();
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+
+    expect(loadCustomFighter).toHaveBeenCalledWith(scene, 1, expect.objectContaining({ version: 'abc' }));
+    expect(entry.ftype).toBe(ftype);
+    expect(body.setTexture).toHaveBeenLastCalledWith('custom-1-abc', 'custom-1-abc-idle-0');
+    expect(body.play).toHaveBeenLastCalledWith('custom-1-abc-idle');
+  });
+
+  test('stands the body as tall as a roster fighter, with its feet on the same line', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const ftype = await loaded();
+    loadCustomFighter.mockResolvedValue(ftype);
+    const { scene, body } = makeScene();
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+
+    const scale = 36 / 18;
+    expect(body.setScale).toHaveBeenLastCalledWith(scale * ftype.bodyScale);
+    expect(body.setY).toHaveBeenLastCalledWith(ftype.bodyOffsetY * scale);
+  });
+
+  test('a fighter already showing that version is not loaded again', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockClear();
+    const { scene } = makeScene({ ftype: await loaded() });
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+
+    expect(loadCustomFighter).not.toHaveBeenCalled();
+  });
+
+  test('the boot payload\'s camelCase shape loads the same fighter', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockClear();
+    loadCustomFighter.mockResolvedValue(await loaded());
+    const { scene } = makeScene();
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: { version: 'abc', urlBase: WIRE.url_base, animations: WIRE.animations } }]);
+
+    expect(loadCustomFighter).toHaveBeenCalledOnce();
+  });
+
+  test('a character equipped through the sheet does not displace the custom fighter', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const { scene, entry } = makeScene({ ftype: await loaded() });
+    loadCustomFighter.mockClear();
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard', custom_character: WIRE }]);
+    await settle();
+
+    expect(entry.ftype.key).toBe('custom-1-abc');
+  });
+
+  test('removing the custom character puts the roster character back, body at its own size', async () => {
+    const { scene, entry, body } = makeScene({ ftype: await loaded() });
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard', custom_character: null }]);
+
+    expect(entry.ftype.key).toBe('wizard');
+    expect(body.setScale).toHaveBeenLastCalledWith(36 / 18);
+    expect(body.setY).toHaveBeenLastCalledWith(0);
+    expect(body.setTexture).toHaveBeenLastCalledWith('fighters', 'wizard-idle-0');
+  });
+
+  test('a load that finishes after the character was removed does not bring it back', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    let finish;
+    loadCustomFighter.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const { scene, entry } = makeScene();
+    const fighter = new Fighter(scene);
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    fighter.updateCharacters([{ user_id: 1, character: 'wizard', custom_character: null }]);
+    finish(await loaded());
+    await settle();
+
+    expect(entry.ftype.key).toBe('wizard');
+  });
+
+  test('a strip that will not load leaves the fighter as its roster character', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockRejectedValue(new Error('404'));
+    const { scene, entry } = makeScene();
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+
+    expect(entry.ftype.key).toBe('soldier');
+  });
+
+  test('a custom fighter\'s own death and summon play when it is swapped in with animation', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockResolvedValue(await loaded());
+    const { scene, entry, body, finishAnim } = makeScene({ reducedMotion: false });
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }], { animate: true });
+    await settle();
+    expect(body.play).toHaveBeenLastCalledWith('soldier-death');
+
+    finishAnim();
+    expect(entry.ftype.key).toBe('custom-1-abc');
+    expect(body.setTexture).toHaveBeenLastCalledWith('custom-1-abc', 'custom-1-abc-death-0');
+    expect(body.play).toHaveBeenLastCalledWith('custom-1-abc-summon');
+  });
+});
+
+describe('custom fighters across a rotate', () => {
+  test('a fighter whose strips are still loading snapshots the custom character it is waiting for', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const { snapshotState } = await import('@battlefield/snapshot.js');
+    loadCustomFighter.mockReturnValue(new Promise(() => {}));
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, pos: { x: 1, y: 2 }, handleText: 'a', body: {} };
+    const scene = { fighters: new Map([[1, entry]]), charges: new Map(), damageTotals: new Map(), layout: { logicalWidth: 960, logicalHeight: 540 } };
+    const wire = { version: 'abc', url_base: '/storage/custom-characters/1/abc', animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } };
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: wire }]);
+
+    expect(snapshotState({}, scene).fighters[0].customCharacter).toMatchObject({ version: 'abc', urlBase: wire.url_base });
+  });
+
+  test('a removed custom character is no longer snapshotted', async () => {
+    const { snapshotState } = await import('@battlefield/snapshot.js');
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, pos: { x: 1, y: 2 }, handleText: 'a', body: { setTexture() {}, play() {}, setScale() { return this; }, setY() { return this; } }, customRequest: { wantedKey: 'custom-1-abc', wantedSpec: { version: 'abc' }, loadingKey: null, failedKey: null, retryAt: 0 }, bodyFitted: false };
+    const scene = { fighters: new Map([[1, entry]]), charges: new Map(), damageTotals: new Map(), layout: { logicalWidth: 960, logicalHeight: 540 }, textures: { getFrame: () => null, remove() {} }, anims: { exists: () => true, remove() {}, get: () => ({ frames: [1] }) }, reducedMotion: true };
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard', custom_character: null }]);
+
+    expect(snapshotState({}, scene).fighters[0].customCharacter).toBeNull();
+  });
+});
+
+describe('custom fighters: retries and stale loads', () => {
+  const WIRE = { version: 'abc', url_base: '/storage/custom-characters/1/abc', animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } };
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const body = () => ({ play: vi.fn(), setTexture: vi.fn(), setScale: vi.fn(function () { return this; }), setY: vi.fn(function () { return this; }), once: vi.fn() });
+  const sceneFor = entry => ({ fighters: new Map([[1, entry]]), textures: { getFrame: () => null, remove() {} }, anims: { exists: () => true, remove() {}, get: () => ({ frames: [1] }) }, reducedMotion: true, isShuttingDown: false, time: { now: 0 } });
+  const entryFor = () => ({ id: 1, ftype: { key: 'soldier' }, baseSize: 36, pos: { x: 1, y: 2 }, body: body(), sprite: { active: true } });
+  const typeFor = async () => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE));
+  };
+
+  test('a swap cut short by a hit is retried by the next update, not blocked for the session', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockResolvedValue(await typeFor());
+    const entry = entryFor();
+    const scene = sceneFor(entry);
+    scene.reducedMotion = false; // animated swap: ftype is only set once the death animation completes
+    const fighter = new Fighter(scene);
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }], { animate: true });
+    await settle(); // load done, waiting on the death animation that a hit then cancels
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+
+    expect(entry.ftype.key).toBe('custom-1-abc');
+  });
+
+  test('a failed load is tried again by a later update', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockRejectedValueOnce(new Error('503')).mockResolvedValue(await typeFor());
+    const entry = entryFor();
+    const scene = sceneFor(entry);
+    const fighter = new Fighter(scene);
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+    expect(entry.ftype.key).toBe('soldier');
+
+    scene.time.now = 60_000; // past the retry backoff
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+
+    expect(entry.ftype.key).toBe('custom-1-abc');
+  });
+
+  test('a failed load is not hammered: an update right behind it does not fetch again', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockRejectedValue(new Error('503'));
+    const scene = sceneFor(entryFor());
+    const fighter = new Fighter(scene);
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    await settle();
+
+    expect(loadCustomFighter).toHaveBeenCalledTimes(1);
+  });
+
+  test('a load that finishes after the fighter left does nothing', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    let finish;
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const entry = entryFor();
+    const scene = sceneFor(entry);
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE }]);
+    scene.fighters.delete(1);
+    entry.sprite.active = false;
+    finish(await typeFor());
+    await settle();
+
+    expect(entry.body.setTexture).not.toHaveBeenCalled();
+    expect(entry.ftype.key).toBe('soldier');
+  });
+
+  test('a rotate snapshot prefers the newer request over the look it is still wearing', async () => {
+    const { snapshotState } = await import('@battlefield/snapshot.js');
+    const entry = { ...entryFor(), handleText: 'a', ftype: { key: 'custom-1-old', custom: true, spec: { version: 'old' } }, customRequest: { wantedKey: 'custom-1-new', wantedSpec: { version: 'new' }, loadingKey: null, failedKey: null, retryAt: 0 } };
+    const scene = { ...sceneFor(entry), charges: new Map(), damageTotals: new Map(), layout: { logicalWidth: 960, logicalHeight: 540 } };
+
+    expect(snapshotState({}, scene).fighters[0].customCharacter).toEqual({ version: 'new' });
+  });
+
+  test('a removed custom character is not snapshotted even while its old look is still on', async () => {
+    const { snapshotState } = await import('@battlefield/snapshot.js');
+    const entry = { ...entryFor(), handleText: 'a', ftype: { key: 'custom-1-old', custom: true, spec: { version: 'old' } }, customRequest: { wantedKey: 'custom-1-old', wantedSpec: { version: 'old' }, loadingKey: null, failedKey: null, retryAt: 0 }, bodyFitted: true };
+    const scene = { ...sceneFor(entry), charges: new Map(), damageTotals: new Map(), layout: { logicalWidth: 960, logicalHeight: 540 } };
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard', custom_character: null }]);
+
+    expect(entry.ftype.key).toBe('wizard');
+    expect(snapshotState({}, scene).fighters[0].customCharacter).toBeNull();
+  });
+});
+
+describe('custom fighters: animation state across a swap', () => {
+  const WIRE = { version: 'abc', url_base: '/storage/custom-characters/1/abc', animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } };
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const typeFor = async () => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE));
+  };
+  const makeBody = () => ({
+    play: vi.fn(),
+    setTexture: vi.fn(),
+    setScale: vi.fn(function () { return this; }),
+    setY: vi.fn(function () { return this; }),
+    setFlipX: vi.fn(),
+    off: vi.fn(),
+    once: vi.fn(),
+    scene: {},
+  });
+  const makeScene = (entry, { charging = false } = {}) => ({
+    fighters: new Map([[1, entry]]),
+    charges: new Map(charging ? [[1, { ring: { setY() {} } }]] : []),
+    textures: { getFrame: () => null, remove: vi.fn() },
+    anims: { exists: () => true, remove() {}, get: () => ({ frames: [1] }), remove: vi.fn() },
+    reducedMotion: true,
+    isShuttingDown: false,
+    time: { now: 0, delayedCall() {} },
+  });
+
+  test('a swap that lands while the fighter is charging keeps it walking, on the new body', async () => {
+    const ftype = await typeFor();
+    const body = makeBody();
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, body, animState: 'walk', sprite: { active: true } };
+
+    new Fighter(makeScene(entry, { charging: true }))._applyCharacter(entry, ftype);
+
+    expect(entry.animState).toBe('walk');
+    expect(body.setTexture).toHaveBeenLastCalledWith('custom-1-abc', 'custom-1-abc-idle-0');
+    expect(body.play).toHaveBeenLastCalledWith('custom-1-abc-walk');
+  });
+
+  test('a swap that lands while the fighter is idle leaves it idle', async () => {
+    const ftype = await typeFor();
+    const body = makeBody();
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, body, animState: 'idle', sprite: { active: true } };
+
+    new Fighter(makeScene(entry))._applyCharacter(entry, ftype);
+
+    expect(body.play).toHaveBeenLastCalledWith('custom-1-abc-idle');
+  });
+
+  test('a swap that lands mid attack does not cut the attack: the type changes, the animation plays on', async () => {
+    const ftype = await typeFor();
+    const body = makeBody();
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, body, animState: 'attack', sprite: { active: true } };
+
+    new Fighter(makeScene(entry))._applyCharacter(entry, ftype);
+
+    expect(entry.ftype).toBe(ftype);
+    expect(entry.animState).toBe('attack');
+    expect(body.setTexture).not.toHaveBeenCalled();
+    expect(body.play).not.toHaveBeenCalled();
+  });
+
+  test('the attack that was cut across by a swap hands over to the new look, not the old one it started with', async () => {
+    const completions = [];
+    const body = { ...makeBody(), once: vi.fn((event, callback) => completions.push(callback)) };
+    const entry = {
+      id: 1,
+      ftype: { key: 'soldier' },
+      sprite: { x: 300, y: 460, active: true, scaleX: 1 },
+      body,
+      pos: { x: 300, y: 460 },
+      displaySize: 48,
+      damageScale: 1,
+      animState: 'idle',
+    };
+    const scene = {
+      ...makeScene(entry),
+      layout: LAYOUTS.landscape,
+      bossState: { number: 0, currentHp: 1000, maxHp: 1000 },
+      damageTotals: new Map(),
+      tweens: { killTweensOf() {}, add(cfg) { return cfg; } },
+      attacks: { dispatch() {} },
+    };
+    const fighter = new Fighter(scene);
+
+    fighter.handleHit({ user_id: 1, damage: 0, boss_hp_after: 990 });
+    fighter._applyCharacter(entry, await typeFor());
+    completions[0]();
+
+    expect(body.play).toHaveBeenLastCalledWith('custom-1-abc-idle');
+    expect(entry.animState).toBe('idle');
+  });
+
+  test('the custom look a fighter leaves behind is released, so a long session does not collect one canvas per rebuild', async () => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+    const old = customFighterType(1, normalizeCustomCharacter({ ...WIRE, version: 'old' }));
+    const body = makeBody();
+    const entry = { id: 1, ftype: old, baseSize: 36, body, animState: 'idle', bodyFitted: true, sprite: { active: true } };
+    const scene = makeScene(entry);
+
+    new Fighter(scene)._applyCharacter(entry, await typeFor());
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
+    expect(scene.anims.remove).toHaveBeenCalledWith('custom-1-old-idle');
+    expect(scene.anims.remove).toHaveBeenCalledWith('custom-1-old-summon');
+  });
+
+  test('a roster look it leaves behind is never released: the atlas is shared', async () => {
+    const body = makeBody();
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, body, animState: 'idle', sprite: { active: true } };
+    const scene = makeScene(entry);
+
+    new Fighter(scene)._applyCharacter(entry, await typeFor());
+
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+  });
+
+  test('the roster character a custom fighter falls back to is remembered while it is pending, for a rotate', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockReturnValue(new Promise(() => {}));
+    const { snapshotState } = await import('@battlefield/snapshot.js');
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, handleText: 'a', pos: { x: 1, y: 2 }, body: makeBody(), sprite: { active: true } };
+    const scene = { ...makeScene(entry), damageTotals: new Map(), layout: { logicalWidth: 960, logicalHeight: 540 } };
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard', custom_character: WIRE }]);
+
+    expect(entry.rosterKey).toBe('wizard');
+    expect(snapshotState({}, scene).fighters[0].character).toBe('wizard');
+  });
+
+  test('a custom fighter on show snapshots its roster fallback as the character, never its own synthetic key', async () => {
+    const { snapshotState } = await import('@battlefield/snapshot.js');
+    const ftype = await typeFor();
+    const entry = { id: 1, ftype, rosterKey: 'knight', baseSize: 36, handleText: 'a', pos: { x: 1, y: 2 }, body: makeBody(), sprite: { active: true } };
+    const scene = { ...makeScene(entry), damageTotals: new Map(), layout: { logicalWidth: 960, logicalHeight: 540 } };
+
+    const fighters = snapshotState({}, scene).fighters;
+
+    expect(fighters[0].character).toBe('knight');
+    expect(fighters[0].customCharacter).toEqual(ftype.spec);
+  });
+
+  test('a newer version is not held back by an older one still loading or inside its retry window', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockReturnValue(new Promise(() => {}));
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, body: makeBody(), sprite: { active: true } };
+    const fighter = new Fighter(makeScene(entry));
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: { ...WIRE, version: 'one' } }]);
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: { ...WIRE, version: 'two' } }]);
+
+    expect(loadCustomFighter).toHaveBeenCalledTimes(2);
+    expect(entry.customRequest.wantedKey).toBe('custom-1-two');
+  });
+});
+
+describe('custom fighters: stale swaps and releases', () => {
+  const WIRE = (version = 'abc') => ({ version, url_base: '/storage/custom-characters/1/' + version, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const typeFor = async version => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE(version)));
+  };
+  const makeBody = () => ({
+    play: vi.fn(),
+    setTexture: vi.fn(),
+    setScale: vi.fn(function () { return this; }),
+    setY: vi.fn(function () { return this; }),
+    setFlipX: vi.fn(),
+    off: vi.fn(),
+    once: vi.fn(),
+    scene: {},
+  });
+  const makeScene = entry => ({
+    fighters: new Map([[1, entry]]),
+    charges: new Map(),
+    textures: { getFrame: () => null, remove: vi.fn() },
+    anims: { exists: () => true, get: () => ({ frames: [1] }), remove: vi.fn() },
+    necromancer: { spawnSummonCircle: vi.fn() },
+    reducedMotion: false,
+    isShuttingDown: false,
+    time: { now: 0, delayedCall() {} },
+  });
+
+  test('switching back to the version already on show while another loads leaves the fighter on it', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const v1 = await typeFor('v1');
+    const v2 = await typeFor('v2');
+    let land;
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    const entry = { id: 1, ftype: v1, baseSize: 36, body: makeBody(), sprite: { active: true }, bodyFitted: true };
+    const scene = makeScene(entry);
+    scene.reducedMotion = true;
+    const fighter = new Fighter(scene);
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE('v2') }]);
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE('v1') }]);
+    land(v2);
+    await settle();
+
+    expect(entry.ftype.key).toBe('custom-1-v1');
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-v2');
+  });
+
+  test('a roster equip, then the custom fighter again while its load is in flight, still ends on the custom fighter', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const v2 = await typeFor('v2');
+    let land;
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, body: makeBody(), sprite: { active: true } };
+    const scene = makeScene(entry);
+    scene.reducedMotion = true;
+    const fighter = new Fighter(scene);
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE('v2') }]);
+    fighter.updateCharacters([{ user_id: 1, character: 'wizard', custom_character: null }]);
+    fighter.updateCharacters([{ user_id: 1, character: 'wizard', custom_character: WIRE('v2') }]);
+    land(v2);
+    await settle();
+
+    expect(entry.ftype.key).toBe('custom-1-v2');
+  });
+
+  test('a swap\'s completion does not undo a newer choice made while it played', async () => {
+    const completions = [];
+    const v2 = await typeFor('v2');
+    const body = { ...makeBody(), once: vi.fn((event, callback) => completions.push(callback)) };
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, pos: { x: 1, y: 2 }, body, animState: 'idle', sprite: { active: true } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: null }]);
+
+    fighter._requests(entry).wantedKey = v2.key;
+    fighter._swapCharacter(entry, v2);
+    // while the soldier's death plays the player goes back to the roster: the custom swap is no longer wanted
+    fighter._requests(entry).wantedKey = null;
+    completions.shift()();
+
+    expect(entry.ftype.key).toBe('soldier');
+    expect(body.setTexture).not.toHaveBeenCalledWith('custom-1-v2', expect.anything());
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-v2');
+  });
+
+  test('a look left behind mid attack is let go of once the attack ends: the playing attack still draws from it until then', async () => {
+    const old = await typeFor('old');
+    const body = makeBody();
+    const entry = { id: 1, ftype: old, baseSize: 36, body, animState: 'attack', bodyFitted: true, sprite: { active: true } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+
+    fighter._applyCharacter(entry, await typeFor('new'));
+
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+    expect(body.play).not.toHaveBeenCalled();
+
+    fighter._releasePending(entry);
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
+    expect(scene.textures.remove).toHaveBeenCalledTimes(1);
+  });
+
+  test('a swap cut short while it was summoning still lets go of the look it left, once the attack that cut it ends', async () => {
+    const completions = [];
+    const old = await typeFor('old');
+    const next = await typeFor('next');
+    const body = { ...makeBody(), once: vi.fn((event, callback) => completions.push(callback)) };
+    const entry = {
+      id: 1,
+      ftype: old,
+      baseSize: 36,
+      pos: { x: 300, y: 460 },
+      sprite: { x: 300, y: 460, active: true, scaleX: 1 },
+      displaySize: 48,
+      damageScale: 1,
+      body,
+      animState: 'idle',
+      bodyFitted: true,
+    };
+    const scene = {
+      ...makeScene(entry),
+      layout: LAYOUTS.landscape,
+      bossState: { number: 0, currentHp: 1000, maxHp: 1000 },
+      damageTotals: new Map(),
+      tweens: { killTweensOf() {}, add(cfg) { return cfg; } },
+      attacks: { dispatch() {} },
+    };
+    const fighter = new Fighter(scene);
+    fighter._requests(entry).wantedKey = next.key;
+
+    fighter._swapCharacter(entry, next);
+    completions.shift()(); // the old look's death finished: the new one is summoning, the old one is pending release
+    fighter.handleHit({ user_id: 1, damage: 0, boss_hp_after: 990 }); // a hit cuts the summon's completion
+    completions.pop()(); // the attack ends
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
+  });
+});
+
+describe('custom fighters: leaving the field and aborted swaps', () => {
+  const WIRE = (version = 'abc') => ({ version, url_base: '/storage/custom-characters/1/' + version, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+  const typeFor = async version => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE(version)));
+  };
+  const makeBody = () => ({
+    play: vi.fn(),
+    setTexture: vi.fn(),
+    setScale: vi.fn(function () { return this; }),
+    setY: vi.fn(function () { return this; }),
+    setFlipX: vi.fn(),
+    off: vi.fn(),
+    once: vi.fn(),
+    scene: {},
+  });
+  const makeScene = entry => ({
+    fighters: new Map([[1, entry]]),
+    charges: new Map(),
+    textures: { getFrame: () => null, remove: vi.fn() },
+    anims: { exists: () => true, get: () => ({ frames: [1] }), remove: vi.fn() },
+    necromancer: { spawnSummonCircle: vi.fn() },
+    tweens: { add: vi.fn(cfg => cfg) },
+    reducedMotion: false,
+    isShuttingDown: false,
+    time: { now: 0, delayedCall() {} },
+    layout: LAYOUTS.landscape,
+  });
+
+  test('a fighter that leaves lets go of its custom look once the fade is over, not before', async () => {
+    const look = await typeFor('mine');
+    const entry = { id: 1, ftype: look, baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() }, bodyFitted: true };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.removeFighter(1);
+
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+    scene.tweens.add.mock.calls[0][0].onComplete();
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-mine');
+  });
+
+  test('a look left behind while an attack played goes with the fighter that leaves', async () => {
+    const left = await typeFor('left');
+    const look = await typeFor('mine');
+    const entry = { id: 1, ftype: look, releaseOnApply: [left], baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.removeFighter(1);
+    scene.tweens.add.mock.calls[0][0].onComplete();
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-left');
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-mine');
+  });
+
+  test('a fighter who rejoins before the fade ends keeps the look it came back with', async () => {
+    const look = await typeFor('mine');
+    const entry = { id: 1, ftype: look, baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.removeFighter(1);
+    scene.fighters.set(1, { id: 1, ftype: look, customRequest: { wantedKey: look.key } });
+    scene.tweens.add.mock.calls[0][0].onComplete();
+
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+  });
+
+  test('a custom look that finishes loading for a fighter who has left is let go of at once', async () => {
+    const { loadCustomFighter } = await import('@battlefield/fighter/custom-fighter-loader.js');
+    const next = await typeFor('next');
+    let land;
+    loadCustomFighter.mockReset();
+    loadCustomFighter.mockReturnValue(new Promise(resolve => { land = resolve; }));
+    const entry = { id: 1, ftype: { key: 'soldier' }, baseSize: 36, displaySize: 48, body: makeBody(), sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+
+    fighter.updateCharacters([{ user_id: 1, character: 'soldier', custom_character: WIRE('next') }]);
+    fighter.removeFighter(1);
+    land(next);
+    await settle();
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-next');
+  });
+
+  test('when the wanted look flips back while the death plays, the old fighter stands up again', async () => {
+    const completions = [];
+    const old = await typeFor('old');
+    const next = await typeFor('next');
+    const body = { ...makeBody(), once: vi.fn((event, callback) => completions.push(callback)) };
+    const entry = { id: 1, ftype: old, baseSize: 36, displaySize: 48, pos: { x: 1, y: 2 }, body, animState: 'idle', bodyFitted: true, sprite: { active: true } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+
+    fighter._requests(entry).wantedKey = next.key;
+    fighter._swapCharacter(entry, next);
+    fighter._requests(entry).wantedKey = old.key;
+    body.play.mockClear();
+    completions.shift()();
+
+    expect(entry.ftype).toBe(old);
+    expect(body.setTexture).toHaveBeenLastCalledWith(old.texture, 'custom-1-old-idle-0');
+    expect(body.play).toHaveBeenCalledWith('custom-1-old-idle');
+  });
+
+  test('two looks left behind during one attack are both let go of when it ends', async () => {
+    const a = await typeFor('a');
+    const b = await typeFor('b');
+    const c = await typeFor('c');
+    const entry = { id: 1, ftype: a, baseSize: 36, displaySize: 48, body: makeBody(), animState: 'attack', bodyFitted: true, sprite: { active: true } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+
+    fighter._applyCharacter(entry, b);
+    fighter._applyCharacter(entry, c);
+    expect(scene.textures.remove).not.toHaveBeenCalled();
+
+    fighter._releasePending(entry);
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-a');
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-b');
+    expect(scene.textures.remove).not.toHaveBeenCalledWith('custom-1-c');
+  });
+});
+
+describe('custom fighters: a swap running while the fighter leaves', () => {
+  const WIRE = (version = 'abc') => ({ version, url_base: '/storage/custom-characters/1/' + version, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } });
+  const typeFor = async version => {
+    const { customFighterType, normalizeCustomCharacter } = await import('@battlefield/fighter/custom-fighter.js');
+
+    return customFighterType(1, normalizeCustomCharacter(WIRE(version)));
+  };
+  const makeBody = completions => ({
+    play: vi.fn(),
+    setTexture: vi.fn(),
+    setScale: vi.fn(function () { return this; }),
+    setY: vi.fn(function () { return this; }),
+    once: vi.fn((event, callback) => completions.push(callback)),
+    scene: {},
+  });
+  const makeScene = entry => ({
+    fighters: new Map([[1, entry]]),
+    charges: new Map(),
+    textures: { getFrame: () => null, remove: vi.fn() },
+    anims: { exists: () => true, get: () => ({ frames: [1] }), remove: vi.fn() },
+    necromancer: { spawnSummonCircle: vi.fn() },
+    tweens: { add: vi.fn(cfg => cfg) },
+    reducedMotion: false,
+    isShuttingDown: false,
+    time: { now: 0, delayedCall() {} },
+    layout: LAYOUTS.landscape,
+  });
+
+  test('a death that ends after the fighter left does nothing to it, nor to the look a returning fighter wants', async () => {
+    const completions = [];
+    const old = await typeFor('old');
+    const next = await typeFor('next');
+    const entry = { id: 1, ftype: old, baseSize: 36, displaySize: 48, pos: { x: 1, y: 2 }, body: makeBody(completions), animState: 'idle', bodyFitted: true, sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+    fighter._requests(entry).wantedKey = next.key;
+    fighter._swapCharacter(entry, next);
+
+    fighter.removeFighter(1);
+    scene.fighters.set(1, { id: 1, ftype: next, customRequest: { wantedKey: next.key } });
+    entry.body.setTexture.mockClear();
+    completions.shift()();
+
+    expect(entry.body.setTexture).not.toHaveBeenCalled();
+    expect(scene.necromancer.spawnSummonCircle).not.toHaveBeenCalled();
+    expect(scene.textures.remove).not.toHaveBeenCalledWith('custom-1-next');
+  });
+
+  test('a swap target that never became the look on show is released when the fighter leaves', async () => {
+    const completions = [];
+    const old = await typeFor('old');
+    const next = await typeFor('next');
+    const entry = { id: 1, ftype: old, baseSize: 36, displaySize: 48, pos: { x: 1, y: 2 }, body: makeBody(completions), animState: 'idle', bodyFitted: true, sprite: { active: true, scene: {}, destroy: vi.fn() } };
+    const scene = makeScene(entry);
+    const fighter = new Fighter(scene);
+    fighter.relayoutFighters = vi.fn();
+    fighter._requests(entry).wantedKey = next.key;
+    fighter._swapCharacter(entry, next);
+
+    fighter.removeFighter(1);
+    scene.tweens.add.mock.calls[0][0].onComplete();
+
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-next');
+    expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
   });
 });

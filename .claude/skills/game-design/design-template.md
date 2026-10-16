@@ -35,6 +35,7 @@ What is stored, with which version or hash; what is written first; what happens 
 
 ## 8. Screens: states, phone, keyboard, access
 Per screen: where the entry point is and how a person finds it (and whether it opens in the same tab or a new one); what is shown first, second and third; empty, loading, working, error, partial, success, disabled, each with message, next action and whether input is kept; phone layout in portrait and landscape; the keyboard path (order, focus on open and close, Escape); touch targets and what replaces hover; labels and live announcements; what reduced motion shows instead of each feel item. Which world (game, app, admin) and which existing components (`.ai/design/`).
+Use the editing-panel, sticky-action and toast-clearance recipes and the four-screen verification checklist in `.ai/design/layout.md`.
 
 ## 9. Edge cases
 At least three chosen for this feature: the empty case, the biggest case, the repeated case, the unfinished case, the case after someone else changed it, the case of a viewer who joins mid-way.

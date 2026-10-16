@@ -7,6 +7,7 @@ use App\Livewire\FighterSheet;
 use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Boss;
+use App\Models\CustomCharacter;
 use App\Models\Event as EventModel;
 use App\Models\User;
 use App\Services\ProviderServiceFactory;
@@ -441,6 +442,38 @@ test('character tab passes roommates to the Alpine component', function () {
         ->assertSee($mate->displayHandle(), false);
 });
 
+test('character tab passes another player’s active custom fighter without duplicating the viewer’s own', function () {
+    $viewer = User::factory()->create();
+    CustomCharacter::factory()->create(['user_id' => $viewer->id]);
+    $other = CustomCharacter::factory()->create(['name' => 'Copy for review']);
+    CustomCharacter::factory()->create(['active' => false]);
+
+    Livewire::actingAs($viewer)
+        ->test(FighterSheet::class)
+        ->call('open', 'character')
+        ->assertViewHas('otherCustomCharacters', function (array $characters) use ($other, $viewer): bool {
+            return count($characters) === 1
+                && $characters[0]['user_id'] === $other->user_id
+                && $characters[0]['name'] === 'Copy for review'
+                && $characters[0]['author'] === $other->user->displayHandle()
+                && $characters[0]['user_id'] !== $viewer->id;
+        });
+});
+
+test('an open character sheet can refresh another player’s custom fighter after it changes', function () {
+    $viewer = User::factory()->create();
+    $other = CustomCharacter::factory()->create(['name' => 'First look']);
+    $sheet = Livewire::actingAs($viewer)->test(FighterSheet::class)->call('open', 'character');
+
+    $other->update(['name' => 'Second look']);
+    $sheet->dispatch('other-custom-characters-refresh')
+        ->assertDispatched('other-custom-characters-state', function (string $event, array $params) use ($other): bool {
+            return count($params['characters']) === 1
+                && $params['characters'][0]['user_id'] === $other->user_id
+                && $params['characters'][0]['name'] === 'Second look';
+        });
+});
+
 test('charactersWithMeta() entries each carry an attackType', function () {
     $user = User::factory()->create();
 
@@ -618,4 +651,138 @@ test('the loaded sheet takes the loader\'s exact place: its fade never puts a tr
         ->call('open', 'profile')
         ->assertSeeHtml('x-transition:enter="fs-content-enter"')
         ->assertDontSeeHtml('x-transition.opacity.duration.200ms');
+});
+
+test('a user with a custom fighter has it equipped, and the sheet hands the Character tab its strips', function () {
+    $character = CustomCharacter::factory()->create();
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->assertSet('equipped', 'custom')
+        ->assertSet('customCharacter', $character->sheetState());
+});
+
+test('a user whose custom fighter is not equipped sees their roster character equipped, and still gets the strips', function () {
+    $character = CustomCharacter::factory()->create(['active' => false]);
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->assertSet('equipped', $character->user->characterForBoss(Boss::first()->id))
+        ->assertSet('customCharacter', $character->fresh()->sheetState());
+});
+
+test('equipping custom turns the custom fighter on and tells the battlefield', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    $character = CustomCharacter::factory()->create(['active' => false]);
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->call('equip', 'custom')
+        ->assertSet('equipped', 'custom');
+
+    expect($character->fresh()->active)->toBeTrue();
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->customFighterState() !== null);
+});
+
+test('equipping a roster character turns the custom fighter off, keeps it, and tells the battlefield', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    $character = CustomCharacter::factory()->create();
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->call('equip', 'werebear')
+        ->assertSet('equipped', 'werebear');
+
+    expect($character->fresh()->active)->toBeFalse()
+        ->and($character->user->fresh()->equipped_character)->toBe(FighterCharacter::Werebear);
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($event) => $event->user->customFighterState() === null);
+});
+
+test('equipping custom without having built one does nothing', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    $user = User::factory()->create(['equipped_character' => null]);
+
+    Livewire::actingAs($user)->test(FighterSheet::class)->call('equip', 'custom');
+
+    expect($user->refresh()->equipped_character)->toBeNull();
+    Event::assertNotDispatched(FighterCharacterChanged::class);
+});
+
+test('the sheet follows the editor: a fighter made while it was closed is there when it opens again', function () {
+    $user = User::factory()->create();
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class)->assertSet('customCharacter', null);
+
+    $character = CustomCharacter::factory()->create(['user_id' => $user->id]);
+    $sheet->dispatch('custom-character-changed')
+        ->assertSet('customCharacter', $character->fresh()->sheetState())
+        ->assertSet('equipped', 'custom');
+});
+
+test('the sheet follows the editor when the fighter is removed: the roster character comes back', function () {
+    $character = CustomCharacter::factory()->create();
+    $sheet = Livewire::actingAs($character->user)->test(FighterSheet::class)->assertSet('equipped', 'custom');
+
+    $character->delete();
+    $sheet->dispatch('custom-character-changed')
+        ->assertSet('customCharacter', null)
+        ->assertSet('equipped', $character->user->fresh()->characterForBoss(Boss::first()->id));
+});
+
+test('a rename in the editor reaches the sheet', function () {
+    $character = CustomCharacter::factory()->create();
+    $sheet = Livewire::actingAs($character->user)->test(FighterSheet::class);
+
+    $character->update(['name' => 'Sir Pixel']);
+    $sheet->dispatch('custom-character-changed')->assertSet('customCharacter.name', 'Sir Pixel');
+});
+
+test('equipping while another change of the player is running changes nothing and tells the sheet to go back', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    config(['token_slayer.custom_character.lock_seconds' => 0]);
+    $user = User::factory()->create(['equipped_character' => FighterCharacter::Soldier]);
+    Cache::lock(App\Support\CacheKeys::customCharacterBuild($user->id), 30)->get();
+
+    Livewire::actingAs($user)
+        ->test(FighterSheet::class)
+        ->call('equip', 'werebear')
+        ->assertDispatched('sheet-equip-failed');
+
+    expect($user->refresh()->equipped_character)->toBe(FighterCharacter::Soldier);
+    Event::assertNotDispatched(FighterCharacterChanged::class);
+});
+
+test('a pending draft is handed to the stage on load, without the editor ever mounting', function () {
+    $user = User::factory()->create();
+    $draft = stagedFor($user);
+
+    Livewire::actingAs($user)->test(FighterSheet::class)
+        ->assertSet('customDraft.hash', $draft->version_hash)
+        ->assertSet('customDraft.spec.version', $draft->version_hash);
+});
+
+test('a player with no draft hands the stage none', function () {
+    Livewire::actingAs(User::factory()->create())->test(FighterSheet::class)->assertSet('customDraft', null);
+});
+
+test('the sheet follows a draft discarded or built in the editor', function () {
+    $user = User::factory()->create();
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class)->assertSet('customDraft', null);
+
+    $draft = stagedFor($user);
+    $sheet->dispatch('custom-character-changed')->assertSet('customDraft.hash', $draft->version_hash);
+
+    $user->customCharacterDraft()->delete();
+    $sheet->dispatch('custom-character-changed')->assertSet('customDraft', null);
+});
+
+test('a refresh request is answered with the current state and no ceremony, and never loops back as a change', function () {
+    $character = CustomCharacter::factory()->create(['name' => 'Sir Pixel']);
+    $draft = stagedFor($character->user);
+
+    Livewire::actingAs($character->user)->test(FighterSheet::class)
+        ->dispatch('custom-character-refresh')
+        ->assertDispatched('custom-character-state', function (string $event, array $params) use ($character, $draft) {
+            return $params['custom']['name'] === 'Sir Pixel'
+                && $params['custom']['version'] === $character->version_hash
+                && $params['draft']['hash'] === $draft->version_hash
+                && $params['equipped'] === 'custom'
+                && ! array_key_exists('ceremony', $params);
+        })
+        ->assertNotDispatched('custom-character-changed');
 });

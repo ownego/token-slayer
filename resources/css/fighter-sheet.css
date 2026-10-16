@@ -326,6 +326,38 @@
     display: grid; place-items: center; overflow: hidden; transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 .fs .slot:hover { border-color: rgba(251,191,36,0.55); background: #12213d; }
+/* the "+ Custom" tile: sits in the roster grid like a slot, but is a link to the page that makes a custom fighter */
+.fs .slot-add {
+    position: relative; aspect-ratio: 1; display: grid; place-items: center; align-content: center; gap: 2px; padding: 0;
+    background: transparent; border: 1px dashed #3a4a70; color: var(--dim); cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.fs .slot-add[aria-pressed="true"] { border-style: solid; border-color: var(--rivet); color: var(--rivet); background: #15233f; }
+/* the custom fighter is marked in the roster whatever its name is */
+.fs .slot .badge { position: absolute; bottom: 0; left: 0; right: 0; padding: 1px 0; text-align: center; font: 700 8px var(--display); letter-spacing: 0.06em; background: #7c3aed; color: #fff; }
+.fs .slot .badge.draft { background: var(--rivet); color: var(--night-deep); }
+.fs .slot .badge.other { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #243150; color: var(--parchment); }
+.fs .equip-row #equip-btn[hidden], .fs .show-stage .stage-avatar[hidden] { display: none; }
+.fs .slot.slot-new { animation: fs-slot-pop 0.35s cubic-bezier(.2,.8,.2,1); }
+@keyframes fs-slot-pop { from { opacity: 0; scale: .8; } }
+.fs .inspector { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fs .inspector[hidden] { display: none; }
+
+/* the editor is a drawer under the stage: the stage keeps showing the fighter, the roster stays beside it */
+.fs .cce-drawer { display: none; min-width: 0; padding: 8px 14px 12px; container-type: inline-size; }
+.fs .showcase.editing > .moves-head, .fs .showcase.editing > .hotbar, .fs .showcase.editing > .move-name,
+.fs .showcase.editing > .equip-row, .fs .showcase.editing > .inspector { display: none; }
+.fs .showcase.editing > .cce-drawer { display: block; flex: 1 1 0; min-height: 0; overflow-y: auto; border-top: 1px solid rgba(251,191,36,0.18); }
+.fs .slot-add { min-height: 44px; }
+.fs .showcase.blank .show-sprite, .fs .showcase.blank .show-effect, .fs .showcase.blank .show-state { visibility: hidden; }
+.fs .panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.fs .panel-link { color: var(--rivet); font: 500 12px var(--body); text-decoration: underline; text-underline-offset: 2px; }
+.fs .panel-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.fs .slot-add .plus { font: 700 22px/1 var(--display); }
+.fs .slot-add .nm { font: 500 10px/1 var(--body); }
+.fs .slot-add:hover, .fs .slot-add:focus-visible { border-color: rgba(251,191,36,0.7); color: var(--rivet); background: #12213d; }
+.fs .slot-add:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.fs .slot-add:active { transform: scale(0.96); }
 .fs .slot:active { transform: scale(0.96); }
 .fs .slot[aria-selected="true"] { border: 2px solid var(--rivet); background: #15233f; box-shadow: 0 0 0 3px rgba(251,191,36,0.12); }
 .fs .slot .face-sprite { position: absolute; width: 100px; height: 100px; transform-origin: 0 0; image-rendering: pixelated; background-repeat: no-repeat; }
@@ -1313,3 +1345,363 @@
 /* The battlefield page is viewport-fit=cover: a full-screen phone sheet keeps
    its content inside the safe area (0 everywhere but a notched/rounded screen). */
 .fs .sheet { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+/* ==== the custom fighter editor (the Character tab's panel) ====
+   Built from the sheet's own pieces; only what the sheet has no equivalent for is here:
+   panel sections, a labelled field with a counter, the upload bar, the version cards and
+   the in-place confirm row. */
+.fs .cce { display: grid; gap: 12px; font: 400 14px/1.45 var(--body); color: var(--parchment); }
+.fs .cce-sec { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.fs .cce-sec + .cce-sec { padding-top: 12px; border-top: 1px solid rgba(251,191,36,0.18); }
+.fs .cce-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.fs .cce h3 { margin: 0; font: 600 15px var(--display); color: var(--rivet); }
+.fs .cce-note { margin: 0; font-size: 13px; color: var(--dim); }
+.fs .cce-ok { color: var(--life); }
+.fs .cce-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fs .cce-form { display: grid; gap: 10px; }
+.fs .cce-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--dim); }
+.fs .cce-thumb { display: flex; align-items: center; gap: 10px; color: var(--dim); }
+.fs .cce-thumb img { display: block; width: 96px; height: 72px; object-fit: contain; image-rendering: pixelated; background: #0e1a31; border: 1px solid #243150; }
+.fs .build-bar { height: 6px; margin-top: 6px; background: #243150; overflow: hidden; }
+.fs .build-bar i { display: block; width: 35%; height: 100%; background: var(--rivet); animation: fs-build-progress 1.2s ease-in-out infinite alternate; }
+@keyframes fs-build-progress { from { transform: translateX(0); } to { transform: translateX(190%); } }
+@media (prefers-reduced-motion: reduce) { .fs .build-bar i { animation: none; width: 100%; } }
+.fs .cce .btn { min-height: 44px; cursor: pointer; }
+.fs .btn.blood { color: var(--blood); border-color: var(--blood); }
+.fs .cce .alert { max-height: none; }
+.fs .cce .confirm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.fs .cce .confirm-row > span { flex: 1 1 200px; }
+.fs .cce-stage { height: 280px; min-height: 280px; flex: none; }
+.fs .cce-stage .show-sprite { left: 50%; }
+.fs .cce .equip-row { flex-wrap: wrap; margin-top: 0; }
+.fs .field { display: grid; gap: 6px; }
+.fs .field label { font: 600 12px var(--display); color: var(--dim); }
+.fs .field input { flex: 1 1 180px; min-width: 0; height: 44px; padding: 0 12px; background: #0e1a31; border: 1px solid #243150; color: var(--parchment); font: 500 14px var(--body); }
+.fs .field input:hover { border-color: rgba(251,191,36,0.55); }
+.fs .field-count { font: 500 12px var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
+.fs .upload-bar { height: 6px; margin-top: 6px; background: #243150; overflow: hidden; }
+.fs .upload-bar i { display: block; height: 100%; background: var(--rivet); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform 0.15s ease; }
+.fs .versions { display: flex; gap: 8px; margin: 0; padding: 0 0 6px; list-style: none; overflow-x: auto; scroll-snap-type: x proximity; }
+.fs .versions > .version { flex: 0 0 160px; scroll-snap-align: start; }
+.fs .version { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 8px; background: #0e1a31; border: 1px solid #243150; text-align: center; }
+.fs .version.current { border-color: var(--rivet); }
+.fs .version .cce-row { justify-content: center; }
+.fs .vsprite { width: 100px; height: 100px; image-rendering: pixelated; background-repeat: no-repeat; background-size: calc(var(--frames) * 100px) 100px; animation: fs-cce-play calc(var(--frames) / var(--rate) * 1s) steps(var(--frames)) infinite; }
+@keyframes fs-cce-play { to { background-position: calc(var(--frames) * -100px) 0; } }
+.fs .cce-drawer .btn { min-height: 44px; }
+@media (max-width: 640px) {
+    .fs .char-body:has(.showcase.editing) .roster { display: none; }
+    .fs .showcase { padding-bottom: env(safe-area-inset-bottom); }
+    .fs .show-stage { flex: none; min-height: 190px; height: 190px; }
+    .fs .showcase .equip-row { position: sticky; bottom: 0; z-index: 8; padding: 8px 0; background: var(--night-deep); }
+    .fs .showcase .equip-row .btn.primary { flex: 1 1 auto; }
+    .fs .showcase .inspector { position: sticky; bottom: var(--actions-h, 60px); z-index: 8; padding: 8px 0; background: var(--night-deep); }
+    .fs .cce-form .cce-row:last-child { position: sticky; bottom: 0; z-index: 2; padding: 8px 0; background: var(--night-deep); }
+    .fs .toast { --bar-h: 0px; bottom: calc(env(safe-area-inset-bottom) + var(--bar-h) + 12px); max-width: calc(100vw - 24px); }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+    .fs .show-stage { flex: none; min-height: 120px; height: 120px; }
+    .fs .cce-drawer { overflow-y: auto; }
+    .fs .cce-form .cce-row:last-child { position: sticky; bottom: 0; z-index: 2; padding: 8px 0; background: var(--night-deep); }
+}
+/* the CUSTOM marker is the sheet's own gold corner label */
+.fs .slot .badge { background: var(--rivet); color: var(--night-deep); }
+/* the CUSTOM marker and YOU share the corner: YOU drops to the second row instead of covering it */
+
+/* a wide drawer puts upload and fighter side by side, the version strip under both: less scrolling */
+@container (min-width: 600px) {
+    .fs .cce { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; align-items: start; }
+    .fs .cce > .alert { grid-column: 1 / -1; }
+    .fs .cce-sec + .cce-sec { padding-top: 0; border-top: 0; padding-left: 16px; border-left: 1px solid rgba(251,191,36,0.18); }
+    .fs .cce > .cce-sec:nth-of-type(3) { grid-column: 1 / -1; padding-left: 0; border-left: 0; padding-top: 12px; border-top: 1px solid rgba(251,191,36,0.18); }
+}
+
+/* the editor drawer: quiet chrome, one primary action per step, no heavy outlines */
+.fs .cce-drawer .panel-head { margin-bottom: 8px; }
+.fs .cce-drawer .btn { min-height: 36px; padding: 0 14px; }
+@media (pointer: coarse) { .fs .cce-drawer .btn, .fs .cce-link { min-height: 44px; } }
+.fs .cce-drawer #panel-back { border-color: transparent; background: transparent; color: var(--dim); padding: 0 8px; }
+.fs .cce-drawer #panel-back:hover { color: var(--rivet); }
+.fs .cce .btn:not(.primary):not(.blood) { border-color: #2e3d63; background: #0e1a31; }
+.fs .cce-link { background: none; border: 0; padding: 0 4px; color: var(--rivet); font: 500 12px var(--body); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.fs .cce-link.danger { color: var(--blood); justify-self: start; }
+.fs .cce-link:focus-visible { outline: 2px solid #7dd3fc; outline-offset: 2px; }
+.fs .cce-thumb { padding: 6px 0 0; }
+/* while the drawer is open the stage is a preview strip, so the drawer has the room */
+.fs .showcase.editing > .show-stage { flex: none; min-height: 0; }
+
+/* button weight: one gold action per view. Tools (the frame inspector) and the secondary actions beside Use are
+   dim-bordered and small; gold shows only on hover, focus and the pressed state. 44 px only for a touch pointer. */
+.fs .inspector { gap: 0; padding: 2px 0; }
+.fs .inspector .btn { min-height: 30px; padding: 0 12px; font: 600 12px var(--display); color: var(--parchment); background: #0e1a31; border-width: 1px; border-color: #2e3d63; margin-left: -1px; transition: border-color 0.15s ease, color 0.15s ease; }
+.fs .inspector .btn:first-child { margin-left: 0; }
+.fs .inspector .btn:hover, .fs .inspector .btn:focus-visible { border-color: var(--rivet); color: var(--rivet); position: relative; z-index: 1; }
+.fs .inspector .btn:active { transform: scale(0.96); }
+#inspect-label { margin-left: 12px; font: 500 12px var(--display); color: var(--dim); font-variant-numeric: tabular-nums; }
+.fs .equip-row .btn:not(.primary) { min-height: 36px; padding: 0 14px; border-width: 1px; border-color: #2e3d63; color: var(--parchment); background: transparent; transition: border-color 0.15s ease, color 0.15s ease; }
+.fs .equip-row .btn:not(.primary):hover, .fs .equip-row .btn:not(.primary):focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .equip-row .btn:not(.primary):active { transform: scale(0.97); }
+@media (pointer: coarse) { .fs .inspector .btn, .fs .equip-row .btn { min-height: 44px; } }
+
+/* editor drawer: controls keep their natural width and share one height and edge weight with the fields beside them */
+.fs .cce-drawer .panel-head { justify-content: flex-start; }
+.fs .cce-drawer #panel-back { flex: 0 0 auto; width: auto; border: 0; }
+.fs .cce .field input { height: 36px; border-color: #2e3d63; transition: border-color 0.15s ease; }
+.fs .cce .field input:focus-visible { border-color: var(--rivet); }
+.fs .cce .btn:not(.primary):not(.blood) { border-width: 1px; color: var(--parchment); transition: border-color 0.15s ease, color 0.15s ease; }
+.fs .cce .btn:not(.primary):not(.blood):hover, .fs .cce .btn:not(.primary):not(.blood):focus-visible { border-color: var(--rivet); color: var(--rivet); }
+@media (pointer: coarse) { .fs .cce .field input { height: 44px; } }
+
+/* what the lazy editor shows while it loads: the shape of what is coming, not a line of text */
+.fs .cce-skel { display: grid; gap: 10px; padding: 4px 0; }
+.fs .cce-skel i { display: block; height: 14px; background: #12213d; animation: fs-skel 1.2s ease-in-out infinite alternate; }
+.fs .cce-skel i:nth-child(1) { width: 40%; }
+.fs .cce-skel i:nth-child(2) { width: 90%; height: 40px; border: 1px dashed #3a4a70; background: transparent; }
+.fs .cce-skel i:nth-child(3) { width: 25%; }
+@keyframes fs-skel { from { opacity: 0.45; } to { opacity: 1; } }
+
+/* stable widths: a control that changes its label reserves the longest one, so Pause/Play, Equip/Equipping and
+   Build/Building never push their neighbours; text beside them is tabular and the row keeps its height */
+#inspect-toggle { min-width: 64px; }
+#inspect-label { min-width: 17ch; display: inline-block; white-space: nowrap; }
+.fs .btn-equip { min-width: 190px; }
+#discard-draft { min-width: 112px; }
+.fs .cce-build { min-width: 140px; }
+.fs .equip-row { min-height: 52px; }
+.fs .equip-note { font-size: 12px; line-height: 1.3; }
+
+/* confirm row: the question on its own line, then Cancel and the destructive verb right-aligned, the verb last */
+.fs .cce .confirm-row { justify-content: flex-end; }
+.fs .cce .confirm-row > span { flex: 1 1 100%; }
+
+/* the author of a custom fighter: its own line under the description, so credit is never lost in the caption */
+.fs .show-author { margin: 4px 0 0; font: 600 12px var(--display); color: var(--rivet); letter-spacing: 0.02em; }
+.fs .show-author[hidden] { display: none; }
+
+/* the make-a-fighter flow: three steps, a drop zone, a file card, one build action */
+.fs .cce-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fs .cce-steps li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #0e1a31; border: 1px solid #243150; color: var(--dim); font: 600 12px var(--display); transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease; min-width: 0; }
+.fs .cce-steps b { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid currentColor; font: 700 11px var(--display); }
+.fs .cce-steps span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs .cce-steps li.now { color: var(--rivet); border-color: var(--rivet); background: #15233f; }
+.fs .cce-steps li.past { color: var(--life); border-color: rgba(74,222,128,0.4); }
+.fs .cce-steps li.past b::before { content: "\2713"; }
+.fs .cce-steps li.past b { font-size: 0; }
+.fs .cce-steps li.past b::before { font-size: 12px; }
+.fs .cce-drop { display: grid; justify-items: center; gap: 8px; padding: 16px 12px; border: 1px dashed #3a4a70; background: rgba(14,26,49,0.6); text-align: center; transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease; }
+.fs .cce-drop.over { border-style: solid; border-color: var(--rivet); background: #15233f; transform: scale(1.01); }
+.fs .cce-drop-icon { color: var(--rivet); animation: fs-bob 2s ease-in-out infinite; }
+@keyframes fs-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.fs .cce-drop.over .cce-drop-icon { animation-duration: 0.6s; }
+.fs .cce-drop-title { margin: 0; font: 600 14px var(--display); color: var(--parchment); }
+.fs .cce-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.fs .cce-chips li { padding: 2px 8px; border: 1px solid #2e3d63; font: 500 11px var(--display); color: var(--dim); }
+.fs .cce-filecard { display: flex; gap: 12px; align-items: flex-start; padding: 10px; border: 1px solid #2e3d63; background: #0e1a31; animation: fs-rise 0.22s ease; }
+@keyframes fs-rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.fs .cce-fileinfo { display: grid; gap: 6px; min-width: 0; flex: 1; justify-items: start; }
+.fs .cce-fileinfo .cce-file { color: var(--parchment); max-width: 100%; }
+.fs .cce-fileinfo > div, .fs .cce-fileinfo .upload-bar, .fs .cce-fileinfo .build-bar { width: 100%; }
+.fs .cce-ok { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 640px) { .fs .cce-steps span { display: none; } .fs .cce-steps li.now span { display: inline; } }
+
+/* The file picker and build controls change shape with the editor phase. */
+.fs .showcase.editing > .show-stage { height: clamp(150px, 24vh, 240px); }
+.fs .cce > .cce-sec:only-of-type { grid-column: 1 / -1; }
+.fs .cce-pick { display: grid; gap: 10px; }
+.fs .cce-pick .cce-drop { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon title btn" "icon chips btn"; justify-items: start; align-items: center; text-align: left; column-gap: 12px; row-gap: 4px; padding: 10px 14px; }
+.fs .cce-pick .cce-drop-icon { grid-area: icon; }
+.fs .cce-pick .cce-drop-title { grid-area: title; }
+.fs .cce-pick .cce-chips { grid-area: chips; justify-content: flex-start; }
+.fs .cce-pick .cce-drop .btn { grid-area: btn; }
+.fs .cce-filecard > .cce-build { flex: none; align-self: center; }
+
+/* The forge is a focused view of the same live stage. Its controls scroll independently
+   while the fighter stays visible; the roster returns when the player goes back. */
+.fs .char-body.forging { grid-template-columns: minmax(0, 1fr); }
+.fs .char-body.forging > .roster { display: none; }
+.fs .char-body.forging > .showcase {
+    display: grid;
+    grid-template-columns: minmax(280px, 5fr) minmax(0, 6fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+    padding: 4px 22px 20px;
+    overflow: hidden;
+}
+.fs .char-body.forging .showcase.editing > .show-stage {
+    height: auto;
+    min-height: 0;
+    border: 1px solid rgba(251,191,36,0.24);
+    border-right: 0;
+}
+.fs .char-body.forging .showcase.editing > .cce-drawer {
+    min-width: 0;
+    height: 100%;
+    padding: 18px clamp(16px, 3vw, 34px) 24px;
+    border: 1px solid rgba(251,191,36,0.24);
+    background: #0a1427;
+    overscroll-behavior: contain;
+    animation: fs-panel-in 0.22s ease;
+}
+.fs .showcase.blank.editing > .cce-drawer { display: flex; flex-direction: column; }
+.fs .showcase.blank.editing > .cce-drawer > .cce { margin-block: auto; }
+.fs .char-body.forging .cce { grid-template-columns: minmax(0, 1fr); }
+.fs .char-body.forging .cce-sec + .cce-sec {
+    padding: 18px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(251,191,36,0.18);
+}
+.fs .char-body.forging .cce > .cce-sec:nth-of-type(3) { grid-column: auto; }
+.fs .char-body.forging .cce-head { align-items: baseline; flex-wrap: wrap; }
+.fs .char-body.forging .cce h3 { font-size: 19px; color: var(--parchment); }
+.fs .char-body.forging #panel-back { color: var(--parchment); border: 1px solid #2e3d63; background: #0e1a31; }
+.fs .char-body.forging #panel-back:hover, .fs .char-body.forging #panel-back:focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .char-body.forging .panel-link { min-height: 30px; display: inline-flex; align-items: center; }
+.fs .char-body.forging .cce-guide { font-size: 13px; }
+.fs .char-body.forging .cce-drop { min-width: 0; }
+.fs .char-body.forging .cce-drop .btn { min-width: 0; white-space: normal; }
+.fs .char-body.forging .cce-filecard { min-width: 0; }
+.fs .char-body.forging .cce-build { min-width: 140px; }
+.fs .char-body.forging .cce-steps { margin: 4px 0 10px; }
+.fs .cce-step-caption { display: none; }
+.fs .char-body.forging .cce-pick { min-width: 0; }
+.fs .char-body.forging .cce-pick .cce-drop { padding: 20px; }
+.fs .char-body.forging .cce-pick .cce-drop { grid-template-columns: auto minmax(0, 1fr) auto; }
+.fs .forge-blueprint { display: none; }
+.fs .showcase.blank.editing > .show-stage { background: #0b1427; border-color: #2e3d63; }
+.fs .showcase.blank.editing > .show-stage > :not(.forge-blueprint) { display: none !important; }
+.fs .showcase.blank.editing .forge-blueprint {
+    position: absolute;
+    z-index: 8;
+    inset: 0;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    padding: 24px;
+    background: #0b1427;
+    animation: fs-panel-in 0.22s ease;
+}
+.fs .forge-prototype { display: grid; gap: 12px; width: min(100%, 460px); min-width: 0; color: var(--parchment); }
+.fs .forge-prototype-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.fs .forge-kicker { font: 700 19px var(--display); color: var(--rivet); }
+.fs .forge-prototype-tag { font: 600 10px var(--display); letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
+.fs .forge-prototype-intro, .fs .forge-prototype-caption, .fs .forge-prototype-note { margin: 0; font-size: 13px; line-height: 1.4; }
+.fs .forge-prototype-intro { color: var(--parchment); }
+.fs .forge-prototype-caption { color: var(--rivet); }
+.fs .forge-prototype-note { color: var(--dim); }
+.fs .forge-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.fs .forge-action { display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; min-height: 44px; padding: 4px; border: 1px solid #344364; background: #101b32; color: var(--parchment); font: 600 12px var(--display); cursor: pointer; transition: border-color .15s ease, background .15s ease, color .15s ease; }
+.fs .forge-action:hover, .fs .forge-action:focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .forge-action[aria-pressed="true"] { border-color: var(--rivet); background: #263454; color: var(--rivet); }
+.fs .forge-action-number { font-size: 9px; color: var(--dim); }
+.fs .forge-motion-frame { position: relative; display: grid; place-items: center; height: clamp(170px, 28vh, 250px); overflow: hidden; border: 1px solid #344364; background: #0c172b; }
+.fs .forge-motion-grid { position: absolute; inset: 0; opacity: .12; background-image: linear-gradient(#344364 1px, transparent 1px), linear-gradient(90deg, #344364 1px, transparent 1px); background-size: 24px 24px; }
+.fs .forge-motion-toggle { position: absolute; z-index: 1; top: 6px; left: 6px; min-height: 44px; padding: 0 10px; border: 1px solid #51617f; background: #0b1427e8; color: var(--parchment); font: 600 11px var(--display); cursor: pointer; }
+.fs .forge-motion-toggle:hover, .fs .forge-motion-toggle:focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .forge-motion-toggle:disabled { opacity: .65; cursor: default; }
+.fs .forge-motion-direction { position: absolute; z-index: 1; top: 10px; right: 10px; color: var(--rivet); font: 700 11px var(--display); text-transform: uppercase; letter-spacing: .05em; }
+.fs .forge-motion-ground { position: absolute; top: calc(50% + 32px); left: 28%; width: 44%; height: 2px; background: #51617f; }
+.fs .forge-motion-sprite { position: absolute; top: 50%; left: 50%; width: 100px; height: 100px; translate: -50% -50%; scale: 4; background: var(--dim); opacity: .75; image-rendering: auto; filter: blur(.8px); -webkit-mask-image: var(--forge-strip); mask-image: var(--forge-strip); -webkit-mask-size: var(--forge-strip-width) 100px; mask-size: var(--forge-strip-width) 100px; -webkit-mask-position: var(--forge-frame-x) 0; mask-position: var(--forge-frame-x) 0; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+@media (max-height: 899px) {
+    .fs .forge-motion-sprite { scale: 2.5; }
+}
+.fs .forge-motion-index { position: absolute; right: 10px; bottom: 8px; color: var(--dim); font: 600 11px var(--display); font-variant-numeric: tabular-nums; }
+.fs .forge-prototype-meta { display: flex; align-items: baseline; gap: 10px; font: 600 12px var(--display); }
+.fs .forge-prototype-meta strong { color: var(--rivet); font-size: 16px; }
+.fs .forge-prototype-meta span:last-child { margin-left: auto; color: var(--parchment); }
+.fs .showcase.editing[data-forge-phase="uploading"] > .show-stage,
+.fs .showcase.editing[data-forge-phase="building"] > .show-stage { border-color: var(--rivet); }
+.fs .showcase.editing[data-forge-phase="building"] > .show-stage::after {
+    content: 'Building your fighter…';
+    position: absolute;
+    z-index: 9;
+    right: 14px;
+    bottom: 14px;
+    padding: 6px 10px;
+    border: 1px solid var(--rivet);
+    background: #0a1427;
+    color: var(--rivet);
+    font: 600 12px var(--display);
+    animation: fs-build-glow 1.2s ease-in-out infinite alternate;
+}
+@keyframes fs-build-glow { from { opacity: .65; } to { opacity: 1; } }
+
+@container (max-width: 480px) {
+    .fs .char-body.forging .cce-pick .cce-drop {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "icon" "title" "btn" "chips";
+        justify-items: center;
+        text-align: center;
+    }
+    .fs .char-body.forging .cce-chips { justify-content: center; }
+    .fs .char-body.forging .cce-filecard {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        align-items: center;
+    }
+    .fs .char-body.forging .cce-thumb img { width: 72px; height: 64px; }
+    .fs .char-body.forging .cce-filecard > .cce-build { grid-column: 1 / -1; width: 100%; }
+    .fs .char-body.forging .cce-file { white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 900px) {
+    .fs .char-body.forging > .showcase {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: clamp(180px, 30vh, 230px) minmax(0, 1fr);
+        padding: 4px 12px 12px;
+    }
+    .fs .char-body.forging .showcase.editing > .show-stage { border-right: 1px solid rgba(251,191,36,0.24); border-bottom: 0; }
+    .fs .char-body.forging .showcase.editing > .cce-drawer { padding: 12px 16px 20px; }
+    .fs .showcase.blank.editing > .cce-drawer > .cce { margin-block: 0; }
+    .fs .showcase.blank.editing .forge-blueprint { padding: 10px; }
+    .fs .forge-prototype { gap: 5px; }
+    .fs .forge-kicker { font-size: 13px; }
+    .fs .forge-prototype-tag, .fs .forge-prototype-intro, .fs .forge-prototype-caption, .fs .forge-prototype-note { display: none; }
+    .fs .forge-action { min-height: 44px; font-size: 11px; }
+    .fs .forge-motion-frame { height: clamp(72px, 13vh, 112px); }
+    .fs .forge-motion-ground { top: calc(50% + 12px); }
+    .fs .forge-motion-sprite { scale: 1.6; }
+    .fs .forge-prototype-meta { font-size: 10px; }
+    .fs .forge-prototype-meta strong { font-size: 12px; }
+}
+@media (max-width: 640px) {
+    .fs .char-body.forging .cce-head .cce-guide { flex-basis: 100%; }
+    .fs .char-body.forging .cce-steps li { justify-content: center; }
+    .fs .char-body.forging .cce-steps span { display: none; }
+    .fs .char-body.forging .cce-step-caption { display: block; margin: -6px 0 2px; color: var(--rivet); font: 600 12px var(--display); }
+    .fs .showcase:not(.editing) .show-stage .show-info {
+        inset: 0 0 auto;
+        padding: 8px 10px;
+        background: linear-gradient(#081226eb, #081226b8);
+    }
+    .fs .showcase:not(.editing) .show-stage .show-info h2 { font-size: 17px; }
+    .fs .showcase:not(.editing) .show-stage .show-type { display: none; }
+    .fs .char-body.forging .showcase.editing > .show-stage .show-info { left: 10px; right: 10px; top: 8px; }
+    .fs .char-body.forging .showcase.editing > .show-stage .show-info h2 { font-size: 17px; }
+    .fs .char-body.forging .showcase.editing > .show-stage .show-type { display: none; }
+    .fs .showcase:not(.editing) > .equip-row:has(#discard-draft:not([hidden])) {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .fs .showcase:not(.editing) > .equip-row:has(#discard-draft:not([hidden])) .equip-note { grid-column: 1 / -1; min-width: 0; }
+    .fs .showcase:not(.editing) > .equip-row:has(#discard-draft:not([hidden])) .btn { width: 100%; min-width: 0; white-space: normal; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+    .fs .char-body.forging > .showcase { grid-template-rows: 145px minmax(0, 1fr); }
+    .fs .showcase.blank.editing .forge-blueprint { padding: 5px 10px; }
+    .fs .forge-prototype-head, .fs .forge-prototype-meta { display: none; }
+    .fs .forge-prototype { gap: 3px; }
+    .fs .forge-action { min-height: 44px; }
+    .fs .forge-motion-frame { height: 85px; }
+    .fs .forge-motion-ground { top: calc(50% + 10px); }
+    .fs .forge-motion-sprite { scale: 1.3; }
+}
+@media (max-width: 900px) and (max-height: 600px) and (orientation: portrait) {
+    .fs .forge-motion-ground { top: calc(50% + 8px); }
+    .fs .forge-motion-sprite { scale: 1.1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .fs .char-body.forging .showcase.editing > .cce-drawer,
+    .fs .showcase.blank.editing .forge-blueprint,
+    .fs .showcase.editing[data-forge-phase="building"] > .show-stage::after { animation: none; }
+}

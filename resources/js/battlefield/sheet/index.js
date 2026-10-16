@@ -104,6 +104,12 @@ export function createSheetShell(root, { onClose, onTab }) {
 
   const onKeydown = event => {
     if (event.key === 'Escape') {
+      // whatever is open inside the sheet (the editor drawer) gets the first Escape
+      const offered = new CustomEvent('sheet-escape', { cancelable: true });
+      window.dispatchEvent(offered);
+      if (offered.defaultPrevented) {
+        return;
+      }
       close();
 
       return;

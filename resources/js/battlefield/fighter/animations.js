@@ -1,9 +1,11 @@
 import { FIGHTER_TYPES } from '@battlefield/config.js';
-import { AnimState, TextureKey } from '@battlefield/constants.js';
+import { AnimState } from '@battlefield/constants.js';
+import { textureOf } from '@battlefield/fighter/custom-fighter.js';
 
 /**
  * Registers every Phaser animation (idle/walk/death, attackN/effectN) for a
- * single FIGHTER_TYPES entry against the shared 'fighters' atlas. Idempotent
+ * single FIGHTER_TYPES entry against its texture (the shared 'fighters' atlas,
+ * or a custom fighter's own). Idempotent
  * via anims.exists() — safe to call repeatedly for the same character.
  *
  * @param {Phaser.Scene} scene
@@ -11,12 +13,13 @@ import { AnimState, TextureKey } from '@battlefield/constants.js';
  * @return {void}
  */
 export function registerFighterAnimations(scene, ft) {
+  const texture = textureOf(ft);
   for (const [state, anim] of Object.entries(ft.animations)) {
     const animKey = `${ft.key}-${state}`;
     if (!scene.anims.exists(animKey)) {
       scene.anims.create({
         key: animKey,
-        frames: scene.anims.generateFrameNames(TextureKey.FIGHTERS, {
+        frames: scene.anims.generateFrameNames(texture, {
           prefix: `${ft.key}-${state}-`,
           start: 0,
           end: anim.frames - 1,
@@ -33,7 +36,7 @@ export function registerFighterAnimations(scene, ft) {
     if (!scene.anims.exists(atkKey)) {
       scene.anims.create({
         key: atkKey,
-        frames: scene.anims.generateFrameNames(TextureKey.FIGHTERS, {
+        frames: scene.anims.generateFrameNames(texture, {
           prefix: `${ft.key}-attack${i + 1}-`,
           start: 0,
           end: atk.frames - 1,
@@ -45,7 +48,7 @@ export function registerFighterAnimations(scene, ft) {
     if (atk.effectFrames && !scene.anims.exists(effKey)) {
       scene.anims.create({
         key: effKey,
-        frames: scene.anims.generateFrameNames(TextureKey.FIGHTERS, {
+        frames: scene.anims.generateFrameNames(texture, {
           prefix: `${ft.key}-effect${i + 1}-`,
           start: 0,
           end: atk.effectFrames - 1,
@@ -66,7 +69,7 @@ export function registerFighterAnimations(scene, ft) {
     const reversed = Array.from({ length: deathInfo.frames }, (_, i) => deathInfo.frames - 1 - i);
     scene.anims.create({
       key: summonKey,
-      frames: scene.anims.generateFrameNames(TextureKey.FIGHTERS, {
+      frames: scene.anims.generateFrameNames(texture, {
         prefix: `${ft.key}-death-`,
         frames: reversed,
       }),

@@ -20,6 +20,14 @@ State vocabulary used below: default, hover, `:focus-visible`, active (pressed),
 | `.link` | 13 px gold text, underline, 3 px offset | an inline text action or a link |
 | `.fold` | 12 px `--dim`, rotating triangle | expand/collapse |
 
+Rules for weight and stability (checked on the real page, not only in CSS):
+- One gold action per view. Tools (the frame inspector) and secondary actions beside Use are small, 1 px dim-bordered (`#2e3d63`), parchment text, gold only on hover/focus/pressed. 30-36 px high on a mouse, 44 px only under `@media (pointer: coarse)`.
+- A control whose label changes (Pause/Play, Equip/Equipping, Build/Building) reserves the width of its longest label (`min-width`), and a status text beside it is tabular with a fixed width. Toggling must never move a neighbour.
+- Buttons keep their natural width inside a flex/grid row (`flex: 0 0 auto`); a stretched full-width button is a bug unless it is the sticky phone action bar.
+- Fields and the buttons beside them share one height and one edge weight.
+- A confirm row is the question on its own line, then Cancel (safe, focused) and the destructive verb right-aligned, the verb last.
+- Before calling a screen done, measure it: list every button/field with size, font, border and colour and look for outliers; open each state (empty, loading, error, long text), not only the happy path.
+
 Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness(1.1)`. Every pressable control sets `cursor: pointer` (Tailwind 4 preflight resets buttons to the arrow; see `layout.md`). Destructive buttons are not a new colour: they are `.btn` with the confirm pattern in `patterns.md` and, once confirmed, `--blood` text on the confirm step only.
 
 ## Tabs
@@ -30,6 +38,7 @@ Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness
 
 - `.roster-grid` 4 columns (5 on a phone), gap 8 px, inside `.roster-scroll` (own scroller).
 - `.slot`: a fighter tile (aspect 0.86, fill `#0e1a31`, border `#243150`). Hover: gold border at 55%; selected: `2px solid var(--rivet)` + 3 px soft ring; active: scale 0.96. Name `.nm` is a 10 px label at the bottom; `.tag` is a gold 9 px corner label (`YOU`, and the marker for a kind of fighter). The face animates only on hover or when selected.
+- Another player's active custom fighter uses the same `.slot` preview, with a muted `.badge.other` naming its creator. The stage shows the author and moves; Equip and Edit stay unavailable. A live fighter change refreshes these slots while the sheet is open.
 - `.slot-add`: dashed "add" tile in the grid (`1px dashed #3a4a70`, `--dim`, turns gold on hover/focus). It is an action, not a fighter; it is not a `.slot`, so selection, filters, keys and tooltips ignore it. Its label says what it does ("Create", "Manage"); it is the visible entry point to an editor, so it must be findable: do not hide it among slots with a 10 px label only.
 - `.chips` / `.chip`: single-select filter row (11 px `--display`, `1px solid #2b3858`, selected `aria-pressed="true"` = gold fill, dark text). A filter chip filters; it never hides an item that has no matching value: items with no style get their own chip, they do not appear under every chip.
 - `.move` / `.hotbar`: a numbered action button with a looping thumbnail (`aria-pressed`), key legend `.key`.
@@ -37,7 +46,31 @@ Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness
 
 ## Show stage (preview of a fighter)
 
-`.show-stage` (270 px tall, accent glow floor line, sprite at `scale: 4`, the boss on the right), `.show-info` (name `h2` 24 px, type, `.show-state` badge: `Equipped` green, `Previewing` gold), `.hotbar`, `.equip-row` (`.equip-note` + `.btn.primary`). Any fighter (roster or custom) is previewed here, with the same stage, scale, moves and equip row; do not build a second preview widget (see `motion.md` for rates and `patterns.md` for the flow).
+`.show-stage` (270 px desktop, 190 px portrait, 120 px landscape; accent glow floor line, sprite at `scale: 4`, boss on the right), `.show-info` (name, type and `.show-state`), `.hotbar`, `.inspector` (Pause, Frame, Play for a draft or version peek), and `.equip-row`. A draft is a `.slot .badge.draft` roster entry, using the same stage and moves as a saved fighter. Do not build a second preview widget.
+
+`.show-author` (12 px `--display` gold, hidden when empty): its own line under `.show-type` reading "Created by <handle>" for a custom fighter and its draft; never merged into the description line, never shown for a roster fighter. The author is plain text (`textContent`), and it lives only in `sheetState()`, never in the public broadcast.
+
+## Editor panel (the custom fighter editor, `.cce`)
+
+Opening the editor adds `.char-body.forging`: the roster gives way to the live stage and `.cce-drawer` side by side. At 900 px and below they stack, with the stage above a scrollable editor. Back restores the roster. When there is no fighter, `.forge-blueprint` replaces all battle visuals with a quiet motion example; it disappears as soon as a fighter exists.
+
+| Class | Look | Use |
+|---|---|---|
+| `.cce` > `.cce-sec` | grid of sections, 18 px apart, a gold hairline between them; `h3` is 15 px `--display` gold | one concern per section (preview, upload, your fighter, versions) |
+| `.cce-head` | title left, a `.show-state` badge right | a section whose state is a badge (`Previewing`, `Equipped`, `In use`) |
+| `.cce-note`, `.cce-ok` | 13 px `--dim` / `--life` | a hint or a status line next to a control: the reason a button is disabled, "File uploaded." |
+| `.field` + `.field-count` | label above (12 px `--display` `--dim`), 44 px input on the tile fill, a `n / max` counter | a text field whose length is limited and read by others |
+| `.upload-bar` | 6 px bar, fills by `transform: scaleX(var(--p))` | upload progress (never animate `width`) |
+| `.cce-steps` | three numbered steps (Make a sheet, Upload and build, Try it then use it); the current one gold, finished ones green with a check | where the player is in the flow |
+| `.cce-step-caption` | current step name beside the compact three-number progress on a phone | keeps the step readable without squeezing three labels into one row |
+| `.cce-drop` + `.cce-chips` | dashed drop zone with an icon, one primary button and requirement chips; solid gold on drag-over | choosing the pose sheet (drag and drop or button) |
+| `.cce-filecard` | thumbnail, file name and size, progress or build bar, Uploaded check | the chosen file after it is picked |
+| `.forge-prototype`, `.forge-action`, `.forge-motion-frame` | four selectable source rows, the existing Lancer's motion shown as a one-colour alpha silhouette, and the selected row's required pose count | explains Idle, Walk, Attack and Death without implying the empty stage has a fighter |
+| `.cce-thumb` | 96 x 72 chosen-file image | confirms the selected sheet before building |
+| `.build-bar` | 6 px indeterminate transform animation, stopped under reduced motion | server-side build progress after upload finishes |
+| `.versions` > `.version` | auto-fill grid of 150 px tiles, `.current` has the gold border; `.vsprite` is the idle strip at 1x | numbered versions with Preview, Equip and Delete actions |
+| `.confirm-row` | an `.alert.crit` row that replaces the control in place, with a `.btn.blood` (the verb) and a `.btn` Cancel | confirming a destructive action (see `patterns.md`): names the thing, Cancel focused, Escape cancels |
+| `.btn.blood` | `.btn` with `--blood` text and border | the confirming button of a destructive action, only on the confirm step |
 
 ## Feedback
 

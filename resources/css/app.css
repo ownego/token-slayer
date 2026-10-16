@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+/* Tailwind 4's preflight leaves buttons on the arrow cursor; a button you can press shows the hand. */
+@layer base {
+    button:not(:disabled),
+    [role="button"]:not(:disabled) {
+        cursor: pointer;
+    }
+}
+
 /* Alpine's x-cloak is inert without this rule — Tailwind/Alpine don't ship
    it by default. Without it, any x-cloak'd element (e.g. the character-select
    modal's full-viewport backdrop) renders at its normal display value until

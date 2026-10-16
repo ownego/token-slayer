@@ -31,7 +31,7 @@ Rules: anything a player does while the battlefield is open (choose, create, edi
 3. Cover every state: default, hover, focus-visible, active, selected, disabled, loading, empty, error, success (`patterns.md`).
 4. Destructive or irreversible action: use the in-game confirm of `patterns.md`, never `window.confirm` / `wire:confirm`.
 5. Motion: durations from `motion.md`, a `prefers-reduced-motion` rule, no animation that runs faster than the one in the game.
-6. Phone: check the three layout classes in `layout.md` (desktop, <=640 px portrait, landscape <=500 px high) and 44 px touch targets.
+6. Responsive: use the four layout classes, recipes and per-class checklist in `layout.md`; keep every touch target at least 44 px.
 7. Keyboard and screen reader: reachable and operable by keyboard, a visible focus ring, labelled controls (`layout.md`).
 8. Copy: developer audience, no sentence that explains the obvious (`patterns.md`).
 9. Verify on staging with a screenshot per state, desktop and phone width; the team verifies on staging, not locally.

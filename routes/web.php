@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\SlackController;
 use App\Http\Controllers\AvatarProxyController;
+use App\Http\Controllers\CustomCharacterController;
 use App\Http\Controllers\HistoryController;
 use App\Http\Controllers\SlayerWheelController;
 use App\Services\Client\ReleaseArtifacts;
@@ -96,7 +97,14 @@ Route::get('/tracker.user.js', fn () => response(
 Route::middleware('auth')->group(function (): void {
     Route::get('/battlefield', fn () => view('battlefield'))->name('battlefield');
 
+    // A one-time "open the fighter sheet" request: flashed for the next request only, so a reload shows the arena.
+    Route::get('/battlefield/open/{target}', function (string $target) {
+        return redirect()->route('battlefield')->with('open_sheet', ['tab' => 'character', 'editor' => $target === 'editor']);
+    })->whereIn('target', ['character', 'editor'])->name('battlefield.open-sheet');
+
     Route::get('/avatars/{user}', AvatarProxyController::class)->name('avatar');
 
     Route::get('/history', [HistoryController::class, 'index'])->name('history');
+
+    Route::get('/character', CustomCharacterController::class)->name('custom-character');
 });

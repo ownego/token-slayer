@@ -61,11 +61,13 @@ export function heelToLocal(heel, scale, facing) {
  * left.
  *
  * @param {{x:number, y:number}} heel frame px
- * @param {{sprite: {scaleX: number}, body: {scaleX: number, flipX: boolean}}} fighter
+ * @param {{sprite: {scaleX: number}, body: {scaleX: number, flipX: boolean, y?: number}}} fighter
  * @return {{dx:number, dy:number}}
  */
 export function heelWorldOffset(heel, fighter) {
-  const scale = (fighter.sprite?.scaleX ?? 1) * (fighter.body?.scaleX ?? 1);
+  const growth = fighter.sprite?.scaleX ?? 1;
+  const local = heelToLocal(heel, growth * (fighter.body?.scaleX ?? 1), fighter.body?.flipX ? -1 : 1);
 
-  return heelToLocal(heel, scale, fighter.body?.flipX ? -1 : 1);
+  // a body nudged down inside its container (a custom fighter's feet-line offset) carries its heel
+  return { dx: local.dx, dy: local.dy + (fighter.body?.y ?? 0) * growth };
 }

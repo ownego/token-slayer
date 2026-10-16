@@ -9,7 +9,7 @@
 @endphp
 <aside class="fighter">
     <div>
-        <div wire:ignore x-data="miniStage(@js($equipped), {{ $minions['busy'] }}, {{ auth()->id() }})">
+        <div wire:ignore x-data="miniStage(@js($equipped), {{ $minions['busy'] }}, {{ auth()->id() }}, @js($customCharacter))">
             <div class="mini-stage" id="mini-stage" x-ref="stage">
                 <div class="mini-floor"><span class="mf-ring"></span><span class="mf-ticks"></span><span class="mf-pad"></span></div>
                 <span class="mini-glow"></span>

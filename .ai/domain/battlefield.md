@@ -29,6 +29,16 @@ The deep operational guide is the `battlefield` skill (`.claude/skills/battlefie
 10. **Canvas size and camera zoom move together.** `renderScale` sets both the canvas pixel size and the camera zoom; any resize of the running game (relayout in `index.js`'s `applyLayout`) sizes through `render-scale.js`'s `canvasSizeFor` and updates the registry's `renderScale`, or the world renders zoomed in.
 11. **Roster order is a cross-stack contract.** `FIGHTER_TYPES` key order must equal the PHP `App\Enums\FighterCharacter` case order: the server assigns a character as `cases()[(user_id + boss_id) % count]` and broadcasts the key. Locked by `tests/js/config.test.js` and `tests/Unit/FighterCharacterTest.php` — append new types at the end of both, or every existing player's assigned character shifts.
 
+## Custom fighters
+
+A player's own fighter (`.ai/domain/custom-characters.md`) is a FIGHTER_TYPES-shaped entry built from the `custom_character` payload, not a roster key, so three roster assumptions are relaxed:
+
+- **Texture.** Its frames live in one per-user, per-version canvas texture (`custom-<user>-<version>`, frames named like the atlas's), not in `TextureKey.FIGHTERS`. Every body `setTexture`/`add.sprite` goes through `textureOf(ftype)`. The texture and its animations belong to the game, so a scene restart keeps them.
+- **Identity.** It wins over the roster `character` through boss changes and equips (`updateCharacters` branches on the custom spec first); the roster character only comes back once the custom one is removed. `snapshotState()` writes `customCharacter` (the newest request, else `ftype.spec`) so a rotate rebuilds it.
+- **Loading is asynchronous and fallible.** A fighter shows its roster character first and swaps the custom one in when the strips land, in whatever state it is in (charging keeps walking, an attack in progress plays out and hands over to the new look). A failed or cut-short load leaves the current look and is retried by the next update after `CUSTOM_RETRY_MS`. Only the newest request (`entry.customRequest`, `fighter/custom-fighter-requests.js`) and only a live entry still on the field may apply a load; the look a fighter leaves is released from the game (`releaseCustomFighter`). `snapshotState()`'s `character` stays a roster key (`entry.rosterKey`). Its body is scaled by `bodyScale` and nudged by `bodyOffsetY` so it stands as tall as a roster fighter with its feet on the same line (invariant 3 still holds: frames stay 100 px). The heel offset includes that nudge (`shared/heel.js`).
+
+Not done: a custom fighter's attack is always the slash animation (no per-attack art), and `attacks/blade.js`, `attacks/shuriken.js` and `onEffect` in `handleHit` still read the atlas — unreachable for it, but they would break if a custom fighter ever got another attack type. The minions and the roster's teammate faces still use the equipped roster character.
+
 ## Boss scripts
 
 Per-boss behaviour lives in `resources/js/battlefield/boss/scripts/`, one module per boss, registered by `BOSS_TYPES` key in `scripts/index.js`. The engine (`boss/index.js`) never branches on a boss key: it resolves `scriptFor(key)` and calls the script's optional hooks — `readState(payload)` to turn the flat `BossSpawned` payload into the script's own state object, `create(scene, bossState) → handle` at boot and on `BossSpawned` (inside the ceremony's spawn gate), `destroy(scene, handle)` on `BossKilled` and scene teardown (`Boss.destroy()` from `_teardown()`, so a rotate-restart rebuilds it from the snapshot). A boss with no script runs the plain engine. Script state lives under one generic key, `bossState.script` — the boot payload sends it as `boss.script` (absent for a scriptless boss) and `snapshotState()` copies it as a block — so neither the engine nor the snapshot ever learns a script's key names. Anything a script creates (canvas objects, DOM nodes, timers, document listeners) is released in `destroy` — that is how invariant #2 holds for script-owned objects.
@@ -200,9 +210,10 @@ and the `/profile` page (the route is gone, not redirected). Its markup and CSS
 are a **verbatim port of the approved mockup**
 `docs/superpowers/mockups/2026-09-27-battlefield-redesign/fighter-sheet.html` (local
 only) — port its behaviour, don't re-derive it. Embedded in `battlefield.blade.php`,
-opened only by the nav's Profile button (`$dispatch('open-fighter-sheet', {tab})` →
-`#[On('open-fighter-sheet')] open($tab)`); there is no `?sheet=` link and no Loadout
-pill any more. It starts **closed** and runs no aggregate `events` query until
+opened by the nav's Profile button (`$dispatch('open-fighter-sheet', {tab})` →
+`#[On('open-fighter-sheet')] open($tab)`) and, once, by `/battlefield/open/{character|editor}`
+(a session flash that redirects to the clean `/battlefield`; see `custom-characters.md`); there is
+no `?sheet=` link and no Loadout pill any more. It starts **closed** and runs no aggregate `events` query until
 opened — the header's attribution/hook chip is the one exception.
 It is wrapped in an always-rendered frame (`sheetFrame`, x-show + x-transition):
 the nav's `open-fighter-sheet` window event shows it at once — a skeleton

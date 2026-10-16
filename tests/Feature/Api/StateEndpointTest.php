@@ -40,3 +40,15 @@ test('state endpoint includes display_name for each fighter', function () {
     $fighter = collect($body['fighters'])->firstWhere('id', $user->id);
     expect($fighter)->toHaveKey('display_name', 'Alice');
 });
+
+test('state endpoint carries each fighter\'s custom character, null for one without', function () {
+    Boss::factory()->create();
+    $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    $custom = App\Models\CustomCharacter::factory()->create()->user;
+    $custom->forceFill(['last_event_at' => now()->subMinute()])->save();
+
+    $fighters = collect($this->getJson('/api/state')->assertOk()->json('fighters'))->keyBy('id');
+
+    expect($fighters[$plain->id])->toHaveKey('custom_character', null)
+        ->and($fighters[$custom->id]['custom_character'])->toBe($custom->customFighterState());
+});

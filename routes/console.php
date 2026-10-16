@@ -13,6 +13,10 @@ Artisan::command('inspire', function () {
 // SweepIdleFighters's own docblock for why it isn't a separate schedule entry.
 Schedule::command('fighters:sweep-idle')->everyMinute();
 
+// A fighter a player built, previewed and forgot keeps its staged files until this removes the draft.
+Schedule::command('custom-characters:prune-drafts')->dailyAt('04:00')->withoutOverlapping();
+Schedule::command('custom-characters:prune-orphans')->dailyAt('04:30')->withoutOverlapping()->onOneServer();
+
 // Keeps the install-script/wheel digests warm so POST /api/events never
 // resolves a GitHub release inline: that call has an 8s timeout while the
 // client's curl gives up after 3s.

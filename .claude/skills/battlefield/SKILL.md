@@ -55,7 +55,7 @@ Echo listens with a leading dot (`.HitDealt`) because of the custom `broadcastAs
   boss: {number, name, currentHp, maxHp},
   currentUserId,
   fighters: [{id, handle, avatarUrl, character, charging: {activity}|null,
-              position: {x, y} (0–1 fractions)|null, agentCount}],
+              position: {x, y} (0–1 fractions)|null, customCharacter: {version, url_base|urlBase, animations}|null, agentCount}],  // `character` is always a roster key; a custom fighter's own key is synthetic
   leaderboard: [{userId, damage, handle}],
   damageTotals: [[userId, damage], ...],
   globalDamage: {allTime, monthly, daily, hourly}   // passed through untouched by the snapshot

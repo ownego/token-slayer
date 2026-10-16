@@ -41,6 +41,7 @@ No scheduler container in dev (staging adds `scheduler` = `schedule:work`). The 
 | `token-tracking.md` | hook → EventController → damage pipeline, providers, per-event model, subagent dispatch tracking, install scripts |
 | `broadcasting.md` | PHP↔JS broadcast contract rules |
 | `accounts.md` | org accounts (Claude + Codex), attribution chain, provisioning, quota probing, rebalance/reconciliation |
+| `custom-characters.md` | player-uploaded fighters: the pose-sheet contract, conversion to 100 px strips, storage, `/character` page |
 
 **Game and UI work:** `.ai/design/game.md` is the map of the game (the idea, loops, systems, knobs, flows): read it before designing anything a player sees or does. Then, before building any HUD, fighter sheet, page, control or copy, read `.ai/design/README.md`: tokens, components, patterns (confirm, empty/error states, previews), motion, layout and accessibility, plus a pre-build checklist. Update it in the same PR when a token, component class or rule changes.
 

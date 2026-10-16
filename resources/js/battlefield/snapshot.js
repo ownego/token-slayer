@@ -1,3 +1,5 @@
+import { snapshotSpec } from './fighter/custom-fighter-requests.js';
+
 /**
  * Capture the live scene into a serializable state object so the game can be
  * destroyed and re-booted (e.g. on orientation change) without losing what
@@ -47,7 +49,13 @@ export function snapshotState(currentState, scene) {
         id: f.id,
         handle: f.handleText,
         avatarUrl: f.avatarUrl,
-        character: f.ftype?.key ?? null,
+        // always a roster key (the boot payload only ever holds one): a custom fighter's own key is synthetic
+        character: f.rosterKey ?? f.ftype?.key ?? null,
+        // a custom fighter's own character: the newest one asked for (still loading, or
+        // swapping in), else the one it shows — a rotate must not lose a fighter whose
+        // strips have not landed, and a removal clears the request. The rebooted scene
+        // shows it from the first frame once its strips are in the textures
+        customCharacter: snapshotSpec(f.customRequest, f.ftype),
         charging: charge ? { activity: charge.activity ?? '' } : null,
         position: pos,
         // Minions are cosmetic-only and were deliberately never snapshotted
