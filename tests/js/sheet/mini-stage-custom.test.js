@@ -99,4 +99,14 @@ describe('miniStage with a custom fighter', () => {
 
     expect(events).toEqual([{ user_id: 7 }]);
   });
+
+  test('a teammate changing their fighter asks the open character stage to refresh its previews', () => {
+    const stage = miniStage('knight', 0, 7);
+    const changed = vi.fn();
+    window.addEventListener('sheet-other-character-broadcast', changed, { once: true });
+
+    stage.onCharacterBroadcast({ user_id: 8, character: 'wizard', custom_character: null });
+
+    expect(changed).toHaveBeenCalledOnce();
+  });
 });

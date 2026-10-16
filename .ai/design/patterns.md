@@ -32,7 +32,7 @@ If the deleted thing was the one in use, the view and every client switch to a d
 ## Forms and uploads
 
 - One panel, labels above fields, 44 px high controls, errors under the field they belong to, the submit button disabled with a reason until the input is valid.
-- A pose-sheet upload shows the chosen-file thumbnail and dimensions, percentage while transferring, "File uploaded" when Build is enabled, then an indeterminate build bar. A failure keeps the chosen file and gives one `PoseSheetProblem` hint about what to change. First-time players see the four-row diagram.
+- A pose-sheet upload shows the chosen-file thumbnail and dimensions, percentage while transferring, "File uploaded" when Build is enabled, then an indeterminate build bar. A failure keeps the chosen file and gives one `PoseSheetProblem` hint about what to change. First-time players see the four source rows through a selectable motion example.
 - A file the player will use is previewed before it counts: the result appears as a normal item the player can select and inspect on the show stage, and nothing is applied or broadcast until the player picks "Equip" (or the equivalent). Creating something is not using it: a player can make a thing for someone else or just to try.
 - Text the player types that other players will read (a name) has a length limit, is shown with a visible counter or hint, and is escaped everywhere it is rendered.
 
@@ -44,7 +44,7 @@ A built draft is a `DRAFT` roster slot. Selecting it keeps the editor available 
 
 ## Links and buttons that leave the view
 
-Links from the live battlefield (including its HUD and fighter sheet) to another page open a new tab (`target="_blank" rel="noopener"`) so the arena and any edit in progress remain open. Links between outer pages, including `partials/account-nav.blade.php` and the `/character` guide, stay in the same tab; the current page is plain text. In-page actions stay in the page. A `/battlefield/open/{character|editor}` link (a one-time session flash, never a URL param) waits for `battlefield-ready` before opening the sheet and editor, with a 15-second ceiling if the arena does not load.
+Links from the live battlefield (including its HUD and fighter sheet) to another page open a new tab (`target="_blank" rel="noopener"`) so the arena and any edit in progress remain open. Links between outer pages, including `partials/account-nav.blade.php` and the `/character` guide, stay in the same tab; the current page is plain text. In-page actions stay in the page. New deep links use `/battlefield/open/{character|editor}` and a one-time session flash; old query-parameter links redirect through that route. The sheet and editor wait for `battlefield-ready`, with a 15-second ceiling if the arena does not load.
 
 ## Who made it
 

@@ -11,7 +11,7 @@
     <section class="cce-sec cce-make" aria-labelledby="cce-upload-title-{{ $this->getId() }}">
         <div class="cce-head">
             <h3 id="cce-upload-title-{{ $this->getId() }}">{{ $character ? 'Make a new version' : 'Make your own fighter' }}</h3>
-            <a class="panel-link" href="{{ route('custom-character') }}" target="_blank" rel="noopener">Prompt guide &#8599;</a>
+            <a class="panel-link cce-guide" href="{{ route('custom-character') }}" target="_blank" rel="noopener">Need a sheet? Open the prompt guide &#8599;</a>
         </div>
 
         {{-- Choosing a file (and sending it to the server) is one step; building the preview from it is the next. --}}
@@ -23,6 +23,7 @@
             x-on:livewire-upload-error="phase = 'failed'"
             x-on:custom-character-changed.window="if ($event.detail?.draft) { phase = 'done'; clearThumb() }"
             x-on:submit="phase = 'building'"
+            x-effect="window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase } }))"
             wire:submit="build"
             class="cce-form"
         >
@@ -32,14 +33,12 @@
                 <li x-bind:class="{ now: step === 2, past: step > 2 }"><b>2</b><span>Upload and build</span></li>
                 <li x-bind:class="{ now: step === 3 }"><b>3</b><span>Try it, then use it</span></li>
             </ol>
+            <p class="cce-step-caption" x-text="['Make a sheet', 'Upload and build', 'Try it, then use it'][step - 1]">Make a sheet</p>
             @endif
 
             <input type="file" wire:model="sheet" x-ref="file" x-on:change="choose($event.target.files[0] ?? null)" accept="image/png,image/jpeg,image/webp" class="sr-only" tabindex="-1">
 
             <div class="cce-pick" x-show="phase === 'idle' || phase === 'failed' || phase === 'done'">
-            @if (! $character && ! $draft)
-                @include('partials.custom-character-sheet-diagram')
-            @endif
             <div
                 class="cce-drop"
                 x-bind:class="{ over: over }"

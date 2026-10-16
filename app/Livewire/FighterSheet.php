@@ -23,6 +23,7 @@ use App\Services\Profile\CharacterRoommates;
 use App\Services\Profile\DamageByModel;
 use App\Services\Profile\DamageByPeriod;
 use App\Services\Profile\HourlyDamage;
+use App\Services\Profile\OtherCustomCharacters;
 use App\Services\Profile\Period;
 use App\Services\Profile\PeriodStats;
 use App\Services\SubagentCountCache;
@@ -207,6 +208,25 @@ class FighterSheet extends Component
             draft: $this->customDraft,
             equipped: $this->equipped,
         );
+    }
+
+    /**
+     * Sends the current previews after another player changes their fighter.
+     *
+     * @param  OtherCustomCharacters  $otherCustomCharacters
+     * @return void
+     */
+    #[On('other-custom-characters-refresh')]
+    #[Renderless]
+    public function publishOtherCustomCharacters(OtherCustomCharacters $otherCustomCharacters): void
+    {
+        $viewer = auth()->user();
+
+        if (! $viewer) {
+            return;
+        }
+
+        $this->dispatch('other-custom-characters-state', characters: $otherCustomCharacters->for($viewer));
     }
 
     /**
@@ -525,6 +545,7 @@ class FighterSheet extends Component
      * @param  CachedLatestVersion  $latest
      * @param  AccountAlerts  $alertsService
      * @param  CharacterRoommates  $roommatesService
+     * @param  OtherCustomCharacters  $otherCustomCharacters
      * @param  SubagentCountCache  $minionCache
      * @param  PeriodStats  $statsService
      * @param  AccountCardSummaries  $cardSummaries
@@ -540,6 +561,7 @@ class FighterSheet extends Component
         CachedLatestVersion $latest,
         AccountAlerts $alertsService,
         CharacterRoommates $roommatesService,
+        OtherCustomCharacters $otherCustomCharacters,
         SubagentCountCache $minionCache,
         PeriodStats $statsService,
         AccountCardSummaries $cardSummaries,
@@ -576,6 +598,7 @@ class FighterSheet extends Component
             'attribution' => $attribution,
             'alerts' => $alertsService->for($accounts, $attribution),
             'roommates' => $roommatesService->for(),
+            'otherCustomCharacters' => $otherCustomCharacters->for($user),
             'minions' => $minionCache->countFor($user->id),
         ]);
     }

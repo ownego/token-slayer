@@ -336,6 +336,8 @@
 /* the custom fighter is marked in the roster whatever its name is */
 .fs .slot .badge { position: absolute; bottom: 0; left: 0; right: 0; padding: 1px 0; text-align: center; font: 700 8px var(--display); letter-spacing: 0.06em; background: #7c3aed; color: #fff; }
 .fs .slot .badge.draft { background: var(--rivet); color: var(--night-deep); }
+.fs .slot .badge.other { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; background: #243150; color: var(--parchment); }
+.fs .equip-row #equip-btn[hidden], .fs .show-stage .stage-avatar[hidden] { display: none; }
 .fs .slot.slot-new { animation: fs-slot-pop 0.35s cubic-bezier(.2,.8,.2,1); }
 @keyframes fs-slot-pop { from { opacity: 0; scale: .8; } }
 .fs .inspector { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1358,7 +1360,6 @@
 .fs .cce-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .fs .cce-form { display: grid; gap: 10px; }
 .fs .cce-file { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--dim); }
-.fs .cce-sheet-diagram { display: block; width: min(100%, 240px); height: auto; border: 1px solid var(--rivet); }
 .fs .cce-thumb { display: flex; align-items: center; gap: 10px; color: var(--dim); }
 .fs .cce-thumb img { display: block; width: 96px; height: 72px; object-fit: contain; image-rendering: pixelated; background: #0e1a31; border: 1px solid #243150; }
 .fs .build-bar { height: 6px; margin-top: 6px; background: #243150; overflow: hidden; }
@@ -1487,9 +1488,6 @@
 .fs .cce-steps li.past b::before { content: "\2713"; }
 .fs .cce-steps li.past b { font-size: 0; }
 .fs .cce-steps li.past b::before { font-size: 12px; }
-.fs .cce-sheet-diagram { width: min(100%, 360px); justify-self: center; }
-.fs .cce-cell { animation: fs-cell 3.2s ease-in-out infinite; animation-delay: calc(var(--i) * 0.12s); }
-@keyframes fs-cell { 0%, 70%, 100% { opacity: 1; } 35% { opacity: 0.35; } }
 .fs .cce-drop { display: grid; justify-items: center; gap: 8px; padding: 16px 12px; border: 1px dashed #3a4a70; background: rgba(14,26,49,0.6); text-align: center; transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease; }
 .fs .cce-drop.over { border-style: solid; border-color: var(--rivet); background: #15233f; transform: scale(1.01); }
 .fs .cce-drop-icon { color: var(--rivet); animation: fs-bob 2s ease-in-out infinite; }
@@ -1506,18 +1504,204 @@
 .fs .cce-ok { display: flex; align-items: center; gap: 6px; }
 @media (max-width: 640px) { .fs .cce-steps span { display: none; } .fs .cce-steps li.now span { display: inline; } }
 
-/* layout per state, measured on the real page so no state needs a scroll bar at a normal height:
-   first run: steps on top, pose map beside the drop zone; with a fighter: a compact one-row drop zone;
-   file chosen: one card with the Build action in it; the stage follows the viewport height */
+/* The file picker and build controls change shape with the editor phase. */
 .fs .showcase.editing > .show-stage { height: clamp(150px, 24vh, 240px); }
 .fs .cce > .cce-sec:only-of-type { grid-column: 1 / -1; }
 .fs .cce-pick { display: grid; gap: 10px; }
-.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon title btn" "icon chips btn"; justify-items: start; align-items: center; text-align: left; column-gap: 12px; row-gap: 4px; padding: 10px 14px; }
-.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop-icon { grid-area: icon; }
-.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop-title { grid-area: title; }
-.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-chips { grid-area: chips; justify-content: flex-start; }
-.fs .cce-pick:not(:has(.cce-sheet-diagram)) .cce-drop .btn { grid-area: btn; }
+.fs .cce-pick .cce-drop { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "icon title btn" "icon chips btn"; justify-items: start; align-items: center; text-align: left; column-gap: 12px; row-gap: 4px; padding: 10px 14px; }
+.fs .cce-pick .cce-drop-icon { grid-area: icon; }
+.fs .cce-pick .cce-drop-title { grid-area: title; }
+.fs .cce-pick .cce-chips { grid-area: chips; justify-content: flex-start; }
+.fs .cce-pick .cce-drop .btn { grid-area: btn; }
 .fs .cce-filecard > .cce-build { flex: none; align-self: center; }
-@container (min-width: 600px) {
-    .fs .cce-pick:has(.cce-sheet-diagram) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; }
+
+/* The forge is a focused view of the same live stage. Its controls scroll independently
+   while the fighter stays visible; the roster returns when the player goes back. */
+.fs .char-body.forging { grid-template-columns: minmax(0, 1fr); }
+.fs .char-body.forging > .roster { display: none; }
+.fs .char-body.forging > .showcase {
+    display: grid;
+    grid-template-columns: minmax(280px, 5fr) minmax(0, 6fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+    padding: 4px 22px 20px;
+    overflow: hidden;
+}
+.fs .char-body.forging .showcase.editing > .show-stage {
+    height: auto;
+    min-height: 0;
+    border: 1px solid rgba(251,191,36,0.24);
+    border-right: 0;
+}
+.fs .char-body.forging .showcase.editing > .cce-drawer {
+    min-width: 0;
+    height: 100%;
+    padding: 18px clamp(16px, 3vw, 34px) 24px;
+    border: 1px solid rgba(251,191,36,0.24);
+    background: #0a1427;
+    overscroll-behavior: contain;
+    animation: fs-panel-in 0.22s ease;
+}
+.fs .showcase.blank.editing > .cce-drawer { display: flex; flex-direction: column; }
+.fs .showcase.blank.editing > .cce-drawer > .cce { margin-block: auto; }
+.fs .char-body.forging .cce { grid-template-columns: minmax(0, 1fr); }
+.fs .char-body.forging .cce-sec + .cce-sec {
+    padding: 18px 0 0;
+    border-left: 0;
+    border-top: 1px solid rgba(251,191,36,0.18);
+}
+.fs .char-body.forging .cce > .cce-sec:nth-of-type(3) { grid-column: auto; }
+.fs .char-body.forging .cce-head { align-items: baseline; flex-wrap: wrap; }
+.fs .char-body.forging .cce h3 { font-size: 19px; color: var(--parchment); }
+.fs .char-body.forging #panel-back { color: var(--parchment); border: 1px solid #2e3d63; background: #0e1a31; }
+.fs .char-body.forging #panel-back:hover, .fs .char-body.forging #panel-back:focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .char-body.forging .panel-link { min-height: 30px; display: inline-flex; align-items: center; }
+.fs .char-body.forging .cce-guide { font-size: 13px; }
+.fs .char-body.forging .cce-drop { min-width: 0; }
+.fs .char-body.forging .cce-drop .btn { min-width: 0; white-space: normal; }
+.fs .char-body.forging .cce-filecard { min-width: 0; }
+.fs .char-body.forging .cce-build { min-width: 140px; }
+.fs .char-body.forging .cce-steps { margin: 4px 0 10px; }
+.fs .cce-step-caption { display: none; }
+.fs .char-body.forging .cce-pick { min-width: 0; }
+.fs .char-body.forging .cce-pick .cce-drop { padding: 20px; }
+.fs .char-body.forging .cce-pick .cce-drop { grid-template-columns: auto minmax(0, 1fr) auto; }
+.fs .forge-blueprint { display: none; }
+.fs .showcase.blank.editing > .show-stage { background: #0b1427; border-color: #2e3d63; }
+.fs .showcase.blank.editing > .show-stage > :not(.forge-blueprint) { display: none !important; }
+.fs .showcase.blank.editing .forge-blueprint {
+    position: absolute;
+    z-index: 8;
+    inset: 0;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    padding: 24px;
+    background: #0b1427;
+    animation: fs-panel-in 0.22s ease;
+}
+.fs .forge-prototype { display: grid; gap: 12px; width: min(100%, 460px); min-width: 0; color: var(--parchment); }
+.fs .forge-prototype-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.fs .forge-kicker { font: 700 19px var(--display); color: var(--rivet); }
+.fs .forge-prototype-tag { font: 600 10px var(--display); letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
+.fs .forge-prototype-intro, .fs .forge-prototype-caption, .fs .forge-prototype-note { margin: 0; font-size: 13px; line-height: 1.4; }
+.fs .forge-prototype-intro { color: var(--parchment); }
+.fs .forge-prototype-caption { color: var(--rivet); }
+.fs .forge-prototype-note { color: var(--dim); }
+.fs .forge-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.fs .forge-action { display: flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; min-height: 44px; padding: 4px; border: 1px solid #344364; background: #101b32; color: var(--parchment); font: 600 12px var(--display); cursor: pointer; transition: border-color .15s ease, background .15s ease, color .15s ease; }
+.fs .forge-action:hover, .fs .forge-action:focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .forge-action[aria-pressed="true"] { border-color: var(--rivet); background: #263454; color: var(--rivet); }
+.fs .forge-action-number { font-size: 9px; color: var(--dim); }
+.fs .forge-motion-frame { position: relative; display: grid; place-items: center; height: clamp(170px, 28vh, 250px); overflow: hidden; border: 1px solid #344364; background: #0c172b; }
+.fs .forge-motion-grid { position: absolute; inset: 0; opacity: .12; background-image: linear-gradient(#344364 1px, transparent 1px), linear-gradient(90deg, #344364 1px, transparent 1px); background-size: 24px 24px; }
+.fs .forge-motion-toggle { position: absolute; z-index: 1; top: 6px; left: 6px; min-height: 44px; padding: 0 10px; border: 1px solid #51617f; background: #0b1427e8; color: var(--parchment); font: 600 11px var(--display); cursor: pointer; }
+.fs .forge-motion-toggle:hover, .fs .forge-motion-toggle:focus-visible { border-color: var(--rivet); color: var(--rivet); }
+.fs .forge-motion-toggle:disabled { opacity: .65; cursor: default; }
+.fs .forge-motion-direction { position: absolute; z-index: 1; top: 10px; right: 10px; color: var(--rivet); font: 700 11px var(--display); text-transform: uppercase; letter-spacing: .05em; }
+.fs .forge-motion-ground { position: absolute; top: calc(50% + 32px); left: 28%; width: 44%; height: 2px; background: #51617f; }
+.fs .forge-motion-sprite { position: absolute; top: 50%; left: 50%; width: 100px; height: 100px; translate: -50% -50%; scale: 4; background: var(--dim); opacity: .75; image-rendering: auto; filter: blur(.8px); -webkit-mask-image: var(--forge-strip); mask-image: var(--forge-strip); -webkit-mask-size: var(--forge-strip-width) 100px; mask-size: var(--forge-strip-width) 100px; -webkit-mask-position: var(--forge-frame-x) 0; mask-position: var(--forge-frame-x) 0; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+@media (max-height: 899px) {
+    .fs .forge-motion-sprite { scale: 2.5; }
+}
+.fs .forge-motion-index { position: absolute; right: 10px; bottom: 8px; color: var(--dim); font: 600 11px var(--display); font-variant-numeric: tabular-nums; }
+.fs .forge-prototype-meta { display: flex; align-items: baseline; gap: 10px; font: 600 12px var(--display); }
+.fs .forge-prototype-meta strong { color: var(--rivet); font-size: 16px; }
+.fs .forge-prototype-meta span:last-child { margin-left: auto; color: var(--parchment); }
+.fs .showcase.editing[data-forge-phase="uploading"] > .show-stage,
+.fs .showcase.editing[data-forge-phase="building"] > .show-stage { border-color: var(--rivet); }
+.fs .showcase.editing[data-forge-phase="building"] > .show-stage::after {
+    content: 'Building your fighter…';
+    position: absolute;
+    z-index: 9;
+    right: 14px;
+    bottom: 14px;
+    padding: 6px 10px;
+    border: 1px solid var(--rivet);
+    background: #0a1427;
+    color: var(--rivet);
+    font: 600 12px var(--display);
+    animation: fs-build-glow 1.2s ease-in-out infinite alternate;
+}
+@keyframes fs-build-glow { from { opacity: .65; } to { opacity: 1; } }
+
+@container (max-width: 480px) {
+    .fs .char-body.forging .cce-pick .cce-drop {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "icon" "title" "btn" "chips";
+        justify-items: center;
+        text-align: center;
+    }
+    .fs .char-body.forging .cce-chips { justify-content: center; }
+    .fs .char-body.forging .cce-filecard {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        align-items: center;
+    }
+    .fs .char-body.forging .cce-thumb img { width: 72px; height: 64px; }
+    .fs .char-body.forging .cce-filecard > .cce-build { grid-column: 1 / -1; width: 100%; }
+    .fs .char-body.forging .cce-file { white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 900px) {
+    .fs .char-body.forging > .showcase {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: clamp(180px, 30vh, 230px) minmax(0, 1fr);
+        padding: 4px 12px 12px;
+    }
+    .fs .char-body.forging .showcase.editing > .show-stage { border-right: 1px solid rgba(251,191,36,0.24); border-bottom: 0; }
+    .fs .char-body.forging .showcase.editing > .cce-drawer { padding: 12px 16px 20px; }
+    .fs .showcase.blank.editing > .cce-drawer > .cce { margin-block: 0; }
+    .fs .showcase.blank.editing .forge-blueprint { padding: 10px; }
+    .fs .forge-prototype { gap: 5px; }
+    .fs .forge-kicker { font-size: 13px; }
+    .fs .forge-prototype-tag, .fs .forge-prototype-intro, .fs .forge-prototype-caption, .fs .forge-prototype-note { display: none; }
+    .fs .forge-action { min-height: 44px; font-size: 11px; }
+    .fs .forge-motion-frame { height: clamp(72px, 13vh, 112px); }
+    .fs .forge-motion-ground { top: calc(50% + 12px); }
+    .fs .forge-motion-sprite { scale: 1.6; }
+    .fs .forge-prototype-meta { font-size: 10px; }
+    .fs .forge-prototype-meta strong { font-size: 12px; }
+}
+@media (max-width: 640px) {
+    .fs .char-body.forging .cce-head .cce-guide { flex-basis: 100%; }
+    .fs .char-body.forging .cce-steps li { justify-content: center; }
+    .fs .char-body.forging .cce-steps span { display: none; }
+    .fs .char-body.forging .cce-step-caption { display: block; margin: -6px 0 2px; color: var(--rivet); font: 600 12px var(--display); }
+    .fs .showcase:not(.editing) .show-stage .show-info {
+        inset: 0 0 auto;
+        padding: 8px 10px;
+        background: linear-gradient(#081226eb, #081226b8);
+    }
+    .fs .showcase:not(.editing) .show-stage .show-info h2 { font-size: 17px; }
+    .fs .showcase:not(.editing) .show-stage .show-type { display: none; }
+    .fs .char-body.forging .showcase.editing > .show-stage .show-info { left: 10px; right: 10px; top: 8px; }
+    .fs .char-body.forging .showcase.editing > .show-stage .show-info h2 { font-size: 17px; }
+    .fs .char-body.forging .showcase.editing > .show-stage .show-type { display: none; }
+    .fs .showcase:not(.editing) > .equip-row:has(#discard-draft:not([hidden])) {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+    .fs .showcase:not(.editing) > .equip-row:has(#discard-draft:not([hidden])) .equip-note { grid-column: 1 / -1; min-width: 0; }
+    .fs .showcase:not(.editing) > .equip-row:has(#discard-draft:not([hidden])) .btn { width: 100%; min-width: 0; white-space: normal; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+    .fs .char-body.forging > .showcase { grid-template-rows: 145px minmax(0, 1fr); }
+    .fs .showcase.blank.editing .forge-blueprint { padding: 5px 10px; }
+    .fs .forge-prototype-head, .fs .forge-prototype-meta { display: none; }
+    .fs .forge-prototype { gap: 3px; }
+    .fs .forge-action { min-height: 44px; }
+    .fs .forge-motion-frame { height: 85px; }
+    .fs .forge-motion-ground { top: calc(50% + 10px); }
+    .fs .forge-motion-sprite { scale: 1.3; }
+}
+@media (max-width: 900px) and (max-height: 600px) and (orientation: portrait) {
+    .fs .forge-motion-ground { top: calc(50% + 8px); }
+    .fs .forge-motion-sprite { scale: 1.1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .fs .char-body.forging .showcase.editing > .cce-drawer,
+    .fs .showcase.blank.editing .forge-blueprint,
+    .fs .showcase.editing[data-forge-phase="building"] > .show-stage::after { animation: none; }
 }

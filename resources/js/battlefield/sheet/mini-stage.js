@@ -180,6 +180,7 @@ export function miniStage(equipped, total, me, custom = null) {
      */
     onCharacterBroadcast(payload) {
       if (Number(payload.user_id) !== Number(me)) {
+        window.dispatchEvent(new CustomEvent('sheet-other-character-broadcast', { detail: { user_id: payload.user_id } }));
         return;
       }
       const next = this.keyFor(payload);

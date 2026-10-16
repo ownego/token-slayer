@@ -409,6 +409,7 @@ test('the roster starts with a Create tile that opens the editor panel in place,
   expect(document.querySelector('.showcase').hidden).toBe(false);
   expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
   expect(tile.getAttribute('aria-pressed')).toBe('true');
+  expect(document.getElementById('root').classList.contains('forging')).toBe(true);
 });
 
 test('the tile reads Manage once there is a custom fighter', () => {
@@ -425,12 +426,27 @@ test('the back button, and picking any fighter, bring the stage back', () => {
   document.getElementById('panel-back').click();
   expect(document.getElementById('custom-panel').hidden).toBe(true);
   expect(document.querySelector('.showcase').classList.contains('editing')).toBe(false);
+  expect(document.getElementById('root').classList.contains('forging')).toBe(false);
 
   tile.click();
   document.querySelector('.slot[data-key="wizard"]').click();
   expect(document.getElementById('custom-panel').hidden).toBe(true);
   expect(document.querySelector('.showcase').classList.contains('editing')).toBe(false);
+  expect(document.getElementById('root').classList.contains('forging')).toBe(false);
   expect(document.getElementById('show-name').textContent).toBe('Wizard');
+});
+
+test('the forge preview follows upload and build phases only while the editor is open', () => {
+  mount();
+  document.querySelector('.slot-add').click();
+
+  window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase: 'building' } }));
+  expect(document.querySelector('.showcase').dataset.forgePhase).toBe('building');
+
+  document.getElementById('panel-back').click();
+  expect(document.querySelector('.showcase').dataset.forgePhase).toBeUndefined();
+  window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase: 'ready' } }));
+  expect(document.querySelector('.showcase').dataset.forgePhase).toBeUndefined();
 });
 
 test('the tile toggles the panel: pressing it again closes it', () => {
@@ -548,6 +564,124 @@ test('a custom fighter is a slot next to the roster, tagged YOU when it is the e
   expect(document.getElementById('roster-count').textContent).toBe('21 fighters');
   expect(document.getElementById('show-name').textContent).toBe('Custom');
   expect(document.getElementById('show-state').textContent).toBe('Equipped');
+});
+
+test('another player’s custom fighter has its own preview slot and cannot be equipped or edited', () => {
+  const { equip } = mount({
+    equipped: 'custom',
+    custom: { ...CUSTOM, name: 'Custom', author: 'tungot' },
+    otherCustomCharacters: [{ ...CUSTOM, user_id: 22, name: 'Copy for review', author: 'fakeclean' }],
+  });
+
+  const other = document.querySelector('.slot[data-key="custom-user-22"]');
+  expect(other).not.toBeNull();
+  expect(other.textContent).toContain('fakeclean');
+  expect(document.querySelectorAll('.slot[data-key^="custom"]')).toHaveLength(2);
+
+  other.click();
+  expect(document.getElementById('show-name').textContent).toBe('Copy for review');
+  expect(document.getElementById('show-author').textContent).toBe('Created by fakeclean');
+  expect(document.getElementById('edit-custom').hidden).toBe(true);
+  expect(document.getElementById('equip-btn').hidden).toBe(true);
+  document.getElementById('equip-btn').click();
+  expect(equip).not.toHaveBeenCalled();
+});
+
+test('another player’s changed or removed fighter updates the open preview', () => {
+  mount({ otherCustomCharacters: [{ ...CUSTOM, user_id: 22, name: 'First look', author: 'fakeclean' }] });
+  document.querySelector('.slot[data-key="custom-user-22"]').click();
+
+  window.dispatchEvent(new CustomEvent('other-custom-characters-state', { detail: {
+    characters: [{ ...CUSTOM, user_id: 22, name: 'Second look', author: 'fakeclean', version: 'next-version' }],
+  } }));
+  expect(document.getElementById('show-name').textContent).toBe('Second look');
+  expect(document.querySelectorAll('.slot[data-key="custom-user-22"]')).toHaveLength(1);
+
+  window.dispatchEvent(new CustomEvent('other-custom-characters-state', { detail: { characters: [] } }));
+  expect(document.querySelector('.slot[data-key="custom-user-22"]')).toBeNull();
+  expect(document.getElementById('show-name').textContent).toBe('Orc rider');
+  expect(document.querySelector('.chip[data-type="CUSTOM"]').hidden).toBe(true);
+});
+
+test('refreshing another player’s slot keeps keyboard focus on that slot', () => {
+  mount({ otherCustomCharacters: [{ ...CUSTOM, user_id: 22, name: 'First look', author: 'fakeclean' }] });
+  document.querySelector('.slot[data-key="custom-user-22"]').focus();
+
+  window.dispatchEvent(new CustomEvent('other-custom-characters-state', { detail: {
+    characters: [{ ...CUSTOM, user_id: 22, name: 'Second look', author: 'fakeclean' }],
+  } }));
+
+  expect(document.activeElement.dataset.key).toBe('custom-user-22');
+});
+
+test('removing another player’s slot does not close Forge while creating a fighter', () => {
+  mount({ otherCustomCharacters: [{ ...CUSTOM, user_id: 22, name: 'First look', author: 'fakeclean' }] });
+  document.querySelector('.slot[data-key="custom-user-22"]').click();
+  document.querySelector('.slot-add').click();
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+
+  window.dispatchEvent(new CustomEvent('other-custom-characters-state', { detail: { characters: [] } }));
+
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  document.getElementById('panel-back').click();
+  expect(document.getElementById('show-name').textContent).toBe('Orc rider');
+});
+
+test('removing the focused preview under Custom filter returns to a visible selected fighter', () => {
+  mount({ otherCustomCharacters: [
+    { ...CUSTOM, user_id: 22, name: 'First look', author: 'fakeclean' },
+    { ...CUSTOM, user_id: 23, name: 'Second look', author: 'teammate' },
+  ] });
+  document.querySelector('.chip[data-type="CUSTOM"]').click();
+  const selected = document.querySelector('.slot[data-key="custom-user-22"]');
+  selected.click();
+  selected.focus();
+
+  window.dispatchEvent(new CustomEvent('other-custom-characters-state', { detail: { characters: [
+    { ...CUSTOM, user_id: 23, name: 'Second look', author: 'teammate' },
+  ] } }));
+
+  expect(document.querySelector('.chip[data-type=""]').getAttribute('aria-pressed')).toBe('true');
+  expect(document.activeElement.dataset.key).toBe('orc-rider');
+  expect(document.activeElement.classList.contains('filtered-out')).toBe(false);
+  expect(document.activeElement.getAttribute('aria-selected')).toBe('true');
+});
+
+test('removing a hovered fighter cancels its pending peek', () => {
+  vi.useFakeTimers();
+  mount({ otherCustomCharacters: [{ ...CUSTOM, user_id: 22, name: 'First look', author: 'fakeclean' }] });
+  document.querySelector('.slot[data-key="custom-user-22"]').dispatchEvent(new Event('pointerover', { bubbles: true }));
+
+  window.dispatchEvent(new CustomEvent('other-custom-characters-state', { detail: { characters: [] } }));
+
+  expect(() => vi.advanceTimersByTime(120)).not.toThrow();
+  expect(document.getElementById('show-stage').classList.contains('peeking')).toBe(false);
+});
+
+test('removing the fighter currently peeked restores the selected fighter', () => {
+  vi.useFakeTimers();
+  mount({ otherCustomCharacters: [{ ...CUSTOM, user_id: 22, name: 'First look', author: 'fakeclean' }] });
+  document.querySelector('.slot[data-key="custom-user-22"]').dispatchEvent(new Event('pointerover', { bubbles: true }));
+  vi.advanceTimersByTime(120);
+  expect(document.getElementById('show-stage').classList.contains('peeking')).toBe(true);
+
+  window.dispatchEvent(new CustomEvent('other-custom-characters-state', { detail: { characters: [] } }));
+
+  expect(document.getElementById('show-stage').classList.contains('peeking')).toBe(false);
+  expect(document.getElementById('show-name').textContent).toBe('Orc rider');
+});
+
+test('a teammate broadcast requests fresh previews from the sheet', () => {
+  vi.useFakeTimers();
+  const refresh = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch: refresh });
+  mount({ me: 7 });
+
+  window.dispatchEvent(new CustomEvent('sheet-other-character-broadcast', { detail: { user_id: 22 } }));
+  vi.advanceTimersByTime(150);
+
+  expect(refresh).toHaveBeenCalledWith('other-custom-characters-refresh');
 });
 
 test('a custom fighter that is not equipped can be picked and equipped like any other', () => {
@@ -749,6 +883,30 @@ test('opening Create with nothing built shows an empty stage, not the selected r
   expect(document.getElementById('show-name').textContent).toBe('Wizard');
 });
 
+test('a fighter arriving from another tab replaces the forge blueprint without closing the editor', () => {
+  mount();
+  document.querySelector('.slot-add').click();
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
+
+  changed({ custom: { ...CUSTOM, name: 'New Fighter' }, draft: null, equipped: 'orc-rider' });
+
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(false);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  expect(document.getElementById('show-name').textContent).toBe('New Fighter');
+});
+
+test('removing the fighter in another tab restores the forge blueprint', () => {
+  mount({ custom: CUSTOM });
+  document.querySelector('.slot-add').click();
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(false);
+
+  changed({ custom: null, draft: null, equipped: 'orc-rider' });
+
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  expect(document.getElementById('show-name').textContent).toBe('Your fighter');
+});
+
 test('opening Manage shows the player\'s own fighter on the stage', () => {
   mount({ equipped: 'orc-rider', custom: { ...CUSTOM, name: 'Sir Pixel' } });
   document.querySelector('.slot[data-key="wizard"]').click();
@@ -796,29 +954,4 @@ test('opening Manage makes the fighter walk instead of standing still', () => {
   document.querySelector('.slot-add').click();
 
   expect(document.getElementById('move-name').textContent).toContain('Walk');
-});
-
-test('opening from the guide link selects the Manage tile, shows the player\'s fighter walking, and leaves focus on the tile', () => {
-  mount({ equipped: 'orc-rider', custom: { ...CUSTOM, name: 'Sir Pixel' } });
-  const tile = document.querySelector('.slot-add');
-
-  window.dispatchEvent(new Event('open-custom-editor'));
-
-  expect(tile.getAttribute('aria-pressed')).toBe('true');
-  expect(tile.getAttribute('aria-expanded')).toBe('true');
-  expect(document.getElementById('custom-panel').hidden).toBe(false);
-  expect(document.getElementById('show-name').textContent).toBe('Sir Pixel');
-  expect(document.getElementById('move-name').textContent).toContain('Walk');
-  expect(document.activeElement).toBe(tile);
-});
-
-test('opening from the guide link with no fighter yet selects Create and shows the empty stage', () => {
-  mount({ equipped: 'orc-rider' });
-  const tile = document.querySelector('.slot-add');
-
-  window.dispatchEvent(new Event('open-custom-editor'));
-
-  expect(tile.getAttribute('aria-pressed')).toBe('true');
-  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
-  expect(document.activeElement).toBe(tile);
 });

@@ -442,6 +442,38 @@ test('character tab passes roommates to the Alpine component', function () {
         ->assertSee($mate->displayHandle(), false);
 });
 
+test('character tab passes another player’s active custom fighter without duplicating the viewer’s own', function () {
+    $viewer = User::factory()->create();
+    CustomCharacter::factory()->create(['user_id' => $viewer->id]);
+    $other = CustomCharacter::factory()->create(['name' => 'Copy for review']);
+    CustomCharacter::factory()->create(['active' => false]);
+
+    Livewire::actingAs($viewer)
+        ->test(FighterSheet::class)
+        ->call('open', 'character')
+        ->assertViewHas('otherCustomCharacters', function (array $characters) use ($other, $viewer): bool {
+            return count($characters) === 1
+                && $characters[0]['user_id'] === $other->user_id
+                && $characters[0]['name'] === 'Copy for review'
+                && $characters[0]['author'] === $other->user->displayHandle()
+                && $characters[0]['user_id'] !== $viewer->id;
+        });
+});
+
+test('an open character sheet can refresh another player’s custom fighter after it changes', function () {
+    $viewer = User::factory()->create();
+    $other = CustomCharacter::factory()->create(['name' => 'First look']);
+    $sheet = Livewire::actingAs($viewer)->test(FighterSheet::class)->call('open', 'character');
+
+    $other->update(['name' => 'Second look']);
+    $sheet->dispatch('other-custom-characters-refresh')
+        ->assertDispatched('other-custom-characters-state', function (string $event, array $params) use ($other): bool {
+            return count($params['characters']) === 1
+                && $params['characters'][0]['user_id'] === $other->user_id
+                && $params['characters'][0]['name'] === 'Second look';
+        });
+});
+
 test('charactersWithMeta() entries each carry an attackType', function () {
     $user = User::factory()->create();
 

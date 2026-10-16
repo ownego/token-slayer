@@ -82,9 +82,10 @@ const REFRESH_DEBOUNCE_MS = 150;
  * @param {number} me The viewer's user id, left out of the teammates.
  * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
  * @param {?{hash: string, spec: object}} draft The fighter the viewer built and has not used yet (`FighterSheet::$customDraft`).
+ * @param {Array<object>} otherCustomCharacters Active fighters made by other players, for preview only.
  * @return {object}
  */
-export function characterStage(startingKey, roommates, handle, me, custom = null, draft = null) {
+export function characterStage(startingKey, roommates, handle, me, custom = null, draft = null, otherCustomCharacters = []) {
   return {
     cleanup: [],
     init() {
@@ -99,6 +100,7 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
         me,
         custom,
         draft,
+        otherCustomCharacters,
         equip: key => window.Livewire.find(componentId)?.equip(key),
         dispatch: (name, detail) => this.$dispatch(name, detail),
       });
@@ -117,10 +119,10 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
  * (key `custom`) beside the fighters; a "+ Custom" tile always opens the page
  * where one is made or replaced.
  *
- * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, draft?: ?{hash: string, spec: object}, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
+ * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, draft?: ?{hash: string, spec: object}, otherCustomCharacters?: Array<object>, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
  * @return {Array<function(): void>} Teardown callbacks.
  */
-export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, draft = null, equip, dispatch }) {
+export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, draft = null, otherCustomCharacters = [], equip, dispatch }) {
   // teammates only: CharacterRoommates lists everyone on a fighter, the viewer included
   const roommates = Object.fromEntries(Object.entries(everyone).map(([key, users]) => [key, users.filter(u => Number(u.user_id) !== Number(me))]));
   const $$ = id => root.querySelector(`#${id}`);
@@ -133,6 +135,18 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   // before anything reads the roster lookups: puts the custom fighter in, or clears an earlier mount's
   const hasCustom = registerCustomRoster(BY_KEY, BOX, custom);
   const hasDraft = registerCustomRoster(BY_KEY, BOX, draft?.spec ?? null, DRAFT_KEY);
+  let otherKeys = otherCustomCharacters
+    .filter(raw => Number.isInteger(Number(raw.user_id)) && Number(raw.user_id) !== Number(me))
+    .map(raw => {
+      const key = `custom-user-${raw.user_id}`;
+      forgetHeel(key);
+      return registerCustomRoster(BY_KEY, BOX, raw, key) ? key : null;
+    })
+    .filter(Boolean);
+  cleanup.push(() => otherKeys.forEach(key => {
+    forgetHeel(key);
+    registerCustomRoster(BY_KEY, BOX, null, key);
+  }));
   const known = key => Boolean(BY_KEY[key]);
   let editing = false;
   let draftHash = draft?.hash ?? null;
@@ -204,6 +218,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const b = document.createElement('button');
     const custom = c.key === CUSTOM_KEY;
     const isDraft = c.key === DRAFT_KEY;
+    const isOtherCustom = otherKeys.includes(c.key);
     b.className = 'slot';
     b.type = 'button';
     b.setAttribute('role', 'option');
@@ -211,13 +226,16 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     b.dataset.type = c.type;
     b.style.setProperty('--d', grid.children.length);
     b.dataset.group = groupOf(c);
-    const label = custom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : isDraft ? `${nameOf(c.key)} (draft)` : nameOf(c.key);
+    const label = custom || isOtherCustom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : isDraft ? `${nameOf(c.key)} (draft)` : nameOf(c.key);
     b.setAttribute('aria-label', label);
-    if (custom) {
+    if (custom || isOtherCustom) {
       b.title = label;
     }
+    if (c.author) {
+      b.dataset.author = c.author;
+    }
     const badge = isDraft ? (previewMode === 'peek' ? `Version ${previewNumber}` : 'DRAFT') : null;
-    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : badge ? `<span class="badge draft">${badge}</span>` : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
+    b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : isOtherCustom ? `<span class="badge other">@${escapeHtml(c.author ?? '')}</span>` : badge ? `<span class="badge draft">${badge}</span>` : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
     paint(b.querySelector('.face-sprite'), c.key, 'idle', { hoverOnly: true });
     frameIn(b.querySelector('.face-sprite'), c.key, { maxW: 46, maxH: 36, cyPct: 40 });
     const mates = roommates[c.key] || [];
@@ -225,12 +243,16 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       b.insertAdjacentHTML('beforeend', `<span class="mates">${mates.slice(0, 2).map(m => mateFace(m)).join('')}${mates.length > 2 ? `<span class="mate more">+${mates.length - 2}</span>` : ''}</span>`);
       b.dataset.mates = mates.map(m => m.handle).join(', ');
     }
-    on(b, 'click', () => select(c.key));
-
     return b;
   }
-  const entries = [...(hasCustom ? [BY_KEY[CUSTOM_KEY]] : []), ...(hasDraft ? [BY_KEY[DRAFT_KEY]] : []), ...ROSTER];
+  const entries = [...(hasCustom ? [BY_KEY[CUSTOM_KEY]] : []), ...(hasDraft ? [BY_KEY[DRAFT_KEY]] : []), ...otherKeys.map(key => BY_KEY[key]), ...ROSTER];
   entries.forEach(c => grid.appendChild(makeSlot(c)));
+  on(grid, 'click', event => {
+    const slot = event.target.closest('.slot');
+    if (slot && grid.contains(slot)) {
+      select(slot.dataset.key);
+    }
+  });
   const countFighters = () => {
     $$('roster-count').textContent = `${grid.querySelectorAll('.slot').length} fighters`;
   };
@@ -242,7 +264,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (!customChip) {
       return;
     }
-    const present = known(CUSTOM_KEY) || known(DRAFT_KEY);
+    const present = known(CUSTOM_KEY) || known(DRAFT_KEY) || otherKeys.length > 0;
     customChip.hidden = !present;
     if (!present && customChip.getAttribute('aria-pressed') === 'true') {
       root.querySelector('.chip[data-type=""]')?.click();
@@ -516,12 +538,15 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   }
 
   // ---- selection ----
-  function select(key) {
-    leaveEditor({ restoreFocus: false });
+  function select(key, { keepEditor = false } = {}) {
+    if (!keepEditor) {
+      leaveEditor({ restoreFocus: false });
+    }
     previewing = key;
     inspectorState = inspectorStart();
     updateInspector();
     const c = BY_KEY[key];
+    const isOtherCustom = otherKeys.includes(key);
     root.querySelectorAll('.slot').forEach(el => el.setAttribute('aria-selected', String(el.dataset.key === key)));
     $$('show-stage').style.setProperty('--acc', c.accent);
     frameStage($$('show-sprite'), key);
@@ -534,6 +559,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (edit) {
       edit.hidden = key !== CUSTOM_KEY;
     }
+    $$('stage-avatar').hidden = isOtherCustom;
     const h2 = $$('show-name');
     h2.style.animation = 'none';
     void h2.offsetWidth;
@@ -550,12 +576,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const isPeek = isDraft && previewMode === 'peek';
     $$('show-state').textContent = isDraft ? 'Preview' : mine ? 'Equipped' : 'Previewing';
     $$('show-state').classList.toggle('previewing', !mine);
-    $$('equip-btn').disabled = mine;
+    $$('equip-btn').hidden = isOtherCustom;
+    $$('equip-btn').disabled = mine || isOtherCustom;
     $$('equip-label').textContent = isPeek ? `Equip version ${previewNumber}` : isDraft ? 'Use this fighter' : mine ? 'Equipped' : `Equip ${nameOf(key)}`;
     $$('back-equipped').hidden = mine || isDraft;
     $$('discard-draft').hidden = !isDraft;
     $$('discard-draft').textContent = isPeek ? 'Close preview' : 'Discard';
-    $$('equip-note').textContent = isPeek ? 'Saved version, not in use' : isDraft ? 'Not live yet. Your fighter stays as it is until you use this one.' : '';
+    $$('equip-note').textContent = isOtherCustom ? 'Preview only · made by another player' : isPeek ? 'Saved version, not in use' : isDraft ? 'Not live yet. Your fighter stays as it is until you use this one.' : '';
 
     const hb = $$('hotbar');
     hb.innerHTML = '';
@@ -737,7 +764,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     equippingTimer = null;
     const button = $$('equip-btn');
     button.setAttribute('aria-busy', String(on));
-    button.disabled = on || previewing === equipped;
+    button.disabled = on || previewing === equipped || otherKeys.includes(previewing);
     $$('equip-label').textContent = on ? 'Equipping…' : previewing === DRAFT_KEY && previewMode === 'peek' ? `Equip version ${previewNumber}` : previewing === DRAFT_KEY ? 'Use this fighter' : previewing === equipped ? 'Equipped' : `Equip ${nameOf(previewing)}`;
     if (on) {
       equippingTimer = setTimeout(() => {
@@ -764,6 +791,9 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
   }
   on($$('equip-btn'), 'click', () => {
+    if (otherKeys.includes(previewing)) {
+      return;
+    }
     if (previewing === DRAFT_KEY) {
       setEquipping(true);
       window.Livewire?.dispatch(previewMode === 'peek' ? 'custom-version-equip' : 'custom-draft-confirm', { hash: draftHash });
@@ -866,6 +896,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     editing = true;
     const active = document.activeElement;
     openerEl = active instanceof HTMLElement && active !== document.body ? active : add;
+    root.classList.add('forging');
     showcase.classList.add('editing');
     panel.hidden = false;
     updateBarHeight();
@@ -883,7 +914,9 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     editing = false;
     mountWatch?.disconnect();
     mountWatch = null;
+    root.classList.remove('forging');
     showcase.classList.remove('editing');
+    delete showcase.dataset.forgePhase;
     if (blankFrom !== null) {
       const back = blankFrom;
       blankFrom = null;
@@ -935,6 +968,11 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   if (panelBack) {
     on(panelBack, 'click', () => leaveEditor());
   }
+  on(window, 'custom-forge-phase', (event) => {
+    if (editing && ['idle', 'uploading', 'ready', 'building', 'done', 'failed'].includes(event.detail?.phase)) {
+      showcase.dataset.forgePhase = event.detail.phase;
+    }
+  });
   const editButton = $$('edit-custom');
   if (editButton) {
     on(editButton, 'click', () => enterEditor());
@@ -951,8 +989,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (!editing) {
       showOwn();
     }
-    enterEditor({ focus: false });
-    add.focus();
+    enterEditor();
   }
   on(window, 'open-custom-editor', openEditorFromLink);
 
@@ -1010,6 +1047,58 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     syncCustomChip();
     root.querySelector('.chip[aria-pressed="true"]')?.click();
   }
+  function renderOtherCustomSlots(characters) {
+    clearTimeout(peekTimer);
+    unpeek();
+    const focusedKey = otherKeys.includes(document.activeElement?.dataset.key) ? document.activeElement.dataset.key : null;
+    const nextKeys = [];
+    const seen = new Set();
+    for (const raw of Array.isArray(characters) ? characters : []) {
+      const userId = Number(raw?.user_id);
+      if (!Number.isInteger(userId) || userId <= 0 || userId === Number(me) || seen.has(userId)) {
+        continue;
+      }
+      seen.add(userId);
+      const key = `custom-user-${userId}`;
+      forgetHeel(key);
+      if (registerCustomRoster(BY_KEY, BOX, raw, key)) {
+        nextKeys.push(key);
+      }
+    }
+    for (const key of otherKeys) {
+      if (!nextKeys.includes(key)) {
+        forgetHeel(key);
+        registerCustomRoster(BY_KEY, BOX, null, key);
+      }
+    }
+    otherKeys = nextKeys;
+    grid.querySelectorAll('.slot[data-key^="custom-user-"]').forEach(slot => slot.remove());
+    const firstRoster = grid.querySelector(`.slot[data-key="${ROSTER[0].key}"]`);
+    otherKeys.forEach(key => grid.insertBefore(makeSlot(BY_KEY[key]), firstRoster));
+    countFighters();
+    syncCustomChip();
+    root.querySelector('.chip[aria-pressed="true"]')?.click();
+    if (blankFrom !== null && !known(blankFrom)) {
+      blankFrom = equipped;
+    }
+    if (previewing.startsWith('custom-user-') && !known(previewing)) {
+      if (editing) {
+        previewing = equipped;
+      } else {
+        root.querySelector('.chip[data-type=""]')?.click();
+        select(equipped);
+      }
+    } else if (otherKeys.includes(previewing) && !editing) {
+      select(previewing);
+    }
+    if (focusedKey) {
+      const previousSlot = grid.querySelector(`.slot[data-key="${focusedKey}"]`);
+      const equippedSlot = grid.querySelector(`.slot[data-key="${equipped}"]`);
+      const visible = slot => slot && !slot.classList.contains('filtered-out');
+      const fallback = [previousSlot, equippedSlot, grid.querySelector('.slot:not(.filtered-out)'), add].find(visible);
+      fallback?.focus({ preventScroll: true });
+    }
+  }
   function onCustomChanged(event) {
     if (event.type === 'custom-character-changed') {
       lastLocalAnnouncementAt = Date.now();
@@ -1058,7 +1147,14 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (!editing) {
       select(previewing);
     } else {
-      $$('show-name').textContent = nameOf(previewing);
+      const own = known(CUSTOM_KEY) ? CUSTOM_KEY : known(DRAFT_KEY) ? DRAFT_KEY : null;
+      if (own) {
+        blankFrom = null;
+        showcase.classList.remove('blank');
+        select(own, { keepEditor: true });
+      } else {
+        showOwn();
+      }
     }
     if (ceremony && equipped === CUSTOM_KEY) {
       select(equipped);
@@ -1069,6 +1165,15 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   }
   on(window, 'custom-character-changed', onCustomChanged);
   on(window, 'custom-character-state', onCustomChanged);
+  on(window, 'other-custom-characters-state', event => renderOtherCustomSlots(event.detail?.characters));
+  let otherRefreshTimer = null;
+  on(window, 'sheet-other-character-broadcast', event => {
+    if (Number(event.detail?.user_id) === Number(me)) {
+      return;
+    }
+    clearTimeout(otherRefreshTimer);
+    otherRefreshTimer = setTimeout(() => window.Livewire?.dispatch('other-custom-characters-refresh'), REFRESH_DEBOUNCE_MS);
+  });
   on(window, 'sheet-own-character-broadcast', event => {
     if (Number(event.detail?.user_id) !== Number(me) || Date.now() - lastLocalAnnouncementAt <= REFRESH_DEBOUNCE_MS) {
       return;
@@ -1122,7 +1227,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
     const isSlot = el.classList.contains('slot');
     const name = isSlot ? nameOf(el.dataset.key) : el.title;
-    const sub = isSlot ? TYPE_NAMES[el.dataset.type] + (el.dataset.key === equipped ? ' · yours' : '') + (el.dataset.mates ? ` · ${el.dataset.mates}` : '') : `key ${[...root.querySelectorAll('.move')].indexOf(el) + 1}`;
+    const sub = isSlot ? TYPE_NAMES[el.dataset.type] + (el.dataset.key === equipped ? ' · yours' : '') + (el.dataset.author ? ` · by ${el.dataset.author}` : '') + (el.dataset.mates ? ` · ${el.dataset.mates}` : '') : `key ${[...root.querySelectorAll('.move')].indexOf(el) + 1}`;
     tip.innerHTML = `${escapeHtml(name)}<small>${escapeHtml(sub)}</small>`;
     const r = el.getBoundingClientRect();
     tip.style.left = `${Math.round(r.left + r.width / 2)}px`;
@@ -1198,7 +1303,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   if (window.__openCustomEditor) {
     openEditorFromLink();
   }
-  cleanup.push(() => { seq++; clearTimeout(peekTimer); clearTimeout(equippingTimer); clearTimeout(refreshTimer); });
+  cleanup.push(() => { seq++; clearTimeout(peekTimer); clearTimeout(equippingTimer); clearTimeout(refreshTimer); clearTimeout(otherRefreshTimer); });
 
   return cleanup;
 }

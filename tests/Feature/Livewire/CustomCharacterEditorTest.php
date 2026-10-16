@@ -141,12 +141,12 @@ test('the form submits to an action the browser can reach, not Livewire\'s built
         ->assertDontSeeHtml('wire:submit="upload"');
 });
 
-test('the editor lays out the three steps, the file limits the decoder enforces, and the pose counts per row', function () {
+test('the editor lays out the three steps and the file requirements', function () {
     editorFor(User::factory()->create())
         ->assertSee('Drop your pose sheet here')->assertSee('Upload and build')
         ->assertSee('up to 2048 px')
         ->assertSee('up to 4 MB')
-        ->assertSee('2–4 poses');
+        ->assertSee('on magenta or transparent');
 });
 
 test('the editor is built from the sheet\'s own pieces: no browser dialogs, no pill progress, no second set of buttons', function () {
@@ -221,13 +221,13 @@ test('the sheet loads the editor when its panel is first opened, not with every 
         ->assertSeeHtml('__lazyLoad');
 });
 
-test('a new player sees the pose layout and a file preview flow before building', function () {
+test('a new player sees the prompt guide and a file preview flow before building', function () {
     $user = User::factory()->create();
 
     editorFor($user)
         ->assertSee('Make your own fighter')
-        ->assertSee('Prompt guide')
-        ->assertSeeHtml('<svg role="img"')
+        ->assertSee('prompt guide')
+        ->assertSeeHtml('class="cce-drop-icon"')
         ->assertSeeHtml('phase:')
         ->assertSeeHtml('destroy()')
         ->assertDontSeeHtml('x-on:alpine:destroy')
@@ -571,5 +571,5 @@ test('the file button and the name box carry the hooks the stage focuses by', fu
 test('the prompt guide stays one click away for a player who already has a fighter', function () {
     $character = CustomCharacter::factory()->create();
 
-    editorFor($character->user)->assertSee('Prompt guide')->assertSeeHtml(route('custom-character'));
+    editorFor($character->user)->assertSee('prompt guide')->assertSeeHtml(route('custom-character'));
 });

@@ -1,6 +1,6 @@
 # Layout, responsiveness and accessibility
 
-## Layout classes (the three the sheet is built for)
+## Layout classes
 
 | Class | Rule in `fighter-sheet.css` | What changes |
 |---|---|---|
@@ -15,7 +15,7 @@ Safe areas: the battlefield page is `viewport-fit=cover`; a full-screen sheet pa
 
 ## Scroll
 
-The sheet never outgrows the viewport. Scrolling happens inside one named container per column (`.main`, `.showcase`, `.roster-scroll`) with the sheet's thin gold scrollbar. No page-level scrolling behind the overlay, no nested scrollers that each show a sideways bar.
+The sheet never outgrows the viewport. Scrolling happens inside one named container per column (`.main`, `.showcase`, `.roster-scroll`, or `.cce-drawer` while forging) with the sheet's thin gold scrollbar. No page-level scrolling behind the overlay, no nested scrollers that each show a sideways bar.
 
 ## z-index scale (do not invent new numbers)
 
@@ -51,8 +51,8 @@ Anything above the sheet (a confirm, a toast) uses 70; a new layer needs a new r
 
 ## Recipes
 
-- An editing panel opens as `.cce-drawer` under `.show-stage`, so the fighter stays visible. On a phone `.char-body:has(.showcase.editing) .roster` hides the roster while the drawer fills the remaining space.
-- A phone's primary `.equip-row` is sticky at the bottom, full width. The `.inspector` row sticks directly above it using `--actions-h`. The upload form keeps Build preview in its own sticky `.cce-row:last-child` footer inside the drawer.
+- The Character tab has roster and Forge modes. `.char-body.forging` hides the roster and places the live `.show-stage` beside `.cce-drawer`; at 900 px and below they stack, with the drawer scrolling beneath the stage. Back restores the roster and focus to its opener.
+- A phone's primary `.equip-row` is sticky at the bottom, full width. The `.inspector` row sticks directly above it using `--actions-h`. A visible draft note gets its own row above Discard and Use. Build preview fills the narrow file card instead of extending beyond it.
 - The toast uses `--bar-h`, measured from the visible sticky rows by `character-stage.js`, plus the safe-area inset and 12 px clearance. It must never cover a control.
 - The show stage is 270 px on desktop, 190 px in phone portrait and 120 px in phone landscape. The desktop roster has four columns, the phone roster five and a 170 px scroller; tablets keep a 220 px roster column.
 - Long names and handles stay on one line with ellipsis in tiles and bubbles. Controls added after lazy load must not shift the button a player is about to tap.
@@ -63,11 +63,11 @@ Anything above the sheet (a confirm, a toast) uses 70; a new layer needs a new r
 |---|---|
 | Desktop | Primary action visible without scrolling; stage and roster fit; no horizontal scroll or overlap |
 | Tablet | 220 px roster; primary action visible; no horizontal scroll or overlap |
-| Phone portrait | 190 px stage; 5-column roster closed, hidden when editing; two sticky action rows; toast clears both and safe area |
+| Phone portrait | 190 px browse stage; Forge stage above a scrollable drawer; file card and draft actions fit without horizontal scroll |
 | Phone landscape | 120 px stage; drawer scrolls with Build preview available; no sideways scrolling |
 
 For each class, confirm every target is at least 44 px, focus stays visible inside the open region, tooltips and toasts do not cover controls, and reduced motion stops decorative animation.
 
 ## Verify
 
-The team verifies on staging. Keep the Chrome window visible: a background tab does not mount the lazy editor. This browser extension cannot resize its window, so create a same-origin `<iframe>` from the page console at 390 x 844, 844 x 390, and 768 x 1024; drive the frame through `iframe.contentDocument` and take a screenshot of each state. A real phone is still needed to check touch and browser URL-bar resizing.
+The team verifies on staging. Check the Character tab at 390 x 844, 844 x 390, and 768 x 1024, and capture each state. Keep the browser tab visible while checking the lazy editor. A real phone is still needed to check touch and browser URL-bar resizing.

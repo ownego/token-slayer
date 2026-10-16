@@ -45,6 +45,14 @@ test('renames the fighter, trimming spaces', function () {
         ->and($character->fresh()->name)->toBe('Sir Pixel');
 });
 
+test('renaming announces the new name to other viewers', function () {
+    $character = CustomCharacter::factory()->create();
+
+    app(RenameCustomCharacter::class)->execute($character->user, 'Sir Pixel');
+
+    Event::assertDispatched(FighterCharacterChanged::class, fn (FighterCharacterChanged $event) => $event->user->is($character->user));
+});
+
 test('an empty name goes back to the default, and a long one is cut to the limit', function () {
     $character = CustomCharacter::factory()->create(['name' => 'Old']);
     $rename = app(RenameCustomCharacter::class);

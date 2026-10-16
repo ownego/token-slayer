@@ -24,6 +24,7 @@ Every animation has an off switch under `@media (prefers-reduced-motion: reduce)
 ## Sprites and previews
 
 - Frames are 100 x 100. Scale only by integers in CSS (`scale: 3`, `4`) or the camera, with `image-rendering: pixelated`. Never smooth, never fractional-scale a frame.
+- The empty Forge's illustrative shadow uses an existing roster strip only as an alpha mask. It may smooth and scale that mask to fit the compact stage; the fighter preview above remains pixelated at stage size.
 - A preview plays at the in-game animation rate (the game's `animations` table: frames at rate), not faster. A preview that loops faster than the game misleads the player about how the fighter will look.
 - A preview a player must judge (a fighter they are about to equip or create) shows the fighter at stage size (`.show-stage`, scale 4), lets them pick a pose (the `.move` hotbar), and can be paused or stepped; it does not rely on one small looping thumbnail.
 - Idle faces in tiles animate on hover or when selected only.

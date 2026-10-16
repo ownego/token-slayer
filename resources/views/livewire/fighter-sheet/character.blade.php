@@ -1,6 +1,5 @@
-{{-- Ported verbatim from the approved mockup's Character tab; character-stage.js
-     fills the roster, hotbar and stage exactly as the mockup's own script does. --}}
-<div class="char-body" wire:ignore x-data="characterStage(@js($equipped), @js($roommates), @js(auth()->user()->displayHandle()), {{ auth()->id() }}, @js($customCharacter), @js($customDraft))">
+{{-- The Character tab keeps the roster and Forge in one stage; character-stage.js owns their transitions. --}}
+<div class="char-body" wire:ignore x-data="characterStage(@js($equipped), @js($roommates), @js(auth()->user()->displayHandle()), {{ auth()->id() }}, @js($customCharacter), @js($customDraft), @js($otherCustomCharacters))">
         <aside class="roster">
             <div class="roster-head">
                 <h3><svg class="px-ic" viewBox="0 0 8 8" aria-hidden="true" shape-rendering="crispEdges"><rect x="0" y="0" width="1" height="1"/><rect x="1" y="0" width="1" height="1"/><rect x="2" y="0" width="1" height="1"/><rect x="3" y="0" width="1" height="1"/><rect x="4" y="0" width="1" height="1"/><rect x="5" y="0" width="1" height="1"/><rect x="6" y="0" width="1" height="1"/><rect x="7" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="2" y="2" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="4" y="2" width="1" height="1"/><rect x="5" y="2" width="1" height="1"/><rect x="7" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="7" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="1" y="5" width="1" height="1"/><rect x="6" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="5" y="6" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/></svg>Roster</h3>
@@ -23,6 +22,9 @@
 
         <section class="showcase">
             <div class="show-stage" id="show-stage">
+                <div class="forge-blueprint">
+                    @include('partials.custom-character-motion-prototype')
+                </div>
                 <div class="backdrop" aria-hidden="true">
                     <div class="bd-stars"><i style="left:83.1%;top:47.1%;--d:3.4s"></i><i style="left:14.9%;top:20.5%;--d:1.0s"></i><i style="left:93.8%;top:9.4%;--d:3.2s"></i><i style="left:24.8%;top:12.4%;--d:1.9s"></i><i style="left:24.7%;top:9.8%;--d:1.9s"></i><i style="left:61.8%;top:32.0%;--d:3.9s"></i><i style="left:78.2%;top:36.6%;--d:0.7s"></i><i style="left:33.1%;top:7.4%;--d:0.7s"></i><i style="left:23.8%;top:53.3%;--d:2.8s"></i><i style="left:46.4%;top:26.7%;--d:2.6s"></i><i style="left:56.9%;top:50.4%;--d:2.2s"></i><i style="left:45.4%;top:44.8%;--d:2.3s"></i><i style="left:47.6%;top:41.3%;--d:1.3s"></i><i style="left:26.9%;top:8.3%;--d:0.8s"></i><i style="left:12.3%;top:22.2%;--d:2.6s"></i><i style="left:94.7%;top:48.8%;--d:1.1s"></i><i style="left:36.7%;top:28.5%;--d:2.2s"></i><i style="left:52.1%;top:51.2%;--d:1.0s"></i><i style="left:19.4%;top:33.2%;--d:3.7s"></i><i style="left:67.0%;top:29.2%;--d:0.2s"></i><i style="left:88.9%;top:43.4%;--d:1.2s"></i><i style="left:17.8%;top:34.9%;--d:1.8s"></i><i style="left:94.0%;top:14.4%;--d:0.3s"></i><i style="left:90.8%;top:30.4%;--d:2.7s"></i><i style="left:70.4%;top:42.0%;--d:0.3s"></i><i style="left:38.2%;top:26.6%;--d:1.8s"></i><i style="left:73.7%;top:27.1%;--d:3.3s"></i><i style="left:64.3%;top:28.7%;--d:2.0s"></i></div>
                     <span class="bd-moon"></span>
@@ -88,9 +90,8 @@
                     <span class="label"><span class="icon-cluster"><span class="sword-fx sword-left">🗡️</span><span class="icon-wiggle">🛡</span><span class="sword-fx sword-right">🗡️</span></span><span id="equip-label">Equipped</span></span>
                 </button>
             </div>
-            {{-- Where a custom fighter is made and managed: a drawer under the stage, which keeps showing the fighter
-                 (character-stage.js toggles `editing` on the showcase). The editor is its own Livewire component,
-                 loaded when the drawer is first opened: it tells this tab what changed with `custom-character-changed`. --}}
+            {{-- The Forge pairs the live stage with a lazily loaded Livewire editor.
+                 The editor reports changes to this tab with `custom-character-changed`. --}}
             <section class="cce-drawer" id="custom-panel" aria-label="Your custom fighter" hidden>
                 <div class="panel-head">
                     <button class="btn" type="button" id="panel-back">&larr; Back to roster</button>
