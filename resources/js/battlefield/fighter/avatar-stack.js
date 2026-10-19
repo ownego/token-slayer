@@ -17,12 +17,14 @@ const BODY_PX = 18;
  *
  * @param {string} key Fighter key.
  * @param {number} scale Sprite scale (display size / 18).
+ * @param {{headTop?: number, bodyPx?: number}} [look] The fighter's own head row and body height when it is not in the
+ *   roster's measured boxes (a custom fighter, whose body is drawn taller than 18).
  * @return {number}
  */
-export function avatarCenterY(key, scale) {
-  const headTop = BOX[key]?.[1] ?? 38;
+export function avatarCenterY(key, scale, look = {}) {
+  const headTop = look.headTop ?? BOX[key]?.[1] ?? 38;
 
-  return -(50 - headTop) * scale - BODY_PX * scale * (38 / 48);
+  return -(50 - headTop) * scale - (look.bodyPx ?? BODY_PX) * scale * (38 / 48);
 }
 
 /**

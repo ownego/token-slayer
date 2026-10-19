@@ -225,15 +225,15 @@ PIXEL ART STYLE:
 - Limited color palette, with carefully grouped pixels and strong value contrast. Use selective highlights and dark shadow pixels to create depth, especially on armor, weapons, hair, and clothing.
 - Dark navy, charcoal, and deep brown outlines, with occasional near-black pixels to define the silhouette and separate overlapping body parts.
 - Simple, blocky shading using approximately 2–4 shades per material. Use small, intentional highlight clusters and compact shadow areas to suggest volume without gradients or realistic lighting.
-- Classic top-down / three-quarter RPG sprite rendering, with a slightly angled view where appropriate for the idle poses. Keep the character's equipment and body parts visually distinct and easy to read at small sprite sizes.
-- For side-view animation poses, use a clear, strict side profile consistent with classic 2D side-scrolling RPG sprites.
+- Classic top-down / three-quarter RPG sprite rendering, with the same slightly angled view for the idle and run poses. Keep the character's equipment and body parts visually distinct and easy to read at small sprite sizes.
+- The attack and defeated poses may use a clear side profile consistent with classic 2D side-scrolling RPG sprites, but never draw the run cycle in a strict side-on profile: it keeps the idle poses' angled view.
 - Distinct, recognizable pixel-art equipment: blocky metal helmets, segmented armor, leather straps, tiny shields, swords, axes, staffs, and other medieval fantasy gear rendered with clean, readable pixel clusters.
 - Overall appearance should resemble a playable character sprite from a nostalgic pixel-art fantasy RPG, NOT a modern high-resolution illustration, smooth cartoon, 3D model, voxel character, or realistic human rendered with pixel filters.
 - Every pose must look like the same unified game sprite set, with consistent pixel scale, outline thickness, palette, proportions, and detail density.
 
 OUTPUT: ONE image on a flat solid magenta (#FF00FF) background, no grid lines, no borders. 4 rows, all poses the same size, feet on the same baseline within a row, character facing RIGHT, with clear empty space between poses:
 - Row 1: idle, standing, 4 poses.
-- Row 2: walk cycle, pure side profile, exactly 4 poses.
+- Row 2: run cycle (a fast run, not a walk: leaning forward, long strides, arms pumping), in the same slightly angled view as the idle poses, exactly 4 poses. The legs must clearly alternate, one step of a loop: pose 1: one leg stretched far forward and the other far back, pose 2: both feet off the ground, legs tucked under the body, pose 3: the same as pose 1 with the legs swapped, pose 4: both feet off the ground again. The arms swing opposite to the legs, and the body leans forward. No two poses may look alike.
 - Row 3: {ATTACK}, exactly 3 poses (wind up, strike, follow through).
 - Row 4: defeated, exactly 3 poses, eyes closed, falling then lying on the ground.
 PROMPT,
@@ -377,8 +377,10 @@ PROMPT,
                 'attack' => 'a wild two-handed sweeping axe chop with the berserker\'s battle axe',
             ],
         ],
-        // Height in px the idle/walk poses are shrunk to, before the outline is added.
-        'sprite_height' => 28,
+        // Height in px the idle/walk poses are shrunk to, before the outline is added. It is also how tall the
+        // fighter stands on the field in the roster's pixels (their body is 18): the strips are drawn unscaled, so
+        // the pixel size matches the roster's. JS twin: CUSTOM_BODY_PX in fighter/custom-fighter.js.
+        'sprite_height' => 22,
         // Colours shared by every pose after quantising.
         'palette_colors' => 24,
         'outline_color' => '#16121f',

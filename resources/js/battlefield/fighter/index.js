@@ -557,7 +557,7 @@ export class Fighter {
       entry.rosterKey = ftype.key;
     }
     // the avatar follows the new body's own head height
-    entry.head?.setY(Math.round(avatarCenterY(ftype.key, (entry.baseSize ?? 48) / SPRITE_CHAR_HEIGHT)));
+    entry.head?.setY(Math.round(avatarCenterY(ftype.key, (entry.baseSize ?? 48) / SPRITE_CHAR_HEIGHT, ftype)));
     // a charging ring is placed on the avatar once, when it's made: move it along
     this.scene.charges?.get(entry.id)?.ring?.setY(entry.head?.y ?? 0);
     this._fitBody(entry, ftype);
@@ -700,7 +700,7 @@ export class Fighter {
     // Scale so the visible character (18px of the 100px frame) fills `size` logical px
     const scale     = size / SPRITE_CHAR_HEIGHT;
     const legH      = Math.round((SPRITE_CHAR_BOT - SPRITE_HALF_FRAME) * scale);
-    const avatarY   = Math.round(avatarCenterY(ftype.key, scale)); // per fighter, from its own head (avatar-stack.js)
+    const avatarY   = Math.round(avatarCenterY(ftype.key, scale, ftype)); // per fighter, from its own head (avatar-stack.js)
     const avSize    = avatarPx(size);
     const displayName = fighter.handle || fighter.slack_handle || fighter.display_name || '';
 

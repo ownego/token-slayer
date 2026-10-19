@@ -17,11 +17,11 @@ export const DRAFT_KEY = 'custom-draft';
 
 /**
  * The custom fighter's body core inside its 100px frame, as [x0, y0, x1, y1] — the
- * roster's `BOX` shape. Custom strips are built 28px tall with the feet on row 58
+ * roster's `BOX` shape. Custom strips are built 22px tall with the feet on row 58
  * and the body centred on column 50, so the box is fixed rather than measured.
  * @type {number[]}
  */
-export const CUSTOM_BOX = [36, 30, 64, 58];
+export const CUSTOM_BOX = [39, 36, 61, 58];
 
 /**
  * The filter group of a player-made fighter: the roster's style chips never show it,

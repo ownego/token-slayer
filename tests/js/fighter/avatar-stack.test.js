@@ -18,6 +18,17 @@ test('the avatar clears the head with a gap proportional to the body, never touc
   }
 });
 
+test('a custom fighter\'s avatar clears its own, taller head rather than the generic line', () => {
+  const custom = { bodyPx: 22, headTop: 36 };
+  const avatarSize = 48 * 0.85;
+  const top = -(50 - 36) * scale;
+  const bottom = avatarCenterY('custom-1-abc', scale, custom) + avatarSize / 2;
+
+  expect(bottom).toBeLessThan(top - 4);
+  expect(top - bottom).toBeLessThan(30); // the gap grows with the body, as for every fighter
+  expect(avatarCenterY('custom-1-abc', scale, custom)).toBeLessThan(avatarCenterY('custom-1-abc', scale));
+});
+
 describe('avatarSrc', () => {
   test('uses the versioned URL the server sent, so the browser can cache the image for a week', () => {
     expect(avatarSrc({ id: 5, avatarUrl: '/avatars/5?v=abc' })).toBe('/avatars/5?v=abc');

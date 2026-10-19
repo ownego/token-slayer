@@ -24,7 +24,7 @@ test('stages the sheet as a draft and leaves the live character alone', function
     $draft = app(StageCustomCharacter::class)->execute($user, pngBytes(poseSheetImage(background: 'transparent')));
 
     expect($draft->user_id)->toBe($user->id)
-        ->and($draft->animations['walk'])->toBe(['frames' => 8, 'rate' => 10])
+        ->and($draft->animations['walk'])->toBe(['frames' => 8, 'rate' => 16])
         ->and($user->fresh()->customCharacterDraft->version_hash)->toBe($draft->version_hash)
         ->and($user->fresh()->customCharacter->version_hash)->toBe($live->version_hash);
     Storage::disk('public')->assertExists("custom-characters/{$user->id}/staged/{$draft->version_hash}/idle.png");
