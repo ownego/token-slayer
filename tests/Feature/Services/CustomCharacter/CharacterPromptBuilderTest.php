@@ -128,6 +128,17 @@ test('the run cycle spells out the leg swap, so the legs alternate and it reads 
         ->toContain('No two poses may look alike');
 })->with(PROMPT_TYPES);
 
+test('effects are welcome but leave clear space, so poses never touch and the converter can tell them apart', function (string $type) {
+    $prompt = app(CharacterPromptBuilder::class)->execute()[$type];
+
+    expect($prompt)->toContain('Keep every pose and everything it carries or casts')
+        ->toContain('Effects are welcome, but they must not reach another pose')
+        ->toContain('at least 5% of the sheet width of clear empty space')
+        ->toContain('effect included')
+        ->toContain('No two poses may touch or overlap')
+        ->not->toContain('never draw a magic circle');
+})->with(PROMPT_TYPES);
+
 test('the pixel art style block is identical for every type', function () {
     $blocks = array_map(function (string $prompt): string {
         preg_match('/PIXEL ART STYLE:\n(?:- .*\n?)+/', $prompt, $match);

@@ -236,6 +236,7 @@ OUTPUT: ONE image on a flat solid magenta (#FF00FF) background, no grid lines, n
 - Row 2: run cycle (a fast run, not a walk: leaning forward, long strides, arms pumping), in the same slightly angled view as the idle poses, exactly 4 poses. The legs must clearly alternate, one step of a loop: pose 1: one leg stretched far forward and the other far back, pose 2: both feet off the ground, legs tucked under the body, pose 3: the same as pose 1 with the legs swapped, pose 4: both feet off the ground again. The arms swing opposite to the legs, and the body leans forward. No two poses may look alike.
 - Row 3: {ATTACK}, exactly 3 poses (wind up, strike, follow through).
 - Row 4: defeated, exactly 3 poses, eyes closed, falling then lying on the ground.
+Keep every pose and everything it carries or casts (weapons, capes, braids, magic circles, bolts, swirls, sparks, projectiles) inside its own cell. Effects are welcome, but they must not reach another pose: leave at least 5% of the sheet width of clear empty space between the last pixel of one pose, effect included, and the first pixel of the next, in every row. No two poses may touch or overlap.
 PROMPT,
         // The character types a player can pick before getting a prompt. Each defines the class costume the prompt
         // spells out: the six `costume` items (the ones the user may override), the class's `identity` and what it
