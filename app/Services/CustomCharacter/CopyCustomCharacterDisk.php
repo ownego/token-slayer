@@ -6,9 +6,10 @@ use App\Exceptions\CustomCharacterStorageException;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Copies every custom fighter file from one disk to another. Changing
+ * Copies every custom fighter and custom minion file from one disk to another. Changing
  * `custom_character.disk` after fighters exist points the app at an empty place:
- * run this first, then change the setting, and nothing is orphaned. The source is
+ * run this first, then change the setting, and nothing is orphaned. Both roots (fighters
+ * and minions) go across. The source is
  * left as it is.
  */
 class CopyCustomCharacterDisk
@@ -28,18 +29,20 @@ class CopyCustomCharacterDisk
         $target = Storage::disk($to);
         $copied = 0;
 
-        foreach ($source->allFiles(CustomCharacterStore::ROOT) as $path) {
-            $stream = $source->readStream($path);
+        foreach ([CustomCharacterStore::ROOT, CustomMinionStore::ROOT] as $root) {
+            foreach ($source->allFiles($root) as $path) {
+                $stream = $source->readStream($path);
 
-            if ($stream === null || $target->writeStream($path, $stream) === false) {
-                throw new CustomCharacterStorageException("Could not copy {$path} from {$from} to {$to}.");
+                if ($stream === null || $target->writeStream($path, $stream) === false) {
+                    throw new CustomCharacterStorageException("Could not copy {$path} from {$from} to {$to}.");
+                }
+
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+
+                $copied++;
             }
-
-            if (is_resource($stream)) {
-                fclose($stream);
-            }
-
-            $copied++;
         }
 
         return $copied;

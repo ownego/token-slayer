@@ -2,6 +2,8 @@
 
 use App\Models\CustomCharacter;
 use App\Models\CustomCharacterDraft;
+use App\Models\CustomMinion;
+use App\Models\CustomMinionDraft;
 use App\Models\User;
 use App\Services\CustomCharacter\CustomCharacterLock;
 use App\Services\CustomCharacter\CustomCharacterStore;
@@ -86,6 +88,42 @@ test('the sweep rechecks version references after acquiring the player lock', fu
 
     expect((new PruneOrphanCustomCharacterFiles(app(CustomCharacterStore::class), $lock))->execute())->toBe(0);
     Storage::disk('public')->assertExists("{$folder}/idle.png");
+});
+
+test('it sweeps an unreferenced minion folder older than an hour and keeps referenced ones', function () {
+    $owner = User::factory()->create();
+    CustomMinion::factory()->for($owner)->create(['version_hash' => 'minlive00000']);
+    CustomMinionDraft::create(['user_id' => $owner->id, 'version_hash' => 'mindraft0000', 'animations' => CustomMinion::first()->animations, 'body_px' => 22]);
+    $base = "custom-minions/{$owner->id}";
+    oldStrip("{$base}/minlive00000");
+    oldStrip("{$base}/minorphan000");
+    oldStrip("{$base}/staged/mindraft0000");
+    Storage::disk('public')->put("{$base}/minrecent000/idle.png", 'new');
+    $strayStaged = User::factory()->create();
+    oldStrip("custom-minions/{$strayStaged->id}/staged/minunused000");
+
+    expect(app(PruneOrphanCustomCharacterFiles::class)->execute())->toBe(2);
+    Storage::disk('public')->assertExists("{$base}/minlive00000/idle.png");
+    Storage::disk('public')->assertExists("{$base}/staged/mindraft0000/idle.png");
+    Storage::disk('public')->assertExists("{$base}/minrecent000/idle.png");
+    Storage::disk('public')->assertMissing("{$base}/minorphan000/idle.png");
+    Storage::disk('public')->assertMissing("custom-minions/{$strayStaged->id}/staged/minunused000/idle.png");
+});
+
+test('it never sweeps minion folders as fighter orphans, nor fighter folders as minion orphans', function () {
+    $minionOnly = User::factory()->create();
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'minionone000']);
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'miniontwo000']);
+    oldStrip("custom-minions/{$minionOnly->id}/minionone000");
+    oldStrip("custom-minions/{$minionOnly->id}/miniontwo000");
+    $fighterOnly = User::factory()->create();
+    CustomCharacter::factory()->for($fighterOnly)->create(['version_hash' => 'fighterone00']);
+    oldStrip("custom-characters/{$fighterOnly->id}/fighterone00");
+
+    expect(app(PruneOrphanCustomCharacterFiles::class)->execute())->toBe(0);
+    Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/minionone000/idle.png");
+    Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/miniontwo000/idle.png");
+    Storage::disk('public')->assertExists("custom-characters/{$fighterOnly->id}/fighterone00/idle.png");
 });
 
 test('the orphan sweep command is scheduled daily without overlap', function () {

@@ -239,6 +239,7 @@ export class BattlefieldScene extends Phaser.Scene {
       [BusEvent.CHARACTER_CHANGED]: payload => this.fighter.updateCharacters([payload], { animate: true }),
       [BusEvent.FIGHTER_AGENT_COUNT_CHANGED]: payload => this.minions.handleAgentCountChanged(payload),
       [BusEvent.FIGHTER_AGENT_TOOL_USED]: payload => this.minions.handleAgentToolUsed(payload),
+      [BusEvent.MINIONS_CHANGED]: payload => this.minions.handleMinionsChanged(payload),
     };
 
     this.moveInput = new MoveInput(this);

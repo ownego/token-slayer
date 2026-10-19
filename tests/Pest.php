@@ -2,6 +2,8 @@
 
 use App\Enums\MembershipStatus;
 use App\Models\Account;
+use App\Models\CustomCharacterDraft;
+use App\Models\CustomMinionDraft;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\AccountConnectService;
@@ -9,6 +11,8 @@ use App\Services\AccountProvisioningService;
 use App\Services\CodexConnectService;
 use App\Services\CodexProvisioningService;
 use App\Services\CodexUsageProber;
+use App\Services\CustomCharacter\StageCustomCharacter;
+use App\Services\CustomCharacter\StageCustomMinion;
 use App\Services\ProviderServiceFactory;
 use App\Services\UsageProber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -327,15 +331,14 @@ function imageBytes(int $width, int $height, string $format = 'png'): string
 }
 
 /**
- * Stages one of three different synthetic sheets as the user's draft.
+ * Draws one of three different synthetic pose sheets.
  *
- * @param  User  $user  the owner
  * @param  int  $variant  0, 1 or 2: each gives different strips (a magenta background alone gives the same ones as a transparent one)
- * @return App\Models\CustomCharacterDraft the staged draft
+ * @return GdImage the drawn sheet
  */
-function stagedFor(User $user, int $variant = 0): App\Models\CustomCharacterDraft
+function variantPoseSheet(int $variant): GdImage
 {
-    $sheet = match ($variant) {
+    return match ($variant) {
         0 => poseSheetImage(background: 'transparent'),
         1 => markedPoseSheet(poseSheetImage(background: 'transparent')),
         default => (function (): GdImage {
@@ -345,6 +348,28 @@ function stagedFor(User $user, int $variant = 0): App\Models\CustomCharacterDraf
             return $image;
         })(),
     };
+}
 
-    return app(App\Services\CustomCharacter\StageCustomCharacter::class)->execute($user, pngBytes($sheet));
+/**
+ * Stages one of three different synthetic sheets as the user's draft.
+ *
+ * @param  User  $user  the owner
+ * @param  int  $variant  0, 1 or 2: each gives different strips (a magenta background alone gives the same ones as a transparent one)
+ * @return CustomCharacterDraft the staged draft
+ */
+function stagedFor(User $user, int $variant = 0): CustomCharacterDraft
+{
+    return app(StageCustomCharacter::class)->execute($user, pngBytes(variantPoseSheet($variant)));
+}
+
+/**
+ * Stages one of three different synthetic sheets as the user's minion draft.
+ *
+ * @param  User  $user  the owner
+ * @param  int  $variant  0, 1 or 2: each gives different strips, and the same variant gives the same hash as stagedFor() does
+ * @return CustomMinionDraft the staged draft
+ */
+function stagedMinionFor(User $user, int $variant = 0): CustomMinionDraft
+{
+    return app(StageCustomMinion::class)->execute($user, pngBytes(variantPoseSheet($variant)));
 }

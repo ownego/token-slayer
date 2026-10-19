@@ -8,7 +8,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('custom-characters:prune-orphans')]
-#[Description('Delete old custom fighter strip folders with no database reference')]
+#[Description('Delete old custom fighter and minion strip folders with no database reference')]
 class SweepOrphanCustomCharacterFiles extends Command
 {
     /**

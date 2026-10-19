@@ -8,7 +8,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('custom-characters:prune-drafts')]
-#[Description('Delete custom fighter drafts nobody used within the time limit, with their staged files')]
+#[Description('Delete custom fighter and minion drafts nobody used within the time limit, with their staged files')]
 class PruneCustomCharacterDrafts extends Command
 {
     /**

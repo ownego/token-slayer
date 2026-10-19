@@ -17,6 +17,7 @@ vi.mock('phaser', () => ({
       },
     },
     Textures: { FilterMode: { NEAREST: 'nearest' } },
+    Scenes: { Events: { SHUTDOWN: 'shutdown', DESTROY: 'destroy' } },
     Animations: { Events: { ANIMATION_COMPLETE: 'animationcomplete', ANIMATION_REPEAT: 'animationrepeat' } },
   },
 }));
@@ -27,7 +28,27 @@ vi.mock('@battlefield/fighter/animations.js', () => ({
   registerAllFighterAnimations: vi.fn(),
 }));
 
+// create() builds every manager; only the ones that would need a real Phaser game are stubbed
+// (the wiring under test is the handler map create() hands to bindBus).
+vi.mock('@battlefield/boss.js', async importOriginal => {
+  const original = await importOriginal();
+
+  return { ...original, Boss: class extends original.Boss { create() { this.scene.bossState = { number: 1, currentHp: 1, maxHp: 1 }; } } };
+});
+vi.mock('@battlefield/necromancer.js', () => ({ Necromancer: class { create() {} } }));
+vi.mock('@battlefield/move-input.js', () => ({ MoveInput: class { setup() {} } }));
+vi.mock('@battlefield/minions.js', () => ({ Minions: class {} }));
+vi.mock('@battlefield/environment/index.js', () => ({ createEnvironment: () => ({ destroy() {}, tick() {} }) }));
+vi.mock('@battlefield/spark-texture.js', () => ({
+  ensureSparkTexture() {}, ensureSparkStreakTexture() {}, ensurePuffTexture() {}, ensureClawdTextures() {}, ensureSoftGlowTexture() {},
+  createFlairGlyphCache: () => ({}),
+}));
+vi.mock('@battlefield/shared/bus-bindings.js', () => ({ bindBus: vi.fn(() => () => {}) }));
+
 import { BattlefieldScene } from '@battlefield/scene.js';
+import { bindBus } from '@battlefield/shared/bus-bindings.js';
+import { BusEvent } from '@battlefield/constants.js';
+import { LAYOUTS } from '@battlefield/config.js';
 import { registerAllFighterAnimations } from '@battlefield/fighter/animations.js';
 
 /**
@@ -102,5 +123,39 @@ describe('BattlefieldScene#preload — boot-only complete handler', () => {
     scene.load.emit('complete');
 
     expect(registerAllFighterAnimations).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BattlefieldScene#create — bus handlers', () => {
+  const chain = () => new Proxy(function () {}, { get: (_, prop) => (prop === 'then' ? undefined : chain()), apply: () => chain() });
+
+  /**
+   * Runs create() on a stand-in for the Phaser scene and returns the handler map it bound to the bus.
+   *
+   * @return {{scene: object, handlers: Record<string, Function>}}
+   */
+  function createdScene() {
+    const registry = { 'initialState': { fighters: [], damageTotals: [] }, 'mode': 'landscape', 'layout': LAYOUTS.landscape };
+    const scene = Object.create(BattlefieldScene.prototype);
+    Object.assign(scene, {
+      game: { registry: { get: key => registry[key] }, events: { emit: vi.fn() } },
+      cameras: { main: { setZoom: vi.fn(), centerOn: vi.fn() } },
+      add: chain(),
+      events: { once: vi.fn(), emit: vi.fn() },
+    });
+    bindBus.mockClear();
+    scene.create();
+
+    return { scene, handlers: bindBus.mock.calls[0][1] };
+  }
+
+  test('a minions-changed broadcast reaches the minions manager untouched', () => {
+    const { scene, handlers } = createdScene();
+    scene.minions = { handleMinionsChanged: vi.fn() };
+    const payload = { user_id: 7, custom_minions: [{ version: 'abc' }] };
+
+    handlers[BusEvent.MINIONS_CHANGED](payload);
+
+    expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith(payload);
   });
 });

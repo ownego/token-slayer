@@ -23,12 +23,13 @@ All events are `ShouldBroadcastNow` on the public `battlefield` channel. Handler
 | `HitDealt` | `EventController` (Stop, tokens > 0) | `user_id, slack_handle, avatar_url, damage, boss_id, boss_hp_after, boss_max_hp, model, flair, flair_duration_ms, flair_color, input_tokens, cache_creation_input_tokens, cache_read_input_tokens` | `HIT` `'hit'` → `fighter.handleHit` |
 | `BossKilled` | `EventController`, once per boss killed in the chain | `boss_number, boss_name, boss_id, killer_user_id, killer_slack_handle, killer_avatar_url` | `BOSS_KILLED` `'boss-killed'` → `boss.handleBossKilled` |
 | `BossSpawned` | `EventController`, once after any kill | `boss_id, boss_number, boss_name, max_hp, fighters[] {user_id, character, custom_character}` (+ per-boss script keys, below) | `BOSS_SPAWNED` `'boss-spawned'` → `boss.handleBossSpawned` |
-| `FighterJoined` | `EventController` (SessionStart) | `user_id, slack_handle, display_name, avatar_url, character, custom_character, position` | `FIGHTER_JOINED` `'fighter-joined'` → `fighter.handleFighterJoined` |
-| `FighterCharging` | `EventController` (prompt / pre-invocation / pre-tool-use; post-hit label for Stop-only providers) | `user_id, slack_handle, avatar_url, character, custom_character, activity, position` | `FIGHTER_CHARGING` `'fighter-charging'` → `charge.handleCharging` |
+| `FighterJoined` | `EventController` (SessionStart) | `user_id, slack_handle, display_name, avatar_url, character, custom_character, custom_minions, position` | `FIGHTER_JOINED` `'fighter-joined'` → `fighter.handleFighterJoined` |
+| `FighterCharging` | `EventController` (prompt / pre-invocation / pre-tool-use; post-hit label for Stop-only providers) | `user_id, slack_handle, avatar_url, character, custom_character, custom_minions, activity, position` | `FIGHTER_CHARGING` `'fighter-charging'` → `charge.handleCharging` |
 | `FighterChargeCleared` | `EventController` (Stop with 0 tokens) | `user_id` | `FIGHTER_CHARGE_CLEARED` `'fighter-charge-cleared'` → `charge.handleChargeCleared` |
 | `FighterIdled` | `fighters:sweep-idle` command (every minute, users past `game.idle_minutes`) | `user_id` | `FIGHTER_IDLED` `'fighter-idled'` → `fighter.handleIdled` + `minions.despawnAll` |
 | `FighterMoved` | `Livewire\Battlefield::move` (user drags own fighter) | `user_id, x, y` | `FIGHTER_MOVED` `'fighter-moved'` → `fighter.handleFighterMoved` |
 | `FighterCharacterChanged` | `Livewire\FighterSheet::equip()` (Character tab; through `EquipCustomCharacter` / `EquipRosterCharacter`, the old `Livewire\CharacterSelect` was removed in the battlefield-redesign PR chain) and `Services\CustomCharacter\AnnounceCustomCharacter` (a custom fighter confirmed, switched, removed) | `user_id, character, custom_character` | `CHARACTER_CHANGED` `'character-changed'` → `fighter.updateCharacters([payload])` |
+| `FighterMinionsChanged` | `Services\CustomCharacter\AnnounceCustomMinions` (a custom minion added, removed, or admin-deleted) | `user_id, custom_minions` | `MINIONS_CHANGED` `'minions-changed'` → `minions.handleMinionsChanged` |
 | `FighterAgentCountChanged` | `EventController` (subagent dispatch/activity), `fighters:sweep-idle` | `user_id, count, seq` | `FIGHTER_AGENT_COUNT_CHANGED` `'fighter-agent-count-changed'` → `minions.handleAgentCountChanged` |
 | `FighterAgentToolUsed` | `EventController` (pre/post-tool-use with `agent_id`, hook v7) | `user_id, agent_id, busy` | `FIGHTER_AGENT_TOOL_USED` `'fighter-agent-tool-used'` → `minions.handleAgentToolUsed` |
 
@@ -37,6 +38,8 @@ All events are `ShouldBroadcastNow` on the public `battlefield` channel. Handler
 Not broadcast: `AccountTokenRejected` is a plain server-side event (listener `SendReauthAlert` → Slack). `BusEvent.POSITIONS_RESYNCED` is client-only: it is emitted from a Livewire `battlefield-resynced` dispatch after an Echo reconnect, never from Reverb.
 
 **Second consumer: `resources/js/ide-bridge.js`** (loaded by `layouts/app.blade.php` only in IDE-embed mode, for the VS Code and JetBrains extensions) listens directly to `.HitDealt`, `.BossKilled`, `.BossSpawned`, `.FighterCharging`, and `.FighterIdled`, and reads `user_id`, `damage`, `boss_id`, `boss_hp_after`, `boss_max_hp` (via `packHit()` in `ide-bridge-internal.js`), `killer_user_id`, `killer_slack_handle`, `boss_name`, `max_hp`, and `activity`. It bypasses `ECHO_EVENT_MAP`, so renaming or removing those names or keys must update it too.
+
+`custom_minions` is the player's whole custom-minion set (up to `token_slayer.custom_character.minions_max`, 3), a list of `{version, url_base, animations, body_px}` from `User::customMinionsState()`; `[]` when they have none. It rides `FighterJoined`, `FighterCharging`, `FighterMinionsChanged`, the boot payload (`customMinions` per fighter) and `/api/state`. It is deliberately **absent** from `BossSpawned`: that event repeats every active fighter and is dispatched through `rescue()`, so adding up to three minions per row could push it past Reverb's `max_request_size` (10,000 bytes) and silently drop the boss spawn. A missing `custom_minions` key therefore means "no information", not "no minions" (the charging seed in `scene.js` and `BossSpawned` omit it); `BroadcastShapeTest` locks the key sets and the payload size.
 
 ## Payload rules
 
@@ -54,7 +57,7 @@ Not broadcast: `AccountTokenRejected` is a plain server-side event (listener `Se
 ## Channel & queue semantics
 
 - Everything rides the public `battlefield` channel (`new Channel('battlefield')`). `routes/channels.php` only defines the default `App.Models.User.{id}` private channel, which nothing uses. A private or presence channel would need an authorization callback there.
-- All eleven events are `ShouldBroadcastNow`. Switching one to queued `ShouldBroadcast` needs a stated reason and a running worker.
+- All twelve events are `ShouldBroadcastNow`. Switching one to queued `ShouldBroadcast` needs a stated reason and a running worker.
 - Queued **listeners** exist and need a worker: `AnnounceBossKill` (`BossKilled` → Slack webhook) implements `ShouldQueue`.
 - Dispatching from the hook path always goes through `EventController::dispatchSafely()` (`rescue()`): a broadcast failure must never fail ingestion. Commands and Livewire actions call `event()` / `::dispatch()` directly.
 - Reverb has no replay. A client that missed events while disconnected recovers through the Livewire `resync()` call triggered on reconnect (`bindResyncOnReconnect()` in `index.js`), and through the scene reboot payload (`data-battlefield-state`).

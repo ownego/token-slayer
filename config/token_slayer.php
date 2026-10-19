@@ -180,6 +180,8 @@ return [
         'name_max' => 24,
         // Uploads a user may attempt per hour; building a sheet costs about a second of CPU.
         'uploads_per_hour' => 10,
+        // How many custom minions a player may hold at once; each subagent they dispatch summons one of them at random.
+        'minions_max' => 3,
         // Bump when the sheet layout or the prompt below changes in a way that invalidates sheets made with the old one.
         'prompt_version' => 1,
         // The prompt template users paste into an image AI, together with a picture of their character.

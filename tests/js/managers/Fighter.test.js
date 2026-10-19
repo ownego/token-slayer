@@ -21,6 +21,12 @@ vi.mock('@battlefield/fighter/flair-font.js', () => ({
 
 vi.mock('@battlefield/fighter/custom-fighter-loader.js', () => ({ loadCustomFighter: vi.fn() }));
 
+vi.mock('@battlefield/fighter/avatar.js', () => ({
+  loadAvatarTexture: vi.fn(() => Promise.resolve('fighter-avatar')),
+  makeFallbackAvatarTexture: vi.fn(() => 'fallback-avatar'),
+  makePermanentFallbackAvatarTexture: vi.fn(() => 'permanent-avatar'),
+}));
+
 import { Fighter } from '@battlefield/fighter.js';
 import { LAYOUTS } from '@battlefield/config.js';
 
@@ -1045,5 +1051,122 @@ describe('custom fighters: a swap running while the fighter leaves', () => {
 
     expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-next');
     expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
+  });
+});
+
+describe('custom minions on the fighter entry', () => {
+  const MINION_WIRE = [
+    { version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } },
+  ];
+
+  /** A Phaser-ish object whose every method returns itself, for the display calls addFighter makes. */
+  const chain = () => new Proxy(function () {}, { get: (_, prop) => (prop === 'then' ? undefined : chain()), apply: () => chain() });
+
+  const addScene = () => ({
+    fighters: new Map(),
+    damageTotals: new Map(),
+    add: chain(),
+    tweens: chain(),
+    time: chain(),
+    textures: { exists: () => false, getFrame: () => null },
+    anims: { get: () => undefined, exists: () => false },
+    addSharpText: () => chain(),
+    currentUserId: 99,
+    reducedMotion: true,
+    mode: 'landscape',
+    layout: LAYOUTS.landscape,
+  });
+
+  test('addFighter stores normalised customMinions from the boot payload', () => {
+    const scene = addScene();
+
+    new Fighter(scene).addFighter({ id: 7, handle: 'a', customMinions: MINION_WIRE }, { x: 100, y: 100 }, { displaySize: 48 });
+
+    expect(scene.fighters.get(7).customMinions).toEqual([
+      { version: 'abc', urlBase: '/storage/custom-minions/7/abc', animations: MINION_WIRE[0].animations, bodyPx: 22 },
+    ]);
+  });
+
+  test.each([
+    ['no minions key (older boot payload)', {}],
+    ['an empty set', { customMinions: [] }],
+    ['a non-array value', { customMinions: 'abc' }],
+  ])('addFighter gives a fighter with %s an empty list, never null', (_, extra) => {
+    const scene = addScene();
+
+    new Fighter(scene).addFighter({ id: 7, handle: 'a', ...extra }, { x: 100, y: 100 }, { displaySize: 48 });
+
+    expect(scene.fighters.get(7).customMinions).toEqual([]);
+  });
+
+  test('handleFighterJoined maps custom_minions onto the new fighter', () => {
+    const scene = addScene();
+    const fighter = new Fighter(scene);
+    const addFighter = vi.spyOn(fighter, 'addFighter').mockImplementation(() => {});
+
+    fighter.handleFighterJoined({ user_id: 7, slack_handle: 'a', custom_minions: MINION_WIRE });
+
+    expect(addFighter).toHaveBeenCalledWith(expect.objectContaining({ id: 7, customMinions: MINION_WIRE }), expect.anything(), expect.anything());
+  });
+
+  describe('a re-join of a fighter already on the field', () => {
+    const sceneWithFighter = () => {
+      const entry = { id: 7, customMinions: [{ version: 'old' }] };
+
+      return { entry, scene: { fighters: new Map([[7, entry]]), minions: { handleMinionsChanged: vi.fn() } } };
+    };
+
+    test('forwards the raw custom_minions array to minions', () => {
+      const { scene } = sceneWithFighter();
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, custom_minions: MINION_WIRE });
+
+      expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith({ user_id: 7, custom_minions: MINION_WIRE });
+    });
+
+    test('forwards an empty set', () => {
+      const { scene } = sceneWithFighter();
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, custom_minions: [] });
+
+      expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith({ user_id: 7, custom_minions: [] });
+    });
+
+    test.each([
+      ['missing', {}],
+      ['null', { custom_minions: null }],
+    ])('forwards nothing when custom_minions is %s', (_, extra) => {
+      const { scene } = sceneWithFighter();
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, ...extra });
+
+      expect(scene.minions.handleMinionsChanged).not.toHaveBeenCalled();
+    });
+
+    test('does not write entry.customMinions itself', () => {
+      const { entry, scene } = sceneWithFighter();
+      const before = entry.customMinions;
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, custom_minions: MINION_WIRE });
+
+      expect(entry.customMinions).toBe(before);
+    });
+
+    test('a scene whose minions manager is not wired yet is a no-op', () => {
+      const { scene } = sceneWithFighter();
+      delete scene.minions;
+
+      expect(() => new Fighter(scene).handleFighterJoined({ user_id: 7, custom_minions: MINION_WIRE })).not.toThrow();
+    });
+  });
+
+  test('updateCharacters (the boss-change path) leaves entry.customMinions alone', () => {
+    const entry = { id: 7, ftype: { key: 'soldier' }, customMinions: [{ version: 'abc' }], customRequest: { wantedKey: null, wantedSpec: null, loadingKey: null, failedKey: null, retryAt: 0 } };
+    const scene = { fighters: new Map([[7, entry]]), minions: { handleMinionsChanged: vi.fn() } };
+
+    new Fighter(scene).updateCharacters([{ user_id: 7, character: 'soldier', custom_minions: [] }]);
+
+    expect(entry.customMinions).toEqual([{ version: 'abc' }]);
+    expect(scene.minions.handleMinionsChanged).not.toHaveBeenCalled();
   });
 });
