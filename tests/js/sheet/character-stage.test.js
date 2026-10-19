@@ -385,6 +385,15 @@ test('the editor deep link opens after the stage mounts even when its event arri
   window.__openCustomEditor = false;
 });
 
+test('the deep link boot flag can carry the Minions tab to a stage that mounts after the event', () => {
+  window.__openCustomEditor = 'minions';
+  mount();
+
+  expect(window.__openCustomEditor).toBe(false);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  expect(document.querySelector('[data-forge-tab="minions"]')?.getAttribute('aria-selected')).toBe('true');
+});
+
 test('the broadcast echo of a just-announced local change does not request another refresh', () => {
   vi.useFakeTimers();
   const livewireDispatch = vi.fn();

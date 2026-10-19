@@ -1222,9 +1222,17 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       leaveEditor();
     }
   });
+  /**
+   * Opens the Forge on the tab a deep link or the Customize minions link asked for.
+   *
+   * @param {CustomEvent|undefined} event `open-custom-editor`; absent when the stage mounts after the event (the tab then comes from `window.__openCustomEditor`).
+   * @return {void}
+   */
   function openEditorFromLink(event) {
+    // the event names the tab; a stage that mounts after the event finds it in the boot flag (`true` = fighter)
+    const requested = event?.detail?.tab ?? window.__openCustomEditor;
     window.__openCustomEditor = false;
-    const tab = event?.detail?.tab === 'minions' ? 'minions' : 'fighter';
+    const tab = requested === 'minions' ? 'minions' : 'fighter';
     openForge(tab);
     // opened by a link to the minions: land on the first card (or the Add button) once the lazy editor has rendered it;
     // until then the focus stays on the tab button openForge gave it
