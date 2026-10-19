@@ -377,20 +377,23 @@ PROMPT,
                 'attack' => 'a wild two-handed sweeping axe chop with the berserker\'s battle axe',
             ],
         ],
-        // Height in px the idle/walk poses are shrunk to, before the outline is added. It is also how tall the
-        // fighter stands on the field in the roster's pixels (their body is 18): the strips are drawn unscaled, so
-        // the pixel size matches the roster's. JS twin: CUSTOM_BODY_PX in fighter/custom-fighter.js.
-        'sprite_height' => 22,
+        // Height in px the idle/walk poses are shrunk to, before the outline is added. The field draws the fighter at
+        // 22 (the roster's bodies are 18). Measured on a real AI sheet: at 22 the costume averaged into brown mush, at 32
+        // the face survived and the costume did not, at 44 face, armour and tunic read, at 52 a little more. The 100 px frame
+        // holds about 56 above the foot row, so 66 or 88 would be squeezed back to that.
+        // JS twin: CUSTOM_BODY_PX in fighter/custom-fighter.js.
+        'sprite_height' => 52,
         // Colours shared by every pose after quantising.
-        'palette_colors' => 24,
+        'palette_colors' => 64,
         'outline_color' => '#16121f',
         // How far an idle/walk pose's height may stray from the median, as a fraction of it.
         'size_tolerance' => 0.3,
         // A detached ink blob smaller than this share of its pose's ink is a stray mark (motion lines, sparks).
         'stray_ratio' => 0.03,
-        // Multipliers pulling an uploaded character's colours toward the roster's muted look.
-        'tone_saturation' => 0.85,
-        'tone_lightness' => 0.95,
+        // Multipliers pulling an uploaded character's colours toward the roster's muted look. 1 keeps the sheet's own
+        // colours: the player chose them, and a pull toward muted turned gold fur and a red tunic to tan and brown.
+        'tone_saturation' => 1.0,
+        'tone_lightness' => 1.0,
         // Rows top to bottom, each with the pose count it must have.
         'rows' => [
             ['name' => 'idle', 'min' => 2, 'max' => 4],
