@@ -14,17 +14,22 @@ export const CUSTOM_FRAME = 100;
 const STATES = ['idle', 'walk', 'attack', 'death'];
 
 /**
- * How tall a custom fighter's body is inside its frame, and so how tall it stands on the
- * field in the roster fighters' pixels (their body is 18, a custom one a little taller
- * because a fighter from a player's own sheet read as small next to them). The server
- * pixelates the sheet straight to this height
- * (`config('token_slayer.custom_character.sprite_height')`) and the strips are drawn as
- * they are: scaling them (they used to be built 28 tall and drawn at 22) resampled the
- * pixel art, which made its detail soft next to the roster's. To change the size, change
- * the server's number: this one follows it (`CustomCharacterConfigTest`).
+ * How tall a custom fighter's body is inside its frame. The server pixelates the sheet to
+ * `config('token_slayer.custom_character.sprite_height')`, enough pixels for the costume
+ * to survive (at 22 px an AI sheet's armour, tunic and trim averaged into brown). 52 is about
+ * the most the 100 px frame holds above the foot row (58); the field draws it at
+ * `CUSTOM_STAND_PX`. `CustomCharacterConfigTest` keeps this equal to the server's number.
  * @type {number}
  */
-const CUSTOM_BODY_PX = 22;
+const CUSTOM_BODY_PX = 52;
+
+/**
+ * How tall a custom fighter stands on the field, in the roster fighters' pixels (their body
+ * is 18, a custom one a little taller because a fighter from a player's own sheet read as
+ * small next to them).
+ * @type {number}
+ */
+const CUSTOM_STAND_PX = 22;
 
 /**
  * Row of a standing custom fighter's lowest pixel (the server's `FOOT_ROW`).
@@ -162,7 +167,7 @@ export function releaseCustomFighter({ textures, anims }, ftype) {
  */
 export function customFighterType(userId, spec) {
   const key = customFighterKey(userId, spec.version);
-  const bodyScale = 1;
+  const bodyScale = CUSTOM_STAND_PX / CUSTOM_BODY_PX;
 
   return {
     key,
@@ -172,8 +177,8 @@ export function customFighterType(userId, spec) {
     attackType: AttackType.SLASH,
     animations: spec.animations,
     bodyScale,
-    bodyPx: CUSTOM_BODY_PX,
-    headTop: CUSTOM_FOOT_ROW - CUSTOM_BODY_PX,
+    bodyPx: CUSTOM_STAND_PX,
+    headTop: CUSTOM_FOOT_ROW - CUSTOM_STAND_PX,
     bodyOffsetY: (CUSTOM_FOOT_ROW - FRAME_CENTRE_ROW) * (1 - bodyScale),
   };
 }
