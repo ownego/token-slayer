@@ -99,8 +99,13 @@ Route::middleware('auth')->group(function (): void {
 
     // A one-time "open the fighter sheet" request: flashed for the next request only, so a reload shows the arena.
     Route::get('/battlefield/open/{target}', function (string $target) {
-        return redirect()->route('battlefield')->with('open_sheet', ['tab' => 'character', 'editor' => $target === 'editor']);
-    })->whereIn('target', ['character', 'editor'])->name('battlefield.open-sheet');
+        $request = ['tab' => 'character', 'editor' => $target !== 'character'];
+        if ($target === 'minions') {
+            $request['editor_tab'] = 'minions';
+        }
+
+        return redirect()->route('battlefield')->with('open_sheet', $request);
+    })->whereIn('target', ['character', 'editor', 'minions'])->name('battlefield.open-sheet');
 
     Route::get('/avatars/{user}', AvatarProxyController::class)->name('avatar');
 
