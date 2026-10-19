@@ -9,10 +9,12 @@ use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
 use App\Events\FighterIdled;
 use App\Events\FighterJoined;
+use App\Events\FighterMinionsChanged;
 use App\Events\FighterMoved;
 use App\Events\HitDealt;
 use App\Models\Boss;
 use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\User;
 use App\Services\FighterPositionCache;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -61,6 +63,7 @@ test('every battlefield event broadcasts now on the battlefield channel with a s
         'FighterIdled' => new FighterIdled($user),
         'FighterChargeCleared' => new FighterChargeCleared($user),
         'FighterCharacterChanged' => new FighterCharacterChanged($user),
+        'FighterMinionsChanged' => new FighterMinionsChanged($user),
         'FighterMoved' => new FighterMoved($user, 0.5, 0.7),
         'FighterAgentCountChanged' => new FighterAgentCountChanged($user, 1, 1),
         'FighterAgentToolUsed' => new FighterAgentToolUsed($user, 'agent-abc123', true),
@@ -331,5 +334,65 @@ test('the custom character payload has exactly these keys, so a rename on either
                 'death' => ['frames' => 3, 'rate' => 6],
             ],
         ]);
+    }
+});
+
+test('FighterMinionsChanged carries the player\'s minion set', function () {
+    $minion = CustomMinion::factory()->create(['version_hash' => 'abc123def456']);
+    $user = $minion->user;
+    $plain = User::factory()->create();
+
+    expect((new FighterMinionsChanged($user))->broadcastWith())->toBe([
+        'user_id' => $user->id,
+        'custom_minions' => [$minion->broadcastState()],
+    ])->and((new FighterMinionsChanged($plain))->broadcastWith())->toBe([
+        'user_id' => $plain->id,
+        'custom_minions' => [],
+    ]);
+});
+
+test('FighterJoined and FighterCharging carry custom_minions', function () {
+    $boss = Boss::factory()->create(['number' => 1]);
+    $plain = User::factory()->create();
+    $minions = CustomMinion::factory()->count(2)->create();
+    $owner = $minions->first()->user;
+    CustomMinion::factory()->create(['user_id' => $owner->id]);
+    $owner = $owner->fresh();
+
+    expect((new FighterJoined($plain, $boss))->broadcastWith())->toHaveKey('custom_minions', [])
+        ->and((new FighterCharging($plain, 'thinking…'))->broadcastWith())->toHaveKey('custom_minions', [])
+        ->and((new FighterJoined($owner, $boss))->broadcastWith()['custom_minions'])->toBe($owner->customMinionsState())
+        ->and((new FighterCharging($owner, 'thinking…'))->broadcastWith()['custom_minions'])->toBe($owner->customMinionsState())
+        ->and($owner->customMinionsState())->toHaveCount(2);
+});
+
+test('BossSpawned fighters do not carry custom_minions', function () {
+    // BossSpawned repeats every active fighter, so a minion set per row would push it past Reverb's limit.
+    $boss = Boss::factory()->create(['number' => 2]);
+    $minion = CustomMinion::factory()->create();
+    $minion->user->forceFill(['last_event_at' => now()])->save();
+    User::factory()->create(['last_event_at' => now()]);
+
+    $fighters = (new BossSpawned($boss))->broadcastWith()['fighters'];
+
+    expect($fighters)->toHaveCount(2);
+    foreach ($fighters as $row) {
+        expect(array_keys($row))->toBe(['user_id', 'character', 'custom_character']);
+    }
+});
+
+test('fighter payloads with a custom fighter and three minions stay under Reverb\'s request limit', function () {
+    $character = CustomCharacter::factory()->create(['version_hash' => 'abc123def456']);
+    $user = $character->user;
+    CustomMinion::factory()->count(3)->create(['user_id' => $user->id]);
+    $user = $user->fresh();
+    $limit = config('reverb.servers.reverb.max_request_size', 10_000);
+
+    foreach ([
+        new FighterJoined($user),
+        new FighterCharging($user, 'thinking…'),
+        new FighterMinionsChanged($user),
+    ] as $event) {
+        expect(strlen(json_encode($event->broadcastWith())))->toBeLessThan($limit);
     }
 });

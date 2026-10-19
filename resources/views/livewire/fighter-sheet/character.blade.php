@@ -1,5 +1,5 @@
 {{-- The Character tab keeps the roster and Forge in one stage; character-stage.js owns their transitions. --}}
-<div class="char-body" wire:ignore x-data="characterStage(@js($equipped), @js($roommates), @js(auth()->user()->displayHandle()), {{ auth()->id() }}, @js($customCharacter), @js($customDraft), @js($otherCustomCharacters))">
+<div class="char-body" wire:ignore x-data="characterStage(@js($equipped), @js($roommates), @js(auth()->user()->displayHandle()), {{ auth()->id() }}, @js($customCharacter), @js($customDraft), @js($otherCustomCharacters), @js($customMinionDraft))">
         <aside class="roster">
             <div class="roster-head">
                 <h3><svg class="px-ic" viewBox="0 0 8 8" aria-hidden="true" shape-rendering="crispEdges"><rect x="0" y="0" width="1" height="1"/><rect x="1" y="0" width="1" height="1"/><rect x="2" y="0" width="1" height="1"/><rect x="3" y="0" width="1" height="1"/><rect x="4" y="0" width="1" height="1"/><rect x="5" y="0" width="1" height="1"/><rect x="6" y="0" width="1" height="1"/><rect x="7" y="0" width="1" height="1"/><rect x="0" y="1" width="1" height="1"/><rect x="7" y="1" width="1" height="1"/><rect x="0" y="2" width="1" height="1"/><rect x="2" y="2" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="4" y="2" width="1" height="1"/><rect x="5" y="2" width="1" height="1"/><rect x="7" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="5" y="3" width="1" height="1"/><rect x="7" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="4" y="4" width="1" height="1"/><rect x="6" y="4" width="1" height="1"/><rect x="1" y="5" width="1" height="1"/><rect x="6" y="5" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="5" y="6" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/></svg>Roster</h3>
@@ -80,6 +80,12 @@
                 <span id="inspect-label" aria-live="off"></span>
             </div>
             <div class="move-name" id="move-name" aria-live="polite"></div>
+            {{-- A minion on the stage: the equipped fighter beside it, each at the size the battlefield draws it. --}}
+            <div class="minion-field-view" id="minion-field-view" role="img" aria-label="The minion beside your fighter, at the size the battlefield draws them" hidden>
+                <span class="mfv-caption" aria-hidden="true">At field size</span>
+                <span class="mfv-sprite mfv-fighter"></span>
+                <span class="mfv-sprite mfv-minion"></span>
+            </div>
 
             <div class="equip-row">
                 <span class="equip-note" id="equip-note"></span>
@@ -91,13 +97,24 @@
                     <span class="label"><span class="icon-cluster"><span class="sword-fx sword-left">🗡️</span><span class="icon-wiggle">🛡</span><span class="sword-fx sword-right">🗡️</span></span><span id="equip-label">Equipped</span></span>
                 </button>
             </div>
-            {{-- The Forge pairs the live stage with a lazily loaded Livewire editor.
-                 The editor reports changes to this tab with `custom-character-changed`. --}}
-            <section class="cce-drawer" id="custom-panel" aria-label="Your custom fighter" hidden>
+            {{-- The Forge pairs the live stage with lazily loaded Livewire editors, one per tab.
+                 The fighter editor reports changes with `custom-character-changed`, the minion editor with
+                 `custom-minions-changed`. character-stage.js owns the tabs (it needs their state for the stage),
+                 so there is no Alpine state here. --}}
+            <section class="cce-drawer" id="custom-panel" aria-label="Your custom fighter and minions" hidden>
                 <div class="panel-head">
                     <button class="btn" type="button" id="panel-back">&larr; Back to roster</button>
                 </div>
-                @livewire('custom-character-editor', ['lazy' => true])
+                <div class="forge-tabs" id="forge-tabs" role="tablist" aria-label="Forge">
+                    <button class="sheet-tab" type="button" role="tab" id="forge-tab-fighter" data-forge-tab="fighter" aria-selected="true" aria-controls="forge-pane-fighter">Fighter</button>
+                    <button class="sheet-tab" type="button" role="tab" id="forge-tab-minions" data-forge-tab="minions" aria-selected="false" aria-controls="forge-pane-minions" tabindex="-1">Minions</button>
+                </div>
+                <div class="forge-pane" id="forge-pane-fighter" data-forge-pane="fighter" role="tabpanel" aria-labelledby="forge-tab-fighter">
+                    @livewire('custom-character-editor', ['lazy' => true])
+                </div>
+                <div class="forge-pane" id="forge-pane-minions" data-forge-pane="minions" role="tabpanel" aria-labelledby="forge-tab-minions" hidden>
+                    @livewire('custom-minion-editor', ['lazy' => true])
+                </div>
             </section>
         </section>
 

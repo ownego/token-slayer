@@ -163,3 +163,69 @@ describe('miniStage sizing the equipped fighter', () => {
     expect(bodyPx('soldier')).toBe(5 * (y1 - y0));
   });
 });
+
+describe('miniStage with a set of custom minions', () => {
+  const minion = (version, frames = 6) => ({
+    id: 1,
+    version,
+    url_base: `/storage/custom-minions/7/${version}`,
+    body_px: 22,
+    source: 'upload',
+    animations: { idle: { frames, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } },
+  });
+
+  test('draws the set instead of the default minions when the sheet opens with one', () => {
+    const stage = miniStage('knight', 2, 7, null, [minion('aaaaaaaaaaaa')]);
+
+    expect(stage.minionSpots.map(s => s.kind)).toEqual(['m-custom', 'm-custom']);
+    expect(stage.minionSpots[0].look).toEqual({ url: '/storage/custom-minions/7/aaaaaaaaaaaa/idle.png', frames: 6, rate: 8 });
+  });
+
+  test('keeps the defaults for an empty set or none', () => {
+    const stage = miniStage('knight', 2, 7, null, []);
+
+    expect(stage.minionSpots.map(s => s.kind)).toEqual(['m-goomba', 'm-demon']);
+    expect(miniStage('knight', 2, 7).looks).toEqual([]);
+  });
+
+  test('follows the editor: a set that changes redraws the swarm at once', () => {
+    const stage = miniStage('knight', 2, 7, null, []);
+
+    stage.onMinionsChanged([minion('aaaaaaaaaaaa'), minion('bbbbbbbbbbbb', 4)]);
+    expect(stage.minionSpots.map(s => s.look.frames)).toEqual([6, 4]);
+
+    stage.onMinionsChanged([]);
+    expect(stage.minionSpots.map(s => s.kind)).toEqual(['m-goomba', 'm-demon']);
+  });
+
+  test('a change with no information in it leaves the set alone', () => {
+    const stage = miniStage('knight', 2, 7, null, [minion('aaaaaaaaaaaa')]);
+
+    stage.onMinionsChanged(undefined);
+
+    expect(stage.looks).toHaveLength(1);
+  });
+
+  test('a broadcast of this player\'s set redraws it and asks the sheet to refresh its editor; another player\'s does neither', () => {
+    const stage = miniStage('knight', 2, 7, null, []);
+    const own = [];
+    window.addEventListener('sheet-own-minions-broadcast', event => own.push(event.detail));
+
+    stage.onMinionsBroadcast({ user_id: 8, custom_minions: [minion('aaaaaaaaaaaa')] });
+    expect(stage.looks).toEqual([]);
+    expect(own).toEqual([]);
+
+    stage.onMinionsBroadcast({ user_id: 7, custom_minions: [minion('aaaaaaaaaaaa')] });
+    expect(stage.looks).toHaveLength(1);
+    expect(own).toEqual([{ user_id: 7 }]);
+  });
+
+  test('styles a custom minion by its strip, frame count and rate, as properties not as text', () => {
+    const stage = miniStage('knight', 1, 7, null, [minion('aaaaaaaaaaaa')]);
+    const style = stage.spotStyle({ x: -72, y: 0, look: stage.looks[0] });
+
+    expect(style).toMatchObject({ '--mx': '-72px', '--my': '0px', '--frames': 6, '--rate': 8 });
+    expect(style['--strip']).toBe('url("/storage/custom-minions/7/aaaaaaaaaaaa/idle.png")');
+    expect(stage.spotStyle({ x: 70, y: 0 })).toEqual({ '--mx': '70px', '--my': '0px' });
+  });
+});

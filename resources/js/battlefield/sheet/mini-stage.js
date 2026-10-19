@@ -11,6 +11,7 @@ import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
 import { registerCustomRoster } from './custom-roster.js';
 import { draw, ENTRANCES, ON_CLICK, play, SEQ } from './clawd-kit.js';
 import { crewCounts, crewReducer } from './sheet-ui.js';
+import { minionLooks } from './minion-preview.js';
 
 /**
  * Where minions stand around the fighter, in px from the stage centre,
@@ -49,14 +50,20 @@ function stageScale(h) {
 
 /**
  * Minion spots: one per live subagent, capped at the spots we have, the
- * first `busy` of them working (in a tool call) and the rest idle.
+ * first `busy` of them working (in a tool call) and the rest idle. With the
+ * player's own minions (`looks`) every spot is a `m-custom` taking the looks
+ * in turn, as each subagent summons one of the set; with none it keeps the
+ * two default minions.
  *
  * @param {number} total Live subagents.
  * @param {number} [busy] How many are in a tool call right now.
- * @return {Array<{i: number, x: number, y: number, kind: string, busy: boolean}>}
+ * @param {Array<{url: string, frames: number, rate: number}>} [looks] The idle strip of each minion in the player's set.
+ * @return {Array<{i: number, x: number, y: number, kind: string, busy: boolean, look?: {url: string, frames: number, rate: number}}>}
  */
-export function minionSpots(total, busy = total) {
-  return MINION_SPOTS.slice(0, Math.max(0, total)).map((s, i) => ({ i, ...s, kind: i % 2 ? 'm-demon' : 'm-goomba', busy: i < busy }));
+export function minionSpots(total, busy = total, looks = []) {
+  return MINION_SPOTS.slice(0, Math.max(0, total)).map((s, i) => (looks.length
+    ? { i, ...s, kind: 'm-custom', look: looks[i % looks.length], busy: i < busy }
+    : { i, ...s, kind: i % 2 ? 'm-demon' : 'm-goomba', busy: i < busy }));
 }
 
 /**
@@ -99,14 +106,16 @@ function busyOnField(me) {
  * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
  *   Registered here, not left to the Character tab: this tab mounts first, and until the custom fighter
  *   is known to the sheet it cannot be shown.
+ * @param {Array<object>} minions The viewer's custom minions (`FighterSheet::$customMinions`); the swarm is drawn from them when there are any.
  * @return {object}
  */
-export function miniStage(equipped, total, me, custom = null) {
+export function miniStage(equipped, total, me, custom = null, minions = []) {
   registerCustomRoster(BY_KEY, BOX, custom);
 
   return {
     key: BY_KEY[equipped] ? equipped : Object.keys(BY_KEY)[0],
     crew: { total, busy: new Set() },
+    looks: minionLooks(minions),
     stopSparks: null,
     unbind: null,
     tabObserver: null,
@@ -117,7 +126,24 @@ export function miniStage(equipped, total, me, custom = null) {
       return crewCounts(this.crew);
     },
     get minionSpots() {
-      return minionSpots(this.counts.total, this.counts.busy);
+      return minionSpots(this.counts.total, this.counts.busy, this.looks);
+    },
+    /**
+     * The style properties of one minion spot: where it stands and, for a custom minion, its strip.
+     * Set as properties (not a style string) so a URL can never break out of its value.
+     *
+     * @param {{x: number, y: number, look?: {url: string, frames: number, rate: number}}} spot A spot from `minionSpots`.
+     * @return {Object<string, string|number>}
+     */
+    spotStyle(spot) {
+      const style = { '--mx': `${spot.x}px`, '--my': `${spot.y}px` };
+      if (spot.look) {
+        style['--strip'] = `url("${spot.look.url}")`;
+        style['--frames'] = spot.look.frames;
+        style['--rate'] = spot.look.rate;
+      }
+
+      return style;
     },
     init() {
       this.crew = { total, busy: busyOnField(Number(me)) };
@@ -165,12 +191,43 @@ export function miniStage(equipped, total, me, custom = null) {
             }
           },
           [BusEvent.CHARACTER_CHANGED]: p => this.onCharacterBroadcast(p),
+          [BusEvent.MINIONS_CHANGED]: p => this.onMinionsBroadcast(p),
         });
       };
       attach();
       // the editor in the Character tab says what the fighter is after every change
       this.onCustomEvent = event => this.onCustomChanged(event.detail ?? {});
       window.addEventListener('custom-character-changed', this.onCustomEvent);
+      // the Minions tab's editor says what the set is after every change
+      this.onMinionsEvent = event => this.onMinionsChanged(event.detail?.minions);
+      window.addEventListener('custom-minions-changed', this.onMinionsEvent);
+    },
+    /**
+     * Follows the editor: the set of minions changed, so the swarm is drawn from the new set (or the
+     * defaults when it is empty). Anything that is not a list leaves it alone.
+     *
+     * @param {*} minions The set (`FighterSheet::$customMinions` shape).
+     * @return {void}
+     */
+    onMinionsChanged(minions) {
+      if (Array.isArray(minions)) {
+        this.looks = minionLooks(minions);
+      }
+    },
+    /**
+     * Reuses the Profile stage's bus subscription: this player's set changed (an admin removal reaches
+     * them this way), so the swarm follows and the Character tab's editor is asked to refresh. Another
+     * player's change is none of this stage's business.
+     *
+     * @param {{user_id: number, custom_minions?: Array<object>}} payload The public `FighterMinionsChanged` broadcast.
+     * @return {void}
+     */
+    onMinionsBroadcast(payload) {
+      if (Number(payload.user_id) !== Number(me)) {
+        return;
+      }
+      this.onMinionsChanged(payload.custom_minions);
+      window.dispatchEvent(new CustomEvent('sheet-own-minions-broadcast', { detail: { user_id: payload.user_id } }));
     },
     /**
      * The fighter to show for a CHARACTER_CHANGED broadcast: the custom one while the player
@@ -278,6 +335,7 @@ export function miniStage(equipped, total, me, custom = null) {
     },
     destroy() {
       window.removeEventListener('custom-character-changed', this.onCustomEvent);
+      window.removeEventListener('custom-minions-changed', this.onMinionsEvent);
       this.tabObserver?.disconnect();
       this.stopSparks?.();
       this.unbind?.();

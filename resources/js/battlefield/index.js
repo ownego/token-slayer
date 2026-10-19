@@ -39,6 +39,7 @@ const ECHO_EVENT_MAP = {
   FighterCharacterChanged: BusEvent.CHARACTER_CHANGED,
   FighterAgentCountChanged: BusEvent.FIGHTER_AGENT_COUNT_CHANGED,
   FighterAgentToolUsed: BusEvent.FIGHTER_AGENT_TOOL_USED,
+  FighterMinionsChanged: BusEvent.MINIONS_CHANGED,
 };
 
 const ECHO_RETRY_INTERVAL_MS = 200;

@@ -16,6 +16,7 @@ import { NAME_DEPTH, NAME_FONT_PX, NAME_STYLE, YOU_NAME_COLOR, refreshNameWhenFo
 import { avatarCenterY, avatarSrc } from './avatar-stack.js';
 import { customFighterKey, customFighterType, normalizeCustomCharacter, releaseCustomFighter, textureOf } from './custom-fighter.js';
 import { loadCustomFighter } from './custom-fighter-loader.js';
+import { normalizeCustomMinions } from '@battlefield/minion-custom.js';
 import { begin, fail, isStale, newRequestState, settle, shouldRequest, want, withdraw } from './custom-fighter-requests.js';
 import {
   buildRingChars,
@@ -221,7 +222,11 @@ export class Fighter {
    * A rejoining fighter carries its persisted position and is restored there
    * rather than placed in the next free grid slot.
    *
-   * @param {{ user_id: number|string, slack_handle?: string, display_name?: string, character?: string, position?: {x: number, y: number}|null }} payload
+   * A fighter already on the field is not added again; the join only hands its
+   * custom minion set (when the payload carries one) to the minions manager, which
+   * is the one place that writes `entry.customMinions` after the entry exists.
+   *
+   * @param {{ user_id: number|string, slack_handle?: string, display_name?: string, character?: string, custom_minions?: ?Array<object>, position?: {x: number, y: number}|null }} payload
    * @return {void}
    */
   handleFighterJoined(payload) {
@@ -229,6 +234,11 @@ export class Fighter {
       return;
     }
     if (this.scene.fighters.has(payload.user_id)) {
+      // a missing key means "no information" (the boot-time charge seed carries none): only an array, even [], is a set
+      if (Array.isArray(payload.custom_minions)) {
+        this.scene.minions?.handleMinionsChanged?.({ user_id: payload.user_id, custom_minions: payload.custom_minions });
+      }
+
       return;
     }
     const fighter = {
@@ -237,6 +247,7 @@ export class Fighter {
       display_name: payload.display_name ?? null,
       character: payload.character ?? null,
       customCharacter: payload.custom_character ?? null,
+      customMinions: payload.custom_minions,
       avatarUrl: payload.avatar_url ?? null,
     };
 
@@ -684,7 +695,7 @@ export class Fighter {
   /**
    * Adds a fighter sprite and label to the scene at the given position.
    *
-   * @param {{ id: number|string, handle?: string, slack_handle?: string, display_name?: string, character?: string }} fighter
+   * @param {{ id: number|string, handle?: string, slack_handle?: string, display_name?: string, character?: string, customCharacter?: ?object, customMinions?: ?Array<object> }} fighter
    * @param {{ x: number, y: number }} pos
    * @param {{ displaySize?: number, showHandle?: boolean }} options
    * @return {void}
@@ -819,6 +830,8 @@ export class Fighter {
       bodyFitted: ftype.bodyScale !== undefined,
       rosterKey: snapshotCharacter(ftypeKey, rosterType),
       customRequest: newRequestState(),
+      // the player's custom minion set; from here on only Minions#handleMinionsChanged writes it
+      customMinions: normalizeCustomMinions(fighter.customMinions) ?? [],
     });
     if (custom && !loadedCustom) {
       this._requestCustomFighter(this.scene.fighters.get(fighter.id), custom, { animate: false });

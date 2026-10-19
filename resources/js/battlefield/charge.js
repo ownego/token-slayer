@@ -39,14 +39,15 @@ export class Charge {
   /**
    * Handles a fighter-charging event: creates or updates charge visuals.
    *
-   * @param {{ user_id: number, activity?: string, slack_handle?: string, avatar_url?: string, character?: string, position?: {x: number, y: number}|null }} payload
+   * @param {{ user_id: number, activity?: string, slack_handle?: string, avatar_url?: string, character?: string, custom_minions?: ?Array<object>, position?: {x: number, y: number}|null }} payload
    * @return {void}
    */
   handleCharging(payload) {
     if (!payload || payload.user_id == null) {
       return;
     }
-    if (!this.scene.fighters.has(payload.user_id)) {
+    const wasOnField = this.scene.fighters.has(payload.user_id);
+    if (!wasOnField) {
       // Synthesizes a client-side rejoin for a fighter this client doesn't
       // have (e.g. its FighterJoined was missed, or it was previously swept
       // idle) — carries the saved position so it doesn't snap to the grid.
@@ -56,6 +57,7 @@ export class Charge {
         avatar_url: payload.avatar_url,
         character: payload.character ?? null,
         custom_character: payload.custom_character ?? null,
+        custom_minions: payload.custom_minions ?? null,
         position: payload.position ?? null,
       });
     }
@@ -71,6 +73,13 @@ export class Charge {
         character: payload.character ?? null,
         custom_character: payload.custom_character ?? null,
       }]);
+    }
+    // The same catch-up for custom minions. scene.js seeds a charge without the key, so a
+    // missing one is "no information", never "the set is empty"; only an array replaces the
+    // set, and Minions#handleMinionsChanged decides whether it changed. A fighter created
+    // just above already got its set from the join.
+    if (wasOnField && Array.isArray(payload.custom_minions)) {
+      this.scene.minions?.handleMinionsChanged?.({ user_id: payload.user_id, custom_minions: payload.custom_minions });
     }
     const existing = this.scene.charges.get(payload.user_id);
     if (existing) {

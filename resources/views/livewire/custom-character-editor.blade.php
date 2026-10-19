@@ -23,7 +23,7 @@
             x-on:livewire-upload-error="phase = 'failed'"
             x-on:custom-character-changed.window="if ($event.detail?.draft) { phase = 'done'; clearThumb() }"
             x-on:submit="phase = 'building'"
-            x-effect="window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase } }))"
+            x-effect="window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase, source: 'fighter' } }))"
             wire:submit="build"
             class="cce-form"
         >

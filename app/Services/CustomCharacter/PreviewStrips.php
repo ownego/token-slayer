@@ -21,10 +21,14 @@ class PreviewStrips
     /**
      * Create the describer.
      *
-     * @param  CustomCharacterStore  $store  knows where the strips are served from
+     * @param  CustomCharacterStore  $store  knows where the fighter's strips are served from
+     * @param  CustomMinionStore  $minionStore  knows where the minions' strips are served from
      * @return void
      */
-    public function __construct(private readonly CustomCharacterStore $store) {}
+    public function __construct(
+        private readonly CustomCharacterStore $store,
+        private readonly CustomMinionStore $minionStore,
+    ) {}
 
     /**
      * Describes the strips of one version.
@@ -89,6 +93,33 @@ class PreviewStrips
         return [
             'hash' => $draft->version_hash,
             'spec' => $this->spec($user->id, $draft->version_hash, $draft->animations, staged: true, name: $name),
+        ];
+    }
+
+    /**
+     * The player's pending minion draft as the sheet's stage takes it: its hash and its
+     * staged spec (version, where the strips are served from, animations, body height).
+     * Null when nothing is waiting.
+     *
+     * @param  User  $user  the owner
+     * @return array{hash: string, spec: array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, body_px: int}}|null
+     */
+    public function minionDraftPayload(User $user): ?array
+    {
+        $draft = $user->customMinionDraft()->first();
+
+        if ($draft === null) {
+            return null;
+        }
+
+        return [
+            'hash' => $draft->version_hash,
+            'spec' => [
+                'version' => $draft->version_hash,
+                'url_base' => $this->minionStore->baseUrl($user->id, $draft->version_hash, staged: true),
+                'animations' => $draft->animations,
+                'body_px' => $draft->body_px,
+            ],
         ];
     }
 }

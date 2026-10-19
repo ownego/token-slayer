@@ -33,6 +33,7 @@ export const BusEvent = {
   CHARACTER_CHANGED: 'character-changed',
   FIGHTER_AGENT_COUNT_CHANGED: 'fighter-agent-count-changed',
   FIGHTER_AGENT_TOOL_USED: 'fighter-agent-tool-used',
+  MINIONS_CHANGED: 'minions-changed',
   // Local-only (never Echo-sourced): Impact's HP counter tween ticks this
   // on every retargeted-tween frame so the DOM boss plate (hud/boss-plate.js)
   // stays in sync without Impact drawing Phaser text itself.

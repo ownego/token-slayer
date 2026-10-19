@@ -38,6 +38,7 @@ Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness
 
 - `.roster-grid` 4 columns (5 on a phone), gap 8 px, inside `.roster-scroll` (own scroller).
 - `.slot`: a fighter tile (aspect 0.86, fill `#0e1a31`, border `#243150`). Hover: gold border at 55%; selected: `2px solid var(--rivet)` + 3 px soft ring; active: scale 0.96. Name `.nm` is a 10 px label at the bottom; `.tag` is a gold 9 px corner label (`YOU`, and the marker for a kind of fighter). The face animates only on hover or when selected.
+- A minion the player has just built is a `.slot` too, badged `MINION DRAFT` (`.badge.draft`, `data-kind="minion"`): it is not counted as a fighter, no style chip claims it (only All shows it), and it is never equipped. Its stage actions are `Add to minions` (the primary button) and `Discard`.
 - Another player's active custom fighter uses the same `.slot` preview, with a muted `.badge.other` naming its creator. The stage shows the author and moves; Equip and Edit stay unavailable. A live fighter change refreshes these slots while the sheet is open.
 - `.slot-add`: dashed "add" tile in the grid (`1px dashed #3a4a70`, `--dim`, turns gold on hover/focus). It is an action, not a fighter; it is not a `.slot`, so selection, filters, keys and tooltips ignore it. Its label says what it does ("Create", "Manage"); it is the visible entry point to an editor, so it must be findable: do not hide it among slots with a 10 px label only.
 - `.chips` / `.chip`: single-select filter row (11 px `--display`, `1px solid #2b3858`, selected `aria-pressed="true"` = gold fill, dark text). A filter chip filters; it never hides an item that has no matching value: items with no style get their own chip, they do not appear under every chip.
@@ -69,8 +70,14 @@ Opening the editor adds `.char-body.forging`: the roster gives way to the live s
 | `.cce-thumb` | 96 x 72 chosen-file image | confirms the selected sheet before building |
 | `.build-bar` | 6 px indeterminate transform animation, stopped under reduced motion | server-side build progress after upload finishes |
 | `.versions` > `.version` | auto-fill grid of 150 px tiles, `.current` has the gold border; `.vsprite` is the idle strip at 1x | numbered versions with Preview, Equip and Delete actions |
+| `.forge-tabs` > `.sheet-tab` + `.forge-pane` | the sheet tab look (gold text, 2 px underline) at 44 px high, in a strip above the editor; `role="tablist"`, arrow keys rove (Home/End too), the panel not shown is `hidden`; `.forge-pane` is `display: contents` so the editor inside stays a direct flex child of the drawer | `Fighter` \| `Minions` in the Forge. `character-stage.js` owns them (no Alpine state) and announces a pick with the `custom-forge-tab` event; the stage shows the draft the open tab owns. Not sheet tabs: only `.sheet-tab[data-tab]` is the sheet's |
+| `.minion-field-view` > `.mfv-sprite` (`.mfv-fighter`, `.mfv-minion`) + `.mfv-caption` | 88 px box on the tile fill, a floor line 8 px up; the equipped fighter and the minion idle strip, each at the scale the battlefield draws them (`fieldSizeMinionScale`) | "At field size" beside a minion on the stage; hidden for a fighter and while the drawer is open; sprites stop under reduced motion |
 | `.confirm-row` | an `.alert.crit` row that replaces the control in place, with a `.btn.blood` (the verb) and a `.btn` Cancel | confirming a destructive action (see `patterns.md`): names the thing, Cancel focused, Escape cancels |
 | `.btn.blood` | `.btn` with `--blood` text and border | the confirming button of a destructive action, only on the confirm step |
+
+## Profile mini stage
+
+`.mini-stage` shows the equipped fighter and one `.mini-minion` per live subagent. The default kinds are `.m-goomba` and `.m-demon`; with minions of the player's own every spot is `.mini-minion.m-custom` (88 px), drawn from the idle strip of one of the set in turn. The blade sets three custom properties on it and the CSS steps the strip by them, like `.vsprite`: `--strip` (`url(...)`), `--frames`, `--rate`. Under reduced motion it holds frame 0. `.stage-links` (right of the name, wraps) holds two `.link` buttons, `Change character` and `Customize minions` (opens Forge on the Minions tab), both at least 44 px high.
 
 ## Feedback
 

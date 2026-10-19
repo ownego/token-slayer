@@ -205,3 +205,25 @@ describe('custom fighters', () => {
     expect(normalizeCustomCharacter(next.fighters[0].customCharacter)).toEqual(spec);
   });
 });
+
+describe('custom minions', () => {
+  const wire = [
+    { version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } },
+    { version: 'def', url_base: '/storage/custom-minions/7/def', body_px: 24, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } },
+  ];
+
+  test('customMinions round-trips through normalizeCustomMinions', async () => {
+    const { normalizeCustomMinions } = await import('@battlefield/minion-custom.js');
+    const scene = fakeScene();
+    scene.fighters.get(7).customMinions = normalizeCustomMinions(wire);
+
+    const next = snapshotState({}, scene);
+
+    expect(next.fighters[0].customMinions).toHaveLength(2);
+    expect(normalizeCustomMinions(next.fighters[0].customMinions)).toEqual(normalizeCustomMinions(wire));
+  });
+
+  test('a fighter with no minions snapshots customMinions as []', () => {
+    expect(snapshotState({}, fakeScene()).fighters[0].customMinions).toEqual([]);
+  });
+});

@@ -23,7 +23,8 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * @return {void}
  */
 export function switchTab(root, tab) {
-  root.querySelectorAll('.sheet-tab').forEach(button => {
+  // only the sheet's own tabs (they carry `data-tab`): the Forge's Fighter | Minions strip reuses the look, not the job
+  root.querySelectorAll('.sheet-tab[data-tab]').forEach(button => {
     button.setAttribute('aria-selected', button.dataset.tab === tab ? 'true' : 'false');
   });
   root.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('is-active', panel.id === `tab-${tab}`));
@@ -98,7 +99,7 @@ export function sheetFrame() {
 export function createSheetShell(root, { onClose, onTab }) {
   let opener = null;
 
-  const currentTab = () => root.querySelector('.sheet-tab[aria-selected="true"]')?.dataset.tab ?? TAB_ORDER[0];
+  const currentTab = () => root.querySelector('.sheet-tab[data-tab][aria-selected="true"]')?.dataset.tab ?? TAB_ORDER[0];
 
   const focusables = () => Array.from(root.querySelectorAll(FOCUSABLE));
 
@@ -142,7 +143,7 @@ export function createSheetShell(root, { onClose, onTab }) {
   };
 
   const onClick = event => {
-    const tabButton = event.target.closest('.sheet-tab');
+    const tabButton = event.target.closest('.sheet-tab[data-tab]');
     if (tabButton && onTab) {
       onTab(tabButton.dataset.tab);
     }

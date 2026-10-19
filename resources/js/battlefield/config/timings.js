@@ -26,4 +26,7 @@ export const TIMINGS = {
   // distance, clamped to this range, so bats never stand still between hops.
   batHopDurationMinMs: 1800,
   batHopDurationMaxMs: 3600,
+  // How long a spawn waits for the owner's custom minion looks to load before it
+  // summons a default type instead (minion-custom.js's spawnLookDecision).
+  customMinionWaitMs: 2000,
 };

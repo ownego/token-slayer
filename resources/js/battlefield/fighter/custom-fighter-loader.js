@@ -3,7 +3,7 @@ import { registerFighterAnimations } from './animations.js';
 import { CUSTOM_FRAME, customFighterType, sheetLayout, stripUrls } from './custom-fighter.js';
 
 /**
- * Textures being built right now, by custom fighter key. Two events for the same
+ * Textures being built right now, by texture name. Two events for the same
  * fighter (a join and the boss change right behind it) must share one load.
  * @type {Map<string, Promise<void>>}
  */
@@ -30,10 +30,8 @@ const BROWSER = {
 /**
  * Loads a user's custom fighter into the scene: fetches its four strips, stacks
  * them into one texture of named 100 px frames (the names the roster atlas uses,
- * so the fighter code reads both the same), and registers its animations. The
- * texture is the game's, not the scene's, so it survives a rotate-restart and a
- * second request for the same version costs nothing. The strips are same-origin
- * paths, which keeps the canvas readable for the heel measurement.
+ * so the fighter code reads both the same), and registers its animations. See
+ * `loadStackedType`.
  *
  * @param {Phaser.Scene} scene
  * @param {number|string} userId
@@ -42,18 +40,37 @@ const BROWSER = {
  * @return {Promise<object>} The fighter type, ready to hand to the fighter code.
  */
 export async function loadCustomFighter(scene, userId, spec, browser = {}) {
-  const ftype = customFighterType(userId, spec);
+  return loadStackedType(scene, customFighterType(userId, spec), browser);
+}
 
-  if (!scene.textures.exists(ftype.texture)) {
-    if (!pending.has(ftype.key)) {
-      const build = buildTexture(scene, ftype, spec, { ...BROWSER, ...browser }).finally(() => pending.delete(ftype.key));
-      pending.set(ftype.key, build);
+/**
+ * Loads any stacked-strip type (a custom fighter, a custom minion) into the scene:
+ * fetches its four strips, stacks them into one texture whose frames are named
+ * `${type.key}-${state}-${i}`, and registers its animations. The texture is the
+ * game's, not the scene's, so it survives a rotate-restart and a second request
+ * for the same texture costs nothing; two requests at once share one load. The
+ * strips are same-origin paths, which keeps the canvas readable for the heel
+ * measurement.
+ *
+ * Only the stacked animations are registered: a type's `attacks` describe its
+ * fights, not extra strips, so they are left out of the registration.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {{key: string, texture: string, spec: {urlBase: string, animations: object}, animations: object}} type
+ * @param {{loadImage?: Function, makeCanvas?: Function}} [browser] Replaceable browser pieces, for tests.
+ * @return {Promise<object>} The type, once its texture and animations are in.
+ */
+export async function loadStackedType(scene, type, browser = {}) {
+  if (!scene.textures.exists(type.texture)) {
+    if (!pending.has(type.texture)) {
+      const build = buildTexture(scene, type, type.spec, { ...BROWSER, ...browser }).finally(() => pending.delete(type.texture));
+      pending.set(type.texture, build);
     }
-    await pending.get(ftype.key);
+    await pending.get(type.texture);
   }
-  registerFighterAnimations(scene, ftype);
+  registerFighterAnimations(scene, { key: type.key, texture: type.texture, animations: type.animations });
 
-  return ftype;
+  return type;
 }
 
 /**

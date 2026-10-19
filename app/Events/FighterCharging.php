@@ -47,6 +47,7 @@ class FighterCharging implements ShouldBroadcastNow
             'avatar_url' => $this->user->avatarProxyUrl(),
             'character' => $this->user->characterForBoss($this->boss?->id),
             'custom_character' => $this->user->customFighterState(),
+            'custom_minions' => $this->user->customMinionsState(),
             'activity' => $this->activity,
             'position' => app(FighterPositionCache::class)->get($this->user->id),
         ];
