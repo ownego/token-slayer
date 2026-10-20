@@ -1,6 +1,8 @@
 {{-- The custom minion editor, in the Forge drawer's Minions tab. It is built from the fighter editor's pieces
      (.cce sections, the upload form, .versions cards with .vsprite, the in-sheet .confirm-row); no new CSS classes.
-     Every change is announced as `custom-minions-changed {minions, draft}` and a result line as `sheet-toast`. --}}
+     Every change is announced as `custom-minions-changed {minions, draft}` and a result line as `sheet-toast`.
+     A build that worked also says `custom-minion-built`: only that clears the chosen file, so a change to the set
+     that is not this form's build (adding the fighter, say) cannot throw away a file still being uploaded. --}}
 {{-- No Alpine state on this root, for the reason given in custom-character-editor.blade.php: what is pending
      (a confirm row) lives in $confirming. --}}
 <div class="cce cme" id="cme-{{ $this->getId() }}">
@@ -79,7 +81,8 @@
                 x-on:livewire-upload-progress="progress = $event.detail.progress"
                 x-on:livewire-upload-finish="phase = 'ready'"
                 x-on:livewire-upload-error="phase = 'failed'"
-                x-on:custom-minions-changed.window="if ($event.detail?.draft) { phase = 'done'; clearThumb() } else if (phase === 'done') { phase = 'idle' }"
+                x-on:custom-minion-built.window="phase = 'done'; clearThumb()"
+                x-on:custom-minions-changed.window="if (phase === 'done' && ! $event.detail?.draft) { phase = 'idle' }"
                 x-on:submit="phase = 'building'"
                 x-effect="window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase, source: 'minions' } }))"
                 wire:submit="build"
