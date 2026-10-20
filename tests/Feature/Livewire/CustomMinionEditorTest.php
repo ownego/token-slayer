@@ -65,6 +65,57 @@ test('builds a draft and announces it', function () {
     Event::assertNotDispatched(FighterMinionsChanged::class);
 });
 
+test('a successful build says its own file is done', function () {
+    minionEditorFor(User::factory()->create())
+        ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
+        ->call('build')
+        ->assertDispatched('custom-minion-built');
+});
+
+test('a failed build does not say its file is done', function () {
+    config(['token_slayer.custom_character.lock_seconds' => 0]);
+    $user = User::factory()->create();
+    stagedMinionFor($user);
+    $held = Cache::lock(CacheKeys::customCharacterBuild($user->id), 30);
+    $held->get();
+
+    minionEditorFor($user)
+        ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
+        ->call('build')
+        ->assertHasErrors('sheet')
+        ->assertDispatched('custom-minions-changed')
+        ->assertNotDispatched('custom-minion-built');
+});
+
+test('a set change that is not a build does not say the chosen file is done', function () {
+    $user = User::factory()->create();
+    $draft = stagedMinionFor($user);
+    app(ConfirmCustomCharacter::class)->execute($user, stagedFor($user)->version_hash);
+
+    $editor = minionEditorFor($user->fresh());
+
+    $editor->call('addFighter')
+        ->assertDispatched('custom-minions-changed', fn (string $event, array $params): bool => $params['draft'] !== null)
+        ->assertNotDispatched('custom-minion-built');
+
+    $editor->call('discard', $draft->version_hash)->assertNotDispatched('custom-minion-built');
+});
+
+test('adding the previewed draft does not say the chosen file is done', function () {
+    $user = User::factory()->create();
+    $draft = stagedMinionFor($user);
+
+    minionEditorFor($user)
+        ->call('confirm', $draft->version_hash)
+        ->assertNotDispatched('custom-minion-built');
+});
+
+test('the form clears its chosen file only when its own build is done', function () {
+    minionEditorFor(User::factory()->create())
+        ->assertSeeHtml('x-on:custom-minion-built.window="phase = \'done\'; clearThumb()"')
+        ->assertSeeHtml('x-on:custom-minions-changed.window="if (phase === \'done\' && ! $event.detail?.draft) { phase = \'idle\' }"');
+});
+
 test('adds the draft to the set', function () {
     Event::fake([FighterMinionsChanged::class]);
     $user = User::factory()->create();

@@ -101,6 +101,7 @@ class CustomMinionEditor extends Component
         try {
             $stage->execute($user, (string) file_get_contents($this->sheet->getRealPath()));
             $this->announce();
+            $this->dispatch('custom-minion-built');
             $this->toast('Built. Add it to your minions to use it.');
         } catch (Throwable $exception) {
             $this->fail($exception, 'sheet');
