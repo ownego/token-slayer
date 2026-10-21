@@ -5,6 +5,7 @@ namespace App\Livewire;
 use App\Enums\FighterCharacter;
 use App\Exceptions\CustomCharacterBusyException;
 use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Analytics\FleetUsageRefresher;
@@ -129,6 +130,22 @@ class FighterSheet extends Component
     public ?array $customDraft = null;
 
     /**
+     * The player's own custom minions (CustomMinion::sheetState() each), handed to the
+     * Profile mini-stage and the Character tab's stage.
+     *
+     * @var list<array<string, mixed>>
+     */
+    public array $customMinions = [];
+
+    /**
+     * The minion draft the player built and has not added yet (`PreviewStrips::minionDraftPayload`),
+     * so a draft saved in an earlier session shows on the stage without the minion editor ever mounting.
+     *
+     * @var array{hash: string, spec: array<string, mixed>}|null
+     */
+    public ?array $customMinionDraft = null;
+
+    /**
      * The roster key the Character tab uses for the custom fighter's slot, in
      * $equipped and in equip().
      *
@@ -160,6 +177,41 @@ class FighterSheet extends Component
         $this->equippedKey = $user->equipped_character?->value;
         $this->customCharacter = $user->customCharacter()->first()?->sheetState();
         $this->customDraft = app(PreviewStrips::class)->draftPayload($user);
+        $this->readCustomMinions($user);
+    }
+
+    /**
+     * Follows the minion editor (it announced a change) and the battlefield (an admin or
+     * another tab changed the set): re-reads the player's minions and minion draft, which
+     * the Profile mini-stage and the Character tab show the next time they are built.
+     *
+     * @return void
+     */
+    #[On('custom-minions-changed')]
+    #[On('custom-minions-refresh')]
+    #[Renderless]
+    public function refreshCustomMinions(): void
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return;
+        }
+
+        $this->readCustomMinions($user);
+    }
+
+    /**
+     * Reads the player's minion set and minion draft from the database.
+     *
+     * @param  User  $user  the signed-in player
+     * @return void
+     */
+    private function readCustomMinions(User $user): void
+    {
+        $user->unsetRelation('customMinions');
+        $this->customMinions = $user->customMinions->map(fn (CustomMinion $minion): array => $minion->sheetState())->values()->all();
+        $this->customMinionDraft = app(PreviewStrips::class)->minionDraftPayload($user);
     }
 
     /**

@@ -2,7 +2,7 @@
 
 A player can make their own fighter from a **pose sheet** they generated with an image AI (from the prompt of the character type they picked — see "The prompt"). Nothing calls an AI from the server: the player does that step, and the app validates and converts the result. The sheet is built into a **draft** the player previews; only when they use it does it become their equipped fighter, which everyone then sees on the battlefield.
 
-Two places: the `/character` page (`CustomCharacterController`) is the **prompt guide only** (pick a type, copy the prompt, the requirements) with a same-tab link to `/battlefield/open/editor`. It flashes the request once and redirects to the clean `/battlefield`, so a reload never reopens the sheet. Older `/battlefield?sheet=character&editor=1` links redirect through the same route. The link waits for `battlefield-ready` (at most `READY_CEILING_MS`) before opening the Character tab and editor. The editor (`Livewire\CustomCharacterEditor`) sits beside the shared show stage in Forge mode and below it at narrow widths. Everything a player does while the battlefield is open belongs to the game world (`.ai/design/README.md`).
+Two places: the `/character` page (`CustomCharacterController`) is the **prompt guide only** (pick a type, copy the prompt, the requirements) with a section on using the same sheet for custom minions (Minions tab, Customize minions, Add my fighter, up to 3 at random) and same-tab links to `/battlefield/open/editor` and `/battlefield/open/minions` (the latter also flashes `editor_tab`, which reaches `character-stage.js` as `open-custom-editor {tab}` or, if the stage mounts later, as `window.__openCustomEditor = 'minions'`). It flashes the request once and redirects to the clean `/battlefield`, so a reload never reopens the sheet. Older `/battlefield?sheet=character&editor=1` links redirect through the same route. The link waits for `battlefield-ready` (at most `READY_CEILING_MS`) before opening the Character tab and editor. The editor (`Livewire\CustomCharacterEditor`) sits beside the shared show stage in Forge mode and below it at narrow widths. Everything a player does while the battlefield is open belongs to the game world (`.ai/design/README.md`).
 
 ## The flow
 
@@ -59,7 +59,7 @@ Uploads are rate limited (`uploads_per_hour`, key `custom-character-upload:{user
 
 ## Services (`app/Services/CustomCharacter/`)
 
-Pipeline (above): `PoseSheetDecoder`, `PoseSheetKeyer`, `PoseSheetLocator`, `StrayMarkRemover`, `PoseSheetValidator`, `SpritePixelator`, `PaletteQuantizer`, `RosterToneMatcher`, `SpriteOutliner`, `SpriteStripBuilder`, `CustomCharacterBuilder`. Storage and flow: `CustomCharacterStore`, `CustomCharacterLock`, `StageCustomCharacter`, `ConfirmCustomCharacter`, `DiscardCustomCharacterDraft`, `RenameCustomCharacter`, `EquipCustomCharacter`, `EquipRosterCharacter`, `EquipCustomCharacterVersion`, `DeleteCustomCharacterVersion`, `RemoveCustomCharacter`, `PruneStaleCustomCharacterDrafts`, `CopyCustomCharacterDisk`, `AnnounceCustomCharacter` (broadcasts inside `rescue()`: a dead Reverb must not undo a change). View models: `PreviewStrips` (strips, and the draft as the `custom_character` payload the sheet plays), `CharacterPromptBuilder`.
+Pipeline (above): `PoseSheetDecoder`, `PoseSheetKeyer`, `PoseSheetLocator`, `StrayMarkRemover`, `PoseSheetValidator`, `SpritePixelator`, `PaletteQuantizer`, `RosterToneMatcher`, `SpriteOutliner`, `SpriteStripBuilder`, `CustomCharacterBuilder`. Storage and flow: `CustomCharacterStore`, `CustomCharacterLock`, `StageCustomCharacter`, `ConfirmCustomCharacter`, `DiscardCustomCharacterDraft`, `RenameCustomCharacter`, `EquipCustomCharacter`, `EquipRosterCharacter`, `EquipCustomCharacterVersion`, `DeleteCustomCharacterVersion`, `RemoveCustomCharacter`, `PruneStaleCustomCharacterDrafts`, `CopyCustomCharacterDisk`, `AnnounceCustomCharacter` (broadcasts inside `rescue()`: a dead Reverb must not undo a change). Minions: `CustomMinionStore`, `MeasureStripBodyHeight`, `StageCustomMinion`, `ConfirmCustomMinion`, `DiscardCustomMinionDraft`, `AddFighterAsMinion`, `RemoveCustomMinion`, `AnnounceCustomMinions`. View models: `PreviewStrips` (strips, and the draft as the `custom_character` payload the sheet plays), `CharacterPromptBuilder`.
 
 ## The editor
 
@@ -81,7 +81,7 @@ While the custom fighter is equipped it wins over the equipped roster character 
 
 **Snapshot.** `snapshotState()` writes `character` as the **roster** key (`entry.rosterKey`, kept from the payload's fallback — the boot payload only ever holds one) and `customCharacter` as the newest request, else the look on (`snapshotSpec`), so a rotate-restart builds the fighter from the textures already loaded, or requests them again.
 
-Limits: an attack is always the slash animation; the minions and the roster's teammate faces still use the equipped roster character.
+Limits: an attack is always the slash animation; the roster's teammate faces still use the equipped roster character. Minions do not follow the equipped fighter: they come from the player's own minion set (see Custom minions), else the five default types.
 
 ## In the fighter sheet
 
@@ -90,6 +90,24 @@ The Character tab (`livewire/fighter-sheet/character.blade.php`, `sheet/characte
 `sheet/custom-roster.js` makes it look like a roster fighter to the sheet's sprite helpers: `registerCustomRoster` puts a roster-shaped entry (`anims` whose `file` is the served strip URL, one attack named `attack1`; `sheet-roster.js`'s `stripUrl` passes a path or `http(s)` URL through) and a fixed body box into `BY_KEY`/`BOX` under key `custom`, and removes them when the user has none, so nothing lingers from an earlier mount. `nameOf(key)` (`sprite-strip.js`) is the player's name for `custom`. The **Profile tab's mini-stage** registers it too (it mounts first), shows it while equipped, and follows the editor's events and live `CHARACTER_CHANGED` broadcasts.
 
 The ingest path pays one indexed query per hook event for `customCharacter` (the events lazy-load it once per request and the model caches it); that is accepted rather than eager-loaded, because the eager load would cost the same query.
+
+## Custom minions
+
+A player can upload up to `custom_character.minions_max` (3) minions. They use the same pose-sheet contract, pipeline and prompt as a fighter (the nine class prompts; no minion-specific prompt). Each subagent the player dispatches summons a **random** member of the set instead of one of the five `MINION_TYPES`; an empty set means the defaults.
+
+**Data.** `custom_minions` (many per user: `version_hash`, `animations`, `body_px`, `source` upload|fighter; unique per user and hash) and `custom_minion_drafts` (one per user, built but not added). `body_px` is the measured ink height of idle frame 0 (`MeasureStripBodyHeight`), because fighters built before the 22 px change are 28 px tall and the field scales by it. There are no slots, no Replace (remove, then add) and no version history.
+
+**Storage.** `CustomMinionStore extends CustomCharacterStore` with `ROOT = 'custom-minions'`, so files live in `custom-minions/{user}/{hash}/...` and `custom-minions/{user}/staged/{hash}/...`. It is a separate root on purpose: the fighter store's `prune()`, `forget()`, `discardStaged()` and `pruneStaged()` sweep the whole `custom-characters/{user}/` folder and would delete minion files. `adopt()` copies a folder between roots on the same disk (used by Add my fighter).
+
+**Flow.** `StageCustomMinion` (build → draft; a sheet identical to a minion already in the set → `CustomMinionDuplicateException`), `ConfirmCustomMinion` (add the draft; set full → `CustomMinionSetFullException`; a hash already in the set is a harmless no-op), `DiscardCustomMinionDraft`, `AddFighterAsMinion` (copies the player's custom fighter, a copy: later fighter changes or removal do not touch it), `RemoveCustomMinion` (caller authorizes), `AnnounceCustomMinions` (`FighterMinionsChanged` inside `rescue()`). Every write runs under the owner's `CustomCharacterLock` and the upload rate limit (`custom-character-upload:{id}`, `uploads_per_hour`) is shared with the fighter editor, so a player's fighter and minion builds never overlap. UI: `Livewire\CustomMinionEditor`, the Minions tab of the Forge drawer.
+
+**Wire shape.** `User::customMinionsState()` → each `CustomMinion::broadcastState()`: `{version, url_base, animations, body_px}`. The full set rides as `custom_minions` on `FighterJoined`, `FighterCharging`, `FighterMinionsChanged`, `customMinions` in the boot payload, and `/api/state`. It is **never** on `BossSpawned` (see `broadcasting.md`: Reverb's 10,000-byte request limit). A missing `custom_minions` key means "no information", not "no minions".
+
+**Client.** See `battlefield.md` (Custom minions): texture keys `minion-<user>-<version>` (a separate namespace, so a fighter version change never releases a texture minions still draw).
+
+**Admin.** `CustomMinionResource` (list only, Remove) reuses `ViewAny:CustomCharacter` and `Delete:CustomCharacter` through `CustomMinionPolicy`; there are no separate Shield permissions.
+
+**Maintenance.** `custom-characters:prune-drafts`, `custom-characters:prune-orphans` and `custom-characters:copy-disk` cover both roots (`custom-characters` and `custom-minions`), each with its own reference set.
 
 ## The prompt
 

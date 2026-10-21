@@ -6,6 +6,7 @@ namespace App\Models;
 use App\Enums\FighterCharacter;
 use App\Enums\MembershipStatus;
 use App\Services\CustomCharacter\CustomCharacterStore;
+use App\Services\CustomCharacter\CustomMinionStore;
 use App\Services\Roles\DefaultRolePermissions;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
@@ -165,14 +166,49 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Deleting a user cascades their fighter's rows away in the database; this
-     * clears the files the rows pointed at, which the database cannot.
+     * The custom minions this user has confirmed, oldest first.
+     *
+     * @return HasMany<CustomMinion, $this>
+     */
+    public function customMinions(): HasMany
+    {
+        return $this->hasMany(CustomMinion::class)->orderBy('id');
+    }
+
+    /**
+     * The minion this user has built but not yet added (their preview), if any.
+     *
+     * @return HasOne<CustomMinionDraft, $this>
+     */
+    public function customMinionDraft(): HasOne
+    {
+        return $this->hasOne(CustomMinionDraft::class);
+    }
+
+    /**
+     * Deleting a user cascades their fighter's and minions' rows away in the
+     * database; this clears the files the rows pointed at, which the database cannot.
      *
      * @return void
      */
     protected static function booted(): void
     {
-        static::deleted(fn (User $user) => app(CustomCharacterStore::class)->forget($user->id));
+        static::deleted(function (User $user): void {
+            app(CustomCharacterStore::class)->forget($user->id);
+            app(CustomMinionStore::class)->forget($user->id);
+        });
+    }
+
+    /**
+     * The broadcast state of each of the user's custom minions (see
+     * CustomMinion::broadcastState()), oldest first; empty when they have none.
+     * Reads through the relation so an eager load is used.
+     *
+     * @return list<array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, body_px: int}>
+     */
+    public function customMinionsState(): array
+    {
+        return $this->customMinions->map(fn (CustomMinion $minion): array => $minion->broadcastState())->values()->all();
     }
 
     /**

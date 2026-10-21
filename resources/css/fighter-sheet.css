@@ -1543,7 +1543,7 @@
     animation: fs-panel-in 0.22s ease;
 }
 .fs .showcase.blank.editing > .cce-drawer { display: flex; flex-direction: column; }
-.fs .showcase.blank.editing > .cce-drawer > .cce { margin-block: auto; }
+.fs .showcase.blank.editing > .cce-drawer > .forge-pane > .cce { margin-block: auto; }
 .fs .char-body.forging .cce { grid-template-columns: minmax(0, 1fr); }
 .fs .char-body.forging .cce-sec + .cce-sec {
     padding: 18px 0 0;
@@ -1651,7 +1651,7 @@
     }
     .fs .char-body.forging .showcase.editing > .show-stage { border-right: 1px solid rgba(251,191,36,0.24); border-bottom: 0; }
     .fs .char-body.forging .showcase.editing > .cce-drawer { padding: 12px 16px 20px; }
-    .fs .showcase.blank.editing > .cce-drawer > .cce { margin-block: 0; }
+    .fs .showcase.blank.editing > .cce-drawer > .forge-pane > .cce { margin-block: 0; }
     .fs .showcase.blank.editing .forge-blueprint { padding: 10px; }
     .fs .forge-prototype { gap: 5px; }
     .fs .forge-kicker { font-size: 13px; }
@@ -1704,4 +1704,34 @@
     .fs .char-body.forging .showcase.editing > .cce-drawer,
     .fs .showcase.blank.editing .forge-blueprint,
     .fs .showcase.editing[data-forge-phase="building"] > .show-stage::after { animation: none; }
+}
+
+/* ======================== custom minions ======================== */
+/* A player's own minion on the Profile stage: the blade sets --strip (the idle strip), --frames and --rate;
+   100px frames drawn at the 88px the default minions use, stepped by the same keyframe idea as .vsprite. */
+.fs .mini-minion.m-custom { width: 88px; height: 88px; background-image: var(--strip); background-repeat: no-repeat; background-size: calc(var(--frames) * 88px) 88px; animation: fs-mini-custom calc(var(--frames) / var(--rate) * 1s) steps(var(--frames)) infinite; }
+@keyframes fs-mini-custom { to { background-position: calc(var(--frames) * -88px) 0; } }
+
+/* the Profile stage's two links: both reach 44px */
+.fs .stage-links { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0 14px; }
+.fs .stage-links .link { min-height: 44px; display: inline-flex; align-items: center; }
+
+/* the Forge's Fighter | Minions tabs: the sheet tab look, inside the drawer */
+.fs .forge-tabs { display: flex; gap: 2px; margin: 0 0 12px; border-bottom: 1px solid rgba(251,191,36,0.18); }
+.fs .forge-tabs .sheet-tab { min-height: 44px; padding: 4px 16px 6px; }
+.fs .forge-tabs .sheet-tab::after { left: 16px; right: 16px; }
+.fs .forge-pane { display: contents; }
+.fs .forge-pane[hidden] { display: none; }
+
+/* the field-size view: the equipped fighter beside the minion, each at the size the battlefield draws it */
+.fs .minion-field-view { position: relative; flex: none; height: 88px; margin-top: 8px; background: #0e1a31; border: 1px solid #243150; overflow: hidden; }
+.fs .minion-field-view[hidden], .fs .showcase.editing > .minion-field-view { display: none; }
+.fs .minion-field-view::after { content: ''; position: absolute; left: 0; right: 0; bottom: 8px; height: 1px; background: rgba(251,191,36,0.25); }
+.fs .mfv-caption { position: absolute; left: 8px; top: 4px; font: 11px var(--display); color: var(--dim); }
+.fs .mfv-sprite { position: absolute; width: 100px; height: 100px; transform-origin: 50% 100%; image-rendering: pixelated; background-repeat: no-repeat; }
+.fs .mfv-fighter { left: 36%; }
+.fs .mfv-minion { left: 62%; }
+
+@media (prefers-reduced-motion: reduce) {
+    .fs .mini-minion.m-custom, .fs .minion-field-view .mfv-sprite { animation: none; }
 }

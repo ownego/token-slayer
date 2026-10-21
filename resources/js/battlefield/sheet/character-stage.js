@@ -8,8 +8,9 @@
 import { BOX, ROSTER, TYPE_LINE } from './sheet-roster.js';
 import { BY_KEY, faceColor, frameIn, moves, nameOf, paint, paintCharge, playAnim, standOn, strip, wait } from './sprite-strip.js';
 import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
-import { CUSTOM_KEY, DRAFT_KEY, groupOf, matchesChip, registerCustomRoster } from './custom-roster.js';
+import { CUSTOM_KEY, DRAFT_KEY, MINION_DRAFT_KEY, MINION_PEEK_KEY, groupOf, isMinionKey, matchesChip, registerCustomRoster } from './custom-roster.js';
 import { frameOffset, inspectorLabel, inspectorStart, inspectorStep, inspectorToggle } from './frame-inspector.js';
+import { fieldSizeFighterScale, fieldSizeMinionScale } from './minion-preview.js';
 
 /**
  * The stage FX strips, all existing battlefield assets.
@@ -74,6 +75,28 @@ const EQUIP_TIMEOUT_MS = 30000;
 const REFRESH_DEBOUNCE_MS = 150;
 
 /**
+ * The field scale the field-size view shows the fighter and its minion at: the field draws
+ * a fighter's body at 18 sprite px times this.
+ *
+ * @type {number}
+ */
+const FIELD_VIEW_SCALE = 2;
+
+/**
+ * The field-size view's floor line, in px above its bottom edge.
+ *
+ * @type {number}
+ */
+const FIELD_VIEW_FLOOR = 8;
+
+/**
+ * What the stage says a minion is, under its name.
+ *
+ * @type {string}
+ */
+const MINION_LINE = 'A minion your subagents can summon';
+
+/**
  * Alpine.data() component for the Character tab.
  *
  * @param {string} startingKey The viewer's equipped fighter key.
@@ -83,9 +106,10 @@ const REFRESH_DEBOUNCE_MS = 150;
  * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
  * @param {?{hash: string, spec: object}} draft The fighter the viewer built and has not used yet (`FighterSheet::$customDraft`).
  * @param {Array<object>} otherCustomCharacters Active fighters made by other players, for preview only.
+ * @param {?{hash: string, spec: object}} minionDraft The minion the viewer built and has not added yet (`FighterSheet::$customMinionDraft`).
  * @return {object}
  */
-export function characterStage(startingKey, roommates, handle, me, custom = null, draft = null, otherCustomCharacters = []) {
+export function characterStage(startingKey, roommates, handle, me, custom = null, draft = null, otherCustomCharacters = [], minionDraft = null) {
   return {
     cleanup: [],
     init() {
@@ -101,6 +125,7 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
         custom,
         draft,
         otherCustomCharacters,
+        minionDraft,
         equip: key => window.Livewire.find(componentId)?.equip(key),
         dispatch: (name, detail) => this.$dispatch(name, detail),
       });
@@ -119,10 +144,10 @@ export function characterStage(startingKey, roommates, handle, me, custom = null
  * (key `custom`) beside the fighters; a "+ Custom" tile always opens the page
  * where one is made or replaced.
  *
- * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, draft?: ?{hash: string, spec: object}, otherCustomCharacters?: Array<object>, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
+ * @param {{equipped: string, roommates: object, handle: string, me?: number, custom?: ?object, draft?: ?{hash: string, spec: object}, otherCustomCharacters?: Array<object>, minionDraft?: ?{hash: string, spec: object}, equip: function(string): Promise, dispatch: function(string, object=): void}} opts
  * @return {Array<function(): void>} Teardown callbacks.
  */
-export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, draft = null, otherCustomCharacters = [], equip, dispatch }) {
+export function mountCharacterStage(root, { equipped: startingKey, roommates: everyone, handle, me, custom = null, draft = null, otherCustomCharacters = [], minionDraft = null, equip, dispatch }) {
   // teammates only: CharacterRoommates lists everyone on a fighter, the viewer included
   const roommates = Object.fromEntries(Object.entries(everyone).map(([key, users]) => [key, users.filter(u => Number(u.user_id) !== Number(me))]));
   const $$ = id => root.querySelector(`#${id}`);
@@ -135,6 +160,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   // before anything reads the roster lookups: puts the custom fighter in, or clears an earlier mount's
   const hasCustom = registerCustomRoster(BY_KEY, BOX, custom);
   const hasDraft = registerCustomRoster(BY_KEY, BOX, draft?.spec ?? null, DRAFT_KEY);
+  // the minion previews: the draft the sheet opened with, and no peek left over from an earlier mount
+  const hasMinionDraft = registerCustomRoster(BY_KEY, BOX, minionDraft?.spec ?? null, MINION_DRAFT_KEY);
+  registerCustomRoster(BY_KEY, BOX, null, MINION_PEEK_KEY);
+  cleanup.push(() => {
+    registerCustomRoster(BY_KEY, BOX, null, MINION_DRAFT_KEY);
+    registerCustomRoster(BY_KEY, BOX, null, MINION_PEEK_KEY);
+  });
   let otherKeys = otherCustomCharacters
     .filter(raw => Number.isInteger(Number(raw.user_id)) && Number(raw.user_id) !== Number(me))
     .map(raw => {
@@ -155,6 +187,12 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   let previewNumber = null;
   let lastLocalAnnouncementAt = -Infinity;
   let refreshTimer = null;
+  let currentMinionDraft = minionDraft;
+  let minionDraftHash = minionDraft?.hash ?? null;
+  let forgeTab = 'fighter';
+  let peekedFromForge = false;
+  let lastLocalMinionsAt = -Infinity;
+  let minionsRefreshTimer = null;
 
   let equipped = known(startingKey) ? startingKey : ROSTER[0].key;
   let previewing = equipped;
@@ -218,6 +256,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const b = document.createElement('button');
     const custom = c.key === CUSTOM_KEY;
     const isDraft = c.key === DRAFT_KEY;
+    const isMinionDraft = c.key === MINION_DRAFT_KEY;
     const isOtherCustom = otherKeys.includes(c.key);
     b.className = 'slot';
     b.type = 'button';
@@ -226,7 +265,10 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     b.dataset.type = c.type;
     b.style.setProperty('--d', grid.children.length);
     b.dataset.group = groupOf(c);
-    const label = custom || isOtherCustom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : isDraft ? `${nameOf(c.key)} (draft)` : nameOf(c.key);
+    if (isMinionDraft) {
+      b.dataset.kind = 'minion';
+    }
+    const label = custom || isOtherCustom ? `${nameOf(c.key)} (custom${c.author ? `, by ${c.author}` : ''})` : isDraft || isMinionDraft ? `${nameOf(c.key)} (draft)` : nameOf(c.key);
     b.setAttribute('aria-label', label);
     if (custom || isOtherCustom) {
       b.title = label;
@@ -234,7 +276,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (c.author) {
       b.dataset.author = c.author;
     }
-    const badge = isDraft ? (previewMode === 'peek' ? `Version ${previewNumber}` : 'DRAFT') : null;
+    const badge = isDraft ? (previewMode === 'peek' ? `Version ${previewNumber}` : 'DRAFT') : isMinionDraft ? 'MINION DRAFT' : null;
     b.innerHTML = `<span class="face-sprite"></span><span class="nm">${escapeHtml(nameOf(c.key))}</span>${custom ? '<span class="badge">CUSTOM</span>' : isOtherCustom ? `<span class="badge other">@${escapeHtml(c.author ?? '')}</span>` : badge ? `<span class="badge draft">${badge}</span>` : ''}${c.key === equipped ? '<span class="tag">YOU</span>' : ''}`;
     paint(b.querySelector('.face-sprite'), c.key, 'idle', { hoverOnly: true });
     frameIn(b.querySelector('.face-sprite'), c.key, { maxW: 46, maxH: 36, cyPct: 40 });
@@ -245,7 +287,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
     return b;
   }
-  const entries = [...(hasCustom ? [BY_KEY[CUSTOM_KEY]] : []), ...(hasDraft ? [BY_KEY[DRAFT_KEY]] : []), ...otherKeys.map(key => BY_KEY[key]), ...ROSTER];
+  const entries = [...(hasCustom ? [BY_KEY[CUSTOM_KEY]] : []), ...(hasDraft ? [BY_KEY[DRAFT_KEY]] : []), ...(hasMinionDraft ? [BY_KEY[MINION_DRAFT_KEY]] : []), ...otherKeys.map(key => BY_KEY[key]), ...ROSTER];
   entries.forEach(c => grid.appendChild(makeSlot(c)));
   on(grid, 'click', event => {
     const slot = event.target.closest('.slot');
@@ -254,7 +296,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
   });
   const countFighters = () => {
-    $$('roster-count').textContent = `${grid.querySelectorAll('.slot').length} fighters`;
+    $$('roster-count').textContent = `${grid.querySelectorAll('.slot:not([data-kind="minion"])').length} fighters`;
   };
   countFighters();
 
@@ -464,11 +506,14 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     return my === seq;
   }
 
+  // a minion's preview starts paused under reduced motion (the card thumbnails show frame 0 there too)
+  const startState = key => (reduced && isMinionKey(key) ? { ...inspectorStart(), playing: false } : inspectorStart());
+
   // sticky move playback like the game's preview: loops loop, one-shots replay until another move is picked
   async function playMove(m) {
     const my = ++seq;
     activeMove = m.id;
-    inspectorState = inspectorStart();
+    inspectorState = startState(previewing);
     updateInspector();
     root.querySelectorAll('.move').forEach(el => el.setAttribute('aria-pressed', String(el.dataset.id === m.id)));
     const idx = moves(previewing).findIndex(x => x.id === m.id) + 1;
@@ -480,6 +525,9 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (m.id === 'idle' || m.id === 'walk') {
       pressed?.style.setProperty('--dur', `${c.anims[m.id].frames / c.anims[m.id].rate}s`);
       fighter(m.id, { loop: true });
+      if (!inspectorState.playing) {
+        $$('show-sprite').style.animationPlayState = 'paused';
+      }
 
       return;
     }
@@ -505,6 +553,24 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
           return;
         }
         $$('show-effect').style.backgroundImage = 'none';
+        fighter('idle', { loop: true });
+        await wait(700);
+      } else if (m.thenReverse) {
+        // a minion's fall, as teammates see it: down, held for a while, then back on its feet
+        const fall = c.anims[m.anim];
+        pressed?.style.setProperty('--dur', `${(fall.frames / fall.rate) * 2 + (m.holdMs ?? 0) / 1000 + 0.7}s`);
+        await fighter(m.anim);
+        if (my !== seq) {
+          return;
+        }
+        await wait(m.holdMs ?? 0);
+        if (my !== seq) {
+          return;
+        }
+        await fighter(m.anim, { reverse: true });
+        if (my !== seq) {
+          return;
+        }
         fighter('idle', { loop: true });
         await wait(700);
       } else if (m.id === 'death') {
@@ -537,16 +603,51 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
   }
 
+  // The label of the stage's main action for what is on it: a fighter is equipped, a minion is added.
+  function equipLabelFor(key) {
+    if (isMinionKey(key)) {
+      return 'Add to minions';
+    }
+    if (key === DRAFT_KEY) {
+      return previewMode === 'peek' ? `Equip version ${previewNumber}` : 'Use this fighter';
+    }
+
+    return key === equipped ? 'Equipped' : `Equip ${nameOf(key)}`;
+  }
+
+  // The field-size view: the equipped fighter beside the minion, each at the size the battlefield draws it,
+  // so the player sees how big the minion really is. Shown only while a minion is on the stage.
+  function paintFieldView(key) {
+    const view = $$('minion-field-view');
+    if (!view) {
+      return;
+    }
+    view.hidden = !isMinionKey(key);
+    const fighterEl = view.querySelector('.mfv-fighter');
+    const minionEl = view.querySelector('.mfv-minion');
+    if (view.hidden || !fighterEl || !minionEl || !BOX[equipped]) {
+      return;
+    }
+    const [, fighterTop, , fighterFeet] = BOX[equipped];
+    const [, minionTop, , minionFeet] = BOX[key];
+    paint(fighterEl, equipped, 'idle');
+    standOn(fighterEl, equipped, fieldSizeFighterScale(FIELD_VIEW_SCALE, fighterFeet - fighterTop), FIELD_VIEW_FLOOR);
+    paint(minionEl, key, 'idle');
+    standOn(minionEl, key, fieldSizeMinionScale(FIELD_VIEW_SCALE, minionFeet - minionTop), FIELD_VIEW_FLOOR);
+  }
+
   // ---- selection ----
   function select(key, { keepEditor = false } = {}) {
     if (!keepEditor) {
       leaveEditor({ restoreFocus: false });
     }
     previewing = key;
-    inspectorState = inspectorStart();
+    inspectorState = startState(key);
     updateInspector();
     const c = BY_KEY[key];
     const isOtherCustom = otherKeys.includes(key);
+    const isMinion = isMinionKey(key);
+    const isMinionDraft = key === MINION_DRAFT_KEY;
     root.querySelectorAll('.slot').forEach(el => el.setAttribute('aria-selected', String(el.dataset.key === key)));
     $$('show-stage').style.setProperty('--acc', c.accent);
     frameStage($$('show-sprite'), key);
@@ -559,13 +660,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (edit) {
       edit.hidden = key !== CUSTOM_KEY;
     }
-    $$('stage-avatar').hidden = isOtherCustom;
+    $$('stage-avatar').hidden = isOtherCustom || isMinion;
     const h2 = $$('show-name');
     h2.style.animation = 'none';
     void h2.offsetWidth;
     h2.style.animation = '';
-    const author = c.author ?? (key === DRAFT_KEY ? handle : null);
-    $$('show-type').textContent = TYPE_LINE[c.type];
+    const author = isMinion ? null : (c.author ?? (key === DRAFT_KEY ? handle : null));
+    $$('show-type').textContent = isMinion ? MINION_LINE : TYPE_LINE[c.type];
     const authorLine = $$('show-author');
     if (authorLine) {
       authorLine.hidden = !author;
@@ -574,15 +675,16 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const mine = key === equipped;
     const isDraft = key === DRAFT_KEY;
     const isPeek = isDraft && previewMode === 'peek';
-    $$('show-state').textContent = isDraft ? 'Preview' : mine ? 'Equipped' : 'Previewing';
+    $$('show-state').textContent = isMinion ? 'Previewing' : isDraft ? 'Preview' : mine ? 'Equipped' : 'Previewing';
     $$('show-state').classList.toggle('previewing', !mine);
-    $$('equip-btn').hidden = isOtherCustom;
+    $$('equip-btn').hidden = isOtherCustom || key === MINION_PEEK_KEY;
     $$('equip-btn').disabled = mine || isOtherCustom;
-    $$('equip-label').textContent = isPeek ? `Equip version ${previewNumber}` : isDraft ? 'Use this fighter' : mine ? 'Equipped' : `Equip ${nameOf(key)}`;
-    $$('back-equipped').hidden = mine || isDraft;
-    $$('discard-draft').hidden = !isDraft;
-    $$('discard-draft').textContent = isPeek ? 'Close preview' : 'Discard';
-    $$('equip-note').textContent = isOtherCustom ? 'Preview only · made by another player' : isPeek ? 'Saved version, not in use' : isDraft ? 'Not live yet. Your fighter stays as it is until you use this one.' : '';
+    $$('equip-label').textContent = equipLabelFor(key);
+    $$('back-equipped').hidden = mine || isDraft || isMinion;
+    $$('discard-draft').hidden = !isDraft && !isMinion;
+    $$('discard-draft').textContent = isPeek || key === MINION_PEEK_KEY ? 'Close preview' : 'Discard';
+    $$('equip-note').textContent = isOtherCustom ? 'Preview only · made by another player' : isPeek ? 'Saved version, not in use' : isDraft ? 'Not live yet. Your fighter stays as it is until you use this one.' : isMinionDraft ? 'Not live yet. Your subagents summon it once you add it.' : key === MINION_PEEK_KEY ? 'In your minions · preview only' : '';
+    paintFieldView(key);
 
     const hb = $$('hotbar');
     hb.innerHTML = '';
@@ -615,7 +717,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (!inspector) {
       return;
     }
-    inspector.hidden = previewing !== DRAFT_KEY;
+    inspector.hidden = previewing !== DRAFT_KEY && !isMinionKey(previewing);
     $$('inspect-toggle').textContent = inspectorState.playing ? 'Pause' : 'Play';
     $$('inspect-label').textContent = inspectorLabel(inspectorState);
   }
@@ -693,7 +795,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     root.querySelectorAll('.slot').forEach(sl => {
       const hide = !matchesChip(ch.dataset.type, sl.dataset.group);
       sl.classList.toggle('filtered-out', hide);
-      if (!hide) {
+      if (!hide && sl.dataset.kind !== 'minion') {
         n++;
       }
     });
@@ -765,12 +867,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const button = $$('equip-btn');
     button.setAttribute('aria-busy', String(on));
     button.disabled = on || previewing === equipped || otherKeys.includes(previewing);
-    $$('equip-label').textContent = on ? 'Equipping…' : previewing === DRAFT_KEY && previewMode === 'peek' ? `Equip version ${previewNumber}` : previewing === DRAFT_KEY ? 'Use this fighter' : previewing === equipped ? 'Equipped' : `Equip ${nameOf(previewing)}`;
+    const adding = isMinionKey(previewing);
+    $$('equip-label').textContent = on ? (adding ? 'Adding…' : 'Equipping…') : equipLabelFor(previewing);
     if (on) {
       equippingTimer = setTimeout(() => {
         setEquipping(false);
-        toast('The equip did not finish. Check your fighter and try again.', false);
-        window.Livewire?.dispatch('custom-character-refresh');
+        toast(adding ? 'Adding the minion did not finish. Check your minions and try again.' : 'The equip did not finish. Check your fighter and try again.', false);
+        window.Livewire?.dispatch(adding ? 'custom-minions-refresh' : 'custom-character-refresh');
       }, EQUIP_TIMEOUT_MS);
     }
   }
@@ -791,7 +894,14 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
   }
   on($$('equip-btn'), 'click', () => {
-    if (otherKeys.includes(previewing)) {
+    if (otherKeys.includes(previewing) || previewing === MINION_PEEK_KEY) {
+      return;
+    }
+    if (previewing === MINION_DRAFT_KEY) {
+      // bound to the previewed hash: the editor refuses a draft that was replaced meanwhile
+      setEquipping(true);
+      window.Livewire?.dispatch('custom-minion-draft-confirm', { hash: minionDraftHash });
+
       return;
     }
     if (previewing === DRAFT_KEY) {
@@ -830,6 +940,17 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     setTimeout(() => dispatch('fighter-equipped'), EQUIP_FOLD_DELAY_MS);
   });
   on($$('discard-draft'), 'click', () => {
+    if (previewing === MINION_PEEK_KEY) {
+      closeMinionPeek();
+
+      return;
+    }
+    if (previewing === MINION_DRAFT_KEY) {
+      // bound to the previewed hash, like the add: the editor keeps a draft that was replaced meanwhile
+      window.Livewire?.dispatch('custom-minion-draft-discard', { hash: minionDraftHash });
+
+      return;
+    }
     if (previewMode === 'peek') {
       previewMode = currentDraft ? 'draft' : null;
       draftHash = currentDraft?.hash ?? null;
@@ -941,7 +1062,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const own = known(CUSTOM_KEY) ? CUSTOM_KEY : known(DRAFT_KEY) ? DRAFT_KEY : null;
     if (own) {
       if (previewing !== own) {
-        select(own);
+        select(own, { keepEditor: true });
       }
       const walk = moves(own).find(m => m.id === 'walk');
       if (walk) {
@@ -950,16 +1071,122 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
 
       return;
     }
-    blankFrom = previewing;
+    blankFrom = isMinionKey(previewing) ? equipped : previewing;
     showcase.classList.add('blank');
     $$('show-name').textContent = 'Your fighter';
     $$('show-type').textContent = 'Upload a pose sheet and it appears here';
     $$('show-state').textContent = '';
   }
+  /**
+   * The Minions tab's stage: the minion the player has just built, else their fighter, never the
+   * empty "Create" stage (that is the Fighter tab's, for a player with no fighter yet).
+   */
+  function showMinionsStage() {
+    if (blankFrom !== null) {
+      blankFrom = null;
+      showcase.classList.remove('blank');
+    }
+    select(known(MINION_DRAFT_KEY) ? MINION_DRAFT_KEY : equipped, { keepEditor: true });
+  }
+  /** The stage shows the draft the open Forge tab owns: a minion's on Minions, the fighter's on Fighter. */
+  function showForgeStage() {
+    if (forgeTab === 'minions') {
+      showMinionsStage();
+    } else {
+      showOwn();
+    }
+  }
+
+  // ---- the Forge's Fighter | Minions tabs ----
+  const forgeStrip = $$('forge-tabs');
+  const forgeButtons = [...root.querySelectorAll('[data-forge-tab]')];
+  const forgePanes = [...root.querySelectorAll('[data-forge-pane]')];
+  /**
+   * Shows one Forge tab: its panel, the roving tabindex and aria-selected. A tab the player picks is
+   * announced with `custom-forge-tab`; while the drawer is open the stage follows it.
+   *
+   * @param {string} tab `fighter` or `minions`.
+   * @param {{focus?: boolean}} [opts] Whether focus moves onto the tab button.
+   * @return {boolean} Whether the tab changed.
+   */
+  const forgePhases = { fighter: null, minions: null };
+  /**
+   * Shows the upload phase of the open Forge tab on the stage; the other tab's editor keeps its own.
+   *
+   * @return {void}
+   */
+  function showForgePhase() {
+    const phase = forgePhases[forgeTab];
+    if (phase) {
+      showcase.dataset.forgePhase = phase;
+    } else {
+      delete showcase.dataset.forgePhase;
+    }
+  }
+  function setForgeTab(tab, { focus = false } = {}) {
+    const changed = tab !== forgeTab;
+    forgeTab = tab;
+    forgeButtons.forEach(button => {
+      const selected = button.dataset.forgeTab === tab;
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      if (selected && focus) {
+        button.focus();
+      }
+    });
+    forgePanes.forEach(pane => { pane.hidden = pane.dataset.forgePane !== tab; });
+    if (changed) {
+      window.dispatchEvent(new CustomEvent('custom-forge-tab', { detail: { tab } }));
+      if (editing) {
+        showForgeStage();
+        showForgePhase();
+      }
+    }
+
+    return changed;
+  }
+  forgeButtons.forEach(button => on(button, 'click', () => setForgeTab(button.dataset.forgeTab)));
+  if (forgeStrip) {
+    on(forgeStrip, 'keydown', event => {
+      const at = forgeButtons.findIndex(button => button.dataset.forgeTab === forgeTab);
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+      const next = step ? forgeButtons[(at + step + forgeButtons.length) % forgeButtons.length] : { Home: forgeButtons[0], End: forgeButtons.at(-1) }[event.key];
+      if (!next) {
+        return;
+      }
+      // the sheet's own tabs also answer the arrow keys: these are the Forge's
+      event.preventDefault();
+      event.stopPropagation();
+      setForgeTab(next.dataset.forgeTab, { focus: true });
+    });
+  }
+  // a tab picked elsewhere (the `custom-forge-tab` event is the contract) moves this strip too
+  on(window, 'custom-forge-tab', event => {
+    const tab = event.detail?.tab;
+    if ((tab === 'fighter' || tab === 'minions') && tab !== forgeTab) {
+      setForgeTab(tab);
+    }
+  });
+  /**
+   * Opens the drawer on a tab, the stage showing what that tab owns.
+   *
+   * @param {string} tab `fighter` or `minions`.
+   * @return {void}
+   */
+  function openForge(tab) {
+    setForgeTab(tab);
+    if (!editing) {
+      showForgeStage();
+    }
+    enterEditor({ focus: false });
+    (tab === 'minions' ? forgeButtons.find(button => button.dataset.forgeTab === tab) : add)?.focus();
+  }
+
   on(add, 'click', () => {
     if (editing) {
       leaveEditor();
     } else {
+      setForgeTab('fighter');
       showOwn();
       enterEditor();
     }
@@ -968,14 +1195,25 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   if (panelBack) {
     on(panelBack, 'click', () => leaveEditor());
   }
+  // Both editors announce their phase; `source` says whose it is (a missing one is the fighter's), and the stage
+  // shows only the open tab's, so a build on one tab never paints the other's preview.
   on(window, 'custom-forge-phase', (event) => {
-    if (editing && ['idle', 'uploading', 'ready', 'building', 'done', 'failed'].includes(event.detail?.phase)) {
-      showcase.dataset.forgePhase = event.detail.phase;
+    const phase = event.detail?.phase;
+    if (!['idle', 'uploading', 'ready', 'building', 'done', 'failed'].includes(phase)) {
+      return;
+    }
+    const source = event.detail?.source === 'minions' ? 'minions' : 'fighter';
+    forgePhases[source] = phase;
+    if (editing && source === forgeTab) {
+      showForgePhase();
     }
   });
   const editButton = $$('edit-custom');
   if (editButton) {
-    on(editButton, 'click', () => enterEditor());
+    on(editButton, 'click', () => {
+      setForgeTab('fighter');
+      enterEditor();
+    });
   }
   // Escape closes the drawer before it closes the sheet: the shell offers the event, only an open drawer takes it
   on(window, 'sheet-escape', event => {
@@ -984,13 +1222,24 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       leaveEditor();
     }
   });
-  function openEditorFromLink() {
+  /**
+   * Opens the Forge on the tab a deep link or the Customize minions link asked for.
+   *
+   * @param {CustomEvent|undefined} event `open-custom-editor`; absent when the stage mounts after the event (the tab then comes from `window.__openCustomEditor`).
+   * @return {void}
+   */
+  function openEditorFromLink(event) {
+    // the event names the tab; a stage that mounts after the event finds it in the boot flag (`true` = fighter)
+    const requested = event?.detail?.tab ?? window.__openCustomEditor;
     window.__openCustomEditor = false;
-    if (!editing) {
-      showOwn();
+    const tab = requested === 'minions' ? 'minions' : 'fighter';
+    openForge(tab);
+    // opened by a link to the minions: land on the first card (or the Add button) once the lazy editor has rendered it;
+    // until then the focus stays on the tab button openForge gave it
+    const first = tab === 'minions' ? FOCUS_TARGETS['minions-first']() : null;
+    if (usable(first)) {
+      first.focus();
     }
-    enterEditor({ focus: false });
-    add.focus();
   }
   on(window, 'open-custom-editor', openEditorFromLink);
 
@@ -998,9 +1247,11 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   const usable = el => Boolean(el) && !el.disabled && !el.closest('[hidden]');
   const FOCUS_TARGETS = {
     'draft-slot': () => root.querySelector('.slot[data-key="custom-draft"]'),
+    'minion-draft-slot': () => root.querySelector(`.slot[data-key="${MINION_DRAFT_KEY}"]`),
     'equipped-slot': () => root.querySelector(`.slot[data-key="${equipped}"]`),
     upload: () => panel?.querySelector('[data-focus="upload"]'),
     name: () => panel?.querySelector('[data-focus="name"]'),
+    'minions-first': () => panel?.querySelector('#forge-pane-minions [data-focus="minions-first"]'),
     opener: () => openerEl,
   };
   function focusTarget(name) {
@@ -1147,6 +1398,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
     if (!editing) {
       select(previewing);
+    } else if (forgeTab === 'minions') {
+      showMinionsStage();
     } else {
       const own = known(CUSTOM_KEY) ? CUSTOM_KEY : known(DRAFT_KEY) ? DRAFT_KEY : null;
       if (own) {
@@ -1196,6 +1449,81 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     focusTarget('draft-slot');
   });
 
+  // ---- the Minions tab: its draft, its cards' Preview, and the set changing under an open sheet ----
+  function renderMinionDraftSlot({ announce = false } = {}) {
+    grid.querySelector(`.slot[data-key="${MINION_DRAFT_KEY}"]`)?.remove();
+    if (known(MINION_DRAFT_KEY)) {
+      const slot = makeSlot(BY_KEY[MINION_DRAFT_KEY]);
+      (grid.querySelector(`.slot[data-key="${DRAFT_KEY}"]`) ?? grid.querySelector(`.slot[data-key="${CUSTOM_KEY}"]`) ?? add).after(slot);
+      if (announce) {
+        if (!reduced) {
+          slot.classList.add('slot-new');
+        }
+        $$('draft-status').textContent = 'Minion draft ready';
+      }
+    }
+    countFighters();
+    root.querySelector('.chip[aria-pressed="true"]')?.click();
+  }
+  function closeMinionPeek() {
+    registerCustomRoster(BY_KEY, BOX, null, MINION_PEEK_KEY);
+    if (peekedFromForge) {
+      peekedFromForge = false;
+      openForge('minions');
+
+      return;
+    }
+    select(equipped);
+  }
+  // The editor says what the set and the draft are after every change (E1): the draft slot follows, a new
+  // draft is shown at once with its Add and Discard, and a draft that is gone puts the player back on the tab.
+  on(window, 'custom-minions-changed', event => {
+    lastLocalMinionsAt = Date.now();
+    clearTimeout(minionsRefreshTimer);
+    setEquipping(false);
+    const nextDraft = event.detail?.draft ?? null;
+    const nextHash = nextDraft?.hash ?? null;
+    const isNewDraft = nextHash !== null && nextHash !== currentMinionDraft?.hash;
+    currentMinionDraft = nextDraft;
+    minionDraftHash = nextHash;
+    registerCustomRoster(BY_KEY, BOX, nextDraft?.spec ?? null, MINION_DRAFT_KEY);
+    renderMinionDraftSlot({ announce: isNewDraft });
+    if (isNewDraft) {
+      if (root.querySelector('.chip[aria-pressed="true"]')?.dataset.type !== '') {
+        root.querySelector('.chip[data-type=""]')?.click();
+      }
+      leaveEditor({ restoreFocus: false });
+      select(MINION_DRAFT_KEY);
+      focusTarget('minion-draft-slot');
+
+      return;
+    }
+    if (previewing === MINION_DRAFT_KEY && !known(MINION_DRAFT_KEY)) {
+      if (editing) {
+        showForgeStage();
+      } else {
+        openForge('minions');
+      }
+    }
+  });
+  // A card's Preview: that minion on the stage, preview only. The stage's own moves and Close preview
+  // are outside the drawer, so the drawer folds away and Close brings it back.
+  on(window, 'custom-minion-peek', event => {
+    if (!registerCustomRoster(BY_KEY, BOX, event.detail?.spec ?? null, MINION_PEEK_KEY)) {
+      return;
+    }
+    peekedFromForge = editing;
+    select(MINION_PEEK_KEY);
+  });
+  // This player's set changed somewhere else (an admin removed one, or another tab): the editor re-renders.
+  on(window, 'sheet-own-minions-broadcast', event => {
+    if (Number(event.detail?.user_id) !== Number(me) || Date.now() - lastLocalMinionsAt <= REFRESH_DEBOUNCE_MS) {
+      return;
+    }
+    clearTimeout(minionsRefreshTimer);
+    minionsRefreshTimer = setTimeout(() => window.Livewire?.dispatch('custom-minions-refresh'), REFRESH_DEBOUNCE_MS);
+  });
+
   // A result line from the editor (a Livewire component) shows in the sheet's own toast.
   on(window, 'sheet-toast', event => toast(escapeHtml(String(event.detail?.message ?? '')), false));
   on(window, 'sheet-error', event => {
@@ -1228,7 +1556,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
     const isSlot = el.classList.contains('slot');
     const name = isSlot ? nameOf(el.dataset.key) : el.title;
-    const sub = isSlot ? TYPE_NAMES[el.dataset.type] + (el.dataset.key === equipped ? ' · yours' : '') + (el.dataset.author ? ` · by ${el.dataset.author}` : '') + (el.dataset.mates ? ` · ${el.dataset.mates}` : '') : `key ${[...root.querySelectorAll('.move')].indexOf(el) + 1}`;
+    const sub = isSlot ? (el.dataset.kind === 'minion' ? 'Minion · not added yet' : TYPE_NAMES[el.dataset.type]) + (el.dataset.key === equipped ? ' · yours' : '') + (el.dataset.author ? ` · by ${el.dataset.author}` : '') + (el.dataset.mates ? ` · ${el.dataset.mates}` : '') : `key ${[...root.querySelectorAll('.move')].indexOf(el) + 1}`;
     tip.innerHTML = `${escapeHtml(name)}<small>${escapeHtml(sub)}</small>`;
     const r = el.getBoundingClientRect();
     tip.style.left = `${Math.round(r.left + r.width / 2)}px`;
@@ -1278,8 +1606,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
         const active = panel.classList.contains('is-active');
         if (active && !wasActive) {
           restart(grid, 'is-popping');
-          select(previewing);
-          setTimeout(() => root.querySelector('.slot[aria-selected="true"]')?.focus({ preventScroll: true }), 0);
+          if (editing) {
+            // opened straight into the Forge (the Profile's "Customize minions"): the drawer stays, on its tab
+            showForgeStage();
+          } else {
+            select(previewing);
+            setTimeout(() => root.querySelector('.slot[aria-selected="true"]')?.focus({ preventScroll: true }), 0);
+          }
         }
         wasActive = active;
       });
@@ -1304,7 +1637,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   if (window.__openCustomEditor) {
     openEditorFromLink();
   }
-  cleanup.push(() => { seq++; clearTimeout(peekTimer); clearTimeout(equippingTimer); clearTimeout(refreshTimer); clearTimeout(otherRefreshTimer); });
+  cleanup.push(() => { seq++; clearTimeout(peekTimer); clearTimeout(equippingTimer); clearTimeout(refreshTimer); clearTimeout(otherRefreshTimer); clearTimeout(minionsRefreshTimer); });
 
   return cleanup;
 }

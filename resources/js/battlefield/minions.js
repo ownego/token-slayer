@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { MINION_TYPES, MINION_CLASH_EFFECTS, TIMINGS } from '@battlefield/config.js';
+import { MINION_TYPES, MINION_CLASH_EFFECTS, MINION_SIZE_RATIO, TIMINGS } from '@battlefield/config.js';
 import { TextureKey } from '@battlefield/constants.js';
 import { setDepthIfChanged } from '@battlefield/shared/depth.js';
 import { randomWanderPoint } from './boss/bat-wander.js';
@@ -7,6 +7,12 @@ import { homeSlotOffset, homeSlotAngle, isInFrontOfFighter } from './minion-layo
 import { sampleTrail, pushTrailSample } from './minion-trail.js';
 import { computeZones, zoneFanOffset } from './minion-grouping.js';
 import { countSidesNear, pickAttackerSide, travelLanding, pickRandom, fidgetAttacks, flipToFace, flipToFaceAngle } from './minion-fight.js';
+import {
+  customMinionType, minionSpriteFrame, normalizeCustomMinions, pickMinionType, sameMinionSet, spawnLookDecision,
+} from './minion-custom.js';
+import { loadStackedType } from '@battlefield/fighter/custom-fighter-loader.js';
+import { CUSTOM_RETRY_MS } from '@battlefield/fighter/custom-fighter-requests.js';
+import { releaseCustomFighter } from '@battlefield/fighter/custom-fighter.js';
 
 /**
  * The Clawd poof that plays before a minion appears: crouch-with-dust,
@@ -27,8 +33,6 @@ const POOF_PUFF_COUNT = 10;
 
 /** Reference ink height (px) the badge/ring/clash-burst ratios below were tuned against — Demon_A/Blood Monster_A's native idle height. A type's own sprite scale comes from its own `charHeight` (config/companions.js) so every type renders at the same visual height; everything sized from "the minion's visual height" goes through this reference instead of a per-type value. */
 const BASE_CHAR_HEIGHT = 20;
-/** A minion's visual height as a fraction of its fighter's own current effective size (baseSize * the container's own live scaleX — see _currentSize) — recomputed every frame since minions are independent world-space sprites now (not container children), so nothing else carries crowd/damage growth for them. */
-const MINION_SIZE_RATIO = 0.5;
 /** A minion's own avatar badge (the owning fighter's avatar image, shrunk down) as a fraction of the minion's current display size — small enough to read as a tag, not compete with the minion sprite itself. */
 const MINION_BADGE_SIZE_RATIO = 0.55;
 /** How far above the minion's own top the badge sits, as a fraction of the minion's current visual height. */
@@ -163,6 +167,10 @@ export class Minions {
     this.leaders = new Map();
     /** @type {Map<number|string, number>} the last-applied FighterAgentCountChanged seq per user, so a broadcast that arrives after a fresher one it already applied is discarded instead of regressing the swarm — see FighterAgentCountChanged's own docblock. */
     this.lastAppliedSeq = new Map();
+    /** @type {Map<number|string, Map<string, {type: object, state: ('loading'|'loaded'|'failed'), retryAt: number}>>} each player's custom looks by set version: the type, and whether its texture is on its way, in, or failed (and when it may be asked for again). A look is dropped from here when its texture is released. */
+    this.looks = new Map();
+    /** @type {boolean} set by destroy(): a load or poof that finishes after the scene shut down finds it and touches nothing (the scene's own isShuttingDown is re-armed by a restart, this flag is not). */
+    this.destroyed = false;
   }
 
   /**
@@ -198,6 +206,9 @@ export class Minions {
 
     const list = this.byUser.get(userId) ?? [];
     const target = Phaser.Math.Clamp(payload.count, 0, MINION_MAX_VISIBLE);
+    if (target > list.length && this._setOf(entry).length > 0) {
+      this._loadSet(userId, entry);
+    }
     while (list.length < target) {
       list.push(this._spawnOne(userId, entry, list.length, target));
     }
@@ -209,6 +220,41 @@ export class Minions {
     if (list.length === 0) {
       this._removeLeader(userId);
     }
+    this._releaseUnusedLooks(userId);
+  }
+
+  /**
+   * Applies a change of a fighter's custom minion set (`FighterMinionsChanged`, or a
+   * re-join / charge event that carries the set). A payload without an array
+   * `custom_minions` means "no information" and is ignored, as is a fighter not on the
+   * field and a set equal to the one already kept. Otherwise the set is stored on the
+   * entry (the only place it is written after the entry is created), its looks are loaded
+   * when the player has minions out, each minion showing a look that left the set is
+   * swapped to another member (or a default), and looks nothing shows any more are
+   * released.
+   *
+   * @param {{user_id: number|string, custom_minions: *}} payload `custom_minions` as it is on the wire
+   * @return {void}
+   */
+  handleMinionsChanged(payload) {
+    if (!payload || payload.user_id == null) {
+      return;
+    }
+    const userId = payload.user_id;
+    const set = normalizeCustomMinions(payload.custom_minions);
+    const entry = this.scene.fighters.get(userId);
+    if (set === null || !entry?.sprite?.active || sameMinionSet(entry.customMinions, set)) {
+      return;
+    }
+
+    entry.customMinions = set;
+    const list = this.byUser.get(userId) ?? [];
+    if (list.length > 0) {
+      this._loadSet(userId, entry);
+    }
+    this._swapLeftLooks(entry, list);
+    this._resolveWaiting(userId);
+    this._releaseUnusedLooks(userId);
   }
 
   /**
@@ -625,12 +671,16 @@ export class Minions {
       this.byUser.delete(userId);
     }
     this._removeLeader(userId);
+    this._releaseUnusedLooks(userId);
   }
 
   /**
-   * Spawns one minion of a randomly-chosen type at its own home slot,
-   * playing a scaled-down version of the fighter-join summon ceremony
-   * (ground circle + golden-glow rise-in) — without the Necromancer sprite
+   * Creates one minion at its own home slot and returns it at once. Its look is one of
+   * the owner's custom minions picked at random when the set is in (or failed), a random
+   * default type when the player has no set; while the set is still loading the minion
+   * is hidden with no look yet and `_waitForLooks` holds its summon back. Once it has a
+   * look, `_beginSummon` plays a scaled-down version of the fighter-join summon
+   * ceremony (ground circle + golden-glow rise-in) — without the Necromancer sprite
    * itself performing it, since a whole team of them would be visual noise.
    *
    * @param {number|string} userId
@@ -641,20 +691,85 @@ export class Minions {
    */
   _spawnOne(userId, entry, index, count) {
     this._ensureLeader(userId);
-    const type = MINION_TYPES[Phaser.Math.Between(0, MINION_TYPES.length - 1)];
     const foot = this._footPosition(entry);
     const home = homeSlotOffset(index, count, this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO);
-    const spawnX = foot.x + home.x;
-    const spawnY = foot.y + home.y;
-    const finalScale = this._minionScale(entry, type.charHeight);
-
-    const summonCircle = this.scene.necromancer?.spawnSummonCircle(spawnX, spawnY, SUMMON_CIRCLE_SCALE) ?? null;
+    const decision = spawnLookDecision({
+      setSize: this._setOf(entry).length,
+      settled: this._isSetSettled(userId, entry),
+      waitedMs: 0,
+      waitMs: TIMINGS.customMinionWaitMs,
+    });
+    const type = decision === 'wait' ? null : this._pickSpawnType(userId, entry);
+    const { texture, frame } = type ? minionSpriteFrame(type) : {};
 
     const sprite = this.scene.add
-      .sprite(spawnX, spawnY, `${type.key}-idle`)
+      .sprite(foot.x + home.x, foot.y + home.y, texture, frame)
       .setDepth(MINION_DEPTH_FRONT)
-      .setAlpha(0)
-      .play(`${type.key}-idle`);
+      .setAlpha(0);
+    if (type) {
+      sprite.play(`${type.key}-idle`);
+    }
+
+    const minion = {
+      userId,
+      sprite,
+      badge: null,
+      spawnX: foot.x + home.x,
+      spawnY: foot.y + home.y,
+      typeKey: type?.key ?? null,
+      type,
+      charHeight: type?.charHeight ?? BASE_CHAR_HEIGHT,
+      awaitingCustom: type ? this._isAwaitingCustom(type, entry) : false,
+      pendingLook: null,
+      waitingForLook: type === null,
+      waitStartedAt: this.scene.time.now,
+      waitTimer: null,
+      swapping: false,
+      pinned: false,
+      reacting: false,
+      fightTimers: [],
+      animState: 'idle',
+      fidgeting: false,
+      fighting: false,
+      summoning: true,
+      fightCooldownUntil: 0,
+      fidgetTimer: null,
+      idleTimer: null,
+      summonTimer: null,
+      idleOffset: { x: 0, y: 0 },
+      homeAngle: homeSlotAngle(index, count),
+      homeRadius: this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO,
+      zoneKey: null,
+      wasTrailFollowing: false,
+      summonCircle: null,
+      assignedAgentId: null,
+      toolRing: null,
+    };
+
+    if (type) {
+      this._beginSummon(userId, entry, minion);
+    } else {
+      this._waitForLooks(userId, entry, minion);
+    }
+
+    return minion;
+  }
+
+  /**
+   * Starts a minion's summon ceremony: the ground circle, the avatar badge, the Clawd
+   * poof (skipped under reduced motion) and the rise-in, then the idle fidget and wander
+   * timers. A look swap parked while it was summoning is applied when the rise-in ends.
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @param {object} minion a minion that already has its look
+   * @return {void}
+   */
+  _beginSummon(userId, entry, minion) {
+    const { spawnX, spawnY, sprite } = minion;
+    const finalScale = this._minionScale(entry, minion.charHeight);
+
+    minion.summonCircle = this.scene.necromancer?.spawnSummonCircle(spawnX, spawnY, SUMMON_CIRCLE_SCALE) ?? null;
 
     // Reuses the owning fighter's OWN already-loaded avatar texture (real
     // photo once loaded, or its generated fallback in the meantime) rather
@@ -673,48 +788,24 @@ export class Minions {
     // for the whole ~SUMMON_RISE_MS window, then snap down to correct size
     // the instant summoning flips false — caught live as "bụp 1 phát từ to
     // hóa về bình thường".
-    const badgePx = finalScale * type.charHeight * MINION_BADGE_SIZE_RATIO;
-    const badge = this.scene.add
+    const badgePx = finalScale * minion.charHeight * MINION_BADGE_SIZE_RATIO;
+    minion.badge = this.scene.add
       .image(spawnX, spawnY, entry.head?.texture?.key ?? sprite.texture.key)
       .setDisplaySize(badgePx, badgePx)
       .setAlpha(0)
       .setDepth(MINION_DEPTH_FRONT);
 
-    const minion = {
-      sprite,
-      badge,
-      typeKey: type.key,
-      type,
-      charHeight: type.charHeight,
-      pinned: false,
-      reacting: false,
-      fightTimers: [],
-      animState: 'idle',
-      fidgeting: false,
-      fighting: false,
-      summoning: true,
-      fightCooldownUntil: 0,
-      fidgetTimer: null,
-      idleTimer: null,
-      summonTimer: null,
-      idleOffset: { x: 0, y: 0 },
-      homeAngle: homeSlotAngle(index, count),
-      homeRadius: this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO,
-      zoneKey: null,
-      wasTrailFollowing: false,
-      summonCircle,
-      assignedAgentId: null,
-      toolRing: null,
-    };
-
     const beginRiseIn = () => {
+      if (this.destroyed || this.scene.isShuttingDown) {
+        return;
+      }
       minion.summonTimer = this.scene.time.delayedCall(SUMMON_CIRCLE_LEAD_MS, () => {
         if (!minion.sprite?.active) {
           return;
         }
         minion.sprite.setAlpha(1);
         minion.badge?.setAlpha(1);
-        const visualHeight = finalScale * type.charHeight;
+        const visualHeight = finalScale * minion.charHeight;
         const riseOffset = visualHeight * SUMMON_RISE_OFFSET_RATIO;
         minion.sprite.setScale(0);
         minion.sprite.y = spawnY + riseOffset;
@@ -739,6 +830,7 @@ export class Minions {
                 onComplete: () => minion.sprite?.preFX?.remove(glow),
               });
             }
+            this._flushPendingLook(minion);
           },
         });
       });
@@ -755,7 +847,6 @@ export class Minions {
 
     this._scheduleFidget(minion);
     this._scheduleIdleWander(userId, minion);
-    return minion;
   }
 
   /**
@@ -847,6 +938,9 @@ export class Minions {
     minion.fidgetTimer?.remove();
     minion.idleTimer?.remove();
     minion.summonTimer?.remove();
+    minion.waitTimer?.remove();
+    minion.waitTimer = null;
+    minion.pendingLook = null;
     for (const timer of minion.fightTimers ?? []) {
       timer.remove();
     }
@@ -1154,7 +1248,7 @@ export class Minions {
       if (!minion.sprite?.active) {
         return;
       }
-      if (minion.animState !== 'idle' || minion.fighting) {
+      if (minion.animState !== 'idle' || minion.fighting || minion.swapping) {
         this._scheduleFidget(minion);
         return;
       }
@@ -1166,6 +1260,7 @@ export class Minions {
         if (minion.sprite?.active && !minion.fighting) {
           minion.sprite.play(`${minion.typeKey}-idle`);
         }
+        this._flushPendingLook(minion);
         this._scheduleFidget(minion);
       });
     });
@@ -1210,7 +1305,7 @@ export class Minions {
    * @return {boolean} whether this minion is free to start a new fight right now
    */
   _isFightEligible(minion, time) {
-    return minion.sprite?.active && !minion.fighting && !minion.fidgeting && !minion.summoning && !minion.pinned && time >= minion.fightCooldownUntil;
+    return minion.sprite?.active && !minion.fighting && !minion.fidgeting && !minion.summoning && !minion.swapping && !minion.pinned && time >= minion.fightCooldownUntil;
   }
 
   /**
@@ -1362,6 +1457,7 @@ export class Minions {
       minion.animState = 'idle';
       minion.sprite.play(`${minion.typeKey}-idle`);
     }
+    this._flushPendingLook(minion);
   }
 
   /**
@@ -1442,6 +1538,348 @@ export class Minions {
   }
 
   /**
+   * A fighter's custom minion set, `[]` for an entry that has none (an older entry, or
+   * a player who never built one).
+   *
+   * @param {object} entry the fighter entry from scene.fighters
+   * @return {Array<{version: string, urlBase: string, animations: object, bodyPx: number}>}
+   */
+  _setOf(entry) {
+    return entry.customMinions ?? [];
+  }
+
+  /**
+   * The custom types of a player's set whose textures are in, in set order.
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @return {Array<object>}
+   */
+  _loadedTypes(userId, entry) {
+    const looks = this.looks.get(userId);
+    if (!looks) {
+      return [];
+    }
+
+    return this._setOf(entry)
+      .map(spec => looks.get(spec.version))
+      .filter(look => look?.state === 'loaded')
+      .map(look => look.type);
+  }
+
+  /**
+   * Whether every look of the set has an answer: loaded, or failed (a failed one stays on
+   * defaults until its retry). True for an empty set.
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @return {boolean}
+   */
+  _isSetSettled(userId, entry) {
+    const looks = this.looks.get(userId);
+
+    return this._setOf(entry).every(spec => {
+      const state = looks?.get(spec.version)?.state;
+
+      return state === 'loaded' || state === 'failed';
+    });
+  }
+
+  /**
+   * The type a new look is drawn as: any of the player's loaded custom minions at
+   * random, else a random default type.
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @return {object}
+   */
+  _pickSpawnType(userId, entry) {
+    return pickMinionType(this._loadedTypes(userId, entry), MINION_TYPES, Math.random());
+  }
+
+  /**
+   * Whether a minion showing `type` should change to a custom look once one lands: it
+   * shows a default although its player has a set.
+   *
+   * @param {object} type
+   * @param {object} entry the fighter entry from scene.fighters
+   * @return {boolean}
+   */
+  _isAwaitingCustom(type, entry) {
+    return !type.custom && this._setOf(entry).length > 0;
+  }
+
+  /**
+   * Starts loading every look of the player's set that is neither loaded, loading nor
+   * waiting out a retry after a failure. Idempotent: a repeat call for the same set
+   * asks the loader for nothing.
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @return {void}
+   */
+  _loadSet(userId, entry) {
+    const looks = this.looks.get(userId) ?? new Map();
+    this.looks.set(userId, looks);
+    for (const spec of this._setOf(entry)) {
+      const look = looks.get(spec.version);
+      if (look?.state === 'loading' || look?.state === 'loaded') {
+        continue;
+      }
+      if (look?.state === 'failed' && this.scene.time.now < look.retryAt) {
+        continue;
+      }
+      const record = { type: look?.type ?? customMinionType(userId, spec), state: 'loading', retryAt: 0 };
+      looks.set(spec.version, record);
+      loadStackedType(this.scene, record.type).then(
+        () => this._lookArrived(userId, record, 'loaded'),
+        () => this._lookArrived(userId, record, 'failed'),
+      );
+    }
+  }
+
+  /**
+   * A look's load ended. Touches nothing once this manager was destroyed or the scene
+   * is shutting down (a rotate-restart); otherwise records the outcome and lets the
+   * waiting spawns, the minions waiting for a custom look and the release check react.
+   *
+   * @param {number|string} userId
+   * @param {{type: object, state: string, retryAt: number}} record
+   * @param {('loaded'|'failed')} state
+   * @return {void}
+   */
+  _lookArrived(userId, record, state) {
+    if (this.destroyed || this.scene.isShuttingDown) {
+      return;
+    }
+    record.state = state;
+    if (state === 'failed') {
+      record.retryAt = this.scene.time.now + CUSTOM_RETRY_MS;
+    }
+    this._resolveWaiting(userId);
+    const entry = this.scene.fighters.get(userId);
+    if (entry && this._loadedTypes(userId, entry).length > 0) {
+      for (const minion of this.byUser.get(userId) ?? []) {
+        if (minion.awaitingCustom && !minion.waitingForLook) {
+          this._requestSwap(minion, entry);
+        }
+      }
+    }
+    this._releaseUnusedLooks(userId);
+  }
+
+  /**
+   * Holds a just-created minion back, hidden with no look, until its player's set is in
+   * or `customMinionWaitMs` has passed, whichever comes first (`_resolveWait`).
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @param {object} minion
+   * @return {void}
+   */
+  _waitForLooks(userId, entry, minion) {
+    minion.waitTimer = this.scene.time.delayedCall(TIMINGS.customMinionWaitMs, () => {
+      const current = this.scene.fighters.get(userId);
+      if (this.destroyed || this.scene.isShuttingDown || !minion.sprite?.active || !current) {
+        return;
+      }
+      this._resolveWait(userId, current, minion, true);
+    });
+  }
+
+  /**
+   * Re-checks every minion of a player that is waiting for its look.
+   *
+   * @param {number|string} userId
+   * @return {void}
+   */
+  _resolveWaiting(userId) {
+    const entry = this.scene.fighters.get(userId);
+    if (!entry) {
+      return;
+    }
+    for (const minion of this.byUser.get(userId) ?? []) {
+      if (minion.waitingForLook) {
+        this._resolveWait(userId, entry, minion, false);
+      }
+    }
+  }
+
+  /**
+   * Ends a minion's wait when `spawnLookDecision` says so: it takes one of the loaded
+   * custom looks at random, else a default (flagged, swapped once a look lands), and
+   * starts its summon.
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @param {object} minion
+   * @param {boolean} timedOut true when called by the wait's own timer
+   * @return {void}
+   */
+  _resolveWait(userId, entry, minion, timedOut) {
+    const waitMs = TIMINGS.customMinionWaitMs;
+    const decision = spawnLookDecision({
+      setSize: this._setOf(entry).length,
+      settled: this._isSetSettled(userId, entry),
+      waitedMs: timedOut ? waitMs : this.scene.time.now - minion.waitStartedAt,
+      waitMs,
+    });
+    if (decision === 'wait') {
+      return;
+    }
+    minion.waitTimer?.remove();
+    minion.waitTimer = null;
+    minion.waitingForLook = false;
+    const type = this._pickSpawnType(userId, entry);
+    minion.awaitingCustom = this._isAwaitingCustom(type, entry);
+    this._applyLook(minion, type);
+    this._beginSummon(userId, entry, minion);
+  }
+
+  /**
+   * Puts a look on a minion: type key, type and ink height change together, then the
+   * sprite takes the type's texture and frame and plays its idle loop.
+   *
+   * @param {object} minion
+   * @param {object} type a custom or a default minion type
+   * @return {void}
+   */
+  _applyLook(minion, type) {
+    const { texture, frame } = minionSpriteFrame(type);
+    minion.typeKey = type.key;
+    minion.type = type;
+    minion.charHeight = type.charHeight;
+    minion.animState = 'idle';
+    minion.sprite.setTexture(texture, frame);
+    minion.sprite.play(`${type.key}-idle`);
+  }
+
+  /**
+   * Swaps every minion of a changed set that shows (or has parked) a custom look which is
+   * no longer in it. A flagged default minion of a player whose set just went empty is
+   * unflagged.
+   *
+   * @param {object} entry the fighter entry from scene.fighters
+   * @param {Array<object>} list the player's minions
+   * @return {void}
+   */
+  _swapLeftLooks(entry, list) {
+    const versions = new Set(this._setOf(entry).map(spec => spec.version));
+    for (const minion of list) {
+      if (minion.waitingForLook) {
+        continue;
+      }
+      const shown = minion.pendingLook ?? minion.type;
+      if (shown.custom && !versions.has(shown.spec.version)) {
+        this._requestSwap(minion, entry);
+      } else if (versions.size === 0) {
+        minion.awaitingCustom = false;
+      }
+    }
+  }
+
+  /**
+   * Asks a minion to change to another of the player's loaded looks (a default type when
+   * none is loaded). The target is parked on `minion.pendingLook`, replacing an older
+   * one, and `_flushPendingLook` applies it unless the minion is busy.
+   *
+   * @param {object} minion
+   * @param {object} entry the fighter entry from scene.fighters
+   * @return {void}
+   */
+  _requestSwap(minion, entry) {
+    const type = this._pickSpawnType(minion.userId, entry);
+    minion.pendingLook = type;
+    minion.awaitingCustom = this._isAwaitingCustom(type, entry);
+    this._flushPendingLook(minion);
+  }
+
+  /**
+   * Starts a parked look swap when the minion is free: not summoning, fidgeting,
+   * fighting, already swapping or waiting for its first look. Called at the end of the
+   * summon, the fidget and the fight, and whenever a swap is requested.
+   *
+   * @param {object} minion
+   * @return {void}
+   */
+  _flushPendingLook(minion) {
+    if (!minion.pendingLook || !minion.sprite?.active || this.destroyed || this.scene.isShuttingDown) {
+      return;
+    }
+    if (minion.summoning || minion.fidgeting || minion.fighting || minion.swapping || minion.waitingForLook) {
+      return;
+    }
+    const entry = this.scene.fighters.get(minion.userId);
+    if (this.scene.reducedMotion || !entry) {
+      this._applyPendingLook(minion);
+      return;
+    }
+    minion.swapping = true;
+    this._playClawdPoof(minion.sprite.x, minion.sprite.y, this._minionScale(entry), () => {
+      minion.swapping = false;
+      if (this.destroyed || this.scene.isShuttingDown) {
+        return;
+      }
+      this._applyPendingLook(minion);
+    });
+  }
+
+  /**
+   * Applies the look parked on a minion (the newest one asked for), then releases any
+   * look nothing shows any more. A minion whose sprite is gone just drops it.
+   *
+   * @param {object} minion
+   * @return {void}
+   */
+  _applyPendingLook(minion) {
+    const type = minion.pendingLook;
+    minion.pendingLook = null;
+    if (type && minion.sprite?.active) {
+      this._applyLook(minion, type);
+    }
+    this._releaseUnusedLooks(minion.userId);
+  }
+
+  /**
+   * Takes custom looks out of the game once nothing needs them: no minion of the player
+   * shows or has parked the look, and it either left the player's set or the player has
+   * no minions out. A look still loading is left alone (its arrival runs this again); a
+   * failed look stays (its retry window) while it is in the set.
+   *
+   * @param {number|string} userId
+   * @return {void}
+   */
+  _releaseUnusedLooks(userId) {
+    const looks = this.looks.get(userId);
+    if (!looks) {
+      return;
+    }
+    const list = this.byUser.get(userId) ?? [];
+    const versions = new Set(this._setOf(this.scene.fighters.get(userId) ?? {}).map(spec => spec.version));
+    for (const [version, look] of looks) {
+      if (look.state === 'loading') {
+        continue;
+      }
+      const inSet = versions.has(version);
+      if (look.state === 'failed') {
+        if (!inSet) {
+          looks.delete(version);
+        }
+        continue;
+      }
+      const shown = list.some(minion => minion.type?.key === look.type.key || minion.pendingLook?.key === look.type.key);
+      if (shown || (inSet && list.length > 0)) {
+        continue;
+      }
+      releaseCustomFighter(this.scene, look.type);
+      looks.delete(version);
+    }
+    if (looks.size === 0) {
+      this.looks.delete(userId);
+    }
+  }
+
+  /**
    * Registers every MINION_TYPES and MINION_CLASH_EFFECTS animation against
    * its own individually-loaded spritesheet, idempotent.
    *
@@ -1464,13 +1902,18 @@ export class Minions {
   }
 
   /**
-   * Stops every pending timer/tween for every fighter's minions — called on
-   * scene shutdown. Does not destroy the sprites themselves: Phaser's own
-   * scene teardown destroys the full display list.
+   * Stops every pending timer/tween for every fighter's minions (including a spawn's
+   * wait for its look) — called on scene shutdown. Does not destroy the sprites
+   * themselves: Phaser's own scene teardown destroys the full display list. Custom
+   * look textures and animations are KEPT: they belong to the game, a restarted scene
+   * reuses them, and this manager (a fresh one after a restart) releases them when the
+   * swarm is gone. A load or poof that finishes after this finds `destroyed` set and
+   * touches nothing.
    *
    * @return {void}
    */
   destroy() {
+    this.destroyed = true;
     for (const list of this.byUser.values()) {
       for (const minion of list) {
         this._teardownMinion(minion);
@@ -1478,5 +1921,6 @@ export class Minions {
     }
     this.byUser.clear();
     this.leaders.clear();
+    this.looks.clear();
   }
 }

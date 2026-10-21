@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Boss;
+use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\Event;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -44,11 +46,27 @@ test('state endpoint includes display_name for each fighter', function () {
 test('state endpoint carries each fighter\'s custom character, null for one without', function () {
     Boss::factory()->create();
     $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
-    $custom = App\Models\CustomCharacter::factory()->create()->user;
+    $custom = CustomCharacter::factory()->create()->user;
     $custom->forceFill(['last_event_at' => now()->subMinute()])->save();
 
     $fighters = collect($this->getJson('/api/state')->assertOk()->json('fighters'))->keyBy('id');
 
     expect($fighters[$plain->id])->toHaveKey('custom_character', null)
         ->and($fighters[$custom->id]['custom_character'])->toBe($custom->customFighterState());
+});
+
+test('state endpoint carries each fighter\'s custom minions as their broadcast state, not the raw rows', function () {
+    Boss::factory()->create();
+    $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    $owner = CustomMinion::factory()->create()->user;
+    CustomMinion::factory()->create(['user_id' => $owner->id]);
+    $owner->forceFill(['last_event_at' => now()->subMinute()])->save();
+
+    $fighters = collect($this->getJson('/api/state')->assertOk()->json('fighters'))->keyBy('id');
+    $minions = $fighters[$owner->id]['custom_minions'];
+
+    expect($fighters[$plain->id])->toHaveKey('custom_minions', [])
+        ->and($minions)->toBe($owner->fresh()->customMinionsState())
+        ->and($minions)->toHaveCount(2)
+        ->and($minions[0])->not->toHaveKeys(['created_at', 'user_id', 'id']);
 });

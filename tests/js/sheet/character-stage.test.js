@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { characterStage, mountCharacterStage } from '@battlefield/sheet/character-stage.js';
+import { BOX } from '@battlefield/sheet/sheet-roster.js';
+import { fieldSizeMinionScale } from '@battlefield/sheet/minion-preview.js';
 
 const IDS = ['show-stage', 'flames', 'tick-ring', 'shock', 'fx-circle', 'fx-burst', 'show-sprite', 'stage-avatar', 'show-effect', 'boss', 'hit-spark', 'flashbang', 'dmg-layer', 'banner', 'show-name', 'show-type', 'show-author', 'also', 'show-state', 'hotbar', 'move-name', 'equip-note', 'back-equipped', 'edit-custom', 'equip-btn', 'equip-label'];
 
@@ -17,7 +19,12 @@ beforeEach(() => {
     <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div><div class="equip-row"></div>
       <button type="button" id="discard-draft" hidden>Discard</button><span id="draft-status" role="status"></span>
       <div id="inspector" hidden><button id="inspect-toggle">Pause</button><button id="inspect-prev">Previous frame</button><button id="inspect-next">Next frame</button><span id="inspect-label"></span></div>
-      <section class="cce-drawer" id="custom-panel" hidden><button type="button" id="panel-back">Back</button><div class="cce-row"><button type="button" data-focus="upload">Choose file</button></div><input type="text" data-focus="name"></section>
+      <div id="minion-field-view" hidden><span class="mfv-fighter"></span><span class="mfv-minion"></span></div>
+      <section class="cce-drawer" id="custom-panel" hidden><button type="button" id="panel-back">Back</button>
+        <div id="forge-tabs" role="tablist"><button type="button" role="tab" id="forge-tab-fighter" data-forge-tab="fighter" aria-selected="true" aria-controls="forge-pane-fighter">Fighter</button><button type="button" role="tab" id="forge-tab-minions" data-forge-tab="minions" aria-selected="false" aria-controls="forge-pane-minions" tabindex="-1">Minions</button></div>
+        <div id="forge-pane-fighter" data-forge-pane="fighter" role="tabpanel"><div class="cce-row"><button type="button" data-focus="upload">Choose file</button></div><input type="text" data-focus="name"></div>
+        <div id="forge-pane-minions" data-forge-pane="minions" role="tabpanel" hidden><button type="button" id="minion-card-button">Preview</button></div>
+      </section>
     </section>
   </div></div><div id="toast"></div><div id="tipbox"></div>`;
   // the stage's own floor lives inside #show-stage in the real markup
@@ -376,6 +383,15 @@ test('the editor deep link opens after the stage mounts even when its event arri
   window.dispatchEvent(new Event('open-custom-editor'));
   expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
   window.__openCustomEditor = false;
+});
+
+test('the deep link boot flag can carry the Minions tab to a stage that mounts after the event', () => {
+  window.__openCustomEditor = 'minions';
+  mount();
+
+  expect(window.__openCustomEditor).toBe(false);
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  expect(document.querySelector('[data-forge-tab="minions"]')?.getAttribute('aria-selected')).toBe('true');
 });
 
 test('the broadcast echo of a just-announced local change does not request another refresh', () => {
@@ -979,4 +995,351 @@ test('opening from the guide link with no fighter yet selects Create and shows t
   expect(tile.getAttribute('aria-pressed')).toBe('true');
   expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
   expect(document.activeElement).toBe(tile);
+});
+
+// ---- custom minions on the shared stage ----
+
+const MINION = {
+  version: 'mnn123def456',
+  url_base: '/storage/custom-minions/7/mnn123def456',
+  body_px: 22,
+  animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } },
+};
+const MINION_DRAFT = { hash: 'dhash0000001', spec: MINION };
+const minionsChanged = detail => window.dispatchEvent(new CustomEvent('custom-minions-changed', { detail }));
+const forgeTab = tab => document.getElementById(`forge-tab-${tab}`);
+
+test('a built minion draft appears as a MINION DRAFT slot, selected on the stage, and is not counted as a fighter', () => {
+  mount();
+
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+
+  const slot = document.querySelector('.slot[data-key="minion-draft"]');
+  expect(slot).not.toBeNull();
+  expect(slot.querySelector('.badge')?.textContent).toBe('MINION DRAFT');
+  expect(slot.getAttribute('aria-selected')).toBe('true');
+  expect(document.getElementById('show-name').textContent).toBe('Minion');
+  expect(document.getElementById('show-state').textContent).toBe('Previewing');
+  expect(document.getElementById('roster-count').textContent).toBe('20 fighters');
+});
+
+test('the draft\'s actions are Add to minions and Discard, with no Equip and no way back to mine', () => {
+  mount();
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+
+  expect(document.getElementById('equip-label').textContent).toBe('Add to minions');
+  expect(document.getElementById('equip-btn').disabled).toBe(false);
+  expect(document.getElementById('equip-btn').hidden).toBe(false);
+  expect(document.getElementById('discard-draft').hidden).toBe(false);
+  expect(document.getElementById('discard-draft').textContent).toBe('Discard');
+  expect(document.getElementById('back-equipped').hidden).toBe(true);
+  expect(document.querySelector('.showcase').textContent).not.toMatch(/Equip/);
+});
+
+test('Add to minions asks the editor to confirm exactly the previewed draft; nothing is equipped', () => {
+  const dispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch });
+  const { equip } = mount();
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+
+  document.getElementById('equip-btn').click();
+
+  expect(dispatch).toHaveBeenCalledWith('custom-minion-draft-confirm', { hash: 'dhash0000001' });
+  expect(equip).not.toHaveBeenCalled();
+  expect(document.getElementById('equip-btn').getAttribute('aria-busy')).toBe('true');
+  expect(document.getElementById('equip-label').textContent).toBe('Adding…');
+});
+
+test('Discard asks the editor to drop exactly the previewed minion draft', () => {
+  const dispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch });
+  mount();
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+
+  document.getElementById('discard-draft').click();
+
+  expect(dispatch).toHaveBeenCalledWith('custom-minion-draft-discard', { hash: 'dhash0000001' });
+});
+
+test('a minion\'s hotbar is Idle, Walk, Attack and Fall', () => {
+  mount();
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+
+  expect([...document.querySelectorAll('#hotbar .move .label')].map(el => el.textContent)).toEqual(['Idle', 'Walk', 'Attack', 'Fall']);
+});
+
+test('the field-size view puts the equipped fighter beside the minion at the size the field draws it', () => {
+  mount({ equipped: 'orc-rider' });
+  const view = document.getElementById('minion-field-view');
+  expect(view.hidden).toBe(true);
+
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+
+  expect(view.hidden).toBe(false);
+  const [, y0, , y1] = BOX['orc-rider'];
+  expect(Number(view.querySelector('.mfv-fighter').style.scale)).toBeCloseTo(36 / (y1 - y0), 2);
+  expect(Number(view.querySelector('.mfv-minion').style.scale)).toBeCloseTo(fieldSizeMinionScale(2, 22), 3);
+  expect(view.querySelector('.mfv-minion').style.backgroundImage).toContain('/storage/custom-minions/7/mnn123def456/idle.png');
+
+  document.querySelector('.slot[data-key="wizard"]').click();
+  expect(view.hidden).toBe(true);
+});
+
+test('adding or discarding the draft takes the slot away and returns the player to the Minions tab to go on', () => {
+  mount();
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(false);
+
+  minionsChanged({ minions: [MINION], draft: null });
+
+  expect(document.querySelector('.slot[data-key="minion-draft"]')).toBeNull();
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  expect(forgeTab('minions').getAttribute('aria-selected')).toBe('true');
+});
+
+test('a draft the sheet opened with is a slot at once', () => {
+  mount({ minionDraft: MINION_DRAFT });
+
+  expect(document.querySelector('.slot[data-key="minion-draft"] .badge')?.textContent).toBe('MINION DRAFT');
+  expect(document.getElementById('roster-count').textContent).toBe('20 fighters');
+});
+
+test('Preview on a card shows that minion on the stage, preview only, and closing puts the player\'s fighter back', () => {
+  mount({ equipped: 'orc-rider' });
+
+  window.dispatchEvent(new CustomEvent('custom-minion-peek', { detail: { spec: { id: 3, ...MINION } } }));
+
+  expect(document.getElementById('show-name').textContent).toBe('Minion');
+  expect(document.getElementById('equip-btn').hidden).toBe(true);
+  expect(document.getElementById('discard-draft').hidden).toBe(false);
+  expect(document.getElementById('discard-draft').textContent).toBe('Close preview');
+  expect(document.getElementById('equip-note').textContent).toContain('preview');
+  expect(document.getElementById('minion-field-view').hidden).toBe(false);
+
+  document.getElementById('discard-draft').click();
+
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('orc-rider');
+  expect(document.getElementById('minion-field-view').hidden).toBe(true);
+});
+
+test('a peek that is not a whole minion is ignored', () => {
+  mount();
+
+  window.dispatchEvent(new CustomEvent('custom-minion-peek', { detail: { spec: { version: 'x' } } }));
+  window.dispatchEvent(new CustomEvent('custom-minion-peek', { detail: {} }));
+
+  expect(document.getElementById('show-name').textContent).not.toBe('Minion');
+});
+
+test('the Forge has Fighter and Minions tabs: picking one shows its panel and says so', () => {
+  mount();
+  const seen = [];
+  window.addEventListener('custom-forge-tab', event => seen.push(event.detail.tab));
+  document.querySelector('.slot-add').click();
+  expect(forgeTab('fighter').getAttribute('aria-selected')).toBe('true');
+  expect(document.getElementById('forge-pane-minions').hidden).toBe(true);
+
+  forgeTab('minions').click();
+
+  expect(forgeTab('minions').getAttribute('aria-selected')).toBe('true');
+  expect(forgeTab('fighter').getAttribute('aria-selected')).toBe('false');
+  expect(forgeTab('minions').tabIndex).toBe(0);
+  expect(forgeTab('fighter').tabIndex).toBe(-1);
+  expect(document.getElementById('forge-pane-minions').hidden).toBe(false);
+  expect(document.getElementById('forge-pane-fighter').hidden).toBe(true);
+  expect(seen).toEqual(['minions']);
+});
+
+test('arrow keys move between the Forge tabs and the focus follows', () => {
+  mount();
+  document.querySelector('.slot-add').click();
+  forgeTab('fighter').focus();
+
+  forgeTab('fighter').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  expect(document.activeElement).toBe(forgeTab('minions'));
+  expect(forgeTab('minions').getAttribute('aria-selected')).toBe('true');
+
+  forgeTab('minions').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  expect(document.activeElement).toBe(forgeTab('fighter'));
+
+  forgeTab('fighter').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+  expect(document.activeElement).toBe(forgeTab('minions'));
+});
+
+test('opening the editor for minions lands on the Minions tab, with focus on it, and the stage shows the player\'s fighter', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+
+  expect(document.getElementById('custom-panel').hidden).toBe(false);
+  expect(forgeTab('minions').getAttribute('aria-selected')).toBe('true');
+  expect(document.getElementById('forge-pane-minions').hidden).toBe(false);
+  expect(document.activeElement).toBe(forgeTab('minions'));
+  expect(document.getElementById('show-name').textContent).toBe('Custom');
+});
+
+test('opening the editor for minions focuses the first card once it has rendered, but a click on the tab keeps focus there', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+  const card = document.getElementById('minion-card-button');
+  card.setAttribute('data-focus', 'minions-first');
+
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+  expect(document.activeElement).toBe(card);
+
+  document.getElementById('panel-back').click();
+  window.dispatchEvent(new Event('open-custom-editor'));
+  forgeTab('minions').click();
+  forgeTab('minions').focus();
+  expect(document.activeElement).toBe(forgeTab('minions'));
+});
+
+test('the forge preview shows the open tab\'s upload phase: a build on one tab never paints the other', () => {
+  mount();
+  const phase = () => document.querySelector('.showcase').dataset.forgePhase;
+  const announce = (source, value) => window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase: value, source } }));
+  document.querySelector('.slot-add').click();
+
+  announce('fighter', 'building');
+  expect(phase()).toBe('building');
+
+  announce('minions', 'uploading');
+  expect(phase()).toBe('building');
+
+  forgeTab('minions').click();
+  expect(phase()).toBe('uploading');
+
+  announce('fighter', 'ready');
+  expect(phase()).toBe('uploading');
+
+  forgeTab('fighter').click();
+  expect(phase()).toBe('ready');
+
+  forgeTab('minions').click();
+  announce('minions', 'idle');
+  forgeTab('fighter').click();
+  forgeTab('minions').click();
+  expect(phase()).toBe('idle');
+});
+
+test('opening the editor with no tab lands on the Fighter tab, even after a visit to Minions', () => {
+  mount();
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+  document.getElementById('panel-back').click();
+
+  window.dispatchEvent(new Event('open-custom-editor'));
+
+  expect(forgeTab('fighter').getAttribute('aria-selected')).toBe('true');
+});
+
+test('the stage shows the draft the open Forge tab owns: the minion draft on Minions, the fighter on Fighter', () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('minion-draft');
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+
+  forgeTab('fighter').click();
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('custom');
+
+  forgeTab('minions').click();
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('minion-draft');
+});
+
+test('the Minions tab with nothing to preview shows the player\'s fighter, not the empty Create stage', () => {
+  mount({ equipped: 'orc-rider' });
+  document.querySelector('.slot-add').click();
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
+
+  forgeTab('minions').click();
+
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(false);
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('orc-rider');
+
+  forgeTab('fighter').click();
+  expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
+});
+
+test('a minion preview starts paused under reduced motion', () => {
+  mount();
+
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+
+  expect(document.getElementById('inspector').hidden).toBe(false);
+  expect(document.getElementById('inspect-label').textContent).toContain('paused');
+  expect(document.getElementById('inspect-toggle').textContent).toBe('Play');
+});
+
+test('this player\'s minions broadcast asks the editor to refresh once, not at all right after the sheet\'s own change', () => {
+  vi.useFakeTimers();
+  const dispatch = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch });
+  mount({ me: 7 });
+
+  window.dispatchEvent(new CustomEvent('sheet-own-minions-broadcast', { detail: { user_id: 8 } }));
+  window.dispatchEvent(new CustomEvent('sheet-own-minions-broadcast', { detail: { user_id: 7 } }));
+  window.dispatchEvent(new CustomEvent('sheet-own-minions-broadcast', { detail: { user_id: 7 } }));
+  vi.runOnlyPendingTimers();
+  expect(dispatch.mock.calls).toEqual([['custom-minions-refresh']]);
+
+  dispatch.mockClear();
+  minionsChanged({ minions: [MINION], draft: null });
+  window.dispatchEvent(new CustomEvent('sheet-own-minions-broadcast', { detail: { user_id: 7 } }));
+  vi.runOnlyPendingTimers();
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
+test('an event that arrives after the sheet is gone touches nothing', () => {
+  mount();
+  cleanup.forEach(fn => fn());
+  cleanup = [];
+
+  expect(() => minionsChanged({ minions: [], draft: MINION_DRAFT })).not.toThrow();
+  expect(document.querySelector('.slot[data-key="minion-draft"]')).toBeNull();
+});
+
+test('the Character tab becoming active straight after "Customize minions" keeps the drawer open on Minions', async () => {
+  mount({ equipped: 'orc-rider' });
+  const panel = document.querySelector('.tab-panel');
+
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+  panel.classList.add('is-active');
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  expect(forgeTab('minions').getAttribute('aria-selected')).toBe('true');
+  expect(document.activeElement).toBe(forgeTab('minions'));
+});
+
+test('a fall holds the death strip for about 2s, then plays it backwards to stand up and returns to idle', async () => {
+  vi.useFakeTimers();
+  mount();
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+  const sprite = document.getElementById('show-sprite');
+
+  document.querySelector('#hotbar .move[data-id="death"]').click();
+  await vi.advanceTimersByTimeAsync(10);
+  const falling = sprite.style.animation;
+  expect(falling).toMatch(/^ko100_3 .*1 forwards$/);
+
+  await vi.advanceTimersByTimeAsync(500 + 1500); // down (3 frames at 6 fps), then 1.5s of the hold
+  expect(sprite.style.animation).toBe(falling);
+
+  await vi.advanceTimersByTimeAsync(700); // the hold is over: standing up
+  expect(sprite.style.animation).toMatch(/^ko100_3r /);
+
+  await vi.advanceTimersByTimeAsync(600);
+  expect(sprite.style.animation).toContain('infinite');
+});
+
+test('the tooltip of the minion draft slot says it is a minion, not a slash fighter', () => {
+  mount();
+  minionsChanged({ minions: [], draft: MINION_DRAFT });
+  document.body.insertAdjacentHTML('beforeend', '<div id="tipbox"></div>');
+
+  document.querySelector('.slot[data-key="minion-draft"]').dispatchEvent(new Event('pointerover', { bubbles: true }));
+
+  expect(document.getElementById('tipbox').textContent).toContain('Minion · not added yet');
+  expect(document.getElementById('tipbox').textContent).not.toContain('Slash');
 });

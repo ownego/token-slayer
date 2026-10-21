@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, test, vi } from 'vitest';
-import { FINISH_RUN_MS, agoTicker, clawdBuddyPanel, createSheetShell, fighterSheetShell, sheetFrame } from '@battlefield/sheet/index.js';
+import { FINISH_RUN_MS, agoTicker, clawdBuddyPanel, createSheetShell, fighterSheetShell, sheetFrame, switchTab } from '@battlefield/sheet/index.js';
 
 function buildDom() {
   document.body.innerHTML = `
@@ -364,5 +364,20 @@ test('the sheet announces it is ready once its first render is up', () => {
 
   expect(ready).toHaveBeenCalledTimes(1);
   window.removeEventListener('fighter-sheet-ready', ready);
+  shell.destroy();
+});
+
+test('the Forge\'s Fighter | Minions tabs are not sheet tabs: switching the sheet never unselects them, and clicking them never switches the sheet', () => {
+  const { root } = buildDom();
+  root.insertAdjacentHTML('beforeend', '<div role="tablist"><button class="sheet-tab" id="forge-tab" role="tab" aria-selected="true">Minions</button></div><div id="tab-profile" class="tab-panel"></div><div id="tab-character" class="tab-panel"></div>');
+  const onTab = vi.fn();
+  const shell = createSheetShell(root, { onClose: vi.fn(), onTab });
+
+  document.getElementById('forge-tab').click();
+  expect(onTab).not.toHaveBeenCalled();
+
+  switchTab(root, 'character');
+  expect(document.getElementById('forge-tab').getAttribute('aria-selected')).toBe('true');
+  expect(root.querySelector('[data-tab="character"]').getAttribute('aria-selected')).toBe('true');
   shell.destroy();
 });

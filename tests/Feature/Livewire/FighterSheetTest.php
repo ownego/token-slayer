@@ -8,12 +8,15 @@ use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Boss;
 use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\Event as EventModel;
 use App\Models\User;
 use App\Services\ProviderServiceFactory;
+use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Renderless;
 use Livewire\Livewire;
 
@@ -736,7 +739,7 @@ test('equipping while another change of the player is running changes nothing an
     Event::fake([FighterCharacterChanged::class]);
     config(['token_slayer.custom_character.lock_seconds' => 0]);
     $user = User::factory()->create(['equipped_character' => FighterCharacter::Soldier]);
-    Cache::lock(App\Support\CacheKeys::customCharacterBuild($user->id), 30)->get();
+    Cache::lock(CacheKeys::customCharacterBuild($user->id), 30)->get();
 
     Livewire::actingAs($user)
         ->test(FighterSheet::class)
@@ -785,4 +788,45 @@ test('a refresh request is answered with the current state and no ceremony, and 
                 && ! array_key_exists('ceremony', $params);
         })
         ->assertNotDispatched('custom-character-changed');
+});
+
+test('seeds and refreshes the player\'s minions', function () {
+    Storage::fake('public');
+    $user = User::factory()->create();
+    $first = CustomMinion::factory()->create(['user_id' => $user->id]);
+    $draft = stagedMinionFor($user);
+
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class);
+
+    expect($sheet->get('customMinions'))->toBe([$first->sheetState()])
+        ->and($sheet->get('customMinionDraft')['hash'])->toBe($draft->version_hash)
+        ->and($sheet->get('customMinionDraft')['spec'])->toHaveKeys(['version', 'url_base', 'animations', 'body_px']);
+
+    $second = CustomMinion::factory()->create(['user_id' => $user->id]);
+    $sheet->dispatch('custom-minions-changed');
+    expect(array_column($sheet->get('customMinions'), 'id'))->toBe([$first->id, $second->id]);
+
+    $second->delete();
+    $draft->delete();
+    $sheet->dispatch('custom-minions-refresh');
+    expect(array_column($sheet->get('customMinions'), 'id'))->toBe([$first->id])
+        ->and($sheet->get('customMinionDraft'))->toBeNull();
+});
+
+test('a player with no minions seeds an empty list and no draft', function () {
+    Livewire::actingAs(User::factory()->create())
+        ->test(FighterSheet::class)
+        ->assertSet('customMinions', [])
+        ->assertSet('customMinionDraft', null);
+});
+
+test('the character tab renders with the minions handed to the stage', function () {
+    Storage::fake('public');
+    $user = User::factory()->create();
+    $minion = CustomMinion::factory()->create(['user_id' => $user->id]);
+
+    Livewire::actingAs($user)
+        ->test(FighterSheet::class)
+        ->call('open', 'character')
+        ->assertSeeHtml($minion->version_hash);
 });

@@ -3,6 +3,7 @@
 use App\Livewire\Battlefield;
 use App\Models\Boss;
 use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\FighterChargingCache;
@@ -395,4 +396,19 @@ test('battlefield boot payload carries each fighter\'s custom character, null wh
         ->assertSeeHtml('&quot;customCharacter&quot;:null')
         ->assertSeeHtml('&quot;version&quot;:&quot;feedfacecafe&quot;')
         ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-characters\/'.$custom->id.'\/feedfacecafe&quot;');
+});
+
+test('battlefield boot payload carries each fighter\'s custom minions, an empty list when they have none', function () {
+    Boss::factory()->create(['number' => 1]);
+    User::factory()->create(['last_event_at' => now()->subMinute()]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;customMinions&quot;:[]');
+
+    $minion = CustomMinion::factory()->create(['version_hash' => 'bead1234cafe']);
+    $minion->user->forceFill(['last_event_at' => now()->subMinute()])->save();
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;customMinions&quot;:[{&quot;version&quot;:&quot;bead1234cafe&quot;')
+        ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-minions\/'.$minion->user_id.'\/bead1234cafe&quot;');
 });

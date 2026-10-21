@@ -42,6 +42,17 @@ export const NECROMANCER_CONFIG = {
 };
 
 /**
+ * A minion's visual height as a fraction of its fighter's own current effective size
+ * (baseSize * the container's own live scaleX — see minions.js's _currentSize), recomputed
+ * every frame since minions are independent world-space sprites (not container children),
+ * so nothing else carries crowd/damage growth for them. Lives here, not in minions.js,
+ * so the fighter sheet (which runs without Phaser) can size its own minions with it.
+ *
+ * @type {number}
+ */
+export const MINION_SIZE_RATIO = 0.5;
+
+/**
  * The subagent-minion candidates a fighter's swarm is randomly drawn from
  * (see minions.js) — one per dispatched-but-not-yet-stopped Task subagent.
  * Purely cosmetic: fights between two fighters' minions never touch damage.

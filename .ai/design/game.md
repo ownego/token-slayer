@@ -42,7 +42,8 @@ Consequences that shape every decision:
 | Fighter | one per user on the field, assigned by user and boss, or the equipped one; charge ring, bubble, model flair ring | moment, session, social | keyed by user id; sprites are 100 px frames, never upscaled |
 | Roster and fighter sheet | the 20 fighters, filters by attack style, a Character tab with Equip and undo, a Profile tab with damage, tokens by model, quota gauges, alerts, the combo buddy, a mini stage | session, social | the sheet is a modal over the live battlefield |
 | Custom fighter | a player's own fighter built from an uploaded pose sheet, previewed as a draft slot and managed in a stage drawer | social | strips served per version; every client shows the same fighter; cosmetic only; admin Rename and Remove follow policy |
-| Minions and companions | subagent swarm, bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
+| Minions and companions | subagent swarm (the five default types, or a random one of the owner's up-to-3 custom minions), bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
+| Custom minions | a player's own minions built from uploaded pose sheets, managed in the Forge Minions tab; an empty set means the defaults | social | same sheet contract as the custom fighter; the set is cosmetic and broadcast live; admin Remove follows policy |
 | HUD | team totals, your damage, the damage board with rank changes, boss plate, feed, herald, nav | session, social | follows the screen: landscape and portrait layouts, a phone stats sheet |
 | Ceremonies | join, kill, boss spawn | social | slow motion and shake are for kills; reduced motion is honoured |
 | Accounts and quota | org accounts, attribution, probing, rebalance, alerts | the work-tool layer | per-event attribution, never inferred from membership |
@@ -68,6 +69,8 @@ Consequences that shape every decision:
 | Combo window | 60 s | `sheet/clawd-buddy.js` |
 | Herald duration | 4.5 s | HUD |
 | Fighter size by headcount | 45/36/27 px landscape, 54/45 px portrait | `battlefield/layout.js` |
+| Custom minions per player | 3 | `custom_character.minions_max` in `config/token_slayer.php` |
+| Custom minion look wait | 2 s | `TIMINGS.customMinionWaitMs` (`battlefield/config/timings.js`) |
 
 A new knob has a name, a default, a reason for the default, and a place in this table.
 

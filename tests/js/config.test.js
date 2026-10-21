@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, MINION_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
+import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, MINION_SIZE_RATIO, MINION_TYPES, NECROMANCER_CONFIG, TIMINGS } from '@battlefield/config.js';
 import { AttackType } from '@battlefield/constants.js';
 
 const publicFile = (urlPath) => join(process.cwd(), 'public', urlPath.split('?')[0]);
@@ -235,6 +235,16 @@ describe('companion configs (Bat, Necromancer)', () => {
   test('NECROMANCER_CONFIG has looping idle and walk', () => {
     expect(NECROMANCER_CONFIG.animFiles.idle.loop).toBe(true);
     expect(NECROMANCER_CONFIG.animFiles.walk.loop).toBe(true);
+  });
+});
+
+describe('custom minion tunables', () => {
+  test('a minion stands half as tall as its fighter, from the shared config rather than minions.js', () => {
+    expect(MINION_SIZE_RATIO).toBe(0.5);
+  });
+
+  test('a spawn waits two seconds for the owner\'s custom looks before using a default', () => {
+    expect(TIMINGS.customMinionWaitMs).toBe(2000);
   });
 });
 
