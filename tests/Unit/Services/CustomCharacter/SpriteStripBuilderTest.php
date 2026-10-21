@@ -56,7 +56,7 @@ test('builds one strip per animation, every frame 100 px square', function () {
     $strips = app(SpriteStripBuilder::class)->build(colouredPoses());
 
     expect(array_keys($strips))->toBe(['idle', 'walk', 'attack', 'death'])
-        ->and(array_map(fn (array $strip) => $strip['frames'], $strips))->toBe(['idle' => 6, 'walk' => 8, 'attack' => 6, 'death' => 3])
+        ->and(array_map(fn (array $strip) => $strip['frames'], $strips))->toBe(['idle' => 8, 'walk' => 8, 'attack' => 6, 'death' => 3])
         ->and(array_map(fn (array $strip) => $strip['rate'], $strips))->toBe(['idle' => 8, 'walk' => 16, 'attack' => 12, 'death' => 6]);
 
     foreach ($strips as $strip) {
@@ -79,14 +79,21 @@ test('stands the pose on the roster foot line, centred horizontally', function (
         ->and(stripPixel($idle, 0, 55, 50))->toBe(-1);
 });
 
-test('idles on the last idle pose, bobbing one pixel up and back', function () {
+test('idle plays every idle pose in order, each held two frames, so the motion drawn on the sheet is the motion played', function () {
     $idle = app(SpriteStripBuilder::class)->build(colouredPoses())['idle']['image'];
+    $colourOfFrame = fn (int $frame) => stripPixel($idle, $frame, 50, 55);
 
-    expect(stripPixel($idle, 0, 50, 58))->toBe(0x130000)
-        ->and(stripPixel($idle, 1, 50, 58))->toBe(0x130000)
-        ->and(stripPixel($idle, 2, 50, 58))->toBe(-1)
-        ->and(stripPixel($idle, 2, 50, 57))->toBe(0x130000)
-        ->and(stripPixel($idle, 4, 50, 58))->toBe(0x130000);
+    expect(array_map($colourOfFrame, range(0, 7)))->toBe([0x100000, 0x100000, 0x110000, 0x110000, 0x120000, 0x120000, 0x130000, 0x130000]);
+});
+
+test('idle is as long as the idle poses the sheet has: two poses give four frames', function () {
+    $sprites = colouredPoses();
+    $sprites['idle'] = array_slice($sprites['idle'], 0, 2);
+    $idle = app(SpriteStripBuilder::class)->build($sprites)['idle'];
+
+    expect($idle['frames'])->toBe(4)
+        ->and(imagesx($idle['image']))->toBe(400)
+        ->and(array_map(fn (int $frame) => stripPixel($idle['image'], $frame, 50, 55), range(0, 3)))->toBe([0x100000, 0x100000, 0x110000, 0x110000]);
 });
 
 test('holds each walk, attack and death pose in order', function () {

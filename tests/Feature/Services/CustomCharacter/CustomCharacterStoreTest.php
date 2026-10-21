@@ -29,7 +29,7 @@ test('stages one png per animation under the user and version hash, apart from c
 
     expect($staged['hash'])->toMatch('/^[a-f0-9]{12}$/')
         ->and($staged['animations'])->toBe([
-            'idle' => ['frames' => 6, 'rate' => 8],
+            'idle' => ['frames' => 8, 'rate' => 8],
             'walk' => ['frames' => 8, 'rate' => 16],
             'attack' => ['frames' => 6, 'rate' => 12],
             'death' => ['frames' => 3, 'rate' => 6],
