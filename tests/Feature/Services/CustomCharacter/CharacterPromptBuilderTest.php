@@ -2,17 +2,24 @@
 
 use App\Services\CustomCharacter\CharacterPromptBuilder;
 
-const PROMPT_TYPES = ['warrior', 'wizard', 'assassin', 'archer', 'healer', 'necromancer', 'knight', 'alchemist', 'berserker'];
+const PROMPT_TYPES = ['warrior', 'wizard', 'assassin', 'archer', 'healer', 'necromancer', 'alchemist', 'berserker'];
 
 const BLANK_ITEMS = "- Body:\n- Waist:\n- Feet:\n- Cape:\n- Weapon:\n- Hat:";
 
-test('there is a prompt for every character type, in the order the picker shows them', function () {
-    expect(array_keys(app(CharacterPromptBuilder::class)->execute()))->toBe(PROMPT_TYPES);
+test('there is a prompt for every character type, in the order the picker shows them, with Custom last', function () {
+    expect(array_keys(app(CharacterPromptBuilder::class)->execute()))->toBe([...PROMPT_TYPES, 'custom']);
 });
 
 test('the picker labels come from the same config as the prompts', function () {
-    expect(collect(PROMPT_TYPES)->mapWithKeys(fn (string $type) => [$type => config("token_slayer.custom_character.types.{$type}.label")])->all())
-        ->toBe(array_combine(PROMPT_TYPES, array_map('ucfirst', PROMPT_TYPES)));
+    $types = [...PROMPT_TYPES, 'custom'];
+
+    expect(collect($types)->mapWithKeys(fn (string $type) => [$type => config("token_slayer.custom_character.types.{$type}.label")])->all())
+        ->toBe(array_combine($types, array_map('ucfirst', $types)));
+});
+
+test('there is no knight to pick any more', function () {
+    expect(config('token_slayer.custom_character.types'))->not->toHaveKey('knight');
+    expect(file_exists(public_path('assets/custom-character/types/knight.png')))->toBeFalse();
 });
 
 test('each prompt names its type as the authority for the costume', function (string $type) {
@@ -56,10 +63,10 @@ test('no prompt is left with an unfilled placeholder', function (string $type) {
     expect(app(CharacterPromptBuilder::class)->execute()[$type])->not->toMatch('/\{[A-Za-z_]+\}/');
 })->with(PROMPT_TYPES);
 
-test('the prompts differ: no two types share a costume', function () {
+test('the prompts differ: no two types share a costume, and Custom is its own prompt', function () {
     $prompts = app(CharacterPromptBuilder::class)->execute();
 
-    expect(array_unique(array_map(fn (string $p) => md5(preg_replace('/\b[A-Z]{4,}\b/', '', $p)), $prompts)))->toHaveCount(count(PROMPT_TYPES));
+    expect(array_unique(array_map(fn (string $p) => md5(preg_replace('/\b[A-Z]{4,}\b/', '', $p)), $prompts)))->toHaveCount(count(PROMPT_TYPES) + 1);
 });
 
 test('each type carries the weapon that makes it recognisable', function (string $type, string $weapon) {
@@ -71,7 +78,6 @@ test('each type carries the weapon that makes it recognisable', function (string
     'archer' => ['archer', 'bow'],
     'healer' => ['healer', 'staff'],
     'necromancer' => ['necromancer', 'skull'],
-    'knight' => ['knight', 'plate'],
     'alchemist' => ['alchemist', 'flask'],
     'berserker' => ['berserker', 'axe'],
 ]);
@@ -139,15 +145,77 @@ test('effects are welcome but leave clear space, so poses never touch and the co
         ->not->toContain('never draw a magic circle');
 })->with(PROMPT_TYPES);
 
-test('the pixel art style block is identical for every type', function () {
+test('the pixel art style block is identical for every class type', function () {
     $blocks = array_map(function (string $prompt): string {
         preg_match('/PIXEL ART STYLE:\n(?:- .*\n?)+/', $prompt, $match);
 
         return $match[0] ?? '';
-    }, app(CharacterPromptBuilder::class)->execute());
+    }, array_intersect_key(app(CharacterPromptBuilder::class)->execute(), array_flip(PROMPT_TYPES)));
 
     expect(array_unique($blocks))->toHaveCount(1)
         ->and(reset($blocks))->toContain('- Every pose must look like the same unified game sprite set');
+});
+
+/**
+ * The Custom prompt, and its style block.
+ *
+ * @return array{0: string, 1: string}
+ */
+function customPrompt(): array
+{
+    $prompt = app(CharacterPromptBuilder::class)->execute()['custom'];
+    preg_match('/PIXEL ART STYLE:\n(?:- .*\n?)+/', $prompt, $match);
+
+    return [$prompt, $match[0] ?? ''];
+}
+
+test('the custom prompt says nothing about a class, a costume or fantasy: only the retro pixel style and the output', function () {
+    [$prompt] = customPrompt();
+
+    expect($prompt)->toContain('retro pixel-art')
+        ->toContain('PIXEL ART STYLE:')
+        ->toContain('OUTPUT: ONE image')
+        ->not->toContain('CHARACTER TYPE')
+        ->not->toContain('COSTUME')
+        ->not->toContain('VISUAL IDENTITY')
+        ->not->toContain('medieval')
+        ->not->toContain('fantasy')
+        ->not->toContain('warrior')
+        ->not->toMatch('/\{[A-Za-z_]+\}/');
+});
+
+test('the custom prompt keeps the character exactly as drawn and adds nothing to it', function () {
+    [$prompt] = customPrompt();
+
+    expect($prompt)->toContain('Keep its design, outfit, colors and every signature feature exactly as in my picture')
+        ->toContain('do not add a costume, armor, a class, a weapon or any item it does not already have');
+});
+
+test('the custom prompt shares the style and output rules of the others, minus the fantasy wording', function () {
+    [$prompt, $style] = customPrompt();
+    [$classStyle] = [preg_match('/PIXEL ART STYLE:\n(?:- .*\n?)+/', app(CharacterPromptBuilder::class)->execute()['wizard'], $m) ? $m[0] : ''];
+
+    expect($style)->toContain('Small, compact, chibi-like sprite proportions')
+        ->toContain('No anti-aliasing')
+        ->toContain('approximately 2–4 shades per material')
+        ->toContain('same slightly angled view for the idle and run poses')
+        ->toContain('consistent pixel scale, outline thickness, palette, proportions, and detail density')
+        ->not->toContain('fantasy')
+        ->not->toContain('medieval')
+        ->not->toContain('helmets')
+        ->and(substr_count($classStyle, "\n"))->toBe(substr_count($style, "\n"));
+
+    expect($prompt)->toContain('Row 2: run cycle')
+        ->toContain('The legs must clearly alternate')
+        ->toContain('Effects are welcome, but they must not reach another pose')
+        ->toContain('#FF00FF')
+        ->toContain('facing RIGHT');
+});
+
+test('the custom prompt asks for a simple attack using only what the character already has', function () {
+    [$prompt] = customPrompt();
+
+    expect($prompt)->toMatch('/Row 3: .*already has/i')->toContain('exactly 3 poses (wind up, strike, follow through)');
 });
 
 test('the colors line does not fight the style block over how many shades to use', function (string $type) {

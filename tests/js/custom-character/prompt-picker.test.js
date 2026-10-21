@@ -98,6 +98,31 @@ describe('characterPrompt', () => {
     expect(readItems(picker.text)).toEqual({ Weapon: 'a twin-blade', Hat: 'a veil' });
   });
 
+  test('a prompt with no costume items (Custom) is shown as it is, and the items typed before it come back after it', () => {
+    const custom = 'This is my original character.\n\nOUTPUT: one image.';
+    const picker = characterPrompt({ ...TYPES, custom: 'Custom' }, { ...PROMPTS, custom });
+    picker.choose('assassin');
+    picker.text = fillItems(picker.text, { Weapon: 'a twin-blade' });
+
+    picker.choose('custom');
+    expect(picker.text).toBe(custom);
+
+    picker.choose('wizard');
+    expect(readItems(picker.text)).toEqual({ Weapon: 'a twin-blade' });
+  });
+
+  test('an item the user cleared stays cleared when the type changes', () => {
+    const picker = characterPrompt(TYPES, PROMPTS);
+    picker.choose('assassin');
+    picker.text = fillItems(picker.text, { Weapon: 'a twin-blade' });
+    picker.choose('wizard');
+    picker.text = picker.text.replace('- Weapon: a twin-blade', '- Weapon:');
+
+    picker.choose('assassin');
+
+    expect(readItems(picker.text)).toEqual({});
+  });
+
   test('switching type with nothing typed gives the new type\'s blank prompt', () => {
     const picker = characterPrompt(TYPES, PROMPTS);
     picker.choose('assassin');

@@ -77,9 +77,10 @@ test('the guide says to pick a costume by character type, then copy the prompt i
 
     $this->get('/character')
         ->assertSee('Pick a costume by character type below')
-        ->assertSee('copy its prompt and paste it into ChatGPT')
-        ->assertSee('together with a picture of your custom character')
-        ->assertSee('to make your pose sheet');
+        ->assertSeeHtml('<strong>copy its prompt and paste it into ChatGPT together with a picture of your character</strong>')
+        ->assertSee('to make your pose sheet')
+        ->assertSeeHtml('You can change the costume description in the prompt, but must keep the "Pixel Art Style" &amp; "Output" part.')
+        ->assertDontSee('Not a fantasy hero (an idol, a cartoon character, a mascot)?');
 });
 
 test('the page lets the user pick a character type before it offers a prompt', function () {
@@ -87,10 +88,19 @@ test('the page lets the user pick a character type before it offers a prompt', f
 
     $response = $this->get('/character')->assertOk()->assertSee('Choose a character type to get its prompt.');
 
-    foreach (['Warrior', 'Wizard', 'Assassin', 'Archer', 'Healer', 'Necromancer', 'Knight', 'Alchemist', 'Berserker'] as $label) {
+    foreach (['Warrior', 'Wizard', 'Assassin', 'Archer', 'Healer', 'Necromancer', 'Alchemist', 'Berserker', 'Custom'] as $label) {
         $response->assertSee($label);
     }
     $response->assertSee('characterPrompt(', false)->assertSee('CHARACTER TYPE: ASSASSIN');
+});
+
+test('the guide offers Custom for a character that is not fantasy, so no class costume is added', function () {
+    $this->withoutVite()->actingAs(User::factory()->create());
+
+    $this->get('/character')
+        ->assertSee('Custom keeps your character exactly as it is')
+        ->assertSee('not a fantasy hero')
+        ->assertSeeHtml("x-show=\"type === 'custom'\"");
 });
 
 test('every character type has a transparent square thumbnail to show in the picker', function () {

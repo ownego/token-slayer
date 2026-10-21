@@ -37,6 +37,16 @@ function blockLines(text) {
 }
 
 /**
+ * Whether a prompt has a COSTUME ITEMS block at all (the Custom prompt does not).
+ *
+ * @param {string} text The prompt.
+ * @return {boolean}
+ */
+export function hasItemsBlock(text) {
+  return blockLines(text).length > 0;
+}
+
+/**
  * Reads what the user typed into the COSTUME ITEMS block. An item left empty
  * (or only spaces) is not returned, since it means "use the character type's default".
  *

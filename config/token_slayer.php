@@ -217,8 +217,16 @@ Design one definitive {LABEL} costume and reuse that exact costume across the en
 
 COLORS: muted, slightly desaturated medieval palette in the {label}'s own colors (see the costume above). Keep the character's own main colors recognisable but toned down. No gradients, no glow, no cast shadows, no motion lines, no impact effects, no text.
 
+{PIXEL_ART_STYLE}
+
+{OUTPUT}
+PROMPT,
+        // Pieces every prompt shares, put together by CharacterPromptBuilder. {PIXEL_ART_STYLE} is `prompt_pixel_style` with its
+        // three {STYLE_*} lines taken from `prompt_style_lines` (class prompts keep the fantasy-RPG wording, Custom is neutral so a
+        // character that is not fantasy is not pushed toward it); {OUTPUT} is `prompt_output` with {ATTACK} replaced by the type's own.
+        'prompt_pixel_style' => <<<'STYLE'
 PIXEL ART STYLE:
-- Authentic retro RPG sprite art, resembling character sprites from classic 16-bit fantasy dungeon-crawler and action RPG games.
+{STYLE_REFERENCE}
 - Small, compact, chibi-like sprite proportions: a relatively large head, short torso, short limbs, and a sturdy, readable silhouette. Preserve the original character's identity while adapting the proportions to fit the reference's compact game-sprite aesthetic.
 - Crisp, chunky pixel clusters with clearly visible individual square pixels. Use deliberate pixel placement rather than smooth digital painting or fine pixel noise.
 - Low-resolution, grid-aligned pixel art with hard pixel edges. No anti-aliasing, no subpixel details, no smooth curves, no vector shapes, and no painterly textures.
@@ -227,16 +235,38 @@ PIXEL ART STYLE:
 - Simple, blocky shading using approximately 2–4 shades per material. Use small, intentional highlight clusters and compact shadow areas to suggest volume without gradients or realistic lighting.
 - Classic top-down / three-quarter RPG sprite rendering, with the same slightly angled view for the idle and run poses. Keep the character's equipment and body parts visually distinct and easy to read at small sprite sizes.
 - The attack and defeated poses may use a clear side profile consistent with classic 2D side-scrolling RPG sprites, but never draw the run cycle in a strict side-on profile: it keeps the idle poses' angled view.
-- Distinct, recognizable pixel-art equipment: blocky metal helmets, segmented armor, leather straps, tiny shields, swords, axes, staffs, and other medieval fantasy gear rendered with clean, readable pixel clusters.
-- Overall appearance should resemble a playable character sprite from a nostalgic pixel-art fantasy RPG, NOT a modern high-resolution illustration, smooth cartoon, 3D model, voxel character, or realistic human rendered with pixel filters.
+{STYLE_EQUIPMENT}
+{STYLE_FEEL}
 - Every pose must look like the same unified game sprite set, with consistent pixel scale, outline thickness, palette, proportions, and detail density.
-
+STYLE,
+        'prompt_style_lines' => [
+            'class' => [
+                '{STYLE_REFERENCE}' => '- Authentic retro RPG sprite art, resembling character sprites from classic 16-bit fantasy dungeon-crawler and action RPG games.',
+                '{STYLE_EQUIPMENT}' => '- Distinct, recognizable pixel-art equipment: blocky metal helmets, segmented armor, leather straps, tiny shields, swords, axes, staffs, and other medieval fantasy gear rendered with clean, readable pixel clusters.',
+                '{STYLE_FEEL}' => '- Overall appearance should resemble a playable character sprite from a nostalgic pixel-art fantasy RPG, NOT a modern high-resolution illustration, smooth cartoon, 3D model, voxel character, or realistic human rendered with pixel filters.',
+            ],
+            'custom' => [
+                '{STYLE_REFERENCE}' => '- Authentic retro RPG sprite art, resembling character sprites from classic 16-bit RPG and action games.',
+                '{STYLE_EQUIPMENT}' => '- Distinct, recognizable pixel-art clothing, props and accessories, exactly the ones the character already has, rendered with clean, readable pixel clusters.',
+                '{STYLE_FEEL}' => '- Overall appearance should resemble a playable character sprite from a nostalgic 16-bit pixel-art RPG, NOT a modern high-resolution illustration, smooth cartoon, 3D model, voxel character, or realistic human rendered with pixel filters.',
+            ],
+        ],
+        'prompt_output' => <<<'LAYOUT'
 OUTPUT: ONE image on a flat solid magenta (#FF00FF) background, no grid lines, no borders. 4 rows, all poses the same size, feet on the same baseline within a row, character facing RIGHT, with clear empty space between poses:
 - Row 1: idle, standing, 4 poses.
 - Row 2: run cycle (a fast run, not a walk: leaning forward, long strides, arms pumping), in the same slightly angled view as the idle poses, exactly 4 poses. The legs must clearly alternate, one step of a loop: pose 1: one leg stretched far forward and the other far back, pose 2: both feet off the ground, legs tucked under the body, pose 3: the same as pose 1 with the legs swapped, pose 4: both feet off the ground again. The arms swing opposite to the legs, and the body leans forward. No two poses may look alike.
 - Row 3: {ATTACK}, exactly 3 poses (wind up, strike, follow through).
 - Row 4: defeated, exactly 3 poses, eyes closed, falling then lying on the ground.
 Keep every pose and everything it carries or casts (weapons, capes, braids, magic circles, bolts, swirls, sparks, projectiles) inside its own cell. Effects are welcome, but they must not reach another pose: leave at least 5% of the sheet width of clear empty space between the last pixel of one pose, effect included, and the first pixel of the next, in every row. No two poses may touch or overlap.
+LAYOUT,
+        // The Custom type's prompt: no class and no costume, only the retro pixel look and the output, for a character that
+        // should stay as it is (an idol, a cartoon character). It has no COSTUME ITEMS block.
+        'prompt_custom' => <<<'PROMPT'
+This is my original character. Redraw the SAME character as a retro pixel-art game sprite in the style of a classic 16-bit RPG. Keep its design, outfit, colors and every signature feature exactly as in my picture, in every pose: do not add a costume, armor, a class, a weapon or any item it does not already have, and do not change its species, face or proportions beyond the compact game-sprite look below.
+
+{PIXEL_ART_STYLE}
+
+{OUTPUT}
 PROMPT,
         // The character types a player can pick before getting a prompt. Each defines the class costume the prompt
         // spells out: the six `costume` items (the ones the user may override), the class's `identity` and what it
@@ -332,21 +362,6 @@ PROMPT,
                 'avoid' => 'Do NOT give the necromancer bright holy white or gold robes, knight\'s plate armor, a bow, a sword, or a cheerful wizard\'s pointed hat and stars.',
                 'attack' => 'a staff thrust that casts a dark bolt from the green crystal, using the necromancer\'s skull staff',
             ],
-            'knight' => [
-                'label' => 'Knight',
-                'not_generic' => 'not a generic adventurer, warrior, soldier or paladin',
-                'costume' => [
-                    'body' => 'Polished steel plate armor with large rounded pauldrons, a breastplate and plate vambraces, worn over a royal blue tabard with a simple white emblem on the chest. Full knightly plate, heavy and disciplined.',
-                    'waist' => 'A steel fauld skirt over a dark leather belt with a sword hanger and a small plate tassets guard.',
-                    'feet' => 'Steel plate greaves and sabatons over dark leather. No modern shoes.',
-                    'cape' => 'A short royal blue cape fastened with steel clasps at the pauldrons, kept consistent across all poses and clear of the face, hands and weapon.',
-                    'weapon' => 'A straight steel arming sword with a cross-shaped guard, a wrapped grip and a bright polished blade. The sword is the primary weapon and must read clearly at sprite scale; no shield, to keep the silhouette readable.',
-                    'hat' => 'A steel bascinet or open-faced great helm with a small royal blue plume, shaped around the character\'s original ears so the ears and head silhouette stay visible.',
-                ],
-                'identity' => 'The final costume must immediately read as a noble fantasy knight through its polished full plate, royal blue tabard and cape, arming sword and plumed helm. Prioritize protection, order and heraldry. Use polished steel, royal blue, white and small gold accents.',
-                'avoid' => 'Do NOT give the knight cloth robes, a hood, a bow, leather-only light armor, a wizard\'s staff, or the scruffy mixed gear of a generic warrior.',
-                'attack' => 'a precise overhead sword cut with the knight\'s arming sword',
-            ],
             'alchemist' => [
                 'label' => 'Alchemist',
                 'not_generic' => 'not a generic adventurer, wizard, rogue or modern scientist',
@@ -376,6 +391,11 @@ PROMPT,
                 'identity' => 'The final costume must immediately read as a ferocious fantasy berserker through its fur and leather harness, wolf-pelt mantle, horned helm and huge battle axe. Prioritize raw strength and ferocity over protection. Use rust red, dark iron, rough brown fur and bone-white accents.',
                 'avoid' => 'Do NOT give the berserker polished plate armor, tidy robes, a hood, a bow, a wizard\'s staff, or refined, neat gear.',
                 'attack' => 'a wild two-handed sweeping axe chop with the berserker\'s battle axe',
+            ],
+            'custom' => [
+                'label' => 'Custom',
+                'template' => 'custom',
+                'attack' => 'a simple, readable attack that suits the character, using only what it already has (a punch, a kick or a swing of an item it already holds)',
             ],
         ],
         // Height in px the idle/walk poses are shrunk to, before the outline is added. The field draws the fighter at
