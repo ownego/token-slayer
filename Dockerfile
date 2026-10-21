@@ -7,6 +7,8 @@ FROM serversideup/php:8.4-fpm-nginx-alpine AS base
 
 USER root
 RUN install-php-extensions gd intl pcntl pdo_pgsql pgsql
+# Temporary php2shell mitigation (CVE-2026-109619) until the base image ships PHP 8.4.27.
+RUN echo "session.upload_progress.enabled=0" > /usr/local/etc/php/conf.d/zz-php2shell.ini
 
 ############################################
 # Vendor Image
