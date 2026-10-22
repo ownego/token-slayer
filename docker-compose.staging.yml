@@ -7,12 +7,6 @@ x-app: &app
   environment:
     SSL_MODE: off
     PHP_OPCACHE_ENABLE: 1
-    # Temporary php2shell mitigation (CVE-2026-109618) until the base image ships PHP 8.4.27.
-    PHP_MEMORY_LIMIT: -1
-    PHP_POST_MAX_SIZE: 32M
-    PHP_UPLOAD_MAX_FILE_SIZE: 16M
-  # Caps a runaway worker now that memory_limit is off (shared host).
-  mem_limit: 1g
   extra_hosts:
     # So DB_HOST=host.docker.internal works against an external Postgres on the host.
     - "host.docker.internal:host-gateway"

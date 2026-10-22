@@ -3,11 +3,11 @@
 ############################################
 
 # https://serversideup.net/open-source/docker-php/
-FROM serversideup/php:8.4-fpm-nginx-alpine AS base
+FROM serversideup/php:8.4-fpm-nginx-alpine-v5.0.2 AS base
 
 USER root
 RUN install-php-extensions gd intl pcntl pdo_pgsql pgsql
-# Temporary php2shell mitigation (CVE-2026-109619) until the base image ships PHP 8.4.27.
+# No code tracks upload progress; keeping it off closes the confirmed php2shell path (CVE-2026-109619).
 RUN echo "session.upload_progress.enabled=0" > /usr/local/etc/php/conf.d/zz-php2shell.ini
 
 ############################################
