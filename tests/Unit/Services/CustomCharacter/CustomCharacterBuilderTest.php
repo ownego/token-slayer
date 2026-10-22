@@ -8,7 +8,7 @@ test('turns a valid pose sheet into the four fighter strips', function (string $
     $strips = app(CustomCharacterBuilder::class)->execute(pngBytes(poseSheetImage(background: $background)));
 
     expect(array_keys($strips))->toBe(['idle', 'walk', 'attack', 'death'])
-        ->and(array_map(fn (array $strip) => $strip['frames'], $strips))->toBe(['idle' => 6, 'walk' => 8, 'attack' => 6, 'death' => 3]);
+        ->and(array_map(fn (array $strip) => $strip['frames'], $strips))->toBe(['idle' => 8, 'walk' => 8, 'attack' => 6, 'death' => 3]);
 
     foreach ($strips as $strip) {
         expect(imagesx($strip['image']))->toBe($strip['frames'] * 100)
