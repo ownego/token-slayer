@@ -22,7 +22,7 @@ RUN composer install --prefer-dist --no-scripts --no-dev --no-autoloader --ignor
 ############################################
 # Frontend Build (Vite assets)
 ############################################
-FROM node:22-alpine AS frontend
+FROM node:22.23.4-alpine AS frontend
 
 WORKDIR /app
 
