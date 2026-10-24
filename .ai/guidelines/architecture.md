@@ -32,7 +32,8 @@ hooks on dev machines ──POST /api/events──▶ EventController
 | `Services/CustomCharacter/` | Players' own fighters: the pose-sheet pipeline (decode → key → locate → strip stray marks → validate → pixelate → outline → strips), `CustomCharacterStore` (every path and write, on the configured disk), the single-action flow services (`Stage`/`Confirm`/`Discard`/`Rename`/`EquipVersion`/`DeleteVersion`/`Remove`), `CustomCharacterLock`, `CharacterPromptBuilder` — see `.ai/domain/custom-characters.md` |
 | `Services/Attribution/` | Unrecognized/unattached/expiring-account queries + `EventAttributionBackfiller` |
 | `Services/Battlefield/` | Model flair (`ModelFlairResolver`, `AiModelSyncer`) |
-| `Services/Events/` | `ModelUsageParser` / `TurnUsage` — hook `models` map → `events.model` |
+| `Services/Events/` | `ModelUsageParser` / `TurnUsage` — hook `models` map → `events.model`; `IncompleteUsageFlag` (per-user incomplete-usage counter) |
+| `Services/Pricing/` | Event cost: `EventCostCalculator`, `ModelPriceLookup`, `EventCostResolver` (ingest), the LiteLLM feed (`LiteLlmPriceFeed`, `PriceFeedParser`, `ModelPriceSyncer`), `MissingModelCostFiller` — see `.ai/domain/token-tracking.md` |
 | `Services/Provisioning/`, `Connect/`, `Contracts/` | Device grant resolution/backfills; connect-flow value objects; provider contracts (`UsageProberContract`, `GrantRevokerContract`, `AccountDisconnecterContract`) |
 | `Services/GitHub/`, `Client/` | slayer-cli release relay (`GitHubClient`, `ReleaseResolver`, `CachedLatestVersion`); `ReleaseArtifacts` (rendered install scripts + digests) |
 | `Services/Recap/`, `Slack/`, `Roles/` | Scheduled Slack recap; Slack display-name fetch; Shield default-role permissions |

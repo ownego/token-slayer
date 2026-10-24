@@ -31,6 +31,8 @@ An **Account** is one org-owned AI subscription, identified by its login email a
 - `tracked`: setup confirmed. Shown as **"Verified"**.
 - `pending`: an admin provisioned a grant and is waiting for the user's machine to confirm. Shown as **"Pending setup"**.
 
+On the dashboard's Fleet quota card the member list marks Pending (blue dot) and Untracked (red dot); an amber dot marks a member whose hook sends incomplete usage (`users.incomplete_events > 0`, tooltip from `IncompleteUsageReason`; see `token-tracking.md`, *Event cost*).
+
 ## Attribution (which account served this usage?)
 
 Verified constraints (2026-07-10, do not re-litigate):
@@ -106,7 +108,7 @@ The server holds an **independent OAuth grant per account**, so it never collide
 | `event-attribution:backfill {--org=}` | manual | `EventAttributionBackfiller`: in-place `account_id` fill for org-beacon events |
 | `grant-session-expiry:backfill` | manual | `GrantSessionExpiryBackfiller` |
 
-Other schedules (not accounts): `fighters:sweep-idle` every minute, `client-artifacts:refresh` every 5 min, `battlefield:recap {daily|weekly|monthly|yearly}` at 09:00 Asia/Ho_Chi_Minh.
+Other schedules (not accounts): `model-prices:sync` daily and `model-prices:sync --if-missing` hourly (see `token-tracking.md`, *Event cost*), `fighters:sweep-idle` every minute, `client-artifacts:refresh` every 5 min, `battlefield:recap {daily|weekly|monthly|yearly}` at 09:00 Asia/Ho_Chi_Minh.
 
 **Recipe: add a scheduled account job.** Use a thin command with `#[Signature('<domain-noun>:<verb>')]` + `#[Description]` in `app/Console/Commands/` that iterates and delegates each item to a Service. Catch per item with `report()` so one account can't stop the batch (see `ProbeAccountUsage`). Add a `Schedule::command(...)` entry with `withoutOverlapping()` (it calls external APIs) and a test in `tests/Feature/Console/`. Fake HTTP with `fakeAnthropic()` / `Http::fake`.
 
