@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Cache;
  * Finds the price row to cost an event with: the current one for live
  * ingest (cached), or the one in force on a past day for stored events.
  */
-final class ModelPriceLookup
+class ModelPriceLookup
 {
     /**
      * Cached stand-in for "this model has no price", since a cached `null`
