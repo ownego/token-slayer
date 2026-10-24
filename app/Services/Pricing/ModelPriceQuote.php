@@ -31,6 +31,17 @@ final readonly class ModelPriceQuote
     ) {}
 
     /**
+     * The same price, to be stored under another model id.
+     *
+     * @param  string  $model  the model id to store it under
+     * @return self
+     */
+    public function withModel(string $model): self
+    {
+        return new self($model, $this->provider, $this->input, $this->output, $this->cacheRead, $this->cacheWrite5m, $this->cacheWrite1h);
+    }
+
+    /**
      * Whether a stored row already carries exactly this price.
      *
      * @param  ModelPrice  $row  the model's latest stored price
