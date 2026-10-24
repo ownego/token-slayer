@@ -18,6 +18,7 @@ use App\Services\Accounts\AccountMembershipRecorder;
 use App\Services\Battlefield\ModelFlairResolver;
 use App\Services\Client\ReleaseArtifacts;
 use App\Services\DamageService;
+use App\Services\Events\IncompleteUsageFlag;
 use App\Services\Events\ModelUsageParser;
 use App\Services\Events\TurnUsage;
 use App\Services\FighterChargingCache;
@@ -64,6 +65,7 @@ class EventController extends Controller
         private SubagentCountCache $subagentCounts,
         private EventCostResolver $costs,
         private MissingModelRecorder $missingModels,
+        private IncompleteUsageFlag $incompleteUsage,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -87,10 +89,14 @@ class EventController extends Controller
         $model = $usage !== null ? $this->models->primaryModel($usage->modelTokens) : null;
         $pricedUsage = $usage !== null ? PricedUsage::fromTurn($provider, $model, $usage, $payload['session_id'] ?? null) : null;
 
+        $flaggedUsage = $tokens > 0 ? $pricedUsage : null;
+        $incompleteUsageAttributes = $this->incompleteUsage->attributesFor($user, $flaggedUsage, $accountId, $hookVersion);
+
         $user->forceFill([
             'last_event_at' => now(),
             'client_version' => $clientVersion ?? $user->client_version,
             'hook_version' => $hookVersion ?? $user->hook_version,
+            ...$incompleteUsageAttributes,
         ])->save();
 
         if ($eventType === 'user-prompt-submit' || $eventType === 'pre-invocation') {

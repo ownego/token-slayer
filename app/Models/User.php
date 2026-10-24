@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\FighterCharacter;
+use App\Enums\IncompleteUsageReason;
 use App\Enums\MembershipStatus;
 use App\Services\CustomCharacter\CustomCharacterStore;
 use App\Services\Roles\DefaultRolePermissions;
@@ -43,6 +44,8 @@ class User extends Authenticatable implements FilamentUser
         'last_event_at',
         'client_version',
         'hook_version',
+        'incomplete_events',
+        'incomplete_reason',
     ];
 
     /**
@@ -57,6 +60,8 @@ class User extends Authenticatable implements FilamentUser
             'password' => 'hashed',
             'last_event_at' => 'datetime',
             'equipped_character' => FighterCharacter::class,
+            'incomplete_events' => 'integer',
+            'incomplete_reason' => IncompleteUsageReason::class,
         ];
     }
 
