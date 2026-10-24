@@ -36,6 +36,6 @@ it('says which user columns a turn changes', function (int $counter, ?PricedUsag
 ]);
 
 it('labels each reason for the account card tooltip', function () {
-    expect(IncompleteUsageReason::OldHook->getLabel())->toBe('Old hook, reinstall needed')
+    expect(IncompleteUsageReason::OldHook->getLabel())->toBe('Old hook, run tok update')
         ->and(IncompleteUsageReason::ModifiedHook->getLabel())->toBe('Modified hook or unknown client');
 });

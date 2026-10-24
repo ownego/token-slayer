@@ -119,7 +119,7 @@ test('the fleet quota overview reveals an untracked contributor when show_untrac
         ->assertSee('4,200');
 });
 
-test('the fleet quota card marks a pending member with a distinct dot from an untracked one', function () {
+test('the fleet quota card marks a pending member with a distinct dot from an untracked one, each with a hover tooltip', function () {
     $account = Account::factory()->create(['email' => 'team@example.com']);
     $pending = User::factory()->create(['slack_handle' => 'awaiting']);
     $untracked = User::factory()->create(['slack_handle' => 'departed']);
@@ -129,8 +129,10 @@ test('the fleet quota card marks a pending member with a distinct dot from an un
 
     Livewire::test(FleetQuotaOverview::class, ['pageFilters' => ['show_untracked' => true]])
         ->assertOk()
-        ->assertSee('title="Pending"', false)
-        ->assertSee('title="Untracked"', false);
+        ->assertSee("content: 'Pending'", false)
+        ->assertSee("content: 'Untracked'", false)
+        ->assertSee('aria-label="Untracked"', false)
+        ->assertDontSee('title="Pending"', false);
 });
 
 test('the fleet quota overview shows a fleet-wide total usage across accounts', function () {
@@ -221,4 +223,18 @@ test('the fleet quota card shows account and member amounts in dollars in cost m
         ->assertOk()
         ->assertSee('$2.50')
         ->assertDontSee('2,500,000');
+});
+
+test('the fleet quota card marks a member with incomplete usage with a dot whose hover tooltip names the reason', function () {
+    // A native title tooltip on a 5px glyph needs a still, pixel-exact hover
+    // for about a second, so the reason was effectively never seen.
+    $account = Account::factory()->create();
+    $member = User::factory()->create(['slack_handle' => 'proxyuser', 'incomplete_events' => 3, 'incomplete_reason' => 'modified_hook']);
+    $account->users()->attach($member->id, ['status' => MembershipStatus::Tracked->value]);
+
+    Livewire::test(FleetQuotaOverview::class)
+        ->assertOk()
+        ->assertSee("x-tooltip=\"{ content: 'Modified hook or unknown client'", false)
+        ->assertSee('aria-label="Modified hook or unknown client"', false)
+        ->assertDontSee('title="Modified hook or unknown client"', false);
 });

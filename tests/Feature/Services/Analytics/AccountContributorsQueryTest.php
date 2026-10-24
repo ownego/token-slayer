@@ -252,3 +252,17 @@ it('shows tracked members alongside event contributors when across-accounts is o
         ->and($on[1]['user_id'])->toBe($contributor->id)
         ->and($on[1]['tokens'])->toBe(100);
 });
+
+test('labels a member whose hook sends incomplete usage, and only while the counter is above zero', function () {
+    $account = Account::factory()->create();
+    $flagged = User::factory()->create(['incomplete_events' => 2, 'incomplete_reason' => 'old_hook']);
+    $cleared = User::factory()->create(['incomplete_events' => 0, 'incomplete_reason' => null]);
+    $account->users()->attach($flagged->id, ['status' => MembershipStatus::Tracked->value]);
+    $account->users()->attach($cleared->id, ['status' => MembershipStatus::Tracked->value]);
+    Event::factory()->for($flagged)->create(['account_id' => $account->id, 'tokens' => 100]);
+
+    $labels = collect((new AccountContributorsQuery)->get()[$account->id])->pluck('incomplete_label', 'user_id');
+
+    expect($labels[$flagged->id])->toBe('Old hook, run tok update')
+        ->and($labels[$cleared->id])->toBeNull();
+});

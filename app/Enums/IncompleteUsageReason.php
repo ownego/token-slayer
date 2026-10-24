@@ -29,7 +29,7 @@ enum IncompleteUsageReason: string implements HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::OldHook => 'Old hook, reinstall needed',
+            self::OldHook => 'Old hook, run tok update',
             self::ModifiedHook => 'Modified hook or unknown client',
         };
     }
