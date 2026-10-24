@@ -16,7 +16,7 @@
                         @for ($h = 0; $h < 24; $h++)
                             @php($tokens = $cells["{$wd}:{$h}"]['tokens'] ?? 0)
                             @php($opacity = $tokens > 0 ? max(0.12, $tokens / $max) : 0)
-                            @php($cellInfo = $label.' '.sprintf('%02d', $h).':00 — '.number_format($tokens).' tokens')
+                            @php($cellInfo = $label.' '.sprintf('%02d', $h).':00 — '.$usageFilters->formatAmount($tokens).($usageFilters->isCostMode() ? '' : ' tokens'))
                             <div
                                 title="{{ $cellInfo }}"
                                 x-on:mouseenter="info = @js($cellInfo)"

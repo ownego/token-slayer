@@ -71,6 +71,13 @@ final class UsageFilters
     public const int ALL_TIME_FALLBACK_YEARS = 5;
 
     /**
+     * Micro-dollars in one dollar; event costs are stored in micro-dollars.
+     *
+     * @var int
+     */
+    private const int MICRO_USD_PER_USD = 1_000_000;
+
+    /**
      * The time bucket granularity for series queries: `'hour'`, `'day'`,
      * `'week'`, or `'month'`.
      *
@@ -91,9 +98,8 @@ final class UsageFilters
      *                          recorded model, or null for all
      * @param  string  $tokenMode  `'output'` (default, what damage is dealt
      *                             from), `'total'` (output + input + cache),
-     *                             or `'quota'` (total minus cache_read --
-     *                             the portion that actually counts against a
-     *                             rate-limit window)
+     *                             or `'cost'` (list-price USD, stored as
+     *                             micro-dollars per event)
      */
     public function __construct(
         public readonly Carbon $from,
@@ -159,7 +165,7 @@ final class UsageFilters
             ($filters['provider'] ?? null) ?: null,
             self::intOrNull($filters['user_id'] ?? null),
             ($filters['model'] ?? null) ?: null,
-            in_array($filters['token_mode'] ?? null, ['total', 'quota'], true) ? $filters['token_mode'] : 'output',
+            in_array($filters['token_mode'] ?? null, ['total', 'cost'], true) ? $filters['token_mode'] : 'output',
         );
     }
 
@@ -167,11 +173,10 @@ final class UsageFilters
      * The SQL fragment every analytics query sums/orders by, chosen by
      * {@see self::$tokenMode}. `output` reads the plain column (identical to
      * pre-filter behavior, and to what {@see DamageService} deals damage
-     * from); `total` adds input and cache tokens back in for analytics only;
-     * `quota` adds fresh input and cache-write tokens back in but leaves
-     * `cache_read_input_tokens` out, since Anthropic's rate limits (and,
-     * by report, OpenAI's) don't count cache reads the way they count a
-     * fresh input or output token. Never itself passed to a query builder's
+     * from); `total` adds input and cache tokens back in for analytics only,
+     * except a Codex event's cache reads, which Codex already counts inside
+     * `input_tokens`; `cost` sums the stored micro-dollar cost, an unpriced
+     * event counting as zero. Never itself passed to a query builder's
      * `sum()`/`orderBy()` (those would try to quote it as a single
      * identifier) -- callers wrap it in `DB::raw()` or interpolate it into a
      * `selectRaw`/`orderByRaw` string.
@@ -181,10 +186,55 @@ final class UsageFilters
     public function tokenColumnExpression(): string
     {
         return match ($this->tokenMode) {
-            'total' => '(events.tokens + events.input_tokens + events.cache_creation_input_tokens + events.cache_read_input_tokens)',
-            'quota' => '(events.tokens + events.input_tokens + events.cache_creation_input_tokens)',
+            'total' => "(events.tokens + events.input_tokens + events.cache_creation_input_tokens + CASE WHEN events.provider = 'codex' THEN 0 ELSE events.cache_read_input_tokens END)",
+            'cost' => 'COALESCE(events.cost_micro_usd, 0)',
             default => 'events.tokens',
         };
+    }
+
+    /**
+     * Whether amounts are micro-dollars rather than token counts.
+     *
+     * @return bool
+     */
+    public function isCostMode(): bool
+    {
+        return $this->tokenMode === 'cost';
+    }
+
+    /**
+     * What the summed amount is called on charts.
+     *
+     * @return string
+     */
+    public function amountLabel(): string
+    {
+        return $this->isCostMode() ? 'Cost (USD)' : 'Tokens';
+    }
+
+    /**
+     * A summed amount as a chart value: dollars rounded to cents in cost
+     * mode, the token count otherwise.
+     *
+     * @param  int  $amount  a value summed by {@see self::tokenColumnExpression()}
+     * @return int|float
+     */
+    public function displayAmount(int $amount): int|float
+    {
+        return $this->isCostMode() ? round($amount / self::MICRO_USD_PER_USD, 2) : $amount;
+    }
+
+    /**
+     * A summed amount as text: `$1,234.56` in cost mode, `1,234` otherwise.
+     *
+     * @param  int  $amount  a value summed by {@see self::tokenColumnExpression()}
+     * @return string
+     */
+    public function formatAmount(int $amount): string
+    {
+        return $this->isCostMode()
+            ? '$'.number_format($amount / self::MICRO_USD_PER_USD, 2)
+            : number_format($amount);
     }
 
     /**

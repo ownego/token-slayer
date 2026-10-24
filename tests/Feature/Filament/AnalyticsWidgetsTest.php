@@ -163,3 +163,62 @@ test('the fleet quota overview honors the total-across-accounts toggle', functio
 test('the account quota history chart renders without a record set', function () {
     Livewire::test(AccountQuotaHistoryChart::class)->assertOk();
 });
+
+/**
+ * A widget's Chart.js data, read through its protected getter.
+ *
+ * @param  object  $widget  the mounted widget instance
+ * @return array<string, mixed>
+ */
+function chartData(object $widget): array
+{
+    $getData = new ReflectionMethod($widget, 'getData');
+    $getData->setAccessible(true);
+
+    return $getData->invoke($widget);
+}
+
+test('the chart widgets plot dollars under a cost label in cost mode', function (string $widget) {
+    $user = User::factory()->create(['slack_handle' => 'ada']);
+    $account = Account::factory()->create();
+    Event::factory()->for($user)->create(['provider' => 'claude-code', 'account_id' => $account->id, 'tokens' => 500, 'cost_micro_usd' => 1_234_560, 'created_at' => now()->subDay()]);
+
+    $data = chartData(Livewire::test($widget, ['pageFilters' => ['range' => '7d', 'token_mode' => 'cost']])->instance());
+    $dataset = $data['datasets'][0];
+
+    expect($dataset['data'])->toContain(1.23);
+})->with([
+    'top users' => [TopUsersLeaderboard::class],
+    'top accounts' => [TopAccountsLeaderboard::class],
+    'token volume' => [TokenVolumeChart::class],
+]);
+
+test('the leaderboards name their dataset by the amount in cost mode', function (string $widget) {
+    $data = chartData(Livewire::test($widget, ['pageFilters' => ['range' => '7d', 'token_mode' => 'cost']])->instance());
+
+    expect($data['datasets'][0]['label'])->toBe('Cost (USD)');
+})->with([
+    'top users' => [TopUsersLeaderboard::class],
+    'top accounts' => [TopAccountsLeaderboard::class],
+]);
+
+test('the activity heatmap shows dollars in cost mode', function () {
+    $user = User::factory()->create();
+    Event::factory()->for($user)->create(['tokens' => 500, 'cost_micro_usd' => 1_234_560, 'created_at' => now()->subHour()]);
+
+    Livewire::test(ActivityHeatmap::class, ['pageFilters' => ['range' => '7d', 'token_mode' => 'cost']])
+        ->assertSee('$1.23')
+        ->assertDontSee('1,234,560 tokens');
+});
+
+test('the fleet quota card shows account and member amounts in dollars in cost mode', function () {
+    $account = Account::factory()->create();
+    $user = User::factory()->create(['slack_handle' => 'nova']);
+    $account->users()->attach($user->id, ['status' => MembershipStatus::Tracked->value]);
+    Event::factory()->for($user)->create(['account_id' => $account->id, 'tokens' => 100, 'cost_micro_usd' => 2_500_000, 'created_at' => now()]);
+
+    Livewire::test(FleetQuotaOverview::class, ['pageFilters' => ['range' => 'all', 'token_mode' => 'cost']])
+        ->assertOk()
+        ->assertSee('$2.50')
+        ->assertDontSee('2,500,000');
+});

@@ -74,16 +74,18 @@ test('defaults the token mode to output when the filter form omits it', function
         ->and($f->tokenColumnExpression())->toBe('events.tokens');
 });
 
-test('carries the total token mode through and builds the sum-of-columns expression', function () {
+test('carries the total token mode through and leaves codex cache reads out of the sum', function () {
+    // Codex reports cached input inside input_tokens, so adding its
+    // cache_read_input_tokens again would count those tokens twice.
     $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'total']);
 
     expect($f->tokenMode)->toBe('total')
         ->and($f->tokenColumnExpression())->toBe(
-            '(events.tokens + events.input_tokens + events.cache_creation_input_tokens + events.cache_read_input_tokens)'
+            "(events.tokens + events.input_tokens + events.cache_creation_input_tokens + CASE WHEN events.provider = 'codex' THEN 0 ELSE events.cache_read_input_tokens END)"
         );
 });
 
-test('any token mode value other than total or quota falls back to output', function () {
+test('any token mode value other than total or cost falls back to output', function () {
     // A stray/unexpected value on the wire must never build an ad-hoc SQL
     // fragment -- fall back to the safe, always-correct default instead.
     $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'garbage']);
@@ -91,15 +93,31 @@ test('any token mode value other than total or quota falls back to output', func
     expect($f->tokenMode)->toBe('output');
 });
 
-test('carries the quota token mode through and excludes cache_read from the expression', function () {
-    // cache_read_input_tokens is the one field that does not count against a
-    // rate-limit window (Anthropic's own docs: "only uncached input tokens
-    // count toward your ITPM rate limits") -- "quota" mode is output + fresh
-    // input + cache_creation, deliberately leaving cache_read out.
+test('the removed quota mode falls back to output for sessions that still carry it', function () {
+    // Filament persists the filter form to the session, so an admin who last
+    // picked Quota still sends it after the mode is gone.
     $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'quota']);
 
-    expect($f->tokenMode)->toBe('quota')
-        ->and($f->tokenColumnExpression())->toBe(
-            '(events.tokens + events.input_tokens + events.cache_creation_input_tokens)'
-        );
+    expect($f->tokenMode)->toBe('output')
+        ->and($f->tokenColumnExpression())->toBe('events.tokens');
+});
+
+test('cost mode sums the stored micro-dollar cost, an unpriced event counting as zero', function () {
+    $f = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'cost']);
+
+    expect($f->tokenMode)->toBe('cost')
+        ->and($f->isCostMode())->toBeTrue()
+        ->and($f->tokenColumnExpression())->toBe('COALESCE(events.cost_micro_usd, 0)');
+});
+
+test('formats amounts as dollars in cost mode and as token counts otherwise', function () {
+    $cost = UsageFilters::fromPageFilters(['range' => '7d', 'token_mode' => 'cost']);
+    $output = UsageFilters::fromPageFilters(['range' => '7d']);
+
+    expect($cost->formatAmount(1_234_560_000))->toBe('$1,234.56')
+        ->and($cost->displayAmount(1_234_560_000))->toBe(1234.56)
+        ->and($cost->amountLabel())->toBe('Cost (USD)')
+        ->and($output->formatAmount(1_234_560_000))->toBe('1,234,560,000')
+        ->and($output->displayAmount(1_234_560_000))->toBe(1_234_560_000)
+        ->and($output->amountLabel())->toBe('Tokens');
 });

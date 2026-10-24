@@ -62,30 +62,31 @@ test('every analytics query sums output plus input and cache tokens in total mod
         ->and(collect((new ActivityHeatmapQuery)->get($filters))->sum('tokens'))->toBe($expectedTotal);
 });
 
-test('every analytics query sums output plus input and cache-write but not cache-read in quota mode', function () {
-    // "Quota" excludes cache_read_input_tokens on purpose: per Anthropic's own
-    // rate-limit docs, only uncached input tokens (fresh input +
-    // cache-write) count toward the ITPM window -- a cache-heavy turn should
-    // not look expensive against quota even though its raw total is huge.
+test('every analytics query sums the stored cost in cost mode, an unpriced event counting as zero', function () {
     $user = User::factory()->create();
-    Event::factory()->for($user)->create([
-        'model' => 'claude-sonnet-5',
-        'provider' => 'claude-code',
-        'tokens' => 335,
-        'input_tokens' => 2,
-        'cache_creation_input_tokens' => 791,
-        'cache_read_input_tokens' => 140_177,
-    ]);
-    $expectedQuota = 335 + 2 + 791;
+    Event::factory()->for($user)->create(['model' => 'claude-sonnet-5', 'provider' => 'claude-code', 'cost_micro_usd' => 92_000]);
+    Event::factory()->for($user)->create(['model' => 'claude-sonnet-5', 'provider' => 'claude-code', 'cost_micro_usd' => null]);
 
-    $filters = UsageFilters::fromPageFilters(['range' => 'all', 'token_mode' => 'quota']);
+    $filters = UsageFilters::fromPageFilters(['range' => 'all', 'token_mode' => 'cost']);
 
-    expect((new TopUsersQuery)->get($filters, 10)[0]['tokens'])->toBe($expectedQuota)
-        ->and((new TopAccountsQuery)->get($filters, 10)[0]['tokens'])->toBe($expectedQuota)
-        ->and((new TokenVolumeQuery)->get($filters)[0]['tokens'])->toBe($expectedQuota)
-        ->and((new TokensByModelQuery)->get($filters)[0]['tokens'])->toBe($expectedQuota)
-        ->and((new ModelContributorsQuery)->get($filters, 10)[0]['tokens'])->toBe($expectedQuota)
-        ->and(collect((new ActivityHeatmapQuery)->get($filters))->sum('tokens'))->toBe($expectedQuota);
+    expect((new TopUsersQuery)->get($filters, 10)[0]['tokens'])->toBe(92_000)
+        ->and((new TopAccountsQuery)->get($filters, 10)[0]['tokens'])->toBe(92_000)
+        ->and((new TokenVolumeQuery)->get($filters)[0]['tokens'])->toBe(92_000)
+        ->and((new TokensByModelQuery)->get($filters)[0]['tokens'])->toBe(92_000)
+        ->and((new ModelContributorsQuery)->get($filters, 10)[0]['tokens'])->toBe(92_000)
+        ->and(collect((new ActivityHeatmapQuery)->get($filters))->sum('tokens'))->toBe(92_000);
+});
+
+test('total mode counts a codex cache read once, a claude cache read on top of input', function () {
+    $user = User::factory()->create();
+    Event::factory()->for($user)->create(['provider' => 'codex', 'tokens' => 10, 'input_tokens' => 100, 'cache_creation_input_tokens' => 0, 'cache_read_input_tokens' => 80]);
+    Event::factory()->for($user)->create(['provider' => 'claude-code', 'tokens' => 10, 'input_tokens' => 100, 'cache_creation_input_tokens' => 0, 'cache_read_input_tokens' => 80]);
+
+    $filters = UsageFilters::fromPageFilters(['range' => 'all', 'token_mode' => 'total']);
+    $byProvider = collect((new TokenVolumeQuery)->get($filters))->pluck('tokens', 'provider');
+
+    expect($byProvider['codex'])->toBe(110)
+        ->and($byProvider['claude-code'])->toBe(190);
 });
 
 test('the unknown-model share also honors total mode, not just the per-model breakdown', function () {

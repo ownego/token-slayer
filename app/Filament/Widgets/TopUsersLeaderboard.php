@@ -63,12 +63,13 @@ class TopUsersLeaderboard extends ChartWidget
      */
     protected function getData(): array
     {
-        $rows = app(TopUsersQuery::class)->get(UsageFilters::fromPageFilters($this->filters ?? []), self::LIMIT);
+        $filters = UsageFilters::fromPageFilters($this->filters ?? []);
+        $rows = app(TopUsersQuery::class)->get($filters, self::LIMIT);
 
         return [
             'datasets' => [[
-                'label' => 'Tokens',
-                'data' => collect($rows)->pluck('tokens')->all(),
+                'label' => $filters->amountLabel(),
+                'data' => collect($rows)->map(fn (array $row): int|float => $filters->displayAmount($row['tokens']))->all(),
                 'backgroundColor' => '#d97706',
             ]],
             'labels' => collect($rows)->pluck('handle')->all(),

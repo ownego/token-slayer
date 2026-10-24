@@ -5,12 +5,15 @@
     Optionally $members = a list of the account's contributors, each
     ['handle', 'avatar_url', 'status', 'tokens']; omitted (empty) on the
     single-account gauge, populated on the Fleet Quota dashboard card.
+    Optionally $usageFilters = the dashboard's UsageFilters, which formats
+    amounts as tokens or dollars; plain token counts when absent.
     Layout/colour are inline so the card renders identically inside the
     Filament panel regardless of which utility classes the panel ships.
 --}}
 @php
     $members = $members ?? [];
     $accountTotal = $accountTotal ?? null;
+    $formatAmount = fn (int $amount): string => isset($usageFilters) ? $usageFilters->formatAmount($amount) : number_format($amount);
     $nearCap = $g['near_cap'];
     $cardStyle = $nearCap
         ? 'border:1px solid rgba(220,38,38,.55); background:rgba(220,38,38,.06);'
@@ -51,7 +54,7 @@
 
     @if ($accountTotal !== null)
         <div style="margin-top:.3rem; font-size:.72rem; opacity:.7;">
-            usage <span style="font-weight:600; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:1;">{{ number_format($accountTotal) }}</span>
+            usage <span style="font-weight:600; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:1;">{{ $formatAmount($accountTotal) }}</span>
         </div>
     @endif
 
@@ -120,7 +123,7 @@
                             <span title="Untracked" style="flex:none; font-size:.55rem; color:#ef4444;">●</span>
                         @endif
                     </span>
-                    <span style="flex:none; font-size:.68rem; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:.8;">{{ number_format($m['tokens']) }}</span>
+                    <span style="flex:none; font-size:.68rem; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:.8;">{{ $formatAmount($m['tokens']) }}</span>
                 </div>
             @endforeach
         </div>

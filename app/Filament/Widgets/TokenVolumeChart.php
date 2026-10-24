@@ -69,17 +69,18 @@ class TokenVolumeChart extends ChartWidget
      */
     protected function getData(): array
     {
-        $rows = app(TokenVolumeQuery::class)->get(UsageFilters::fromPageFilters($this->filters ?? []));
+        $filters = UsageFilters::fromPageFilters($this->filters ?? []);
+        $rows = app(TokenVolumeQuery::class)->get($filters);
 
         $buckets = collect($rows)->pluck('bucket')->unique()->sort()->values();
         $byProvider = collect($rows)->groupBy('provider');
 
-        $datasets = $byProvider->map(function ($providerRows, string $provider) use ($buckets): array {
+        $datasets = $byProvider->map(function ($providerRows, string $provider) use ($buckets, $filters): array {
             $keyed = collect($providerRows)->keyBy('bucket');
 
             return [
                 'label' => $provider,
-                'data' => $buckets->map(fn (string $bucket): int => (int) ($keyed[$bucket]['tokens'] ?? 0))->all(),
+                'data' => $buckets->map(fn (string $bucket): int|float => $filters->displayAmount((int) ($keyed[$bucket]['tokens'] ?? 0)))->all(),
                 'borderColor' => self::PROVIDER_COLORS[$provider] ?? '#6b7280',
                 'backgroundColor' => (self::PROVIDER_COLORS[$provider] ?? '#6b7280').'33',
                 'fill' => true,

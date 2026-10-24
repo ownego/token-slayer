@@ -64,12 +64,13 @@ class TopAccountsLeaderboard extends ChartWidget
      */
     protected function getData(): array
     {
-        $rows = app(TopAccountsQuery::class)->get(UsageFilters::fromPageFilters($this->filters ?? []), self::LIMIT);
+        $filters = UsageFilters::fromPageFilters($this->filters ?? []);
+        $rows = app(TopAccountsQuery::class)->get($filters, self::LIMIT);
 
         return [
             'datasets' => [[
-                'label' => 'Tokens',
-                'data' => collect($rows)->pluck('tokens')->all(),
+                'label' => $filters->amountLabel(),
+                'data' => collect($rows)->map(fn (array $row): int|float => $filters->displayAmount($row['tokens']))->all(),
                 'backgroundColor' => '#2563eb',
             ]],
             'labels' => collect($rows)->pluck('email')->all(),

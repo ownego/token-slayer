@@ -51,7 +51,8 @@ class ActivityHeatmap extends Widget
      */
     protected function getViewData(): array
     {
-        $grid = app(ActivityHeatmapQuery::class)->get(UsageFilters::fromPageFilters($this->filters ?? []));
+        $filters = UsageFilters::fromPageFilters($this->filters ?? []);
+        $grid = app(ActivityHeatmapQuery::class)->get($filters);
         $max = collect($grid)->max('tokens') ?: 1;
 
         // Index by "weekday:hour" for O(1) lookup in the view.
@@ -59,6 +60,7 @@ class ActivityHeatmap extends Widget
 
         return [
             'cells' => $cells,
+            'usageFilters' => $filters,
             'max' => $max,
             'weekdays' => [1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 0 => 'Sun'],
         ];
