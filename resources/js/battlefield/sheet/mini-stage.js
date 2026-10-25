@@ -3,6 +3,8 @@
 // charge colours (grinding sparks off its heel), with one minion and one
 // crew Clawd per subagent the viewer has working right now.
 import { BusEvent } from '../constants.js';
+import { FIGHTER_TYPES } from '../config/fighters.js';
+import { chargeAnim } from '../fighter/charge-anim.js';
 import { BOX } from './sheet-roster.js';
 import { BY_KEY, nameOf, paint, paintCharge, standOn } from './sprite-strip.js';
 import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
@@ -31,6 +33,19 @@ const FLOOR = 26;
  * @type {number}
  */
 const BODY_PX = 84;
+
+/**
+ * The scale the stage draws a body `h` px tall at: a whole number from 3 to 5
+ * for the small roster bodies (crisp pixels), and for a body too tall for
+ * three times (the 50-61 px heroes) the exact scale to BODY_PX.
+ *
+ * @param {number} h The body's height in its 100 px frame.
+ * @return {number}
+ */
+function stageScale(h) {
+  const fit = BODY_PX / h;
+  return fit >= 3 ? Math.min(5, Math.round(fit)) : fit;
+}
 
 /**
  * Minion spots: one per live subagent, capped at the spots we have, the
@@ -209,14 +224,17 @@ export function miniStage(equipped, total, me, custom = null) {
       }
     },
     /**
-     * Runs the equipped fighter on the stage, framed like the Character stage.
+     * Runs the equipped fighter on the stage, framed like the Character stage:
+     * its charge animation, as on the field while its player works (a flier
+     * hovers on its idle, a custom fighter runs).
      *
      * @return {void}
      */
     paintFighter() {
       const [, y0, , y1] = BOX[this.key];
-      paint(this.$refs.fighter, this.key, 'walk'); // runs, like a charging fighter in battle
-      standOn(this.$refs.fighter, this.key, Math.max(3, Math.min(5, Math.round(BODY_PX / (y1 - y0)))), FLOOR);
+      const ftype = FIGHTER_TYPES.find(ft => ft.key === this.key);
+      paint(this.$refs.fighter, this.key, ftype ? chargeAnim(ftype) : 'walk');
+      standOn(this.$refs.fighter, this.key, stageScale(y1 - y0), FLOOR);
       paintCharge(this.$el.closest('#tab-profile') || this.$el, this.key);
     },
     /**

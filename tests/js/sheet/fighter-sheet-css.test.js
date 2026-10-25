@@ -189,3 +189,15 @@ test('every control whose label changes at runtime reserves the width of its lon
     expect(joined, `${selector} has no min-width`).toContain(selector);
   }
 });
+
+test('the roster filter chips wrap onto a second row instead of clipping the last one', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  let wrap = null;
+  root.walkDecls('flex-wrap', d => {
+    if (d.parent.selector === '.fs .chips' && d.parent.parent.type === 'root') {
+      wrap = d.value;
+    }
+  });
+
+  expect(wrap).toBe('wrap');
+});

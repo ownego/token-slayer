@@ -110,3 +110,56 @@ describe('miniStage with a custom fighter', () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 });
+
+describe('miniStage painting the equipped fighter', () => {
+  /**
+   * Paints a stage for `key` into a detached profile tab and returns the fighter's strip.
+   *
+   * @param {string} key
+   * @return {string} The strip the fighter element shows.
+   */
+  function stripOf(key) {
+    const tab = document.createElement('div');
+    tab.id = 'tab-profile';
+    const fighter = document.createElement('span');
+    tab.appendChild(fighter);
+    const stage = miniStage(key, 0, 7);
+    Object.assign(stage, { $refs: { fighter }, $el: fighter });
+    stage.paintFighter();
+    return fighter.style.backgroundImage;
+  }
+
+  test.each(['iron-man', 'superman'])('%s hovers on its idle, as fliers do on the field while their player works', key => {
+    expect(stripOf(key)).toContain(`${key}-idle`);
+  });
+
+  test('a fighter on foot runs', () => {
+    expect(stripOf('captain-america')).toContain('captain-america-walk');
+  });
+});
+
+describe('miniStage sizing the equipped fighter', () => {
+  /**
+   * The body height, in px, the stage draws `key` at.
+   *
+   * @param {string} key
+   * @return {number}
+   */
+  function bodyPx(key) {
+    const fighter = document.createElement('span');
+    const stage = miniStage(key, 0, 7);
+    Object.assign(stage, { $refs: { fighter }, $el: fighter });
+    stage.paintFighter();
+    const [, y0, , y1] = BOX[key];
+    return Number(fighter.style.scale) * (y1 - y0);
+  }
+
+  test.each(['captain-america', 'batman'])('draws the tall %s at the stage\'s body height, not three times its own', key => {
+    expect(bodyPx(key)).toBeCloseTo(84, 0);
+  });
+
+  test('keeps a roster fighter on its whole-pixel scale', () => {
+    const [, y0, , y1] = BOX.soldier;
+    expect(bodyPx('soldier')).toBe(5 * (y1 - y0));
+  });
+});

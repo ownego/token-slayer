@@ -13,6 +13,7 @@
                 <button class="chip" aria-pressed="false" data-type="ARROW">Arrow</button>
                 <button class="chip" aria-pressed="false" data-type="BLAST">Blast</button>
                 <button class="chip" aria-pressed="false" data-type="SHURIKEN">Shuriken</button>
+                <button class="chip" aria-pressed="false" data-type="HERO">Heroes</button>
             </div>
             <div class="roster-scroll" id="roster-scroll">
                 <div class="roster-grid" id="roster-grid" role="listbox" aria-label="Characters"></div>

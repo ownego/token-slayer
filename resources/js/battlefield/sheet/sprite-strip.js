@@ -156,6 +156,21 @@ export function paint(el, key, anim, opts = {}) {
 }
 
 /**
+ * Scales a sprite element. Shrunk below its own pixels it is smoothed rather
+ * than pixelated: pixelated shrinking drops whole rows and columns, different
+ * ones from frame to frame, so a tall hero (Batman's 61 px body in a 30 px
+ * slot) flickers. At or above its pixels it keeps the sheet's crisp pixels.
+ *
+ * @param {HTMLElement} el Sprite element.
+ * @param {number} sc Scale.
+ * @return {void}
+ */
+function setScale(el, sc) {
+  el.style.scale = sc;
+  el.style.imageRendering = sc < 1 ? 'auto' : '';
+}
+
+/**
  * Fits a sprite element into a box: scale so the body fills maxW × maxH,
  * body centre on (cxPct, cyPct) of the box.
  *
@@ -167,7 +182,7 @@ export function paint(el, key, anim, opts = {}) {
 export function frameIn(el, key, { maxW, maxH, cxPct = 50, cyPct = 50, cap = 3 }) {
   const [x0, y0, x1, y1] = BOX[key];
   const sc = Math.min(cap, maxW / (x1 - x0), maxH / (y1 - y0));
-  el.style.scale = sc;
+  setScale(el, sc);
   el.style.left = `calc(${cxPct}% - ${(((x0 + x1) / 2) * sc).toFixed(1)}px)`;
   el.style.top = `calc(${cyPct}% - ${(((y0 + y1) / 2) * sc).toFixed(1)}px)`;
 }
@@ -184,7 +199,7 @@ export function frameIn(el, key, { maxW, maxH, cxPct = 50, cyPct = 50, cap = 3 }
  */
 export function standOn(el, key, sc, floor) {
   const [x0, , x1, y1] = BOX[key];
-  el.style.scale = sc;
+  setScale(el, sc);
   el.style.translate = `calc(-50% + ${((50 - (x0 + x1) / 2) * sc).toFixed(1)}px) 0`;
   el.style.bottom = `${floor - (100 - y1) * sc}px`;
 }
@@ -199,7 +214,8 @@ export function standOn(el, key, sc, floor) {
 export function moves(key) {
   const c = BY_KEY[key];
   const list = [{ id: 'idle', label: 'Idle' }, { id: 'walk', label: 'Walk' }];
-  Object.keys(c.anims).filter(a => a.startsWith('attack')).forEach((a, i) => list.push({ id: a, label: (LABELS[c.type] || [])[i] || `Attack ${i + 1}` }));
+  // a hero names each move and marks the big ones; the roster names attacks by fighting style
+  Object.keys(c.anims).filter(a => a.startsWith('attack')).forEach((a, i) => list.push({ id: a, label: c.labels?.[i] ?? (LABELS[c.type] || [])[i] ?? `Attack ${i + 1}`, big: Boolean(c.big?.[i]) }));
   list.push({ id: 'death', label: 'Death' }, { id: 'summon', label: 'Summon', anim: 'death', reverse: true });
 
   return list.filter(m => c.anims[m.anim || m.id]);

@@ -1,6 +1,12 @@
 // Small pure helpers behind the fighter sheet's live UI, ported from the
 // approved mockup's own inline logic so each can be tested on its own.
 
+import { FIGHTER_TYPES } from '@battlefield/config.js';
+import { TextureKey } from '@battlefield/constants.js';
+
+/** The fighters drawn from the hero atlas. */
+const HERO_KEYS = new Set(FIGHTER_TYPES.filter(f => f.texture === TextureKey.HEROES).map(f => f.key));
+
 /**
  * The text an account card's probe stamp shows after its own refresh.
  *
@@ -144,4 +150,17 @@ export function coarseAgo(seconds) {
   }
 
   return `${Math.floor(s / 86400)}d ago`;
+}
+
+/**
+ * Whether a fighter cannot be equipped here because it is a hero and this
+ * page's hero atlas failed to load: the field would draw a roster stand-in.
+ * Before the field reports (`undefined`) a hero stays equippable.
+ *
+ * @param {string} key The fighter key.
+ * @param {boolean|undefined} heroesLoaded The battlefield scene's `heroesLoaded`.
+ * @return {boolean}
+ */
+export function heroArtMissing(key, heroesLoaded) {
+  return heroesLoaded === false && HERO_KEYS.has(key);
 }

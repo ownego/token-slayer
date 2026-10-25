@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { expect, test } from 'vitest';
-import { chargePalette, faceColor, frameIn, moves, pretty } from '@battlefield/sheet/sprite-strip.js';
+import { describe, expect, test } from 'vitest';
+import { chargePalette, faceColor, frameIn, moves, pretty, standOn } from '@battlefield/sheet/sprite-strip.js';
 
 test('a fighter\'s hotbar is idle, walk, its attacks named by type, then death and summon', () => {
   expect(moves('orc-rider').map(m => m.label)).toEqual(['Idle', 'Walk', 'Quick shot', 'Arrow volley', 'Piercing shot', 'Death', 'Summon']);
@@ -29,4 +29,35 @@ test('the charge palette comes from the battlefield\'s own fighter config, as CS
 test('a teammate keeps one face colour everywhere', () => {
   expect(faceColor(9)).toBe(faceColor(9));
   expect(faceColor(0)).toBe('#fb923c');
+});
+
+test('a hero\'s hotbar names its own moves and marks the big ones', () => {
+  const list = moves('batman').map(m => ({ id: m.id, label: m.label, big: Boolean(m.big) }));
+
+  expect(list.filter(m => m.id.startsWith('attack'))).toEqual([
+    { id: 'attack1', label: 'Batarang', big: false },
+    { id: 'attack2', label: 'Combo', big: false },
+    { id: 'attack3', label: 'Explosive Batarang', big: true },
+    { id: 'attack4', label: 'Dollar Palm', big: true },
+    { id: 'attack5', label: 'Bat Swarm', big: true },
+  ]);
+});
+
+describe('shrinking a sprite', () => {
+  // pixelated shrinking drops whole rows and columns, different ones in every frame, so a tall hero flickers
+  test('a sprite drawn smaller than its pixels is smoothed, not pixelated', () => {
+    const el = document.createElement('span');
+    frameIn(el, 'batman', { maxW: 20, maxH: 20 });
+
+    expect(Number(el.style.scale)).toBeLessThan(1);
+    expect(el.style.imageRendering).toBe('auto');
+  });
+
+  test('a sprite drawn at or above its pixels keeps the sheet\'s pixelated rendering', () => {
+    const el = document.createElement('span');
+    el.style.imageRendering = 'auto';
+    standOn(el, 'soldier', 3, 26);
+
+    expect(el.style.imageRendering).toBe('');
+  });
 });

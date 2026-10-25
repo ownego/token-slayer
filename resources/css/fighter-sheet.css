@@ -392,6 +392,8 @@
 .fs .move[aria-pressed="true"] { border-color: var(--rivet); background: #15233f; color: #fff; }
 .fs .move .key { position: absolute; top: 2px; left: 4px; font: 700 10px var(--display); color: #5b6478; }
 .fs .move[aria-pressed="true"] .key { color: var(--rivet); }
+/* a hero's big move (rarer on the field), marked in text, not colour alone */
+.fs .move .big { position: absolute; top: 2px; right: 4px; font: 700 9px var(--display); letter-spacing: 0.06em; color: var(--rivet); }
 .fs .move .thumb { position: relative; width: 60px; height: 52px; margin: 0 auto 2px; overflow: hidden; }
 .fs .move .thumb span { position: absolute; width: 100px; height: 100px; transform-origin: 0 0; image-rendering: pixelated; background-repeat: no-repeat; }
 .fs .move.loop-ended { opacity: 0.8; }
@@ -537,7 +539,7 @@
 @keyframes fs-slot-halo { 0%,100% { box-shadow: 0 0 0 3px rgba(251,191,36,0.12), 0 0 10px rgba(251,191,36,0.15); } 50% { box-shadow: 0 0 0 3px rgba(251,191,36,0.25), 0 0 18px rgba(251,191,36,0.4); } }
 
 /* ---- roster filter chips ---- */
-.fs .chips { display: flex; gap: 3px; margin-bottom: 10px; }
+.fs .chips { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 10px; }
 .fs .chip { flex: 1 1 auto; padding: 3px 4px; background: transparent; border: 1px solid #2b3858; color: var(--dim); font: 600 11px var(--display); cursor: pointer; transition: all 0.15s ease; }
 .fs .chip:hover { color: var(--parchment); border-color: rgba(251,191,36,0.5); }
 .fs .chip[aria-pressed="true"] { background: var(--rivet); border-color: var(--rivet); color: var(--night-deep); }
