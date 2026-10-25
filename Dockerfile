@@ -32,6 +32,7 @@ RUN npm ci
 COPY resources ./resources
 COPY public ./public
 COPY vite.config.js ./
+COPY scripts ./scripts
 
 RUN npm run build
 
