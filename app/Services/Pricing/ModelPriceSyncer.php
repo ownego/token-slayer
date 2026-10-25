@@ -51,7 +51,7 @@ final class ModelPriceSyncer
         $this->history->seed();
 
         $state = PriceFeedState::query()->firstOrCreate(['feed' => self::FEED]);
-        $response = $this->feed->fetch($state->etag);
+        $response = $this->feed->fetch($this->conditionalEtag($state));
 
         if ($response->notModified) {
             $state->update(['checked_at' => now()]);
@@ -190,6 +190,21 @@ final class ModelPriceSyncer
         $todaysRow->fill([...$quote->priceColumns(), 'source_sha256' => $sha256])->save();
 
         return true;
+    }
+
+    /**
+     * The stored ETag, or null while a model waits for a price.
+     *
+     * The stored file was parsed only for the models tracked at the time, so
+     * a model queued since then may be in it unread; a 304 would skip it
+     * until the upstream file changes.
+     *
+     * @param  PriceFeedState  $state  the feed's stored state
+     * @return ?string
+     */
+    private function conditionalEtag(PriceFeedState $state): ?string
+    {
+        return MissingModel::query()->exists() ? null : $state->etag;
     }
 
     /**

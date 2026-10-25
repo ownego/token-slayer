@@ -115,3 +115,16 @@ it('prices an undated model from its newest dated feed key when the feed has no 
     expect(ModelPrice::where('model', 'like', 'claude-haiku%')->pluck('input_per_mtok', 'model')->all())
         ->toBe(['claude-haiku-4-5' => 1.0]);
 });
+
+it('fetches the whole feed while a model waits for a price, even when the stored etag still matches', function () {
+    PriceFeedState::create(['feed' => 'litellm', 'etag' => '"v1"']);
+    MissingModel::factory()->create(['model' => 'gpt-6-sol']);
+    Http::fake([$this->feedUrl => fn ($request) => $request->hasHeader('If-None-Match')
+        ? Http::response('', 304)
+        : Http::response(json_encode($this->feed), 200, ['ETag' => '"v1"'])]);
+
+    $result = app(ModelPriceSyncer::class)->sync();
+
+    expect($result->notModified)->toBeFalse()
+        ->and(ModelPrice::where('model', 'gpt-6-sol')->exists())->toBeTrue();
+});
