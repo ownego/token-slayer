@@ -4,6 +4,7 @@ export const SCENE_KEY = 'battlefield';
 /** Phaser texture/atlas keys registered at scene boot. */
 export const TextureKey = {
   FIGHTERS:  'fighters',
+  HEROES:    'heroes',
   SPARK:     'spark',
   SPARK_STREAK: 'spark-streak',
   FIREBALL:  'fireball',
@@ -52,6 +53,8 @@ export const AttackType = {
   SHURIKEN: 'shuriken',
   BLADE:    'blade',
   ARROW:    'arrow',
+  // Iron Man, Captain America, Batman, Superman: each attack picks its own move (attacks/hero/).
+  HERO:     'hero',
 };
 
 /** Boss patrol phase identifiers. */

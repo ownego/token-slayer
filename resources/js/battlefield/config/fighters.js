@@ -1,4 +1,5 @@
 import { AttackType } from '../constants.js';
+import { BATMAN_ATTACKS, CAPTAIN_AMERICA_ATTACKS, IRON_MAN_ATTACKS, SUPERMAN_ATTACKS, heroBody } from './heroes.js';
 
 const FIRE_CHARGE   = [0x991100, 0xcc3300, 0xdd6600, 0xee9900, 0xffbb00];
 const PURPLE_CHARGE = [0x4400aa, 0x6600cc, 0x8833dd, 0xaa55ee, 0xcc88ff];
@@ -284,5 +285,48 @@ export const FIGHTER_TYPES = [
     attacks: [
       { frames: 9, rate: 12 },
     ],
+  },
+  // Heroes (config/heroes.js): their own atlas, drawn at a roster fighter's
+  // height. Iron Man and Superman fly (`flies`): their fly cycle is stored as `walk`
+  // and plays only when they move; while their player works they stand on their hover.
+  {
+    key: 'iron-man', attackType: AttackType.HERO, chargeColors: FIRE_CHARGE, ...heroBody(29), flies: true,
+    animations: {
+      idle:   { frames: 6,  rate: 8  },
+      walk:   { frames: 8,  rate: 10 },
+      attack: { frames: 8,  rate: 12 },
+      death:  { frames: 10, rate: 10 },
+    },
+    attacks: IRON_MAN_ATTACKS,
+  },
+  {
+    key: 'captain-america', attackType: AttackType.HERO, chargeColors: BLUE_CHARGE, ...heroBody(50, 79),
+    animations: {
+      idle:   { frames: 6, rate: 8  },
+      walk:   { frames: 8, rate: 12 },
+      attack: { frames: 8, rate: 12 },
+      death:  { frames: 8, rate: 10 },
+    },
+    attacks: CAPTAIN_AMERICA_ATTACKS,
+  },
+  {
+    key: 'batman', attackType: AttackType.HERO, chargeColors: GOLD_CHARGE, ...heroBody(61, 79),
+    animations: {
+      idle:   { frames: 6,  rate: 8  },
+      walk:   { frames: 9,  rate: 10 },
+      attack: { frames: 8,  rate: 12 },
+      death:  { frames: 10, rate: 10 },
+    },
+    attacks: BATMAN_ATTACKS,
+  },
+  {
+    key: 'superman', attackType: AttackType.HERO, chargeColors: BLUE_CHARGE, ...heroBody(30), flies: true,
+    animations: {
+      idle:   { frames: 8, rate: 8  },
+      walk:   { frames: 8, rate: 12 },
+      attack: { frames: 8, rate: 12 },
+      death:  { frames: 8, rate: 10 },
+    },
+    attacks: SUPERMAN_ATTACKS,
   },
 ];

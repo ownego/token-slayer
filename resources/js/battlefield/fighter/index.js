@@ -28,6 +28,9 @@ import {
   spinMultiplier,
   startFlair,
 } from './flair.js';
+import { pickAttackIndex } from './attack-pick.js';
+import { resolveFighterType, snapshotCharacter } from './resolve-type.js';
+import { chargeAnim } from './charge-anim.js';
 
 // Tiny RPG sprite geometry constants — do not change without re-measuring the atlas.
 const SPRITE_CHAR_HEIGHT = 18;
@@ -398,8 +401,8 @@ export class Fighter {
       if (!character || entry.ftype?.key === character) {
         continue;
       }
-      const ftype = FIGHTER_TYPES.find(ft => ft.key === character);
-      if (!ftype) {
+      const ftype = resolveFighterType(character, userId, { heroesLoaded: Boolean(this.scene.heroesLoaded) });
+      if (entry.ftype?.key === ftype.key) {
         continue;
       }
       const oldKey = entry.ftype?.key;
@@ -474,23 +477,26 @@ export class Fighter {
   }
 
   /**
-   * Sizes and places a fighter's body for its type. A custom fighter's strips are
-   * drawn taller than a roster fighter's frame, so its body is scaled down to
-   * stand as tall, and nudged so its feet stay on the same line. A roster body is
-   * left alone — until a custom one has been on it, when it is put back.
+   * Sizes and places a fighter's body for its type. A custom fighter's or a
+   * hero's strips are drawn taller than a roster fighter's frame, so its body is
+   * scaled down to stand as tall, and nudged so its feet stay on the same line. A
+   * roster body is left alone — until one of those has been on it, when it is
+   * put back.
    *
    * @param {object} entry A scene.fighters entry.
    * @param {object} ftype The type the body is about to show.
    * @return {void}
    */
   _fitBody(entry, ftype) {
-    if (!ftype.custom && !entry.bodyFitted) {
+    // custom fighters and heroes carry their own body scale; roster fighters fill the frame as drawn
+    const ownsBody = ftype.bodyScale !== undefined;
+    if (!ownsBody && !entry.bodyFitted) {
       return;
     }
     const scale = (entry.baseSize ?? 48) / SPRITE_CHAR_HEIGHT;
     entry.body.setScale(scale * (ftype.bodyScale ?? 1));
     entry.body.setY((ftype.bodyOffsetY ?? 0) * scale);
-    entry.bodyFitted = Boolean(ftype.custom);
+    entry.bodyFitted = ownsBody;
   }
 
   /**
@@ -574,9 +580,10 @@ export class Fighter {
     const state = this.scene.charges?.has(entry.id) ? AnimState.WALK : AnimState.IDLE;
     entry.animState = state;
     entry.body.setTexture(textureOf(ftype), `${ftype.key}-idle-0`);
-    const anim = this.scene.anims.get(`${ftype.key}-${state}`);
+    const animKey = `${ftype.key}-${state === AnimState.WALK ? chargeAnim(ftype) : AnimState.IDLE}`;
+    const anim = this.scene.anims.get(animKey);
     if (anim?.frames?.length) {
-      entry.body.play(`${ftype.key}-${state}`);
+      entry.body.play(animKey);
     }
     this._releasePending(entry);
   }
@@ -694,8 +701,7 @@ export class Fighter {
     const loadedCustom = custom && this.scene.textures.exists(customFighterKey(fighter.id, custom.version))
       ? customFighterType(fighter.id, custom)
       : null;
-    const rosterType = (ftypeKey && FIGHTER_TYPES.find(ft => ft.key === ftypeKey))
-      ?? FIGHTER_TYPES[Math.abs(Number(fighter.id) || 0) % FIGHTER_TYPES.length];
+    const rosterType = resolveFighterType(ftypeKey, fighter.id, { heroesLoaded: Boolean(this.scene.heroesLoaded) });
     const ftype = loadedCustom ?? rosterType;
     // Scale so the visible character (18px of the 100px frame) fills `size` logical px
     const scale     = size / SPRITE_CHAR_HEIGHT;
@@ -810,8 +816,8 @@ export class Fighter {
       waypointMoving: false,
       hasCustomPosition: false,
       rescaleTween: null,
-      bodyFitted: Boolean(ftype.custom),
-      rosterKey: rosterType.key,
+      bodyFitted: ftype.bodyScale !== undefined,
+      rosterKey: snapshotCharacter(ftypeKey, rosterType),
       customRequest: newRequestState(),
     });
     if (custom && !loadedCustom) {
@@ -869,6 +875,8 @@ export class Fighter {
       bossType: Boss.bossTypeOf(this.scene.bossState),
       fsize: entry.displaySize * (entry.damageScale ?? 1),
     };
+    // a hero move driving the container (a super punch) puts it back on its spot before the route is planned
+    entry.heroMoveCancel?.();
     const origin = moveOrigin(entry.sprite, entry.pos, ctx);
     const route = planRoute(origin.x, origin.y, raw.x, raw.y, ctx) ?? [origin];
 
@@ -932,7 +940,7 @@ export class Fighter {
               const next = isCharging ? AnimState.WALK : AnimState.IDLE;
               entry.animState = next;
               entry.body.setFlipX(next === AnimState.WALK ? target.x > this.scene.layout.boss.anchor.x : false);
-              entry.body.play(entry.ftype.key + '-' + next, true);
+              entry.body.play(entry.ftype.key + '-' + (next === AnimState.WALK ? chargeAnim(entry.ftype) : next), true);
             }
           }
           step(idx + 1);
@@ -1550,6 +1558,8 @@ export class Fighter {
     this.scene.charge?.clearCharge?.(payload.user_id);
     const fighter = this.scene.fighters.get(payload.user_id);
     if (fighter) {
+      // a hero move driving the container (a super punch) puts it back on its spot first
+      fighter.heroMoveCancel?.();
       this.scene.tweens.killTweensOf(fighter.sprite);
       if (fighter.handle) this.scene.tweens.killTweensOf(fighter.handle);
       // fighter.pos must be current before applyFlair: its burst places a
@@ -1568,7 +1578,7 @@ export class Fighter {
     }
     const key     = fighter?.ftype?.key ?? null;
     const attacks = fighter?.ftype?.attacks ?? null;
-    const pickIdx = attacks?.length ? Phaser.Math.Between(0, attacks.length - 1) : -1;
+    const pickIdx = pickAttackIndex(attacks, Math.random());
     const flipTowardBoss = fighter ? fighter.pos.x > this.scene.layout.boss.anchor.x : false;
     if (fighter?.body) {
       const atkAnimKey = pickIdx >= 0 ? `${key}-attack${pickIdx + 1}` : `${key}-attack`;
@@ -1583,7 +1593,7 @@ export class Fighter {
         fighter.animState = next;
         fighter.body.setFlipX(next === AnimState.WALK ? flipTowardBoss : false);
         // the live type, not the one the attack began with: a custom fighter may have swapped in meanwhile
-        fighter.body.play(`${fighter.ftype.key}-${next}`);
+        fighter.body.play(`${fighter.ftype.key}-${next === AnimState.WALK ? chargeAnim(fighter.ftype) : next}`);
         this._releasePending(fighter);
       });
     }
@@ -1643,7 +1653,7 @@ export class Fighter {
       const effKey = (pickIdx >= 0 && attacks?.[pickIdx]?.effectFrames) ? `${key}-effect${pickIdx + 1}` : null;
       const onEffect = effKey ? (x, y) => {
         if (!fighter.body?.scene) return;
-        const eff = this.scene.add.sprite(x, y, TextureKey.FIGHTERS, `${effKey}-0`)
+        const eff = this.scene.add.sprite(x, y, textureOf(fighter.ftype), `${effKey}-0`)
           .setScale(fighter.sprite.scaleX * fighter.body.scaleX)
           .setFlipX(flipTowardBoss)
           .setBlendMode(Phaser.BlendModes.ADD)
@@ -1658,6 +1668,7 @@ export class Fighter {
         onImpact,
         onEffect,
         target: hitTarget,
+        move: attacks?.[pickIdx]?.move ?? null,
       });
     } else {
       this.scene.time.delayedCall(TIMINGS.projectileArcMs, onImpact);
