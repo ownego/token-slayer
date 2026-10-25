@@ -16,13 +16,13 @@ Look and behaviour of every screen (tokens, components, states, motion, layout, 
 - Fighter sprite sheets are `frameWidth: 100` — never upscale or regenerate sheets at other sizes.
 - Import game modules via the `@battlefield/...` alias (defined in both `vite.config.js` and `vitest.config.js`), not relative `../../` paths.
 - Adding/removing a module under `resources/js/battlefield/**` → update the Key Files table in `resources/js/battlefield/CLAUDE.md` in the same commit. Changes there should go through the `battlefield-reviewer` agent.
-- Adding a fighter/boss/companion/minion sprite → follow `public/assets/battlefield/CLAUDE.md` (formats, naming) and credit it in `CREDITS.md`. Fighter source frames live in `resources/assets/battlefield/fighters/` and are packed into a gitignored atlas by `scripts/pack-sprites.js` (runs automatically in `npm run build` / `npm run dev`).
-- Tunables live in `resources/js/battlefield/config/` (`fighters.js`, `bosses.js`, `companions.js`, `layouts.js`, `timings.js`), not as literals in managers.
+- Adding a fighter/boss/companion/minion sprite → follow `public/assets/battlefield/CLAUDE.md` (formats, naming) and credit it in `CREDITS.md`. Fighter source frames live in `resources/assets/battlefield/fighters/` and are packed into a gitignored atlas by `scripts/pack-sprites.js`; hero strips live in `resources/assets/battlefield/heroes/` and are packed into a second atlas by `npm run pack-heroes` (both run automatically in `npm run build` / `npm run dev`).
+- Tunables live in `resources/js/battlefield/config/` (`fighters.js`, `heroes.js`, `bosses.js`, `companions.js`, `layouts.js`, `timings.js`), not as literals in managers.
 - New real-time event → use the `scaffold-broadcast-event` skill (PHP event → `ECHO_EVENT_MAP` in `resources/js/battlefield/index.js` → scene bus key).
 
 ## Build & verification
 
 - Every JS/CSS change needs `npm run build` before it exists anywhere but your editor.
-- Vite entry points: `resources/css/app.css`, `resources/js/app.js` (Echo + lazily-imported battlefield), `resources/js/ide-bridge.js` (IDE webview bridge). `VITE_REVERB_*` env values are baked in at build time — build with the target environment's values.
+- Vite entry points: `resources/css/app.css`, `resources/css/battlefield-hud.css`, `resources/css/fighter-sheet.css`, `resources/js/app.js` (Echo + lazily-imported battlefield), `resources/js/ide-bridge.js` (IDE webview bridge). `VITE_REVERB_*` env values are baked in at build time — build with the target environment's values.
 - The team does not test locally — changes are verified on staging. Build, then deploy per the standing staging workflow (rsync `public/build/`), then verify in the browser there.
 - Tailwind 4 (CSS-first config); prefer existing utility patterns in the blades over new custom CSS.

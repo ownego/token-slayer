@@ -42,7 +42,7 @@ Three names must line up: PHP `broadcastAs()` === `ECHO_EVENT_MAP` key; its valu
 | `FighterAgentToolUsed` | `FIGHTER_AGENT_TOOL_USED` | `minions.handleAgentToolUsed` |
 | — (client-only, after Echo reconnect → `Battlefield::resync()`) | `POSITIONS_RESYNCED` | `fighter.reconcilePositions` |
 
-Client-only bus events for the blade HUD (no PHP side): `leaderboard-updated` (`leaderboard/index.js`), `show-mvp-overlay` (`leaderboard/mvp.js`).
+Client-only bus event (no PHP side): `BOSS_HP_TICK` (`'boss-hp-tick'`), emitted by `impact.js`'s HP counter and consumed by the DOM boss plate (`hud/boss-plate.js`, wired in `index.js`).
 
 Echo listens with a leading dot (`.HitDealt`) because of the custom `broadcastAs()`. The handler reads exactly `broadcastWith()` — snake_case keys (`user_id`, `boss_hp_after`, …). Need a new field client-side → add it to `broadcastWith()` and the shape test.
 
@@ -52,7 +52,7 @@ Echo listens with a leading dot (`.HitDealt`) because of the custom `broadcastAs
 
 ```
 {
-  boss: {number, name, currentHp, maxHp},
+  boss: {number, name, currentHp, maxHp, script?},
   currentUserId,
   fighters: [{id, handle, avatarUrl, character, charging: {activity}|null,
               position: {x, y} (0–1 fractions)|null, customCharacter: {version, url_base|urlBase, animations}|null, agentCount}],  // `character` is always a roster key; a custom fighter's own key is synthetic
@@ -66,7 +66,7 @@ Orientation flip: `applyModeChange` → `snapshotState` → resize → `registry
 
 ## Phaser teardown rules
 
-- Everything `scene.add.*` / tween / `scene.time.*` / `bus.on` you create must be released. Scene-level: extend the `events.once('shutdown')` block in `scene.js` (it already does `bus.off` for `_busHandlers`, `leaderboard.destroy()`, `minions.destroy()`). Entity-level: destroy on leave (fighter idle, boss killed, minion despawn).
+- Everything `scene.add.*` / tween / `scene.time.*` / `bus.on` you create must be released. Scene-level: extend `_teardown()` in `scene.js` (runs once on SHUTDOWN and on DESTROY; it already unbinds `_busHandlers`, and calls `boss.destroy()`, `minions.destroy()`, `heroEffects.clear()`, `environment.destroy()`). Entity-level: destroy on leave (fighter idle, boss killed, minion despawn).
 - Objects NOT parented to a container (minions, their badges/rings, handle labels, summon circles) must be destroyed explicitly when their owner leaves; scene shutdown alone destroys the display list.
 - Async callbacks (avatar loads, delayed calls) must guard `sprite?.active` / `scene.isShuttingDown` — the scene may have restarted.
 - `window` listeners: only via `index.js`'s module-level `_cleanupResize` pattern.
@@ -80,7 +80,7 @@ Use the `scaffold-broadcast-event` skill (PHP event → `ECHO_EVENT_MAP` → `Bu
 ### Add a fighter type
 1. Strips → `resources/assets/battlefield/fighters/` as `<key>-idle|walk|attack|death.png`, plus `<key>-attack<N>.png` / `<key>-effect<N>.png` per attack slot, optional `<key>-summon.png` (rise-in) / extra states. Every frame 100×100, horizontal strip — the packer derives frame count from width/100. Never upscale.
 2. Append an entry to `FIGHTER_TYPES` (`config/fighters.js`): `key`, `attackType` (`AttackType`), `chargeColors` (exactly 5 hex numbers), `animations` (`idle`, `walk`, `attack`, `death` required; `{frames, rate}`; no `file`/`frameWidth`), `attacks: [{frames, rate, effectFrames}]` (N-th entry ↔ `attack<N>`/`effect<N>`; `effectFrames: 0` for no effect strip).
-3. Append the same key as the **last** case of `App\Enums\FighterCharacter` and update both order-lock tests (`tests/js/config.test.js`, `tests/Unit/FighterCharacterTest.php` — it hardcodes the case count `% 20`). Order is a contract (domain invariant #11).
+3. Append the same key as the **last** case of `App\Enums\FighterCharacter` and update both order-lock tests (`tests/js/config.test.js`, `tests/Unit/FighterCharacterTest.php` — it hardcodes the case count `% 24`). Order is a contract (domain invariant #11).
 4. Fighter sheet roster: add the key to `sheet/sheet-roster.js` (`ROSTER` — attack type, accent, each animation's strip file/frames/rate — plus its measured `BOX` and `LABELS` move names); `tests/js/sheet/sheet-roster.test.js` fails until every `FIGHTER_TYPES` key has a body box and every named strip resolves.
 5. `npm run build` (repacks atlas + regenerates `ATLAS_VERSION`), `npx vitest run tests/js/config.test.js tests/js/pack-sprites.test.js`, then the PHP tests. Add a row to `public/assets/battlefield/CREDITS.md`.
 

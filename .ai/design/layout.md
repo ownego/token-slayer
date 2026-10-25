@@ -4,7 +4,7 @@
 
 | Class | Rule in `fighter-sheet.css` | What changes |
 |---|---|---|
-| Desktop | default; the sheet is up to 1000 px wide, `max-height: calc(100dvh - 32px)` | two columns (fighter / content), header and footer fixed, the content column scrolls |
+| Desktop | default; the sheet is up to 1240 px wide, `max-height: calc(100dvh - 32px)` | two columns (fighter / content), header and footer fixed, the content column scrolls |
 | Tablet | `(max-width: 1000px) and (min-width: 641px)` | left column 220 px instead of 250 |
 | Phone portrait | `(max-width: 640px)` | the sheet is full screen (`100vw x 100dvh`, no border, no rivets), one column, header wraps and the link labels become icons, the primary action row is sticky at the bottom with full-width buttons, the character roster becomes 5 columns with a 170 px scroller and a 190 px stage |
 | Phone landscape | `(max-height: 500px) and (orientation: landscape)` | full screen, one compact header row, columns scroll down only, mini stage 120 px |
@@ -54,7 +54,7 @@ Anything above the sheet (a confirm, a toast) uses 70; a new layer needs a new r
 - The Character tab has roster and Forge modes. `.char-body.forging` hides the roster and places the live `.show-stage` beside `.cce-drawer`; at 900 px and below they stack, with the drawer scrolling beneath the stage. Back restores the roster and focus to its opener.
 - A phone's primary `.equip-row` is sticky at the bottom, full width. The `.inspector` row sticks directly above it using `--actions-h`. A visible draft note gets its own row above Discard and Use. Build preview fills the narrow file card instead of extending beyond it.
 - The toast uses `--bar-h`, measured from the visible sticky rows by `character-stage.js`, plus the safe-area inset and 12 px clearance. It must never cover a control.
-- The show stage is 270 px on desktop, 190 px in phone portrait and 120 px in phone landscape. The desktop roster has four columns, the phone roster five and a 170 px scroller; tablets keep a 220 px roster column.
+- The show stage is 280 px on desktop, 190 px in phone portrait and 120 px in phone landscape. The desktop roster has four columns, the phone roster five and a 170 px scroller; tablets keep a 220 px roster column.
 - Long names and handles stay on one line with ellipsis in tiles and bubbles. Controls added after lazy load must not shift the button a player is about to tap.
 
 ## Per-class checklist

@@ -105,6 +105,8 @@ Ambient actors are neither a **fighter** (player-controlled, keyed by `user_id`)
 - `feed-merge.js` — folds a burst of activity-feed events into readable, de-duplicated lines.
 - `hud-zones.js` — keeps fighters clear of DOM HUD panels and apart from each other.
 - `board.js` — ranks the damage board and reports rank changes/overtakes.
+- `camera-focus.js` — the 2.2x push-in pan/zoom onto a fighter (the sheet's Equip hand-off).
+- `scene-ready.js` — runs a callback once the scene is created and again after every restart, for DOM HUD code wired before Phaser finishes preloading.
 
 See `resources/js/battlefield/CLAUDE.md`'s Key Files and Test Files tables for each module's exact API and test coverage.
 
@@ -259,7 +261,7 @@ the new numbers land.
   `resources/js/battlefield/CLAUDE.md`).
 - **Character tab** (`character.blade.php`, `sheet/character-stage.js`'s
   `characterStage` → `mountCharacterStage`): the mockup's CSS sprite-strip roster
-  (20 slots, filter chips by `FighterCharacter::attackType()`, teammate faces),
+  (24 slots, filter chips by `FighterCharacter::attackType()`, teammate faces),
   summon/attack/death stage FX, a 1–9 hotbar, Equip with an undo toast. After
   900ms the sheet folds and closes and the camera pushes in on the viewer's fighter
   (`window.__battlefield.focusFighter`, `shared/camera-focus.js`); at 2200ms
