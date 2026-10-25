@@ -42,8 +42,8 @@ Consequences that shape every decision:
 | Fighter | one per user on the field, assigned by user and boss, or the equipped one; charge ring, bubble, model flair ring. Heroes are fighters with their own atlas, flight drawn into the pixels and their own moves (a projectile normally, a big move on about one hit in five) | moment, session, social | keyed by user id; sprites are 100 px frames, never upscaled; a hero's move only changes the visuals, its hit lands once |
 | Roster and fighter sheet | the 20 fighters, filters by attack style, a Character tab with Equip and undo, a Profile tab with damage, tokens by model, quota gauges, alerts, the combo buddy, a mini stage | session, social | the sheet is a modal over the live battlefield |
 | Custom fighter | a player's own fighter built from an uploaded pose sheet, previewed as a draft slot and managed in a stage drawer | social | strips served per version; every client shows the same fighter; cosmetic only; admin Rename and Remove follow policy |
-| Minions and companions | subagent swarm (a random look from the owner's pool: the five default types plus up to 3 custom minions, each with a tick), bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
-| Custom minions | a player's own minions built from uploaded pose sheets, managed in the Minions sub-tab of Character (pool cells with ticks, Add, Replace, Use my fighter); nothing ticked means the five defaults | social | same sheet contract as the custom fighter; the set is cosmetic and broadcast live; admin Remove follows policy |
+| Minions and companions | subagent swarm (a random look from the owner's pool: the five default types plus up to 3 custom minions, each with a tick the player saves), bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
+| Custom minions | a player's own minions built from uploaded pose sheets, managed in the Minions sub-tab of Character (pool cells with ticks and a Save pool button, Add, Replace, Use my fighter; the stage plays each look's Idle, Walk, Attack and Fall); nothing ticked means the five defaults; saving a new pool changes the minions already on the field live | social | same sheet contract as the custom fighter; the set is cosmetic and broadcast live; admin Remove follows policy |
 | HUD | team totals, your damage, the damage board with rank changes, boss plate, feed, herald, nav | session, social | follows the screen: landscape and portrait layouts, a phone stats sheet |
 | Ceremonies | join, kill, boss spawn | social | slow motion and shake are for kills; reduced motion is honoured |
 | Accounts and quota | org accounts, attribution, probing, rebalance, alerts | the work-tool layer | per-event attribution, never inferred from membership |
@@ -73,7 +73,7 @@ Consequences that shape every decision:
 | Hero effect cap | 120 live effect objects; past it a big move plays its main contact only | `battlefield/config/heroes.js` |
 | Hero main contact, latest | 2100 ms after the hit (the bat swarm) | `battlefield/config/heroes.js` |
 | Custom minions per player | 3 (the cap counts custom minions only, the five defaults are extra) | `custom_character.minions_max` in `config/token_slayer.php`; mirrored by `MINION_POOL_CUSTOM_CAP` in `battlefield/config/companions.js` |
-| Minion pool changes | 30 per minute per player (ticks, Use my fighter, remove, retarget; each broadcasts the pool) | `custom_character.minion_changes_per_minute` in `config/token_slayer.php` |
+| Minion pool changes | 30 per minute per player (Save pool, Use my fighter, Add, Discard, Remove, retarget; ticking alone is free and stores nothing) | `custom_character.minion_changes_per_minute` in `config/token_slayer.php` |
 | Custom minion look wait | 2 s | `TIMINGS.customMinionWaitMs` (`battlefield/config/timings.js`) |
 
 A new knob has a name, a default, a reason for the default, and a place in this table.

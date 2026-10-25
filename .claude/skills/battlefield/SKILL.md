@@ -96,7 +96,7 @@ A **hero** (art bigger than the roster's, its own moves) differs at each step: s
 ### Add a minion type
 1. Strips → `public/assets/battlefield/companions/<key>/`, **all strips of one type share one frame size**, every strip drawn facing RIGHT (code flips). Need `idle` + `walk` (both `loop: true`), ≥1 one-shot attack strip, and a reaction strip.
 2. Append to `MINION_TYPES` (`config/companions.js`): `key`, `charHeight` (the character's ink height in frame px — the scale divisor that makes every type render at the same height), `animFiles` (`file` with `?v=<n>`), `attacks: [{anim, hitFrame, travel?: {from, to}, fidget?: false}]` (`hitFrame` 0-based inside the strip; `travel.to ≤ hitFrame`; the strip stays in place, code moves the sprite), `reaction: {anim, holdMs?, getUp?}` (total play time ≥ 1800ms, test-locked).
-3. `tests/js/config.test.js` asserts **exactly 5** minion types — update that count. `minions.js` picks types uniformly at random; no other registration is needed (preload + `_ensureAnims` iterate `MINION_TYPES`).
+3. `tests/js/config.test.js` asserts **exactly 5** minion types — update that count. `minions.js` (through `MinionLooks`, `minion-looks.js`) picks types uniformly at random from the owner's pool; no other registration is needed (preload + `_ensureAnims` iterate `MINION_TYPES`).
 4. Credit the source in `CREDITS.md`. Bump `?v=` on every later edit of a strip (7-day cache).
 
 ## Verify & debug
