@@ -6,7 +6,7 @@ description: Use for EVERY behavior change in this repo — enforced red/green w
 # TDD Workflow (mandatory)
 
 1. **Locate the test file** from the mapping below. If it doesn't exist, create it with `spin exec php php artisan make:test --pest <Name>` (add `--unit` for pure logic), then move it into the mapped folder to match its siblings.
-2. **Write the failing test**: the smallest test that pins the new behavior. Use factories/datasets per `.ai/guidelines/testing.md`, and check `tests/Pest.php` helpers first (`fakeAnthropic()`, `fakeRedis()`, `livesOn()`).
+2. **Write the failing test**: the smallest test that pins the new behavior. Use factories/datasets per `.ai/guidelines/testing.md`, and check `tests/Pest.php` helpers first (`fakeAnthropic()`, `fakeRedis()`, `livesOn()`, and for custom characters `poseSheetImage()`, `stagedFor()`).
 3. **Run it and watch it fail.** Confirm it fails for the *right reason*: missing behavior, not a typo or fixture error.
 4. **Implement the minimal change** that makes it pass.
 5. **Run the scoped test again**: green.
@@ -33,18 +33,19 @@ Skipping step 3 is the most common violation: a test that never failed proves no
 | `app/Filament/**` (resources, pages, widgets, actions) | `tests/Feature/Filament/<Thing>Test.php` |
 | `app/Policies/*`, `Services/Roles/*` | `tests/Feature/Roles/` |
 | `app/Services/X.php` (touches DB/HTTP/cache) | `tests/Feature/Services/XTest.php` |
-| `app/Services/{Analytics,Attribution,GitHub}/X.php` | `tests/Feature/Services/{Analytics,Attribution,GitHub}/XTest.php` |
+| `app/Services/{Analytics,Attribution,GitHub,Pricing,Profile,CustomCharacter}/X.php` | `tests/Feature/Services/{Analytics,Attribution,GitHub,Pricing,Profile,CustomCharacter}/XTest.php` |
 | `app/Services/Accounts/X.php` | `tests/Feature/Accounts/XTest.php` (DB-backed) or `tests/Unit/Services/Accounts/XTest.php` (pure) |
 | `app/Services/Provisioning/*`, `AccountProvisioningService`, `CodexProvisioningService` | `tests/Feature/Provisioning/` |
 | `app/Services/Client/ReleaseArtifacts.php` | `tests/Feature/Client/ReleaseArtifactsTest.php` |
-| Pure service / value object (no framework surface) | `tests/Unit/Services/<same subpath>/XTest.php` (e.g. `Unit/Services/Events/ModelUsageParserTest.php`) |
+| Pure service / value object (no framework surface) | `tests/Unit/Services/<same subpath>/XTest.php` (e.g. `Unit/Services/Events/ModelUsageParserTest.php`, `Unit/Services/Pricing/EventCostCalculatorTest.php`, `Unit/Services/CustomCharacter/SpritePixelatorTest.php`) |
 | `app/Models/X.php` | `tests/Feature/Models/XTest.php` (DB) or `tests/Unit/Models/` |
 | `app/Enums/X.php`, `app/Support/X.php` | `tests/Unit/Enums/XTest.php`, `tests/Unit/Support/XTest.php` |
 | `config/game.php` | `tests/Unit/GameConfigTest.php` |
+| `config/token_slayer.php` `custom_character` | `tests/Feature/CustomCharacterConfigTest.php` |
 | `resources/views/install-script.blade.php` | `tests/Feature/InstallScriptTest.php` (+ `HookSnippetTest.php` for the registered-event list) |
 | `resources/views/install-script-ps1.blade.php` | `tests/Feature/InstallScriptPs1Test.php`. Hook changes need **both** install tests (lockstep rule) |
 | `cowork-*.blade.php`, `userscript.blade.php` | `tests/Feature/CoworkTrackerTest.php`, `tests/Feature/UserscriptTest.php` |
-| `resources/js/battlefield/<module>.js` (pure logic) | `tests/js/<module>.test.js`, or the matching subfolder (`tests/js/{boss,attacks,managers,character-preview}/`) |
+| `resources/js/battlefield/<module>.js` (pure logic) | `tests/js/<module>.test.js`, or the matching subfolder (`tests/js/{boss,attacks,battlefield,character-preview,custom-character,fighter,hud,managers,sheet,shared}/`) |
 | Page-level smoke (renders, no JS errors) | `tests/Browser/` (Pest 4 browser; only run when asked) |
 
 Phaser-coupled JS: there is no real Phaser runtime in Vitest. Two options:

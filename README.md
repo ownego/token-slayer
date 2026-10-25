@@ -112,6 +112,7 @@ scheduled jobs probe their quotas. See `.ai/domain/accounts.md`.
 | `/` | Landing page. Signed-in users go to `/battlefield`. |
 | `/battlefield` | Live battle view. Login required. |
 | `/history` | Defeated bosses. Login required. |
+| `/character` | Prompt guide for making a custom fighter. Login required. |
 | `/setup` | Install wizard for every track. Login required. |
 | `/update` | Upgrade instructions for an outdated hook. Login required. |
 | `/guide` | `tok` command reference and hook customisation. Login required. |
@@ -121,8 +122,9 @@ scheduled jobs probe their quotas. See `.ai/domain/accounts.md`.
 ## Scheduled work
 
 `routes/console.php` schedules the idle-fighter sweep, installer artifact
-refresh, daily/weekly/monthly/yearly recaps, and account quota probing and
-profile sync. In Docker these run in the `scheduler` container
+refresh, daily/weekly/monthly/yearly recaps, custom-character file cleanup,
+model price sync, and account quota probing and profile sync. In Docker these
+run in the `scheduler` container
 (`php artisan schedule:work`).
 
 ## Testing
