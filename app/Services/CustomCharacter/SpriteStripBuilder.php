@@ -7,9 +7,9 @@ use GdImage;
 /**
  * Lays outlined sprites into the game's fighter strips: one horizontal strip
  * per animation, every frame 100 x 100 with the feet on the roster's foot line
- * and the body centred. Idle holds the last idle pose (the one facing the
- * way the game walks) and bobs a pixel; walk, attack and death hold each
- * drawn pose for a beat.
+ * and the body centred. Every animation plays the poses drawn on the sheet in
+ * order, each held for a beat (two frames for idle, walk and attack, one for death),
+ * so the motion on the sheet is the motion in the game.
  */
 class SpriteStripBuilder
 {
@@ -75,7 +75,7 @@ class SpriteStripBuilder
     private function sequence(string $name, int $poseCount): array
     {
         return match ($name) {
-            'idle' => array_map(fn (int $lift): array => [$poseCount - 1, $lift], [0, 0, -1, -1, 0, 0]),
+            'idle' => array_map(fn (int $frame): array => [intdiv($frame, 2), 0], range(0, $poseCount * 2 - 1)),
             'walk' => array_map(fn (int $frame): array => [intdiv($frame, 2), $frame % 2 === 1 ? -1 : 0], range(0, 7)),
             'attack' => array_map(fn (int $frame): array => [intdiv($frame, 2), 0], range(0, 5)),
             'death' => array_map(fn (int $frame): array => [$frame, 0], range(0, 2)),
