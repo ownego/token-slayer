@@ -3,9 +3,10 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "node scripts/pack-sprites.js && vite build",
-        "dev": "node scripts/pack-sprites.js && vite",
+        "build": "node scripts/pack-sprites.js && npm run pack-heroes && vite build",
+        "dev": "node scripts/pack-sprites.js && npm run pack-heroes && vite",
         "pack-sprites": "node scripts/pack-sprites.js",
+        "pack-heroes": "node scripts/pack-sprites.js --src resources/assets/battlefield/heroes --out public/assets/battlefield/heroes --name heroes-atlas",
         "test": "vitest run"
     },
     "devDependencies": {

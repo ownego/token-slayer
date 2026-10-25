@@ -30,4 +30,7 @@ Thumbs.db
 /public/assets/battlefield/fighters/fighters-atlas.png
 /public/assets/battlefield/fighters/fighters-atlas.json
 /resources/js/battlefield/config/atlas-version.js
+/public/assets/battlefield/heroes/heroes-atlas.png
+/public/assets/battlefield/heroes/heroes-atlas.json
+/resources/js/battlefield/config/heroes-atlas-version.js
 /.superpowers/

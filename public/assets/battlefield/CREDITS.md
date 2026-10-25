@@ -47,6 +47,29 @@ Naming convention: `{character}-{state}.png` for base animations, `{character}-a
 
 The last 5 rows were added later (`d9c60d3`), with their source strips in the same directory. `knight-templar` and `lancer` (melee `BLADE` attacks) have no effect-strip variants at all. `priest` also has a dedicated 4-frame `heal` animation (`rate: 5`) played on the Necromancer, not on Priest itself — see `.ai/domain/battlefield.md` Companions. `skeleton-archer` also has the skeleton-family's 5-frame `summon` animation, like `skeleton`/`armored-skeleton`/`greatsword-skeleton`.
 
+## Hero Characters (`resources/assets/battlefield/heroes/`)
+
+Iron Man, Captain America, Batman and Superman. Base stills from the **Sprite AI** public gallery (sprite-ai.art); the gallery states no licence. The characters belong to Marvel and DC; the owner accepted that for this non-commercial internal game.
+
+| Hero | Gallery item | Made here |
+|---|---|---|
+| `iron-man` | "pixel-art-iron-man-minimalist" | chibi proportions, pixel reduction, idle/fly/attack/hurt rig; lying death frames from the Sprite AI "Death" animation preset |
+| `captain-america` | "captain-america-in-blue-and-red-costume" | chibi still redrawn by hand (helmet, star, round shield), idle/shield-throw rig with the far arm; run from the Sprite AI "Run" preset; death frames from the "Death" preset; Mjolnir leap from a Sprite AI "Custom" animation of a hand-drawn still, hammer drawn here |
+| `batman` | none: an AI-generated concept sheet supplied by the owner (no licence stated) | frames cut from the sheet, reduced to 60 px and to the earlier Batman's 12 colours; idle/walk/attack/combo/explosive/ultimate/death |
+| `superman` | "superman chibi idle pose in air" | idle/fly/heat-vision/death rig, cape flutter |
+
+Strips are 100×100 per frame, padded from 80 px working sheets without resampling (see `CLAUDE.md`, Hero sprites).
+
+### Hero effects (`heroes/fx/`, `resources/js/battlefield/config/hero-fx.js`)
+
+| Files | Source | Licence |
+|---|---|---|
+| `magical-projectile`, `focus-charge`, `electric-impact`, `lattice-beam`, `beam-cutoff-burst`, `frost-nova`, `landing-dust`, `void-implosion`, `solar-shrapnel`, `cinder-orchid`, `warm-explosion`, `earth-rupture` | **PVFX Foundry** free pack, `effects/<name>/grid/sprite-sheet.png` copied unchanged (cell size, pivot and timing from each `manifest.json`) | CC0 1.0, which covers the sheets and manifests only |
+| `dollar-palm.png` | **Kenney** "Cursor Pixel Pack", tile 138 (open hand), recoloured gold with a "$": https://kenney.nl/assets/cursor-pixel-pack | CC0 |
+| `coin-spin.png` | "spinning coin anim" by **rzuf**, OpenGameArt, reduced to pixel art: https://opengameart.org/content/spinning-coin-anim | CC0 |
+| `cap-shield-spin.png`, `cap-mjolnir.png` | drawn here with the Captain America set | as the heroes above |
+| `bat-batarang`, `bat-bat`, `bat-spark`, `bat-burst`, `bat-explosion`, `bat-cloud`, `bat-sphere`, `bat-smoke` | cut from the Batman concept sheet | as Batman above |
+
 ## Companion Spritesheets (`companions/`)
 
 `minion-clash/burst1.png` / `burst2.png` are crops of the fighter pack's own `wizard-effect1` / `wizard-effect2` frames (Zerie, CC0 — see above), not separate art.
