@@ -29,6 +29,10 @@ enum FighterCharacter: string
     case Wizard = 'wizard';
     case Priest = 'priest';
     case SkeletonArcher = 'skeleton-archer';
+    case IronMan = 'iron-man';
+    case CaptainAmerica = 'captain-america';
+    case Batman = 'batman';
+    case Superman = 'superman';
 
     public static function forUserAndBoss(int $userId, ?int $bossId): self
     {
@@ -43,7 +47,7 @@ enum FighterCharacter: string
      * FIGHTER_TYPES 1:1; `tests/Unit/Enums/FighterCharacterAttackTypeTest.php`
      * locks the two in sync.
      *
-     * @return string one of 'slash'|'blast'|'shuriken'|'blade'|'arrow'
+     * @return string one of 'slash'|'blast'|'shuriken'|'blade'|'arrow'|'hero'
      */
     public function attackType(): string
     {
@@ -54,6 +58,7 @@ enum FighterCharacter: string
             self::EliteOrc, self::Slime, self::Werebear, self::Wizard, self::Priest => 'blast',
             self::Skeleton => 'shuriken',
             self::Archer, self::OrcRider, self::SkeletonArcher => 'arrow',
+            self::IronMan, self::CaptainAmerica, self::Batman, self::Superman => 'hero',
         };
     }
 }

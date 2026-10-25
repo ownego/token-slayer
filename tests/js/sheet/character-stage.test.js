@@ -51,9 +51,9 @@ test('measures the phone action rows so a toast clears their controls', () => {
 test('renders one slot per fighter and tags the equipped one YOU', () => {
   mount();
 
-  expect(document.querySelectorAll('.slot')).toHaveLength(20);
+  expect(document.querySelectorAll('.slot')).toHaveLength(24);
   expect(document.querySelector('.slot[data-key="orc-rider"] .tag')?.textContent).toBe('YOU');
-  expect(document.getElementById('roster-count').textContent).toBe('20 fighters');
+  expect(document.getElementById('roster-count').textContent).toBe('24 fighters');
 });
 
 test('a teammate playing a fighter shows as a face on its slot', () => {
@@ -400,7 +400,7 @@ test('the roster starts with a Create tile that opens the editor panel in place,
   expect(tile.classList.contains('slot')).toBe(false);
   expect(tile.textContent).toContain('Create');
   expect(tile.getAttribute('href')).toBeNull();
-  expect(document.querySelectorAll('.slot')).toHaveLength(20);
+  expect(document.querySelectorAll('.slot')).toHaveLength(24);
   expect(document.getElementById('custom-panel').hidden).toBe(true);
 
   tile.click();
@@ -505,7 +505,7 @@ test('a fighter made in the editor appears as a slot, equipped, with no reload',
   expect(slot.querySelector('.tag')?.textContent).toBe('YOU');
   expect(document.querySelector('.slot[data-key="orc-rider"] .tag')).toBeNull();
   expect(document.querySelector('.slot-add').textContent).toContain('Manage');
-  expect(document.getElementById('roster-count').textContent).toBe('21 fighters');
+  expect(document.getElementById('roster-count').textContent).toBe('25 fighters');
 });
 
 test('renaming or replacing the fighter updates its slot in place, never adding a second one', () => {
@@ -560,8 +560,8 @@ test('a custom fighter is a slot next to the roster, tagged YOU when it is the e
   const slot = document.querySelector('.slot[data-key="custom"]');
   expect(slot).not.toBeNull();
   expect(slot.querySelector('.tag')?.textContent).toBe('YOU');
-  expect(document.querySelectorAll('.slot')).toHaveLength(21);
-  expect(document.getElementById('roster-count').textContent).toBe('21 fighters');
+  expect(document.querySelectorAll('.slot')).toHaveLength(25);
+  expect(document.getElementById('roster-count').textContent).toBe('25 fighters');
   expect(document.getElementById('show-name').textContent).toBe('Custom');
   expect(document.getElementById('show-state').textContent).toBe('Equipped');
 });
@@ -722,7 +722,7 @@ test('the Custom chip shows only the custom fighter and counts it', () => {
   expect(document.getElementById('roster-count').textContent).toBe('1 fighter');
 
   document.querySelector('.chip[data-type=""]').click();
-  expect(document.getElementById('roster-count').textContent).toBe('21 fighters');
+  expect(document.getElementById('roster-count').textContent).toBe('25 fighters');
 });
 
 test('the Custom chip appears only when there is a custom fighter, and goes with it', () => {
@@ -752,7 +752,7 @@ test('the stage and the slot name the author of a custom fighter, as plain text'
 test('an equipped key the roster does not know falls back to the first fighter, not a crash', () => {
   mount({ equipped: 'custom' });
 
-  expect(document.querySelectorAll('.slot')).toHaveLength(20);
+  expect(document.querySelectorAll('.slot')).toHaveLength(24);
   expect(document.getElementById('show-name').textContent).toBe('Soldier');
 });
 

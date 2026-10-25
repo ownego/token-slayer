@@ -131,6 +131,31 @@ describe('handleHit', () => {
     expect(dispatchedFrom).toEqual({ x: 300, y: 460 });
   });
 
+  test('a hit during a hero\'s super punch ends the punch first, so its dash never becomes home', () => {
+    const entry = {
+      id: 1,
+      sprite: { x: 650, y: 460, active: true, scaleX: 1 },
+      pos: { x: 300, y: 460 },
+      displaySize: 48,
+      damageScale: 1,
+    };
+    entry.heroMoveCancel = vi.fn(() => { entry.sprite.x = entry.pos.x; entry.sprite.y = entry.pos.y; });
+    const scene = {
+      layout: LAYOUTS.landscape,
+      bossState: { number: 0, currentHp: 1000, maxHp: 1000 },
+      fighters: new Map([[1, entry]]),
+      charges: new Map(),
+      time: { now: 0, delayedCall() {} },
+      tweens: { killTweensOf() {}, add(cfg) { return cfg; } },
+      attacks: { dispatch() {} },
+    };
+
+    new Fighter(scene).handleHit({ user_id: 1, damage: 0, boss_hp_after: 990 });
+
+    expect(entry.heroMoveCancel).toHaveBeenCalledOnce();
+    expect(entry.pos).toEqual({ x: 300, y: 460 });
+  });
+
   test('still picks up the live position when a hit interrupts an ordinary walk', () => {
     const entry = {
       id: 1,
@@ -373,6 +398,32 @@ describe('custom fighters', () => {
     expect(body.setScale).toHaveBeenLastCalledWith(36 / 18);
     expect(body.setY).toHaveBeenLastCalledWith(0);
     expect(body.setTexture).toHaveBeenLastCalledWith('fighters', 'wizard-idle-0');
+  });
+
+  test('equipping a hero stands its body at a roster fighter\'s height, on the hero atlas', async () => {
+    const { FIGHTER_TYPES } = await import('@battlefield/config.js');
+    const batman = FIGHTER_TYPES.find(ft => ft.key === 'batman');
+    const { scene, entry, body } = makeScene();
+    scene.heroesLoaded = true;
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'batman' }]);
+
+    expect(entry.ftype.key).toBe('batman');
+    expect(body.setScale).toHaveBeenLastCalledWith((36 / 18) * batman.bodyScale);
+    expect(body.setY).toHaveBeenLastCalledWith(batman.bodyOffsetY * (36 / 18));
+    expect(body.setTexture).toHaveBeenLastCalledWith('heroes', 'batman-idle-0');
+  });
+
+  test('leaving a hero for a roster fighter puts the body back at its own size', async () => {
+    const { FIGHTER_TYPES } = await import('@battlefield/config.js');
+    const { scene, entry, body } = makeScene({ ftype: FIGHTER_TYPES.find(ft => ft.key === 'batman') });
+    entry.bodyFitted = true; // as addFighter leaves a hero's body
+
+    new Fighter(scene).updateCharacters([{ user_id: 1, character: 'wizard' }]);
+
+    expect(entry.ftype.key).toBe('wizard');
+    expect(body.setScale).toHaveBeenLastCalledWith(36 / 18);
+    expect(body.setY).toHaveBeenLastCalledWith(0);
   });
 
   test('a load that finishes after the character was removed does not bring it back', async () => {

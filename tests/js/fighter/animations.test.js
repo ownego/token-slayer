@@ -95,3 +95,30 @@ describe('registerFighterAnimations', () => {
     expect(scene.created.size).toBe(count);
   });
 });
+
+describe('registerFighterAnimations: per-frame timing', () => {
+  test('a hero move with frameMs plays each frame for its own time, totalling the move', () => {
+    const created = new Map();
+    const scene = {
+      anims: {
+        exists: key => created.has(key),
+        generateFrameNames: (texture, { prefix, start, end, frames }) =>
+          (frames ?? Array.from({ length: end - start + 1 }, (_, i) => start + i)).map(i => ({ key: texture, frame: `${prefix}${i}` })),
+        create: config => created.set(config.key, config),
+      },
+    };
+    const hero = {
+      key: 'test-hero', texture: 'heroes',
+      animations: { idle: { frames: 1, rate: 8 }, walk: { frames: 1, rate: 8 }, attack: { frames: 3, rate: 12 }, death: { frames: 1, rate: 8 } },
+      attacks: [{ frames: 3, rate: 12, frameMs: [80, 900, 120] }],
+    };
+
+    registerFighterAnimations(scene, hero);
+
+    // Phaser plays a frame for its own duration when it has one, else 1000 / frameRate.
+    const move = created.get('test-hero-attack1');
+    const total = move.frames.reduce((sum, f) => sum + (f.duration || 1000 / move.frameRate), 0);
+    expect(total).toBe(1100);
+    expect(move.frames.map(f => f.frame)).toEqual(['test-hero-attack1-0', 'test-hero-attack1-1', 'test-hero-attack1-2']);
+  });
+});

@@ -6,6 +6,7 @@
 // persists through $wire.equip and then dispatches `fighter-equipped`, which
 // fighterSheetShell answers by folding the sheet and focusing the camera.
 import { BOX, ROSTER, TYPE_LINE } from './sheet-roster.js';
+import { heroArtMissing } from './sheet-ui.js';
 import { BY_KEY, faceColor, frameIn, moves, nameOf, paint, paintCharge, playAnim, standOn, strip, wait } from './sprite-strip.js';
 import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
 import { CUSTOM_KEY, DRAFT_KEY, groupOf, matchesChip, registerCustomRoster } from './custom-roster.js';
@@ -577,7 +578,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     $$('show-state').textContent = isDraft ? 'Preview' : mine ? 'Equipped' : 'Previewing';
     $$('show-state').classList.toggle('previewing', !mine);
     $$('equip-btn').hidden = isOtherCustom;
-    $$('equip-btn').disabled = mine || isOtherCustom;
+    $$('equip-btn').disabled = mine || isOtherCustom || heroArtMissing(key, window.__battlefield?.scene?.heroesLoaded);
     $$('equip-label').textContent = isPeek ? `Equip version ${previewNumber}` : isDraft ? 'Use this fighter' : mine ? 'Equipped' : `Equip ${nameOf(key)}`;
     $$('back-equipped').hidden = mine || isDraft;
     $$('discard-draft').hidden = !isDraft;
@@ -598,7 +599,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       b.dataset.id = m.id;
       b.title = m.label;
       b.setAttribute('aria-pressed', 'false');
-      b.innerHTML = `<span class="key">${i + 1}</span><div class="thumb"><span></span></div><span class="label">${m.label}</span>`;
+      b.innerHTML = `<span class="key">${i + 1}</span><div class="thumb"><span></span></div><span class="label">${m.label}</span>${m.big ? '<span class="big">BIG</span>' : ''}`;
       paint(b.querySelector('.thumb span'), key, m.anim || m.id, { reverse: m.reverse });
       frameIn(b.querySelector('.thumb span'), key, { maxW: 44, maxH: 32, cyPct: 52 });
       b.addEventListener('click', () => playMove(m));
@@ -764,7 +765,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     equippingTimer = null;
     const button = $$('equip-btn');
     button.setAttribute('aria-busy', String(on));
-    button.disabled = on || previewing === equipped || otherKeys.includes(previewing);
+    button.disabled = on || previewing === equipped || otherKeys.includes(previewing) || heroArtMissing(previewing, window.__battlefield?.scene?.heroesLoaded);
     $$('equip-label').textContent = on ? 'Equipping…' : previewing === DRAFT_KEY && previewMode === 'peek' ? `Equip version ${previewNumber}` : previewing === DRAFT_KEY ? 'Use this fighter' : previewing === equipped ? 'Equipped' : `Equip ${nameOf(previewing)}`;
     if (on) {
       equippingTimer = setTimeout(() => {
@@ -1219,7 +1220,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
   });
 
   // ---- one tooltip for every icon-only button (roster slots and moves) ----
-  const TYPE_NAMES = { SLASH: 'Slash', BLADE: 'Blade', SHURIKEN: 'Shuriken', ARROW: 'Arrow', BLAST: 'Blast' };
+  const TYPE_NAMES = { SLASH: 'Slash', BLADE: 'Blade', SHURIKEN: 'Shuriken', ARROW: 'Arrow', BLAST: 'Blast', HERO: 'Hero' };
   const tipShow = e => {
     const el = e.target.closest?.('.slot, .move');
     const tip = document.getElementById('tipbox');

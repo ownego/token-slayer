@@ -3,8 +3,17 @@ import { join, basename, extname } from 'node:path';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 
-const SRC_DIR  = 'resources/assets/battlefield/fighters';
-const OUT_DIR  = 'public/assets/battlefield/fighters';
+// `--src <dir> --out <dir> --name <atlas>` packs another strip set (the heroes) into its own atlas; with no flags
+// it packs the roster fighters as before. The version file and constant follow the name, e.g. `heroes-atlas` ->
+// config/heroes-atlas-version.js exporting HEROES_ATLAS_VERSION.
+const arg = (flag, fallback) => {
+  const i = process.argv.indexOf(flag);
+  return i >= 0 ? process.argv[i + 1] : fallback;
+};
+const SRC_DIR  = arg('--src', 'resources/assets/battlefield/fighters');
+const OUT_DIR  = arg('--out', 'public/assets/battlefield/fighters');
+const NAME     = arg('--name', null);
+const ATLAS    = NAME ?? 'fighters-atlas';
 const FRAME_H  = 100;
 const FRAME_W  = 100;
 const MAX_W    = 4096;
@@ -16,7 +25,8 @@ const MAX_W    = 4096;
 // BUNDLE at build time instead (see scene.js/character-preview/scene.js's
 // `?v=` query string), which busts exactly like Vite's own hashed /build/
 // assets already do.
-const VERSION_FILE = 'resources/js/battlefield/config/atlas-version.js';
+const VERSION_FILE = NAME ? `resources/js/battlefield/config/${NAME}-version.js` : 'resources/js/battlefield/config/atlas-version.js';
+const VERSION_CONST = NAME ? `${NAME.replace(/-/g, '_').toUpperCase()}_VERSION` : 'ATLAS_VERSION';
 
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -66,7 +76,7 @@ await sharp({
 })
   .composite(composites)
   .png({ compressionLevel: 9 })
-  .toFile(join(OUT_DIR, 'fighters-atlas.png'));
+  .toFile(join(OUT_DIR, `${ATLAS}.png`));
 
 // Build Phaser Hash atlas JSON
 const frames = {};
@@ -87,7 +97,7 @@ const atlasJson = {
   frames,
   meta: {
     app:    'pack-sprites',
-    image:  'fighters-atlas.png',
+    image:  `${ATLAS}.png`,
     format: 'RGBA8888',
     size:   { w: MAX_W, h: atlasH },
     scale:  '1',
@@ -95,7 +105,7 @@ const atlasJson = {
 };
 
 const atlasJsonText = JSON.stringify(atlasJson);
-writeFileSync(join(OUT_DIR, 'fighters-atlas.json'), atlasJsonText);
+writeFileSync(join(OUT_DIR, `${ATLAS}.json`), atlasJsonText);
 
 // Derived from the JSON (frame layout) rather than the PNG bytes: sharp's
 // PNG encoder isn't guaranteed byte-identical across otherwise-identical
@@ -103,7 +113,12 @@ writeFileSync(join(OUT_DIR, 'fighters-atlas.json'), atlasJsonText);
 // build even when nothing actually changed. The JSON already captures
 // every frame's name, position, and size, so it changes if and only if the
 // visible content does.
-const version = createHash('sha256').update(atlasJsonText).digest('hex').slice(0, 10);
-writeFileSync(VERSION_FILE, `export const ATLAS_VERSION = '${version}';\n`);
+// The source strips are hashed too: an art edit that keeps every frame's place
+// (a recoloured strip) changes no JSON, and must still bust the cache. Their
+// committed bytes are stable, unlike the encoder's output.
+const versionHash = createHash('sha256').update(atlasJsonText);
+for (const file of files) versionHash.update(readFileSync(join(SRC_DIR, file)));
+const version = versionHash.digest('hex').slice(0, 10);
+writeFileSync(VERSION_FILE, `export const ${VERSION_CONST} = '${version}';\n`);
 
-console.log(`[pack-sprites] ${placements.length} strips → fighters-atlas.png (${MAX_W}×${atlasH})`);
+console.log(`[pack-sprites] ${placements.length} strips → ${ATLAS}.png (${MAX_W}×${atlasH})`);

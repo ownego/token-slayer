@@ -3,15 +3,20 @@
 // type lines and measured body boxes, with each inline base64 strip swapped
 // for the real source strip under resources/assets/battlefield/fighters/.
 
+import { FIGHTER_TYPES } from '@battlefield/config/fighters.js';
+import { TextureKey } from '@battlefield/constants.js';
+
 // The legacy "<key>-attack.png" strips are byte-for-byte copies of "<key>-attack1.png":
 // globbed together, the bundler emits one file for both and the other name 404s.
 const STRIP_URLS = import.meta.glob(['../../../assets/battlefield/fighters/*.png', '!../../../assets/battlefield/fighters/*-attack.png'], { eager: true, query: '?url', import: 'default' });
+// the heroes' strips live in their own folder; their "-attack.png" copies are excluded the same way
+const HERO_STRIP_URLS = import.meta.glob(['../../../assets/battlefield/heroes/*.png', '!../../../assets/battlefield/heroes/*-attack.png'], { eager: true, query: '?url', import: 'default' });
 
 /**
  * Every fighter the sheet can show: attack type, accent colour, and each
  * animation's frame count, frame rate and source strip file.
  *
- * @type {Array<{key: string, type: string, accent: string, anims: Object<string, {frames: number, rate: number, file: string}>}>}
+ * @type {Array<{key: string, type: string, accent: string, labels?: string[], big?: boolean[], anims: Object<string, {frames: number, rate: number, file: string}>}>}
  */
 export const ROSTER = [
   {'key': 'soldier', 'type': 'SLASH', 'accent': '#ffbb00', 'anims': {'idle': {'frames': 6, 'rate': 8, 'file': 'soldier-idle.png'}, 'walk': {'frames': 8, 'rate': 10, 'file': 'soldier-walk.png'}, 'attack1': {'frames': 6, 'rate': 12, 'file': 'soldier-attack1.png'}, 'attack2': {'frames': 6, 'rate': 12, 'file': 'soldier-attack2.png'}, 'attack3': {'frames': 9, 'rate': 12, 'file': 'soldier-attack3.png'}, 'death': {'frames': 4, 'rate': 6, 'file': 'soldier-death.png'}, 'effect1': {'frames': 6, 'rate': 12, 'file': 'soldier-effect1.png'}, 'effect2': {'frames': 6, 'rate': 12, 'file': 'soldier-effect2.png'}, 'effect3': {'frames': 9, 'rate': 12, 'file': 'soldier-effect3.png'}}},
@@ -35,6 +40,32 @@ export const ROSTER = [
   {'key': 'priest', 'type': 'BLAST', 'accent': '#cc88ff', 'anims': {'idle': {'frames': 6, 'rate': 8, 'file': 'priest-idle.png'}, 'walk': {'frames': 8, 'rate': 10, 'file': 'priest-walk.png'}, 'attack1': {'frames': 9, 'rate': 12, 'file': 'priest-attack1.png'}, 'death': {'frames': 4, 'rate': 6, 'file': 'priest-death.png'}, 'effect1': {'frames': 5, 'rate': 12, 'file': 'priest-effect1.png'}}},
   {'key': 'skeleton-archer', 'type': 'ARROW', 'accent': '#aaddff', 'anims': {'idle': {'frames': 6, 'rate': 8, 'file': 'skeleton-archer-idle.png'}, 'walk': {'frames': 8, 'rate': 10, 'file': 'skeleton-archer-walk.png'}, 'attack1': {'frames': 9, 'rate': 12, 'file': 'skeleton-archer-attack1.png'}, 'death': {'frames': 4, 'rate': 6, 'file': 'skeleton-archer-death.png'}}},
 ];
+
+/** The heroes' accents on the sheet. */
+const HERO_ACCENTS = { 'iron-man': '#e5484d', 'captain-america': '#5b8def', batman: '#f2c14e', superman: '#3b82f6' };
+
+/**
+ * A hero's roster entry, built from its FIGHTER_TYPES entry so the sheet and
+ * the field never disagree: each move's name and big flag, and a frame rate
+ * that plays the strip in the move's own length (its per-frame ms summed).
+ *
+ * @param {object} ft A FIGHTER_TYPES hero entry.
+ * @return {{key: string, type: string, accent: string, labels: string[], big: boolean[], anims: object}}
+ */
+function heroEntry(ft) {
+  const anims = {};
+  for (const state of ['idle', 'walk']) {
+    anims[state] = { ...ft.animations[state], file: `${ft.key}-${state}.png` };
+  }
+  ft.attacks.forEach((a, i) => {
+    const ms = a.frameMs.reduce((sum, f) => sum + f, 0);
+    anims[`attack${i + 1}`] = { frames: a.frames, rate: (a.frames * 1000) / ms, file: `${ft.key}-attack${i + 1}.png` };
+  });
+  anims.death = { ...ft.animations.death, file: `${ft.key}-death.png` };
+  return { key: ft.key, type: 'HERO', accent: HERO_ACCENTS[ft.key], labels: ft.attacks.map(a => a.label), big: ft.attacks.map(a => a.big), anims };
+}
+
+ROSTER.push(...FIGHTER_TYPES.filter(ft => ft.texture === TextureKey.HEROES).map(heroEntry));
 
 /**
  * Each fighter's body core inside its 100px frame, weapons excluded, as
@@ -63,6 +94,10 @@ export const BOX = {
   'wizard': [44.0, 39, 58.0, 58],
   'priest': [44.0, 38, 58.0, 58],
   'skeleton-archer': [45.92, 40, 59.92, 59],
+  'iron-man': [39, 22, 61, 51],
+  'captain-america': [31, 30, 68, 80],
+  'batman': [28, 19, 70, 80],
+  'superman': [36, 22, 60, 52],
 };
 
 /**
@@ -89,6 +124,7 @@ export const TYPE_LINE = {
   'SHURIKEN': 'Shuriken thrower. Hits from range.',
   'ARROW': 'Arrow fighter. Fires from range.',
   'BLAST': 'Blast caster. Hurls fireballs at the boss.',
+  'HERO': 'Hero. Fights with their own moves; the big ones come up on about one hit in five.',
 };
 
 /**
@@ -103,5 +139,5 @@ export function stripUrl(file) {
     return file;
   }
 
-  return STRIP_URLS[`../../../assets/battlefield/fighters/${file}`];
+  return STRIP_URLS[`../../../assets/battlefield/fighters/${file}`] ?? HERO_STRIP_URLS[`../../../assets/battlefield/heroes/${file}`];
 }

@@ -97,6 +97,18 @@ test('equipping a valid character persists it and broadcasts the change', functi
     Event::assertDispatched(FighterCharacterChanged::class, fn ($e) => $e->user->id === $user->id);
 });
 
+test('equipping a hero persists it like any roster fighter', function () {
+    Event::fake([FighterCharacterChanged::class]);
+    $user = User::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test(FighterSheet::class)
+        ->call('equip', 'batman');
+
+    expect($user->refresh()->equipped_character?->value)->toBe('batman');
+    Event::assertDispatched(FighterCharacterChanged::class, fn ($e) => $e->user->id === $user->id);
+});
+
 test('equipping an unknown character key is rejected', function () {
     Event::fake([FighterCharacterChanged::class]);
     $user = User::factory()->create(['equipped_character' => null]);
@@ -482,6 +494,15 @@ test('charactersWithMeta() entries each carry an attackType', function () {
     foreach ($component->charactersWithMeta() as $entry) {
         expect(FighterCharacter::from($entry['key'])->attackType())->toBe($entry['attackType']);
     }
+});
+
+test('charactersWithMeta() lists the four heroes under the hero style', function () {
+    $user = User::factory()->create();
+
+    $component = Livewire::actingAs($user)->test(FighterSheet::class)->instance();
+    $heroes = array_values(array_filter($component->charactersWithMeta(), fn (array $entry): bool => $entry['attackType'] === 'hero'));
+
+    expect(array_column($heroes, 'key'))->toBe(['iron-man', 'captain-america', 'batman', 'superman']);
 });
 
 test('an account card\'s own refresh re-probes just that account', function () {

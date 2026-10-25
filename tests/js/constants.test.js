@@ -21,6 +21,7 @@ describe('BusEvent', () => {
 describe('TextureKey', () => {
   test('contains all expected texture key strings', () => {
     expect(TextureKey.FIGHTERS).toBe('fighters');
+    expect(TextureKey.HEROES).toBe('heroes');
     expect(TextureKey.SPARK).toBe('spark');
     expect(TextureKey.SPARK_STREAK).toBe('spark-streak');
     expect(TextureKey.PUFF).toBe('puff');

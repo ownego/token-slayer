@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -79,4 +79,70 @@ describe.skipIf(!sourcesExist)('pack-sprites', () => {
     const second = readFileSync(versionFile, 'utf8');
     expect(second).toBe(first);
   });
+});
+
+const heroDir = join(process.cwd(), 'public/assets/battlefield/heroes');
+const heroJson = join(heroDir, 'heroes-atlas.json');
+const heroVersionFile = join(process.cwd(), 'resources/js/battlefield/config/heroes-atlas-version.js');
+
+// The hero strips live in their own atlas: the fighter atlas is already
+// 4096x3700, at the GPU texture limit many phones have.
+describe.skipIf(!sourcesExist)('pack-sprites: hero atlas', () => {
+  beforeAll(() => {
+    execSync('node scripts/pack-sprites.js --src resources/assets/battlefield/heroes --out public/assets/battlefield/heroes --name heroes-atlas', { stdio: 'inherit' });
+  }, 60_000);
+
+  test('packs every hero frame as a 100x100 cell', () => {
+    const json = JSON.parse(readFileSync(heroJson, 'utf8'));
+    expect(json.meta.image).toBe('heroes-atlas.png');
+    for (const [name, f] of Object.entries(json.frames)) {
+      expect(f.frame.w, name).toBe(100);
+      expect(f.frame.h, name).toBe(100);
+    }
+  });
+
+  test('has the hero strips under their game keys, fliers under walk', () => {
+    const json = JSON.parse(readFileSync(heroJson, 'utf8'));
+    for (const key of ['iron-man', 'captain-america', 'batman', 'superman']) {
+      for (const state of ['idle', 'walk', 'attack1', 'death']) {
+        expect(json.frames[`${key}-${state}-0`], `${key}-${state}-0`).toBeDefined();
+      }
+    }
+  });
+
+  test('writes its own HEROES_ATLAS_VERSION and leaves the fighter version alone', () => {
+    expect(readFileSync(heroVersionFile, 'utf8')).toMatch(/export const HEROES_ATLAS_VERSION = '[0-9a-f]{8,}';/);
+    expect(readFileSync(versionFile, 'utf8')).toMatch(/export const ATLAS_VERSION = /);
+  });
+});
+
+// The version is a cache buster for non-hashed files: an art edit that keeps the
+// layout (a recoloured hero strip) must still change it.
+describe('pack-sprites: version follows the art, not only the layout', () => {
+  const tmp = join(process.cwd(), 'storage/framework/testing/pack-version');
+  const versionPath = join(process.cwd(), 'resources/js/battlefield/config/vtest-atlas-version.js');
+
+  afterAll(async () => {
+    const { rmSync } = await import('node:fs');
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(versionPath, { force: true });
+  });
+
+  test('changing a pixel of a strip changes the version', async () => {
+    const { mkdirSync } = await import('node:fs');
+    const sharp = (await import('sharp')).default;
+    mkdirSync(join(tmp, 'src'), { recursive: true });
+    const strip = colour => sharp({ create: { width: 100, height: 100, channels: 4, background: colour } }).png().toFile(join(tmp, 'src', 'probe-idle.png'));
+    const pack = () => {
+      execSync(`node scripts/pack-sprites.js --src ${tmp}/src --out ${tmp}/out --name vtest-atlas`, { stdio: 'ignore' });
+      return readFileSync(versionPath, 'utf8');
+    };
+
+    await strip({ r: 255, g: 0, b: 0, alpha: 1 });
+    const red = pack();
+    await strip({ r: 0, g: 0, b: 255, alpha: 1 });
+    const blue = pack();
+
+    expect(blue).not.toBe(red);
+  }, 60_000);
 });

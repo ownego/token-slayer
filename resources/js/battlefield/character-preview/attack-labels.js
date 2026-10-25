@@ -15,8 +15,9 @@ export const ATTACK_LABELS = {
  *
  * @param {string} attackType - AttackType value
  * @param {number} slotIndex - 0-based index into that character's attacks[]
+ * @param {{label?: string}} [attack] - the attacks[] entry; a hero's move carries its own label
  * @return {string}
  */
-export function getAttackLabel(attackType, slotIndex) {
-  return ATTACK_LABELS[attackType]?.[slotIndex] ?? `Attack ${slotIndex + 1}`;
+export function getAttackLabel(attackType, slotIndex, attack) {
+  return attack?.label ?? ATTACK_LABELS[attackType]?.[slotIndex] ?? `Attack ${slotIndex + 1}`;
 }

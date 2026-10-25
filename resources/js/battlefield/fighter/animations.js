@@ -34,13 +34,16 @@ export function registerFighterAnimations(scene, ft) {
     const atkKey = `${ft.key}-attack${i + 1}`;
     const effKey = `${ft.key}-effect${i + 1}`;
     if (!scene.anims.exists(atkKey)) {
+      const frames = scene.anims.generateFrameNames(texture, {
+        prefix: `${ft.key}-attack${i + 1}-`,
+        start: 0,
+        end: atk.frames - 1,
+      });
+      // A hero move times each frame itself (its effects are scheduled on the
+      // same clock): a frame's own `duration` replaces 1000 / frameRate.
       scene.anims.create({
         key: atkKey,
-        frames: scene.anims.generateFrameNames(texture, {
-          prefix: `${ft.key}-attack${i + 1}-`,
-          start: 0,
-          end: atk.frames - 1,
-        }),
+        frames: atk.frameMs ? frames.map((f, n) => ({ ...f, duration: atk.frameMs[n] })) : frames,
         frameRate: atk.rate,
         repeat: 0,
       });
@@ -89,6 +92,10 @@ export function registerFighterAnimations(scene, ft) {
  */
 export function registerAllFighterAnimations(scene) {
   for (const ft of FIGHTER_TYPES) {
+    // a hero whose atlas did not load is drawn as a roster fighter (fighter/resolve-type.js)
+    if (scene.textures && !scene.textures.exists(textureOf(ft))) {
+      continue;
+    }
     registerFighterAnimations(scene, ft);
   }
 }

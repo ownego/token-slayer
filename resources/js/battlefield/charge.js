@@ -2,6 +2,7 @@ import { TIMINGS } from '@battlefield/config.js';
 import { AnimState } from '@battlefield/constants.js';
 import { heelWorldOffset } from '@battlefield/shared/heel.js';
 import { nextBurst } from '@battlefield/shared/sparks.js';
+import { chargeAnim } from '@battlefield/fighter/charge-anim.js';
 
 /** Manages charge rings, trails, fire emitters, and activity bubbles for charging fighters. */
 export class Charge {
@@ -82,7 +83,7 @@ export class Charge {
     if (fighter.body && fighter.animState !== AnimState.ATTACK) {
       fighter.animState = AnimState.WALK;
       fighter.body.setFlipX(fighter.pos.x > this.scene.layout.boss.anchor.x);
-      fighter.body.play(fighter.ftype.key + '-walk');
+      fighter.body.play(`${fighter.ftype.key}-${chargeAnim(fighter.ftype)}`);
     }
     const ring = this.createChargingRing(fighter);
     fighter.sprite.addAt(ring, 0);

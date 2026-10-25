@@ -14,7 +14,11 @@ function pngSize(path) {
 
 const atlasJsonPath = join(process.cwd(), 'public/assets/battlefield/fighters/fighters-atlas.json');
 const atlasExists   = existsSync(atlasJsonPath);
-const atlasFrames   = atlasExists ? JSON.parse(readFileSync(atlasJsonPath, 'utf8')).frames : {};
+const heroAtlasPath = join(process.cwd(), 'public/assets/battlefield/heroes/heroes-atlas.json');
+const atlasFrames   = atlasExists ? {
+  ...JSON.parse(readFileSync(atlasJsonPath, 'utf8')).frames,
+  ...(existsSync(heroAtlasPath) ? JSON.parse(readFileSync(heroAtlasPath, 'utf8')).frames : {}),
+} : {};
 
 describe('FIGHTER_TYPES', () => {
   test('each entry has the atlas-compatible schema shape', () => {
@@ -58,6 +62,7 @@ describe('FIGHTER_TYPES', () => {
       'armored-orc', 'elite-orc', 'skeleton', 'armored-skeleton', 'slime',
       'archer', 'werewolf', 'werebear', 'orc-rider', 'greatsword-skeleton',
       'knight-templar', 'lancer', 'wizard', 'priest', 'skeleton-archer',
+      'iron-man', 'captain-america', 'batman', 'superman',
     ]);
   });
 

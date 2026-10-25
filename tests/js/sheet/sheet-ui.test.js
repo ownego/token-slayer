@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { agoLabel, bestComboKey, coarseAgo, crewCounts, crewReducer, easeCount, probeLabel, rovingIndex } from '@battlefield/sheet/sheet-ui.js';
+import { agoLabel, bestComboKey, coarseAgo, crewCounts, crewReducer, easeCount, heroArtMissing, probeLabel, rovingIndex } from '@battlefield/sheet/sheet-ui.js';
 
 describe('probeLabel', () => {
   test('a moved reading shows before → after, marked changed', () => {
@@ -66,4 +66,19 @@ test('the last-hit stamp reads coarsely: just now, whole minutes, whole hours, w
   expect(coarseAgo(3600 + 59 * 60)).toBe('1h ago');
   expect(coarseAgo(2 * 3600)).toBe('2h ago');
   expect(coarseAgo(3 * 86400 + 5 * 3600)).toBe('3d ago');
+});
+
+describe('heroArtMissing', () => {
+  test('a hero cannot be equipped from a page whose hero atlas failed to load', () => {
+    expect(heroArtMissing('batman', false)).toBe(true);
+  });
+
+  test('a hero can be equipped once its atlas loaded, or before the field reported it', () => {
+    expect(heroArtMissing('batman', true)).toBe(false);
+    expect(heroArtMissing('batman', undefined)).toBe(false);
+  });
+
+  test('roster fighters never depend on the hero atlas', () => {
+    expect(heroArtMissing('werebear', false)).toBe(false);
+  });
 });
