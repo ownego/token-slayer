@@ -67,9 +67,10 @@ export function snapshotState(currentState, scene) {
         // silently drops every fighter's live subagent count back to 0 on
         // every rotate — caught by battlefield-reviewer before ship.
         agentCount: scene.minions?.byUser.get(f.id)?.length ?? 0,
-        // the player's custom minions, kept on the entry in the normalised shape
-        // (minion-custom.js's normalizeCustomMinions reads it back from the boot payload)
-        customMinions: f.customMinions ?? [],
+        // the player's minion pool ({rev, defaults, custom}), kept on the entry in the
+        // normalised shape (minion-custom.js's normalizeMinionPool reads it back from the
+        // boot payload); the rev rides along so a late payload still loses to it after a rotate
+        minionPool: f.minionPool ?? null,
       };
     });
   }

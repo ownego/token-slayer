@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { CUSTOM_BOX, CUSTOM_GROUP, CUSTOM_KEY, MINION_DRAFT_KEY, MINION_GROUP, MINION_PEEK_KEY, customRosterEntry, groupOf, isMinionKey, matchesChip, registerCustomRoster } from '@battlefield/sheet/custom-roster.js';
+import { CUSTOM_BOX, CUSTOM_GROUP, CUSTOM_KEY, customRosterEntry, groupOf, matchesChip, registerCustomRoster } from '@battlefield/sheet/custom-roster.js';
 import { stripUrl } from '@battlefield/sheet/sheet-roster.js';
 
 const WIRE = {
@@ -117,43 +117,5 @@ describe('registerCustomRoster', () => {
 describe('stripUrl', () => {
   test('hands a served URL back as it is, so custom strips play like the roster\'s', () => {
     expect(stripUrl('/storage/custom-characters/7/abc/idle.png')).toBe('/storage/custom-characters/7/abc/idle.png');
-  });
-});
-
-describe('a custom minion on the stage', () => {
-  const MINION = { ...WIRE, url_base: '/storage/custom-minions/7/abc123def456', body_px: 22 };
-
-  test('has two keys of its own, apart from the fighter\'s', () => {
-    expect(MINION_DRAFT_KEY).toBe('minion-draft');
-    expect(MINION_PEEK_KEY).toBe('minion-peek');
-    expect(isMinionKey(MINION_DRAFT_KEY)).toBe(true);
-    expect(isMinionKey(MINION_PEEK_KEY)).toBe(true);
-    expect(isMinionKey(CUSTOM_KEY)).toBe(false);
-    expect(isMinionKey('custom-draft')).toBe(false);
-  });
-
-  test('is a roster-shaped entry in the minion group, so no fighter chip claims it', () => {
-    const entry = customRosterEntry(MINION, MINION_DRAFT_KEY);
-
-    expect(entry).toMatchObject({ key: MINION_DRAFT_KEY, group: MINION_GROUP, name: 'Minion', author: null });
-    expect(entry.anims.idle.file).toBe('/storage/custom-minions/7/abc123def456/idle.png');
-    expect(matchesChip('', MINION_GROUP)).toBe(true);
-    expect(matchesChip('CUSTOM', MINION_GROUP)).toBe(false);
-    expect(matchesChip('SLASH', MINION_GROUP)).toBe(false);
-  });
-
-  test('registers with the body box its own height gives, and unregisters', () => {
-    const byKey = {};
-    const box = {};
-
-    expect(registerCustomRoster(byKey, box, MINION, MINION_PEEK_KEY)).toBe(true);
-    expect(box[MINION_PEEK_KEY]).toEqual(CUSTOM_BOX);
-
-    registerCustomRoster(byKey, box, { ...MINION, body_px: 28 }, MINION_PEEK_KEY);
-    expect(box[MINION_PEEK_KEY]).toEqual([39, 30, 61, 58]);
-
-    registerCustomRoster(byKey, box, null, MINION_PEEK_KEY);
-    expect(byKey[MINION_PEEK_KEY]).toBeUndefined();
-    expect(box[MINION_PEEK_KEY]).toBeUndefined();
   });
 });

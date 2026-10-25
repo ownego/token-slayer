@@ -10,6 +10,7 @@ use App\Support\CacheKeys;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -106,6 +107,53 @@ test('a minion draft the player rebuilt before the prune got the lock stays, wit
         ->and($user->fresh()->customMinionDraft->version_hash)->toBe($rebuilt->version_hash);
     Storage::disk('public')->assertExists("custom-minions/{$user->id}/staged/{$rebuilt->version_hash}/idle.png");
 })->with(['the same sheet' => 0, 'another sheet' => 1]);
+
+test('it removes every stale draft in one pass, however many players have one', function () {
+    config(['token_slayer.custom_character.draft_ttl_hours' => 24]);
+    // one more than a page of the old each() (1000), so a pass that skips rows while it deletes leaves some behind
+    $players = User::factory()->count(1001)->create();
+    $stale = now()->subHours(48)->toDateTimeString();
+    $rows = [];
+    foreach ($players as $index => $player) {
+        foreach (['fighter', 'minion'] as $type) {
+            $rows[] = [
+                'user_id' => $player->id,
+                'type' => $type,
+                'state' => 'draft',
+                'slot' => null,
+                'version_hash' => sprintf('%s%08x', $type === 'fighter' ? 'f' : 'm', $index),
+                'enabled' => true,
+                'data' => json_encode(['animations' => []]),
+                'created_at' => $stale,
+                'updated_at' => $stale,
+            ];
+        }
+    }
+    foreach (array_chunk($rows, 500) as $chunk) {
+        DB::table('custom_sprites')->insert($chunk);
+    }
+
+    $removed = app(PruneStaleCustomCharacterDrafts::class)->execute();
+
+    expect($removed)->toBe(2002)
+        ->and(CustomCharacterDraft::count())->toBe(0)
+        ->and(CustomMinionDraft::count())->toBe(0);
+});
+
+test('a small page size removes the same drafts', function () {
+    config(['token_slayer.custom_character.draft_ttl_hours' => 24]);
+    $players = User::factory()->count(7)->create();
+    foreach ($players as $player) {
+        $minion = stagedMinionFor($player);
+        $fighter = stagedFor($player);
+        CustomMinionDraft::whereKey($minion->id)->update(['updated_at' => now()->subHours(48)]);
+        CustomCharacterDraft::whereKey($fighter->id)->update(['updated_at' => now()->subHours(48)]);
+    }
+
+    expect(app(PruneStaleCustomCharacterDrafts::class)->execute(chunk: 2))->toBe(14)
+        ->and(CustomCharacterDraft::count())->toBe(0)
+        ->and(CustomMinionDraft::count())->toBe(0);
+});
 
 test('the prune command runs, reports, and is scheduled', function () {
     $this->artisan('custom-characters:prune-drafts')->expectsOutputToContain('0 stale drafts removed')->assertSuccessful();

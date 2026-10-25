@@ -1,12 +1,14 @@
 import './echo';
 import { battlefieldHud } from './battlefield/hud/index.js';
-import { agoTicker, clawdBuddyPanel, fighterSheetShell, sheetFrame, sparkChart } from './battlefield/sheet/index.js';
+import { agoTicker, characterTabs, clawdBuddyPanel, fighterSheetShell, sheetFrame, sparkChart } from './battlefield/sheet/index.js';
 import { runnerSprite } from './battlefield/sheet/runner.js';
 import { clawdHop } from './battlefield/sheet/clawd-hop.js';
 import { accountCard } from './battlefield/sheet/account-card.js';
 import { modelPicker, periodTabs } from './battlefield/sheet/pickers.js';
 import { miniStage } from './battlefield/sheet/mini-stage.js';
 import { characterStage } from './battlefield/sheet/character-stage.js';
+import { minionStage } from './battlefield/sheet/minion-stage.js';
+import { minionThumb } from './battlefield/sheet/minion-thumb.js';
 import { posePrototype } from './battlefield/sheet/pose-prototype.js';
 import { characterPrompt } from './custom-character/prompt-picker.js';
 import { whenReady } from './battlefield/ready-signal.js';
@@ -36,7 +38,10 @@ document.addEventListener('alpine:init', () => {
   window.Alpine.data('modelPicker', modelPicker);
   window.Alpine.data('miniStage', miniStage);
   window.Alpine.data('clawdBuddyPanel', clawdBuddyPanel);
+  window.Alpine.data('characterTabs', characterTabs);
   window.Alpine.data('characterStage', characterStage);
+  window.Alpine.data('minionStage', minionStage);
+  window.Alpine.data('minionThumb', minionThumb);
   window.Alpine.data('posePrototype', posePrototype);
   window.Alpine.data('characterPrompt', characterPrompt);
 });

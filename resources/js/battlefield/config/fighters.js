@@ -1,6 +1,16 @@
 import { AttackType } from '../constants.js';
 import { BATMAN_ATTACKS, CAPTAIN_AMERICA_ATTACKS, IRON_MAN_ATTACKS, SUPERMAN_ATTACKS, heroBody } from './heroes.js';
 
+/**
+ * The height of a roster fighter's visible body in its 100 px frame, in px (the Tiny RPG
+ * sprites: do not change without re-measuring the atlas). A fighter is drawn at
+ * `displaySize / SPRITE_CHAR_HEIGHT`, and the sheet sizes a minion against it
+ * (`sheet/minion-preview.js`), so every one of them reads this one number.
+ *
+ * @type {number}
+ */
+export const SPRITE_CHAR_HEIGHT = 18;
+
 const FIRE_CHARGE   = [0x991100, 0xcc3300, 0xdd6600, 0xee9900, 0xffbb00];
 const PURPLE_CHARGE = [0x4400aa, 0x6600cc, 0x8833dd, 0xaa55ee, 0xcc88ff];
 const GREEN_CHARGE  = [0x005500, 0x117700, 0x33aa00, 0x55cc11, 0x88ee44];

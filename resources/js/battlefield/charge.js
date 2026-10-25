@@ -39,7 +39,7 @@ export class Charge {
   /**
    * Handles a fighter-charging event: creates or updates charge visuals.
    *
-   * @param {{ user_id: number, activity?: string, slack_handle?: string, avatar_url?: string, character?: string, custom_minions?: ?Array<object>, position?: {x: number, y: number}|null }} payload
+   * @param {{ user_id: number, activity?: string, slack_handle?: string, avatar_url?: string, character?: string, minion_pool?: ?object, position?: {x: number, y: number}|null }} payload
    * @return {void}
    */
   handleCharging(payload) {
@@ -57,7 +57,7 @@ export class Charge {
         avatar_url: payload.avatar_url,
         character: payload.character ?? null,
         custom_character: payload.custom_character ?? null,
-        custom_minions: payload.custom_minions ?? null,
+        minion_pool: payload.minion_pool ?? null,
         position: payload.position ?? null,
       });
     }
@@ -74,12 +74,13 @@ export class Charge {
         custom_character: payload.custom_character ?? null,
       }]);
     }
-    // The same catch-up for custom minions. scene.js seeds a charge without the key, so a
-    // missing one is "no information", never "the set is empty"; only an array replaces the
-    // set, and Minions#handleMinionsChanged decides whether it changed. A fighter created
-    // just above already got its set from the join.
-    if (wasOnField && Array.isArray(payload.custom_minions)) {
-      this.scene.minions?.handleMinionsChanged?.({ user_id: payload.user_id, custom_minions: payload.custom_minions });
+    // The same catch-up for the minion pool. scene.js seeds a charge without the key, so a
+    // missing one is "no information", never "the pool is empty"; only a pool object is
+    // forwarded, and Minions#handleMinionsChanged decides whether it is newer by `rev`: this
+    // charge may have read the pool before a change whose broadcast already arrived. A
+    // fighter created just above already got its pool from the join.
+    if (wasOnField && payload.minion_pool != null && typeof payload.minion_pool === 'object') {
+      this.scene.minions?.handleMinionsChanged?.({ user_id: payload.user_id, minion_pool: payload.minion_pool });
     }
     const existing = this.scene.charges.get(payload.user_id);
     if (existing) {

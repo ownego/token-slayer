@@ -25,3 +25,22 @@ export function driftedPositions(localFighters, serverPositions, epsilon = DEFAU
     return Math.abs(local.x - server.x) >= epsilon || Math.abs(local.y - server.y) >= epsilon;
   });
 }
+
+/**
+ * Turns the resync response's pools (`{[userId]: pool}`, every fighter on the field) into
+ * the payloads `Minions#handleMinionsChanged` takes, which applies each by the `rev` rule.
+ * Object keys are strings and the scene keys its fighters by number, so the id is
+ * converted here; a key that is not a whole number cannot be a fighter and is dropped.
+ *
+ * @param {?Object<string, object>} minionPools The pool of each fighter on the field, keyed by user id.
+ * @return {Array<{user_id: number, minion_pool: object}>}
+ */
+export function minionPoolPayloads(minionPools) {
+  if (minionPools === null || typeof minionPools !== 'object' || Array.isArray(minionPools)) {
+    return [];
+  }
+
+  return Object.entries(minionPools)
+    .filter(([userId]) => Number.isInteger(Number(userId)))
+    .map(([userId, pool]) => ({ user_id: Number(userId), minion_pool: pool }));
+}

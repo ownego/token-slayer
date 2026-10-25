@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, test } from 'vitest';
-import { chargePalette, faceColor, frameIn, minionMoves, moves, pretty, standOn } from '@battlefield/sheet/sprite-strip.js';
+import { chargePalette, faceColor, frameIn, moves, pretty, standOn } from '@battlefield/sheet/sprite-strip.js';
 
 test('a fighter\'s hotbar is idle, walk, its attacks named by type, then death and summon', () => {
   expect(moves('orc-rider').map(m => m.label)).toEqual(['Idle', 'Walk', 'Quick shot', 'Arrow volley', 'Piercing shot', 'Death', 'Summon']);
@@ -60,17 +60,4 @@ describe('shrinking a sprite', () => {
 
     expect(el.style.imageRendering).toBe('');
   });
-});
-
-test('a minion\'s hotbar is idle, walk, its attack and the fall it plays when hit', () => {
-  expect(minionMoves('minion-draft').map(m => m.label)).toEqual(['Idle', 'Walk', 'Attack', 'Fall']);
-});
-
-test('the fall holds on the death strip for about 2s and then stands back up, like the field\'s reaction', () => {
-  expect(minionMoves('minion-draft').find(m => m.label === 'Fall')).toMatchObject({ anim: 'death', holdMs: 2000, thenReverse: true });
-  expect(minionMoves('minion-draft').find(m => m.label === 'Attack').anim).toBe('attack1');
-});
-
-test('moves() gives a minion key its own hotbar, with ids the stage can play', () => {
-  expect(moves('minion-peek').map(m => m.id)).toEqual(['idle', 'walk', 'attack1', 'death']);
 });

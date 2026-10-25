@@ -53,6 +53,25 @@ export const NECROMANCER_CONFIG = {
 export const MINION_SIZE_RATIO = 0.5;
 
 /**
+ * The most custom minions one player's pool carries. Mirrors the server's
+ * `token_slayer.custom_character.minions_max` (`CustomCharacterConfigTest` keeps the two
+ * equal); the client uses it to cap a pool read off the wire, so a malformed payload cannot
+ * ask for an unbounded number of textures.
+ *
+ * @type {number}
+ */
+export const MINION_POOL_CUSTOM_CAP = 3;
+
+/**
+ * How long a minion that fell stays down before it gets back up (a death strip held on its
+ * last frame, then played backwards), in ms. One number for the default types' `reaction`,
+ * the custom minion's own reaction (`minion-custom.js`) and the sheet's Fall move.
+ *
+ * @type {number}
+ */
+export const MINION_FALL_HOLD_MS = 2000;
+
+/**
  * The subagent-minion candidates a fighter's swarm is randomly drawn from
  * (see minions.js) — one per dispatched-but-not-yet-stopped Task subagent.
  * Purely cosmetic: fights between two fighters' minions never touch damage.
@@ -96,7 +115,7 @@ export const MINION_TYPES = [
       death:   { file: '/assets/battlefield/companions/demon-a/death.png',   frameWidth: 100, frameHeight: 100, count: 4, rate: 6 },
     },
     attacks: [{ anim: 'attack1', hitFrame: 4 }, { anim: 'attack2', hitFrame: 3 }],
-    reaction: { anim: 'death', holdMs: 2000, getUp: true },
+    reaction: { anim: 'death', holdMs: MINION_FALL_HOLD_MS, getUp: true },
   },
   {
     key: 'blood-monster-a',
@@ -109,7 +128,7 @@ export const MINION_TYPES = [
       death:   { file: '/assets/battlefield/companions/blood-monster-a/death.png',   frameWidth: 100, frameHeight: 100, count: 4, rate: 6 },
     },
     attacks: [{ anim: 'attack1', hitFrame: 4 }, { anim: 'attack2', hitFrame: 5 }],
-    reaction: { anim: 'death', holdMs: 2000, getUp: true },
+    reaction: { anim: 'death', holdMs: MINION_FALL_HOLD_MS, getUp: true },
   },
   {
     key: 'smw-goomba',

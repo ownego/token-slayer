@@ -8,6 +8,7 @@ use App\Enums\IncompleteUsageReason;
 use App\Enums\MembershipStatus;
 use App\Services\CustomCharacter\CustomCharacterStore;
 use App\Services\CustomCharacter\CustomMinionStore;
+use App\Services\CustomCharacter\MinionPool;
 use App\Services\Roles\DefaultRolePermissions;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
@@ -63,6 +64,8 @@ class User extends Authenticatable implements FilamentUser
             'equipped_character' => FighterCharacter::class,
             'incomplete_events' => 'integer',
             'incomplete_reason' => IncompleteUsageReason::class,
+            'minion_defaults_off' => 'array',
+            'minion_pool_rev' => 'integer',
         ];
     }
 
@@ -171,13 +174,13 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * The custom minions this user has confirmed, oldest first.
+     * The custom minions this user has confirmed, by slot.
      *
      * @return HasMany<CustomMinion, $this>
      */
     public function customMinions(): HasMany
     {
-        return $this->hasMany(CustomMinion::class)->orderBy('id');
+        return $this->hasMany(CustomMinion::class)->orderBy('slot');
     }
 
     /**
@@ -205,15 +208,15 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * The broadcast state of each of the user's custom minions (see
-     * CustomMinion::broadcastState()), oldest first; empty when they have none.
-     * Reads through the relation so an eager load is used.
+     * The minion pool a subagent summon draws from: the default looks still ticked
+     * plus the ticked custom minions, with the counter that orders one pool against
+     * another (see MinionPool::get()).
      *
-     * @return list<array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, body_px: int}>
+     * @return array{rev: int, defaults: list<string>, custom: list<array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, body_px: int}>}
      */
-    public function customMinionsState(): array
+    public function minionPoolState(): array
     {
-        return $this->customMinions->map(fn (CustomMinion $minion): array => $minion->broadcastState())->values()->all();
+        return app(MinionPool::class)->get($this);
     }
 
     /**

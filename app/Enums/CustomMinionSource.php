@@ -4,7 +4,7 @@ namespace App\Enums;
 
 /**
  * How a custom minion came to be in a player's set. String-backed because the
- * value persists on `custom_minions.source`.
+ * value persists in the `source` key of the row's `custom_sprites.data`.
  */
 enum CustomMinionSource: string
 {

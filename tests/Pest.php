@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /*
@@ -367,9 +368,33 @@ function stagedFor(User $user, int $variant = 0): CustomCharacterDraft
  *
  * @param  User  $user  the owner
  * @param  int  $variant  0, 1 or 2: each gives different strips, and the same variant gives the same hash as stagedFor() does
+ * @param  int|null  $slot  the slot of the minion the draft will replace, or null to add a new one
  * @return CustomMinionDraft the staged draft
  */
-function stagedMinionFor(User $user, int $variant = 0): CustomMinionDraft
+function stagedMinionFor(User $user, int $variant = 0, ?int $slot = null): CustomMinionDraft
 {
-    return app(StageCustomMinion::class)->execute($user, pngBytes(variantPoseSheet($variant)));
+    return app(StageCustomMinion::class)->execute($user, pngBytes(variantPoseSheet($variant)), $slot);
+}
+
+/**
+ * Wraps the faked `public` disk so some calls fail, everything else going to the real fake.
+ * A broken call gives `false`, as a disk that refuses does. Put the real disk back with
+ * `Storage::set('public', $real)` (take `$real` from `Storage::disk('public')` before this).
+ *
+ * @param  string  $method  the disk method to break
+ * @param  Closure  $when  receives the call's arguments; true makes that call fail
+ * @return void
+ */
+function breakPublicDisk(string $method, Closure $when): void
+{
+    $real = Storage::disk('public');
+    $disk = Mockery::mock($real);
+    $disk->shouldReceive($method)->andReturnUsing(function (...$arguments) use ($real, $method, $when) {
+        if ($when(...$arguments)) {
+            return false;
+        }
+
+        return $real->{$method}(...$arguments);
+    });
+    Storage::set('public', $disk);
 }

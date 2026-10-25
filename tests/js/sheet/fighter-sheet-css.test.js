@@ -202,28 +202,13 @@ test('the roster filter chips wrap onto a second row instead of clipping the las
   expect(wrap).toBe('wrap');
 });
 
-test('a custom minion on the Profile stage is 88px and steps its strip by the variables the blade sets', () => {
-  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
-  const decls = {};
-  root.walkRules('.fs .mini-minion.m-custom', rule => {
-    if (rule.parent.type === 'root') {
-      rule.walkDecls(d => { decls[d.prop] = d.value; });
-    }
-  });
-
-  expect(decls['background-image']).toBe('var(--strip)');
-  expect(decls['background-size']).toContain('var(--frames)');
-  expect(decls.animation).toMatch(/var\(--frames\).*var\(--rate\)|var\(--rate\).*var\(--frames\)/);
-  expect(root.toString()).toMatch(/\.fs \.mini-minion\.m-custom \{[^}]*width: 88px/);
-});
-
-test('a custom minion holds its first frame under reduced motion', () => {
+test('a minion on the Profile stage holds its first frame under reduced motion', () => {
   const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
   let found = null;
   root.walkAtRules('media', at => {
     if (at.params.includes('prefers-reduced-motion: reduce')) {
       at.walkRules(rule => {
-        if (rule.selectors.includes('.fs .mini-minion.m-custom') || rule.selectors.includes('.fs .minion-field-view .mfv-sprite')) {
+        if (rule.selectors.includes('.fs .mini-minion.m-look')) {
           rule.walkDecls('animation', d => { found = d.value; });
         }
       });
@@ -233,10 +218,10 @@ test('a custom minion holds its first frame under reduced motion', () => {
   expect(found).toBe('none');
 });
 
-test('the Forge tabs and the card buttons are at least 44px to hit', () => {
+test('the Character sub-tabs are at least 44px to hit', () => {
   const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
   let height = null;
-  root.walkRules('.fs .forge-tabs .sheet-tab', rule => {
+  root.walkRules('.fs .char-subtabs .sheet-tab', rule => {
     if (rule.parent.type === 'root') {
       rule.walkDecls('min-height', d => { height = d.value; });
     }

@@ -23,11 +23,116 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * @return {void}
  */
 export function switchTab(root, tab) {
-  // only the sheet's own tabs (they carry `data-tab`): the Forge's Fighter | Minions strip reuses the look, not the job
+  // only the sheet's own tabs (they carry `data-tab`): the Character tab's Fighter | Minions strip reuses the look, not the job
   root.querySelectorAll('.sheet-tab[data-tab]').forEach(button => {
     button.setAttribute('aria-selected', button.dataset.tab === tab ? 'true' : 'false');
   });
   root.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('is-active', panel.id === `tab-${tab}`));
+}
+
+/**
+ * The Character tab's sub-tabs, in the order they sit on the strip.
+ *
+ * @type {Array<string>}
+ */
+export const CHARACTER_TABS = ['fighter', 'minions'];
+
+/**
+ * The sub-tab a key on the strip moves to: the arrows step and wrap, Home and End jump to the ends.
+ *
+ * @param {string} current The sub-tab that is showing.
+ * @param {string} key A `KeyboardEvent.key`.
+ * @return {?string} The sub-tab to show, or null when the key is not one the strip answers.
+ */
+export function characterTabAfter(current, key) {
+  const step = { ArrowRight: 1, ArrowLeft: -1 }[key];
+  if (step) {
+    const at = CHARACTER_TABS.indexOf(current);
+
+    return CHARACTER_TABS[(at + step + CHARACTER_TABS.length) % CHARACTER_TABS.length];
+  }
+
+  return { Home: CHARACTER_TABS[0], End: CHARACTER_TABS.at(-1) }[key] ?? null;
+}
+
+/**
+ * Alpine.data() component for the Character tab's `Fighter | Minions` sub-tabs. Both panes stay in the page
+ * (the Fighter pane is the roster and Forge, the Minions pane is the lazily loaded minion editor), so
+ * switching is only a flip of which one shows, never a server round trip.
+ *
+ * It answers three requests to land on a sub-tab: the window event `open-custom-editor` (`{tab: 'minions'}`
+ * for Minions, anything else for the Fighter's Forge), the boot flag `window.__openCustomEditor` a deep link
+ * leaves for a sheet that renders after the event, and `sheet-open-tab` with a `subtab` (the Profile's
+ * "Change character" asks for Fighter).
+ *
+ * @return {object}
+ */
+export function characterTabs() {
+  return {
+    tab: 'fighter',
+    onOpenEditor: null,
+    onOpenTab: null,
+    init() {
+      this.onOpenEditor = event => {
+        const minions = event.detail?.tab === 'minions';
+        if (minions && window.__openCustomEditor === 'minions') {
+          // answered here, so a sheet that renders later does not jump to Minions again
+          window.__openCustomEditor = false;
+        }
+        this.select(minions ? 'minions' : 'fighter', { focus: minions });
+      };
+      this.onOpenTab = event => {
+        if (event.detail?.tab === 'character' && CHARACTER_TABS.includes(event.detail?.subtab)) {
+          this.select(event.detail.subtab);
+        }
+      };
+      window.addEventListener('open-custom-editor', this.onOpenEditor);
+      window.addEventListener('sheet-open-tab', this.onOpenTab);
+      // a deep link that arrived before this sheet rendered leaves its request here; the Fighter's stage answers `true`
+      if (window.__openCustomEditor === 'minions') {
+        window.__openCustomEditor = false;
+        this.select('minions');
+      }
+    },
+    /**
+     * Shows one sub-tab.
+     *
+     * @param {string} tab `fighter` or `minions`; anything else is ignored.
+     * @param {{focus?: boolean}} [opts] Whether focus moves onto the tab button.
+     * @return {boolean} Whether the sub-tab changed.
+     */
+    select(tab, { focus = false } = {}) {
+      if (!CHARACTER_TABS.includes(tab)) {
+        return false;
+      }
+      const changed = tab !== this.tab;
+      this.tab = tab;
+      if (focus) {
+        this.$el.querySelector(`[data-char-tab="${tab}"]`)?.focus();
+      }
+
+      return changed;
+    },
+    /**
+     * The strip's keys. The sheet's own tabs also answer the arrow keys, so these are kept from reaching it.
+     *
+     * @param {KeyboardEvent} event A keydown on the strip.
+     * @return {void}
+     */
+    onKeydown(event) {
+      const next = characterTabAfter(this.tab, event.key);
+      if (!next) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      this.select(next, { focus: true });
+    },
+    destroy() {
+      window.removeEventListener('open-custom-editor', this.onOpenEditor);
+      window.removeEventListener('sheet-open-tab', this.onOpenTab);
+    },
+  };
 }
 
 /**
@@ -186,7 +291,7 @@ export function createSheetShell(root, { onClose, onTab }) {
 /**
  * Alpine.data() component for the sheet's own root: wires createSheetShell
  * (tabs, Escape, focus trap) and a live token ledger fed by the shared
- * battlefield event bus's own 'hit' events (see index.js's ECHO_EVENT_MAP),
+ * battlefield event bus's own 'hit' events (see constants.js's ECHO_EVENT_MAP),
  * once the battlefield game has finished booting — the sheet is embedded
  * on the same page as the Phaser canvas, but Phaser's own boot (and the
  * bus it creates) may not have finished the instant this component's own

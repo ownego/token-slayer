@@ -398,17 +398,30 @@ test('battlefield boot payload carries each fighter\'s custom character, null wh
         ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-characters\/'.$custom->id.'\/feedfacecafe&quot;');
 });
 
-test('battlefield boot payload carries each fighter\'s custom minions, an empty list when they have none', function () {
+test('battlefield boot payload carries each fighter\'s minion pool, the defaults alone when they have no custom minion', function () {
     Boss::factory()->create(['number' => 1]);
     User::factory()->create(['last_event_at' => now()->subMinute()]);
 
     Livewire::test(Battlefield::class)
-        ->assertSeeHtml('&quot;customMinions&quot;:[]');
+        ->assertSeeHtml('&quot;minionPool&quot;:{&quot;rev&quot;:0')
+        ->assertSeeHtml('&quot;custom&quot;:[]')
+        ->assertSeeHtml('&quot;demon-a&quot;')
+        ->assertDontSeeHtml('customMinions');
 
     $minion = CustomMinion::factory()->create(['version_hash' => 'bead1234cafe']);
-    $minion->user->forceFill(['last_event_at' => now()->subMinute()])->save();
+    $minion->user->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool_rev' => 7])->save();
 
     Livewire::test(Battlefield::class)
-        ->assertSeeHtml('&quot;customMinions&quot;:[{&quot;version&quot;:&quot;bead1234cafe&quot;')
-        ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-minions\/'.$minion->user_id.'\/bead1234cafe&quot;');
+        ->assertSeeHtml('&quot;rev&quot;:7')
+        ->assertSeeHtml('&quot;custom&quot;:[{&quot;version&quot;:&quot;bead1234cafe&quot;')
+        ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-minions\/'.$minion->user_id.'\/bead1234cafe&quot;')
+        ->assertDontSeeHtml('customMinions');
+});
+
+test('battlefield boot payload leaves a default look out of the pool once its owner unticked it', function () {
+    Boss::factory()->create(['number' => 1]);
+    User::factory()->create(['last_event_at' => now()->subMinute(), 'minion_defaults_off' => ['smw-bowser']]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;defaults&quot;:[&quot;demon-a&quot;,&quot;blood-monster-a&quot;,&quot;smw-goomba&quot;,&quot;smw-babybowser&quot;]');
 });

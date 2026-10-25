@@ -35,3 +35,18 @@ test('the custom fighter lock outlasts its acquisition wait', function () {
         ->toBeInt()
         ->toBeGreaterThan(config('token_slayer.custom_character.lock_seconds'));
 });
+
+test('the server lists the same default minions as MINION_TYPES', function () {
+    $source = file_get_contents(resource_path('js/battlefield/config/companions.js'));
+
+    preg_match('/export const MINION_TYPES = \[(.*?)\n\];/s', $source, $block);
+    preg_match_all("/^    key: '([^']+)'/m", $block[1] ?? '', $keys);
+
+    expect($keys[1])->not->toBeEmpty()
+        ->and(config('token_slayer.custom_character.default_minions'))->toBe($keys[1]);
+});
+
+test('the client caps a pool at the same number of custom minions the server lets a player hold', function () {
+    expect(jsConstant('battlefield/config/companions.js', 'MINION_POOL_CUSTOM_CAP'))
+        ->toBe((int) config('token_slayer.custom_character.minions_max'));
+});

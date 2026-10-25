@@ -93,7 +93,7 @@ test('the sweep rechecks version references after acquiring the player lock', fu
 test('it sweeps an unreferenced minion folder older than an hour and keeps referenced ones', function () {
     $owner = User::factory()->create();
     CustomMinion::factory()->for($owner)->create(['version_hash' => 'minlive00000']);
-    CustomMinionDraft::create(['user_id' => $owner->id, 'version_hash' => 'mindraft0000', 'animations' => CustomMinion::first()->animations, 'body_px' => 22]);
+    CustomMinionDraft::factory()->create(['user_id' => $owner->id, 'version_hash' => 'mindraft0000']);
     $base = "custom-minions/{$owner->id}";
     oldStrip("{$base}/minlive00000");
     oldStrip("{$base}/minorphan000");
@@ -112,8 +112,8 @@ test('it sweeps an unreferenced minion folder older than an hour and keeps refer
 
 test('it never sweeps minion folders as fighter orphans, nor fighter folders as minion orphans', function () {
     $minionOnly = User::factory()->create();
-    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'minionone000']);
-    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'miniontwo000']);
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'minionone000', 'slot' => 1]);
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'miniontwo000', 'slot' => 2]);
     oldStrip("custom-minions/{$minionOnly->id}/minionone000");
     oldStrip("custom-minions/{$minionOnly->id}/miniontwo000");
     $fighterOnly = User::factory()->create();
@@ -124,6 +124,62 @@ test('it never sweeps minion folders as fighter orphans, nor fighter folders as 
     Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/minionone000/idle.png");
     Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/miniontwo000/idle.png");
     Storage::disk('public')->assertExists("custom-characters/{$fighterOnly->id}/fighterone00/idle.png");
+});
+
+test('it keeps a hash referenced in both roots, and sweeps only the root that lost it', function () {
+    $both = User::factory()->create();
+    CustomCharacter::factory()->for($both)->create(['version_hash' => 'sharedhash00']);
+    CustomMinion::factory()->for($both)->create(['version_hash' => 'sharedhash00']);
+    oldStrip("custom-characters/{$both->id}/sharedhash00");
+    oldStrip("custom-minions/{$both->id}/sharedhash00");
+    $minionOnly = User::factory()->create();
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'copiedhash00']);
+    oldStrip("custom-characters/{$minionOnly->id}/copiedhash00");
+    oldStrip("custom-minions/{$minionOnly->id}/copiedhash00");
+    $fighterOnly = User::factory()->create();
+    CustomCharacter::factory()->for($fighterOnly)->create(['version_hash' => 'keptfighter0']);
+    oldStrip("custom-characters/{$fighterOnly->id}/keptfighter0");
+    oldStrip("custom-minions/{$fighterOnly->id}/keptfighter0");
+
+    expect(app(PruneOrphanCustomCharacterFiles::class)->execute())->toBe(2);
+
+    Storage::disk('public')->assertExists("custom-characters/{$both->id}/sharedhash00/idle.png");
+    Storage::disk('public')->assertExists("custom-minions/{$both->id}/sharedhash00/idle.png");
+    Storage::disk('public')->assertMissing("custom-characters/{$minionOnly->id}/copiedhash00/idle.png");
+    Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/copiedhash00/idle.png");
+    Storage::disk('public')->assertExists("custom-characters/{$fighterOnly->id}/keptfighter0/idle.png");
+    Storage::disk('public')->assertMissing("custom-minions/{$fighterOnly->id}/keptfighter0/idle.png");
+});
+
+test('the sweep rechecks minion references after acquiring the player lock', function () {
+    $owner = User::factory()->create();
+    $folder = "custom-minions/{$owner->id}/justadded000";
+    oldStrip($folder);
+    $lock = Mockery::mock(CustomCharacterLock::class);
+    $lock->shouldReceive('within')->once()->andReturnUsing(function (int $userId, Closure $callback) use ($owner): int {
+        expect($userId)->toBe($owner->id);
+        CustomMinion::factory()->for($owner)->create(['version_hash' => 'justadded000']);
+
+        return $callback();
+    });
+
+    expect((new PruneOrphanCustomCharacterFiles(app(CustomCharacterStore::class), $lock))->execute())->toBe(0);
+    Storage::disk('public')->assertExists("{$folder}/idle.png");
+});
+
+test('the sweep rechecks a minion draft after acquiring the player lock', function () {
+    $owner = User::factory()->create();
+    $folder = "custom-minions/{$owner->id}/staged/justbuilt000";
+    oldStrip($folder);
+    $lock = Mockery::mock(CustomCharacterLock::class);
+    $lock->shouldReceive('within')->once()->andReturnUsing(function (int $userId, Closure $callback) use ($owner): int {
+        CustomMinionDraft::factory()->create(['user_id' => $owner->id, 'version_hash' => 'justbuilt000']);
+
+        return $callback();
+    });
+
+    expect((new PruneOrphanCustomCharacterFiles(app(CustomCharacterStore::class), $lock))->execute())->toBe(0);
+    Storage::disk('public')->assertExists("{$folder}/idle.png");
 });
 
 test('the orphan sweep command is scheduled daily without overlap', function () {

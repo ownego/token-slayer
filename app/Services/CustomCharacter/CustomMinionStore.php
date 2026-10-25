@@ -5,8 +5,10 @@ namespace App\Services\CustomCharacter;
 /**
  * Owns where a player's custom minions' strips live. The same store as the
  * fighter's, rooted at `custom-minions/` instead of `custom-characters/`, so the
- * fighter store's sweeps (prune, discard, forget) and the orphan sweep can never
- * reach a minion's files, and the other way round.
+ * store's own sweeps (prune, discard, forget) never reach the other kind's files.
+ * The orphan sweep (PruneOrphanCustomCharacterFiles) does go into both roots, each
+ * against its own references, and a player's draft sweep (PruneStaleCustomCharacterDrafts)
+ * covers both kinds of draft.
  */
 final class CustomMinionStore extends CustomCharacterStore
 {

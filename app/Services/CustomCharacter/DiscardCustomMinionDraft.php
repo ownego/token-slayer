@@ -8,8 +8,9 @@ use App\Models\User;
 use Carbon\CarbonInterface;
 
 /**
- * Throws away a player's minion draft and its files. The set stays. It runs under
- * the player's lock, so it cannot cut an add in half. It is bound to the version the
+ * Throws away a player's minion draft and its files. The set stays, and so does the
+ * pool's revision: a draft was never in the pool. It runs under the player's lock, so
+ * it cannot cut an add in half. It is bound to the version the
  * caller saw (and, for the prune, to how old it was), re-checked once the lock is held,
  * so a draft the player built in between is never thrown away by a stale tab or pass.
  */

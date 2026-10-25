@@ -20,6 +20,7 @@ const CUSTOM = {
 
 afterEach(() => {
   registerCustomRoster(BY_KEY, BOX, null);
+  vi.unstubAllGlobals();
 });
 
 describe('nameOf', () => {
@@ -164,68 +165,146 @@ describe('miniStage sizing the equipped fighter', () => {
   });
 });
 
-describe('miniStage with a set of custom minions', () => {
-  const minion = (version, frames = 6) => ({
+describe('miniStage with a minion pool', () => {
+  const minion = (version, frames = 6, bodyPx = 22) => ({
     id: 1,
     version,
     url_base: `/storage/custom-minions/7/${version}`,
-    body_px: 22,
+    body_px: bodyPx,
     source: 'upload',
     animations: { idle: { frames, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } },
   });
+  const poolOf = (rev, custom = [], defaults = ['demon-a']) => ({ rev, defaults, custom });
+  const mount = (pool, total = 2) => miniStage('knight', total, 7, null, pool);
 
-  test('draws the set instead of the default minions when the sheet opens with one', () => {
-    const stage = miniStage('knight', 2, 7, null, [minion('aaaaaaaaaaaa')]);
+  test('draws the pool\'s looks, the player\'s own first and then the defaults still ticked', () => {
+    const stage = mount(poolOf(1, [minion('aaaaaaaaaaaa')]));
 
-    expect(stage.minionSpots.map(s => s.kind)).toEqual(['m-custom', 'm-custom']);
-    expect(stage.minionSpots[0].look).toEqual({ url: '/storage/custom-minions/7/aaaaaaaaaaaa/idle.png', frames: 6, rate: 8 });
+    expect(stage.minionSpots).toHaveLength(2);
+    expect(stage.minionSpots[0].look).toMatchObject({ url: '/storage/custom-minions/7/aaaaaaaaaaaa/idle.png', frames: 6, rate: 8 });
+    expect(stage.minionSpots[1].look.url).toContain('demon-a');
   });
 
-  test('keeps the defaults for an empty set or none', () => {
-    const stage = miniStage('knight', 2, 7, null, []);
+  test('a player who has not opened the pool still sees the five defaults, and no pool at all is the same', () => {
+    const everyDefault = mount(poolOf(0, [], ['demon-a', 'blood-monster-a', 'smw-goomba', 'smw-babybowser', 'smw-bowser']), 6);
 
-    expect(stage.minionSpots.map(s => s.kind)).toEqual(['m-goomba', 'm-demon']);
-    expect(miniStage('knight', 2, 7).looks).toEqual([]);
+    expect(everyDefault.minionSpots.map(spot => spot.look.url)).toHaveLength(6);
+    expect(new Set(everyDefault.minionSpots.slice(0, 5).map(spot => spot.look.url)).size).toBe(5);
+    expect(mount(null).looks.length).toBeGreaterThan(1);
   });
 
-  test('follows the editor: a set that changes redraws the swarm at once', () => {
-    const stage = miniStage('knight', 2, 7, null, []);
+  test('with no subagent working the pool stands idle beside the fighter and says it is the pool\'s', () => {
+    const stage = mount(poolOf(1, [minion('aaaaaaaaaaaa')]), 0);
 
-    stage.onMinionsChanged([minion('aaaaaaaaaaaa'), minion('bbbbbbbbbbbb', 4)]);
-    expect(stage.minionSpots.map(s => s.look.frames)).toEqual([6, 4]);
-
-    stage.onMinionsChanged([]);
-    expect(stage.minionSpots.map(s => s.kind)).toEqual(['m-goomba', 'm-demon']);
+    expect(stage.minionSpots).toHaveLength(2);
+    expect(stage.minionSpots.map(spot => stage.spotTitle(spot))).toEqual(['in your pool', 'in your pool']);
   });
 
-  test('a change with no information in it leaves the set alone', () => {
-    const stage = miniStage('knight', 2, 7, null, [minion('aaaaaaaaaaaa')]);
+  test('a working minion says it is working, an idle crew member idle', () => {
+    const stage = mount(poolOf(1, [minion('aaaaaaaaaaaa')]));
+    stage.crew = { total: 2, busy: new Set(['agent-1']) };
 
-    stage.onMinionsChanged(undefined);
-
-    expect(stage.looks).toHaveLength(1);
+    expect(stage.minionSpots.map(spot => stage.spotTitle(spot))).toEqual(['working', 'idle']);
   });
 
-  test('a broadcast of this player\'s set redraws it and asks the sheet to refresh its editor; another player\'s does neither', () => {
-    const stage = miniStage('knight', 2, 7, null, []);
-    const own = [];
-    window.addEventListener('sheet-own-minions-broadcast', event => own.push(event.detail));
+  test('follows the editor: a newer pool redraws the swarm at once', () => {
+    const stage = mount(poolOf(1));
 
-    stage.onMinionsBroadcast({ user_id: 8, custom_minions: [minion('aaaaaaaaaaaa')] });
-    expect(stage.looks).toEqual([]);
-    expect(own).toEqual([]);
+    expect(stage.onPoolChanged(poolOf(2, [minion('aaaaaaaaaaaa'), minion('bbbbbbbbbbbb', 4)]))).toBe(true);
 
-    stage.onMinionsBroadcast({ user_id: 7, custom_minions: [minion('aaaaaaaaaaaa')] });
-    expect(stage.looks).toHaveLength(1);
-    expect(own).toEqual([{ user_id: 7 }]);
+    expect(stage.minionSpots.map(spot => spot.look.frames)).toEqual([6, 4]);
+    expect(stage.pool.rev).toBe(2);
   });
 
-  test('styles a custom minion by its strip, frame count and rate, as properties not as text', () => {
-    const stage = miniStage('knight', 1, 7, null, [minion('aaaaaaaaaaaa')]);
+  test('a pool no newer than the one held is ignored, so a late or repeated report cannot bring a removed minion back', () => {
+    const stage = mount(poolOf(5, [minion('aaaaaaaaaaaa')]));
+
+    expect(stage.onPoolChanged(poolOf(4, [minion('aaaaaaaaaaaa'), minion('bbbbbbbbbbbb')]))).toBe(false);
+    expect(stage.onPoolChanged(poolOf(5, []))).toBe(false);
+
+    expect(stage.pool.rev).toBe(5);
+    expect(stage.looks.map(entry => entry.url)).toContain('/storage/custom-minions/7/aaaaaaaaaaaa/idle.png');
+  });
+
+  test('something that is not a pool leaves the stage alone', () => {
+    const stage = mount(poolOf(1, [minion('aaaaaaaaaaaa')]));
+
+    expect(stage.onPoolChanged(undefined)).toBe(false);
+    expect(stage.onPoolChanged({ custom: [] })).toBe(false);
+    expect(stage.onPoolChanged('pool')).toBe(false);
+
+    expect(stage.pool.rev).toBe(1);
+    expect(stage.looks).toHaveLength(2);
+  });
+
+  test('takes the pool the editor reports as a window event, and stops when the stage is gone', () => {
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 0));
+    const tab = document.createElement('div');
+    tab.id = 'tab-profile';
+    const parts = ['stage', 'fighter', 'crew'].map(() => tab.appendChild(document.createElement('span')));
+    const stage = mount(poolOf(1));
+    Object.assign(stage, { $refs: { stage: parts[0], fighter: parts[1], crew: parts[2] }, $el: tab });
+    stage.init();
+
+    window.dispatchEvent(new CustomEvent('custom-minions-changed', { detail: { pool: poolOf(2, [minion('aaaaaaaaaaaa')]) } }));
+    expect(stage.pool.rev).toBe(2);
+
+    stage.destroy();
+    window.dispatchEvent(new CustomEvent('custom-minions-changed', { detail: { pool: poolOf(3, []) } }));
+    expect(stage.pool.rev).toBe(2);
+  });
+
+  test('a broadcast of this player\'s newer pool redraws it and asks the Minions editor to re-read; another player\'s does neither', () => {
+    const refresh = vi.fn();
+    vi.stubGlobal('Livewire', { dispatch: refresh });
+    const stage = mount(poolOf(1));
+
+    stage.onMinionsBroadcast({ user_id: 8, minion_pool: poolOf(2, [minion('aaaaaaaaaaaa')]) });
+    expect(stage.pool.rev).toBe(1);
+    expect(refresh).not.toHaveBeenCalled();
+
+    stage.onMinionsBroadcast({ user_id: 7, minion_pool: poolOf(2, [minion('aaaaaaaaaaaa')]) });
+    expect(stage.pool.rev).toBe(2);
+    expect(refresh.mock.calls).toEqual([['custom-minions-refresh']]);
+  });
+
+  test('the echo of a change the editor already reported asks for nothing: the pool it carries is not newer', () => {
+    const refresh = vi.fn();
+    vi.stubGlobal('Livewire', { dispatch: refresh });
+    const stage = mount(poolOf(1));
+    stage.onPoolChanged(poolOf(2, [minion('aaaaaaaaaaaa')]));
+
+    stage.onMinionsBroadcast({ user_id: 7, minion_pool: poolOf(2, [minion('aaaaaaaaaaaa')]) });
+
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  test('a broadcast with no pool in it, or an older one, changes nothing and asks for nothing', () => {
+    const refresh = vi.fn();
+    vi.stubGlobal('Livewire', { dispatch: refresh });
+    const stage = mount(poolOf(3, [minion('aaaaaaaaaaaa')]));
+
+    stage.onMinionsBroadcast({ user_id: 7 });
+    stage.onMinionsBroadcast({ user_id: 7, minion_pool: poolOf(2, []) });
+
+    expect(stage.pool.rev).toBe(3);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  test('styles a minion by its strip, frame count, rate and size, as properties not as text', () => {
+    const stage = mount(poolOf(1, [minion('aaaaaaaaaaaa')]), 1);
     const style = stage.spotStyle({ x: -72, y: 0, look: stage.looks[0] });
 
     expect(style).toMatchObject({ '--mx': '-72px', '--my': '0px', '--frames': 6, '--rate': 8 });
     expect(style['--strip']).toBe('url("/storage/custom-minions/7/aaaaaaaaaaaa/idle.png")');
-    expect(stage.spotStyle({ x: 70, y: 0 })).toEqual({ '--mx': '70px', '--my': '0px' });
+  });
+
+  test('draws every look at the same body height, whatever its frame or measured body', () => {
+    const stage = mount(poolOf(1, [minion('aaaaaaaaaaaa', 6, 22), minion('bbbbbbbbbbbb', 6, 44)], ['smw-bowser']), 3);
+    const bodyOf = spot => parseFloat(stage.spotStyle(spot)['--size']) * spot.look.bodyPx / spot.look.frame;
+
+    const heights = stage.minionSpots.map(bodyOf);
+
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(0.2);
   });
 });

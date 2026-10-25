@@ -1,14 +1,17 @@
 import { describe, expect, test } from 'vitest';
 import {
   CUSTOM_MINION_HIT_FRAME,
+  customHitFrame,
   customMinionKey,
   customMinionType,
+  isNewerPool,
   minionSpriteFrame,
-  normalizeCustomMinions,
+  normalizeMinionPool,
   pickMinionType,
-  sameMinionSet,
   spawnLookDecision,
 } from '@battlefield/minion-custom.js';
+import { MINION_FALL_HOLD_MS, MINION_POOL_CUSTOM_CAP, MINION_TYPES } from '@battlefield/config.js';
+import { CUSTOM_FOOT_ROW } from '@battlefield/fighter/custom-fighter.js';
 
 const ANIMATIONS = {
   idle: { frames: 6, rate: 8 },
@@ -25,37 +28,97 @@ const wire = (version = 'abc', extra = {}) => ({
   ...extra,
 });
 
-describe('normalizeCustomMinions', () => {
+const DEFAULT_KEYS = MINION_TYPES.map(type => type.key);
+
+/**
+ * A pool as the wire carries it.
+ *
+ * @param {object} [extra] Keys that replace the defaults.
+ * @return {object}
+ */
+const wirePool = (extra = {}) => ({ rev: 3, defaults: DEFAULT_KEYS, custom: [wire()], ...extra });
+
+describe('normalizeMinionPool', () => {
   test.each([
     ['undefined', undefined],
-    ['an object', {}],
     ['null', null],
     ['a string', 'abc'],
+    ['an array', []],
+    ['an empty object', {}],
+    ['a pool without rev', { defaults: DEFAULT_KEYS, custom: [] }],
+    ['a pool without defaults', { rev: 1, custom: [] }],
+    ['a pool without custom', { rev: 1, defaults: DEFAULT_KEYS }],
+    ['a pool whose custom is not a list', { rev: 1, defaults: DEFAULT_KEYS, custom: {} }],
+    ['a pool whose rev is a string', { rev: '1', defaults: DEFAULT_KEYS, custom: [] }],
   ])('%s gives null (no information)', (_, raw) => {
-    expect(normalizeCustomMinions(raw)).toBeNull();
+    expect(normalizeMinionPool(raw)).toBeNull();
   });
 
-  test('an empty array gives an empty set', () => {
-    expect(normalizeCustomMinions([])).toEqual([]);
+  test('a pool that names nothing is a pool, not "no information"', () => {
+    expect(normalizeMinionPool({ rev: 0, defaults: [], custom: [] })).toEqual({ rev: 0, defaults: [], custom: [] });
   });
 
   test('reads the wire shape and the camelCase shape the same', () => {
-    const expected = [{ version: 'abc', urlBase: '/storage/custom-minions/7/abc', animations: ANIMATIONS, bodyPx: 22 }];
+    const expected = {
+      rev: 3,
+      defaults: DEFAULT_KEYS,
+      custom: [{ version: 'abc', urlBase: '/storage/custom-minions/7/abc', animations: ANIMATIONS, bodyPx: 22 }],
+    };
 
-    expect(normalizeCustomMinions([wire()])).toEqual(expected);
-    expect(normalizeCustomMinions(expected)).toEqual(expected);
+    expect(normalizeMinionPool(wirePool())).toEqual(expected);
+    expect(normalizeMinionPool(expected)).toEqual(expected);
   });
 
-  test.each([0, 101, '22', 21.5, null, undefined])('drops a minion whose body_px is %s', bodyPx => {
-    expect(normalizeCustomMinions([wire('abc', { body_px: bodyPx })])).toEqual([]);
+  test('drops a default look the game does not know, and a repeated one', () => {
+    const pool = normalizeMinionPool(wirePool({ defaults: ['demon-a', 'evil', 'demon-a', 'smw-bowser'], custom: [] }));
+
+    expect(pool.defaults).toEqual(['demon-a', 'smw-bowser']);
+  });
+
+  test.each([
+    [0, false], [1, true], [22, true], [CUSTOM_FOOT_ROW, true], [CUSTOM_FOOT_ROW + 1, false],
+    ['22', false], [21.5, false], [null, false], [undefined, false],
+  ])('a custom minion whose body_px is %s is kept: %s', (bodyPx, kept) => {
+    const { custom } = normalizeMinionPool(wirePool({ custom: [wire('abc', { body_px: bodyPx })] }));
+
+    expect(custom).toHaveLength(kept ? 1 : 0);
   });
 
   test('drops an item that is not a complete custom character', () => {
-    expect(normalizeCustomMinions([wire('abc', { animations: {} }), wire('def'), 'x', null])).toHaveLength(1);
+    const { custom } = normalizeMinionPool(wirePool({ custom: [wire('abc', { animations: {} }), wire('def'), 'x', null] }));
+
+    expect(custom.map(minion => minion.version)).toEqual(['def']);
   });
 
   test('drops a duplicate version', () => {
-    expect(normalizeCustomMinions([wire('abc'), wire('def'), wire('abc')]).map(m => m.version)).toEqual(['abc', 'def']);
+    const { custom } = normalizeMinionPool(wirePool({ custom: [wire('abc'), wire('def'), wire('abc')] }));
+
+    expect(custom.map(minion => minion.version)).toEqual(['abc', 'def']);
+  });
+
+  test('cuts the custom minions at the cap', () => {
+    const versions = Array.from({ length: MINION_POOL_CUSTOM_CAP + 2 }, (_, index) => `v${index}`);
+    const { custom } = normalizeMinionPool(wirePool({ custom: versions.map(version => wire(version)) }));
+
+    expect(custom.map(minion => minion.version)).toEqual(versions.slice(0, MINION_POOL_CUSTOM_CAP));
+  });
+});
+
+describe('isNewerPool', () => {
+  test('a pool with a higher rev is newer', () => {
+    expect(isNewerPool({ rev: 4 }, { rev: 5 })).toBe(true);
+  });
+
+  test('a pool with the same rev is the same pool again', () => {
+    expect(isNewerPool({ rev: 5 }, { rev: 5 })).toBe(false);
+  });
+
+  test('a pool with a lower rev is older', () => {
+    expect(isNewerPool({ rev: 5 }, { rev: 4 })).toBe(false);
+  });
+
+  test.each([[null], [undefined]])('anything beats a fighter that holds no pool (%s)', current => {
+    expect(isNewerPool(current, { rev: 0 })).toBe(true);
   });
 });
 
@@ -66,7 +129,7 @@ describe('customMinionKey', () => {
 });
 
 describe('customMinionType', () => {
-  const spec = normalizeCustomMinions([wire()])[0];
+  const spec = normalizeMinionPool(wirePool()).custom[0];
 
   test('is keyed and sized from the minion', () => {
     const type = customMinionType(7, spec);
@@ -89,14 +152,24 @@ describe('customMinionType', () => {
     expect(customMinionType(7, spec).attacks).toEqual([{ anim: 'attack', hitFrame: 4 }]);
   });
 
-  test('falls down and gets back up when hit', () => {
-    expect(customMinionType(7, spec).reaction).toEqual({ anim: 'death', holdMs: 2000, getUp: true });
+  test('falls down and gets back up when hit, holding as long as the default minions that fall do', () => {
+    expect(customMinionType(7, spec).reaction).toEqual({ anim: 'death', holdMs: MINION_FALL_HOLD_MS, getUp: true });
+    expect(MINION_TYPES.filter(type => type.reaction.getUp).every(type => type.reaction.holdMs === MINION_FALL_HOLD_MS)).toBe(true);
+  });
+
+  test.each([
+    [1, 0], [3, 2], [4, 3], [5, 4], [6, 4], [12, 4],
+  ])('a strip of %s attack frames lands its hit on frame %s', (frames, hitFrame) => {
+    const short = { ...spec, animations: { ...ANIMATIONS, attack: { frames, rate: 12 } } };
+
+    expect(customHitFrame(frames)).toBe(hitFrame);
+    expect(customMinionType(7, short).attacks).toEqual([{ anim: 'attack', hitFrame }]);
   });
 });
 
 describe('minionSpriteFrame', () => {
   test('a custom minion is a named frame of its own stacked texture', () => {
-    const type = customMinionType(7, normalizeCustomMinions([wire()])[0]);
+    const type = customMinionType(7, normalizeMinionPool(wirePool()).custom[0]);
 
     expect(minionSpriteFrame(type)).toEqual({ texture: 'minion-7-abc', frame: 'minion-7-abc-idle-0' });
   });
@@ -107,37 +180,29 @@ describe('minionSpriteFrame', () => {
 });
 
 describe('pickMinionType', () => {
-  const loaded = ['a', 'b', 'c'];
-  const defaults = ['x', 'y'];
+  const loaded = ['a', 'b'];
+  const defaults = ['x', 'y', 'z'];
 
-  test('picks from the loaded set by the random number', () => {
-    expect(pickMinionType(loaded, defaults, 0)).toBe('a');
-    expect(pickMinionType(loaded, defaults, 0.5)).toBe('b');
-    expect(pickMinionType(loaded, defaults, 0.99)).toBe('c');
+  test.each([
+    [0, 'x'], [0.19, 'x'], [0.5, 'z'], [0.6, 'a'], [0.999, 'b'],
+  ])('random %s picks %s, evenly across the defaults and the loaded custom minions', (random, expected) => {
+    expect(pickMinionType(loaded, defaults, random)).toBe(expected);
   });
 
-  test('falls back to the defaults when nothing is loaded', () => {
-    expect(pickMinionType([], defaults, 0.99)).toBe('y');
-  });
-});
+  test('only ever picks from the pool', () => {
+    const picks = [0, 0.1, 0.25, 0.5, 0.75, 0.9, 0.999].map(random => pickMinionType(loaded, defaults, random));
 
-describe('sameMinionSet', () => {
-  const a = { version: 'a' };
-  const b = { version: 'b' };
-
-  test('ignores order', () => {
-    expect(sameMinionSet([a, b], [b, a])).toBe(true);
+    expect(picks.every(pick => [...loaded, ...defaults].includes(pick))).toBe(true);
   });
 
-  test('null and an empty set are the same', () => {
-    expect(sameMinionSet(null, [])).toBe(true);
-    expect(sameMinionSet(undefined, null)).toBe(true);
+  test('draws from the defaults alone while no custom minion is loaded', () => {
+    expect(pickMinionType([], defaults, 0)).toBe('x');
+    expect(pickMinionType([], defaults, 0.999)).toBe('z');
   });
 
-  test('different versions or sizes differ', () => {
-    expect(sameMinionSet([a], [b])).toBe(false);
-    expect(sameMinionSet([a], [a, b])).toBe(false);
-    expect(sameMinionSet([a], null)).toBe(false);
+  test('draws from the custom minions alone when the pool keeps no default', () => {
+    expect(pickMinionType(loaded, [], 0)).toBe('a');
+    expect(pickMinionType(loaded, [], 0.999)).toBe('b');
   });
 });
 

@@ -9,27 +9,6 @@ beforeEach(function () {
     Storage::fake('public');
 });
 
-/**
- * Wraps the faked public disk so some calls fail, everything else going to the real fake.
- *
- * @param  string  $method  the disk method to break
- * @param  Closure  $when  receives the call's arguments; true makes that call fail
- * @return void
- */
-function breakMinionDisk(string $method, Closure $when): void
-{
-    $real = Storage::disk('public');
-    $disk = Mockery::mock($real);
-    $disk->shouldReceive($method)->andReturnUsing(function (...$arguments) use ($real, $method, $when) {
-        if ($when(...$arguments)) {
-            return false;
-        }
-
-        return $real->{$method}(...$arguments);
-    });
-    Storage::set('public', $disk);
-}
-
 test('stages and promotes minions under custom-minions', function () {
     $store = app(CustomMinionStore::class);
 
@@ -83,71 +62,110 @@ test('the minion store sweeps only the minion root', function () {
     Storage::disk('public')->assertExists("custom-characters/7/{$fighter}/idle.png");
 });
 
-test('adopts a fighter version into the minion root', function () {
-    $fighters = app(CustomCharacterStore::class);
-    $hash = $fighters->stage(7, builtStrips())['hash'];
-    $fighters->promote(7, $hash);
+test('copying a staged minion leaves the staged files where they are', function () {
+    $store = app(CustomMinionStore::class);
+    $hash = $store->stage(7, builtStrips())['hash'];
 
-    app(CustomMinionStore::class)->adopt(7, $hash, CustomCharacterStore::folder(7, $hash));
+    $store->copyStaged(7, $hash);
 
     foreach (['idle', 'walk', 'attack', 'death'] as $animation) {
         Storage::disk('public')->assertExists("custom-minions/7/{$hash}/{$animation}.png");
-        Storage::disk('public')->assertExists("custom-characters/7/{$hash}/{$animation}.png");
+        Storage::disk('public')->assertExists("custom-minions/7/staged/{$hash}/{$animation}.png");
         expect(Storage::disk('public')->get("custom-minions/7/{$hash}/{$animation}.png"))
-            ->toBe(Storage::disk('public')->get("custom-characters/7/{$hash}/{$animation}.png"));
+            ->toBe(Storage::disk('public')->get("custom-minions/7/staged/{$hash}/{$animation}.png"));
     }
 });
 
-test('adopting a version that is already in the minion root changes nothing', function () {
-    $fighters = app(CustomCharacterStore::class);
-    $minions = app(CustomMinionStore::class);
-    $hash = $fighters->stage(7, builtStrips())['hash'];
-    $fighters->promote(7, $hash);
-    $minions->adopt(7, $hash, CustomCharacterStore::folder(7, $hash));
-    breakMinionDisk('copy', fn () => true);
+test('copying a staged minion that is already in place copies nothing', function () {
+    $store = app(CustomMinionStore::class);
+    $hash = $store->stage(7, builtStrips())['hash'];
+    $store->copyStaged(7, $hash);
+    breakPublicDisk('copy', fn () => true);
 
-    $minions->adopt(7, $hash, CustomCharacterStore::folder(7, $hash));
+    $store->copyStaged(7, $hash);
 
     Storage::disk('public')->assertExists("custom-minions/7/{$hash}/idle.png");
 });
 
-test('adopting from a folder that lacks strips fails loudly and creates nothing', function () {
-    expect(fn () => app(CustomMinionStore::class)->adopt(7, 'abcdefabcdef', 'custom-characters/7/abcdefabcdef'))
-        ->toThrow(CustomCharacterStorageException::class);
+test('copying a version that was never staged fails loudly and creates nothing', function () {
+    expect(fn () => app(CustomMinionStore::class)->copyStaged(7, 'abcdefabcdef'))
+        ->toThrow(CustomCharacterStorageException::class, "The built sprite's files are gone. Please build it again.");
 
     Storage::disk('public')->assertMissing('custom-minions/7/abcdefabcdef/idle.png');
+});
+
+test('a failed copy of a staged minion keeps the staged files whole and leaves no half folder', function () {
+    $store = app(CustomMinionStore::class);
+    $hash = $store->stage(7, builtStrips())['hash'];
+    breakPublicDisk('copy', fn (string $from) => str_ends_with($from, 'walk.png'));
+
+    expect(fn () => $store->copyStaged(7, $hash))->toThrow(CustomCharacterStorageException::class);
+
+    foreach (['idle', 'walk', 'attack', 'death'] as $animation) {
+        Storage::disk('public')->assertExists("custom-minions/7/staged/{$hash}/{$animation}.png");
+        Storage::disk('public')->assertMissing("custom-minions/7/{$hash}/{$animation}.png");
+    }
+});
+
+test('adopts a fighter version into the minion staged area and leaves the fighter alone', function () {
+    $fighters = app(CustomCharacterStore::class);
+    $hash = $fighters->stage(7, builtStrips())['hash'];
+    $fighters->promote(7, $hash);
+
+    app(CustomMinionStore::class)->adoptStaged(7, $hash, CustomCharacterStore::folder(7, $hash));
+
+    foreach (['idle', 'walk', 'attack', 'death'] as $animation) {
+        Storage::disk('public')->assertExists("custom-minions/7/staged/{$hash}/{$animation}.png");
+        Storage::disk('public')->assertExists("custom-characters/7/{$hash}/{$animation}.png");
+        expect(Storage::disk('public')->get("custom-minions/7/staged/{$hash}/{$animation}.png"))
+            ->toBe(Storage::disk('public')->get("custom-characters/7/{$hash}/{$animation}.png"));
+    }
+    Storage::disk('public')->assertMissing("custom-minions/7/{$hash}/idle.png");
+});
+
+test('adopting a version that is already staged changes nothing', function () {
+    $fighters = app(CustomCharacterStore::class);
+    $minions = app(CustomMinionStore::class);
+    $hash = $fighters->stage(7, builtStrips())['hash'];
+    $fighters->promote(7, $hash);
+    $minions->adoptStaged(7, $hash, CustomCharacterStore::folder(7, $hash));
+    breakPublicDisk('copy', fn () => true);
+
+    $minions->adoptStaged(7, $hash, CustomCharacterStore::folder(7, $hash));
+
+    Storage::disk('public')->assertExists("custom-minions/7/staged/{$hash}/idle.png");
+});
+
+test('adopting from a folder that lacks strips fails loudly and creates nothing', function () {
+    expect(fn () => app(CustomMinionStore::class)->adoptStaged(7, 'abcdefabcdef', 'custom-characters/7/abcdefabcdef'))
+        ->toThrow(CustomCharacterStorageException::class);
+
+    Storage::disk('public')->assertMissing('custom-minions/7/staged/abcdefabcdef/idle.png');
 });
 
 test('removes a half-adopted folder when a copy fails', function () {
     $fighters = app(CustomCharacterStore::class);
     $hash = $fighters->stage(7, builtStrips())['hash'];
     $fighters->promote(7, $hash);
-    breakMinionDisk('copy', fn (string $from) => str_ends_with($from, 'walk.png'));
+    breakPublicDisk('copy', fn (string $from) => str_ends_with($from, 'walk.png'));
 
-    expect(fn () => app(CustomMinionStore::class)->adopt(7, $hash, CustomCharacterStore::folder(7, $hash)))
+    expect(fn () => app(CustomMinionStore::class)->adoptStaged(7, $hash, CustomCharacterStore::folder(7, $hash)))
         ->toThrow(CustomCharacterStorageException::class);
 
     foreach (['idle', 'walk', 'attack', 'death'] as $animation) {
-        Storage::disk('public')->assertMissing("custom-minions/7/{$hash}/{$animation}.png");
+        Storage::disk('public')->assertMissing("custom-minions/7/staged/{$hash}/{$animation}.png");
         Storage::disk('public')->assertExists("custom-characters/7/{$hash}/{$animation}.png");
     }
 });
 
-test('a slow adopt aborts before the lock expires', function () {
-    config(['token_slayer.custom_character.lock_hold_seconds' => 6]);
+test('a slow adopt aborts before the lock expires, without waiting for the clock', function () {
     $fighters = app(CustomCharacterStore::class);
     $hash = $fighters->stage(7, builtStrips())['hash'];
     $fighters->promote(7, $hash);
-    $real = Storage::disk('public');
-    $slow = Mockery::mock($real);
-    $slow->shouldReceive('copy')->andReturnUsing(function (string $from, string $to) use ($real): bool {
-        usleep(1_100_000);
+    // with the lock held for 5 s and 5 s kept in reserve, no time at all is left to spend
+    config(['token_slayer.custom_character.lock_hold_seconds' => 5]);
 
-        return $real->copy($from, $to);
-    });
-    Storage::set('public', $slow);
-
-    expect(fn () => app(CustomMinionStore::class)->adopt(7, $hash, CustomCharacterStore::folder(7, $hash)))
+    expect(fn () => app(CustomMinionStore::class)->adoptStaged(7, $hash, CustomCharacterStore::folder(7, $hash)))
         ->toThrow(CustomCharacterStorageException::class, 'The storage is too slow right now');
-    $real->assertMissing("custom-minions/7/{$hash}/idle.png");
+    Storage::disk('public')->assertMissing("custom-minions/7/staged/{$hash}/idle.png");
 });

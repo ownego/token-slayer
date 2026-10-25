@@ -42,7 +42,7 @@
                 'avatarUrl' => $f->avatarProxyUrl(),
                 'character' => $f->characterForBoss($boss->id),
                 'customCharacter' => $f->customFighterState(),
-                'customMinions' => $f->customMinionsState(),
+                'minionPool' => $f->minionPoolState(),
                 'charging' => $this->chargingByUser[$f->id] ?? null,
                 'position' => $this->positionsByUser[$f->id] ?? null,
                 'agentCount' => $this->agentCountsByUser[$f->id] ?? 0,

@@ -16,6 +16,7 @@ import { HERO_FX } from './config/hero-fx.js';
 import { HERO_EFFECT_CAP } from './config/heroes.js';
 import { Boss, queueBossLoad } from './boss.js';
 import { Charge } from './charge.js';
+import { minionPoolPayloads } from './resync.js';
 import { Bubble } from './bubble.js';
 import { MoveInput } from './move-input.js';
 import { Fighter } from './fighter.js';
@@ -264,7 +265,12 @@ export class BattlefieldScene extends Phaser.Scene {
       [BusEvent.FIGHTER_IDLED]:    payload => { this.fighter.handleIdled(payload); this.minions.despawnAll(payload?.user_id); },
       [BusEvent.FIGHTER_JOINED]:   payload => this.fighter.handleFighterJoined(payload),
       [BusEvent.FIGHTER_MOVED]:    payload => this.fighter.handleFighterMoved(payload),
-      [BusEvent.POSITIONS_RESYNCED]: payload => this.fighter.reconcilePositions(payload.positions),
+      [BusEvent.POSITIONS_RESYNCED]: payload => {
+        this.fighter.reconcilePositions(payload.positions);
+        for (const change of minionPoolPayloads(payload.minionPools)) {
+          this.minions.handleMinionsChanged(change);
+        }
+      },
       [BusEvent.FIGHTER_CHARGE_CLEARED]: payload => this.charge.handleChargeCleared(payload),
       [BusEvent.CHARACTER_CHANGED]: payload => this.fighter.updateCharacters([payload], { animate: true }),
       [BusEvent.FIGHTER_AGENT_COUNT_CHANGED]: payload => this.minions.handleAgentCountChanged(payload),

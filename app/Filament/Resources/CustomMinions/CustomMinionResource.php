@@ -14,6 +14,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\PageRegistration;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -23,8 +24,9 @@ use UnitEnum;
 /**
  * The players' custom minions, for the people who may take one down. There is no
  * create or edit surface (players build their own in the fighter sheet): the
- * list shows who has what, and the only action is removing a minion, which drops
- * it from every client's field live.
+ * list shows who has what (slot, name, whether it is ticked into the pool), and
+ * the only action is removing a minion, which drops it from every client's field
+ * live. Viewing needs `ViewAny:CustomMinion` and removing needs `Delete:CustomMinion`.
  */
 class CustomMinionResource extends Resource
 {
@@ -60,8 +62,10 @@ class CustomMinionResource extends Resource
     }
 
     /**
-     * Builds the table: who owns each minion, how it looks, where it came from,
-     * and the row action that removes it.
+     * Builds the table: who owns each minion, its slot and name, how it looks,
+     * whether it is ticked into the pool, where it came from, and the row action
+     * that removes it. The name lives in the row's JSON data, so it is shown but
+     * neither sortable nor searchable.
      *
      * @param  Table  $table  the table being configured
      * @return Table
@@ -76,10 +80,13 @@ class CustomMinionResource extends Resource
                     ->state(fn (CustomMinion $record): string => $record->user->displayHandle())
                     ->searchable(['users.slack_handle', 'users.display_name', 'users.name'], isIndividual: false, isGlobal: false)
                     ->sortable(false),
+                TextColumn::make('slot')->label('Slot')->numeric()->sortable(),
+                TextColumn::make('name')->label('Name')->searchable(false)->sortable(false),
                 ImageColumn::make('minion')
                     ->label('Minion')
-                    ->state(fn (CustomMinion $record): string => app(CustomMinionStore::class)->stripUrls($record->user_id, $record->version_hash)['idle'])
+                    ->state(fn (CustomMinion $record): string => url(app(CustomMinionStore::class)->stripUrls($record->user_id, $record->version_hash)['idle']))
                     ->height(40),
+                IconColumn::make('enabled')->label('Ticked')->boolean()->sortable(),
                 TextColumn::make('source')
                     ->label('Source')
                     ->badge()
@@ -93,7 +100,7 @@ class CustomMinionResource extends Resource
                     ->icon(Heroicon::OutlinedTrash)
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->modalDescription('The minion is deleted from the player\'s set. Their future subagents summon the rest of the set, or the default minions if none are left.')
+                    ->modalDescription('The minion is deleted from the player\'s set. Their future subagents summon from what is left of their pool; the default minions stay.')
                     ->authorize('delete')
                     ->action(function (CustomMinion $record): void {
                         try {

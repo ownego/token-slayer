@@ -811,43 +811,70 @@ test('a refresh request is answered with the current state and no ceremony, and 
         ->assertNotDispatched('custom-character-changed');
 });
 
-test('seeds and refreshes the player\'s minions', function () {
-    Storage::fake('public');
+it('seeds the mini stage with the player\'s minion pool', function () {
     $user = User::factory()->create();
-    $first = CustomMinion::factory()->create(['user_id' => $user->id]);
-    $draft = stagedMinionFor($user);
+    $minion = CustomMinion::factory()->create(['user_id' => $user->id]);
 
     $sheet = Livewire::actingAs($user)->test(FighterSheet::class);
 
-    expect($sheet->get('customMinions'))->toBe([$first->sheetState()])
-        ->and($sheet->get('customMinionDraft')['hash'])->toBe($draft->version_hash)
-        ->and($sheet->get('customMinionDraft')['spec'])->toHaveKeys(['version', 'url_base', 'animations', 'body_px']);
-
-    $second = CustomMinion::factory()->create(['user_id' => $user->id]);
-    $sheet->dispatch('custom-minions-changed');
-    expect(array_column($sheet->get('customMinions'), 'id'))->toBe([$first->id, $second->id]);
-
-    $second->delete();
-    $draft->delete();
-    $sheet->dispatch('custom-minions-refresh');
-    expect(array_column($sheet->get('customMinions'), 'id'))->toBe([$first->id])
-        ->and($sheet->get('customMinionDraft'))->toBeNull();
+    $pool = $user->fresh()->minionPoolState();
+    expect($sheet->get('minionPool'))->toBe($pool)
+        ->and($pool['custom'])->toHaveCount(1)
+        ->and($pool['defaults'])->toBe(config('token_slayer.custom_character.default_minions'));
+    $sheet->call('open', 'profile')->assertSeeHtml($minion->version_hash);
 });
 
-test('a player with no minions seeds an empty list and no draft', function () {
+it('seeds a player with no minions of their own the five default looks', function () {
+    $sheet = Livewire::actingAs(User::factory()->create())->test(FighterSheet::class);
+
+    expect($sheet->get('minionPool')['custom'])->toBe([])
+        ->and($sheet->get('minionPool')['defaults'])->toBe(config('token_slayer.custom_character.default_minions'));
+});
+
+it('leaves the pool to the mini stage once seeded: a change elsewhere is not re-read into the sheet', function () {
+    $user = User::factory()->create();
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class);
+    $seeded = $sheet->get('minionPool');
+
+    CustomMinion::factory()->create(['user_id' => $user->id]);
+    $sheet->call('open', 'profile')->call('open', 'character');
+
+    expect($sheet->get('minionPool'))->toBe($seeded);
+});
+
+it('offers one link from Profile into Character', function () {
     Livewire::actingAs(User::factory()->create())
         ->test(FighterSheet::class)
-        ->assertSet('customMinions', [])
-        ->assertSet('customMinionDraft', null);
+        ->call('open', 'profile')
+        ->assertSeeHtml('id="change-character"')
+        ->assertSee('Change character')
+        ->assertDontSeeHtml('id="customize-minions"')
+        ->assertDontSee('Customize minions');
 });
 
-test('the character tab renders with the minions handed to the stage', function () {
-    Storage::fake('public');
+it('shows Fighter and Minions sub-tabs in Character', function () {
+    $html = Livewire::actingAs(User::factory()->create())
+        ->test(FighterSheet::class)
+        ->call('open', 'character')
+        ->assertSeeHtml('data-char-tab="fighter"')
+        ->assertSeeHtml('data-char-tab="minions"')
+        ->assertDontSeeHtml('data-forge-tab')
+        ->html();
+
+    // each sub-tab has a panel of its own, and both editors are mounted lazily inside them
+    expect($html)->toMatch('~>Fighter</button>.*>Minions</button>~s')
+        ->and($html)->toContain('id="char-pane-fighter"')
+        ->and($html)->toContain('id="char-pane-minions"')
+        ->and(substr_count($html, '__lazyLoad'))->toBe(2);
+});
+
+it('hands the Character stage no minion draft: the Minions tab owns it', function () {
     $user = User::factory()->create();
-    $minion = CustomMinion::factory()->create(['user_id' => $user->id]);
+    Storage::fake('public');
+    $draft = stagedMinionFor($user);
 
     Livewire::actingAs($user)
         ->test(FighterSheet::class)
         ->call('open', 'character')
-        ->assertSeeHtml($minion->version_hash);
+        ->assertDontSeeHtml($draft->version_hash);
 });

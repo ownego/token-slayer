@@ -4,10 +4,8 @@ use App\Enums\CustomMinionSource;
 use App\Models\CustomMinion;
 use App\Models\CustomMinionDraft;
 use App\Models\User;
-use App\Services\CustomCharacter\CustomMinionStore;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -27,50 +25,43 @@ test('serialises a minion for the wire', function () {
     ]);
 });
 
-test('the sheet state adds the id and where the minion came from', function () {
+test('a minion built from the fighter remembers where it came from', function () {
     $minion = CustomMinion::factory()->create();
     $fromFighter = CustomMinion::factory()->fromFighter()->create();
 
-    expect($minion->sheetState())->toBe([
-        'id' => $minion->id,
-        'version' => $minion->version_hash,
-        'url_base' => app(CustomMinionStore::class)->baseUrl($minion->user_id, $minion->version_hash),
-        'animations' => $minion->animations,
-        'body_px' => 22,
-        'source' => 'upload',
-    ])->and($fromFighter->sheetState()['source'])->toBe('fighter')
+    expect($minion->source)->toBe(CustomMinionSource::Upload)
         ->and($fromFighter->source)->toBe(CustomMinionSource::Fighter);
 });
 
-test('lists a player\'s minions in id order', function () {
+test('lists a player\'s minions by slot, whatever order they were added in', function () {
     $user = User::factory()->create();
-    $first = CustomMinion::factory()->for($user)->create();
-    $second = CustomMinion::factory()->for($user)->create();
+    $second = CustomMinion::factory()->for($user)->create(['slot' => 2]);
+    $first = CustomMinion::factory()->for($user)->create(['slot' => 1]);
 
-    expect($user->customMinionsState())->toBe([$first->broadcastState(), $second->broadcastState()])
-        ->and($user->customMinions->pluck('id')->all())->toBe([$first->id, $second->id])
-        ->and(User::factory()->create()->customMinionsState())->toBe([]);
+    expect($user->customMinions->pluck('id')->all())->toBe([$first->id, $second->id])
+        ->and(User::factory()->create()->customMinions)->toBeEmpty();
 });
 
-test('the state reads through the relation, so an eager load is used', function () {
-    $user = User::factory()->create();
-    CustomMinion::factory()->for($user)->create();
-    $loaded = User::with('customMinions')->find($user->id);
+test('a minion is named after its slot until it is renamed, and keeps its tick', function () {
+    $minion = CustomMinion::factory()->create(['slot' => 3]);
 
-    $queries = 0;
-    DB::listen(function () use (&$queries) {
-        $queries++;
-    });
-    $loaded->customMinionsState();
+    expect($minion->name)->toBe('Minion 3')
+        ->and($minion->enabled)->toBeTrue();
 
-    expect($queries)->toBe(0);
+    $minion->name = 'Pip';
+    $minion->enabled = false;
+    $minion->save();
+
+    expect($minion->fresh()->name)->toBe('Pip')
+        ->and($minion->fresh()->enabled)->toBeFalse()
+        ->and($minion->fresh()->animations)->toBe($minion->animations);
 });
 
 test('refuses the same image twice for one player', function () {
     $user = User::factory()->create();
-    CustomMinion::factory()->for($user)->create(['version_hash' => 'abc123def456']);
+    CustomMinion::factory()->for($user)->create(['version_hash' => 'abc123def456', 'slot' => 1]);
 
-    expect(fn () => CustomMinion::factory()->for($user)->create(['version_hash' => 'abc123def456']))->toThrow(QueryException::class);
+    expect(fn () => CustomMinion::factory()->for($user)->create(['version_hash' => 'abc123def456', 'slot' => 2]))->toThrow(QueryException::class);
 });
 
 test('two players may hold the same image', function () {

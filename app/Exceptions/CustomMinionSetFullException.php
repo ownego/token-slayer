@@ -5,7 +5,7 @@ namespace App\Exceptions;
 use Exception;
 
 /**
- * Thrown when a player adds a minion while their set already holds the most it can.
+ * Thrown when a player adds a minion while their set already holds the most it can; they replace one instead.
  */
 class CustomMinionSetFullException extends Exception
 {
@@ -15,7 +15,7 @@ class CustomMinionSetFullException extends Exception
      * @param  string  $message  the set is full
      * @return void
      */
-    public function __construct(string $message = '3 of 3. Remove one to add another.')
+    public function __construct(string $message = 'Your minion set is full. Replace one to change it.')
     {
         parent::__construct($message);
     }

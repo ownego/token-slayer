@@ -10,9 +10,9 @@ use Illuminate\Foundation\Auth\User as AuthUser;
 
 /**
  * Who may see and take down players' custom minions. A player can always remove
- * their own; taking down someone else's needs the `Delete:CustomCharacter`
- * permission, and the admin list needs `ViewAny:CustomCharacter`. Minions share
- * the fighter's permissions: there is no minion-specific permission.
+ * their own; taking down someone else's needs the `Delete:CustomMinion`
+ * permission, and the admin list needs `ViewAny:CustomMinion`. These are
+ * minion-specific: the fighter's `*:CustomCharacter` permissions grant nothing here.
  */
 class CustomMinionPolicy
 {
@@ -26,7 +26,7 @@ class CustomMinionPolicy
      */
     public function viewAny(AuthUser $authUser): bool
     {
-        return $authUser->can('ViewAny:CustomCharacter');
+        return $authUser->can('ViewAny:CustomMinion');
     }
 
     /**
@@ -38,6 +38,6 @@ class CustomMinionPolicy
      */
     public function delete(AuthUser $authUser, CustomMinion $customMinion): bool
     {
-        return $authUser->getAuthIdentifier() === $customMinion->user_id || $authUser->can('Delete:CustomCharacter');
+        return $authUser->getAuthIdentifier() === $customMinion->user_id || $authUser->can('Delete:CustomMinion');
     }
 }

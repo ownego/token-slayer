@@ -98,29 +98,37 @@ class Battlefield extends Component
     }
 
     /**
-     * Returns the current authoritative position of every active fighter, so
-     * a client can repair its own state after its WebSocket reconnects.
-     * Reverb broadcasts have no replay, so a `FighterMoved` that fired while
-     * this client was disconnected would otherwise be lost forever for that
-     * one viewer; this lets the client re-request the truth instead.
+     * Returns the current authoritative position and minion pool of every active
+     * fighter, so a client can repair its own state after its WebSocket reconnects.
+     * Reverb broadcasts have no replay, so a `FighterMoved` or `FighterMinionsChanged`
+     * that fired while this client was disconnected would otherwise be lost forever for
+     * that one viewer; this lets the client re-request the truth instead.
      *
+     * `minionPools` is keyed by user id and holds each fighter's `{rev, defaults,
+     * custom}` pool, so the client applies it under the same `rev` rule as a broadcast.
+     *
+     * @param  FighterPositionCache  $positionCache  the persisted fighter positions
      * @return void
      */
     #[Renderless]
     #[On('request-resync')]
     public function resync(FighterPositionCache $positionCache): void
     {
-        $userIds = User::where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
-            ->pluck('id')
-            ->all();
+        $fighters = User::with('customMinions')
+            ->where('last_event_at', '>=', now()->subMinutes(config('game.idle_minutes')))
+            ->get();
 
-        $positions = collect($positionCache->many($userIds))
+        $positions = collect($positionCache->many($fighters->pluck('id')->all()))
             ->filter()
             ->map(fn (array $pos, int $userId) => ['user_id' => $userId, 'x' => $pos['x'], 'y' => $pos['y']])
             ->values()
             ->all();
 
-        $this->dispatch('battlefield-resynced', positions: $positions);
+        $minionPools = $fighters
+            ->mapWithKeys(fn (User $fighter) => [$fighter->id => $fighter->minionPoolState()])
+            ->all();
+
+        $this->dispatch('battlefield-resynced', positions: $positions, minionPools: $minionPools);
     }
 
     /**

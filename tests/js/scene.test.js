@@ -152,10 +152,36 @@ describe('BattlefieldScene#create — bus handlers', () => {
   test('a minions-changed broadcast reaches the minions manager untouched', () => {
     const { scene, handlers } = createdScene();
     scene.minions = { handleMinionsChanged: vi.fn() };
-    const payload = { user_id: 7, custom_minions: [{ version: 'abc' }] };
+    const payload = { user_id: 7, minion_pool: { rev: 5, defaults: [], custom: [] } };
 
     handlers[BusEvent.MINIONS_CHANGED](payload);
 
     expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith(payload);
+  });
+
+  test('a resync hands every fighter\'s pool to the minions manager, keyed by a numeric user id', () => {
+    const { scene, handlers } = createdScene();
+    scene.fighter = { reconcilePositions: vi.fn() };
+    scene.minions = { handleMinionsChanged: vi.fn() };
+    const pools = { 7: { rev: 5, defaults: ['demon-a'], custom: [] }, 9: { rev: 2, defaults: [], custom: [] } };
+
+    handlers[BusEvent.POSITIONS_RESYNCED]({ positions: [{ user_id: 7, x: 0.1, y: 0.2 }], minionPools: pools });
+
+    expect(scene.fighter.reconcilePositions).toHaveBeenCalledWith([{ user_id: 7, x: 0.1, y: 0.2 }]);
+    expect(scene.minions.handleMinionsChanged.mock.calls.map(([change]) => change)).toEqual([
+      { user_id: 7, minion_pool: pools[7] },
+      { user_id: 9, minion_pool: pools[9] },
+    ]);
+  });
+
+  test('a resync without pools (an older server) still reconciles positions', () => {
+    const { scene, handlers } = createdScene();
+    scene.fighter = { reconcilePositions: vi.fn() };
+    scene.minions = { handleMinionsChanged: vi.fn() };
+
+    handlers[BusEvent.POSITIONS_RESYNCED]({ positions: [] });
+
+    expect(scene.fighter.reconcilePositions).toHaveBeenCalledWith([]);
+    expect(scene.minions.handleMinionsChanged).not.toHaveBeenCalled();
   });
 });

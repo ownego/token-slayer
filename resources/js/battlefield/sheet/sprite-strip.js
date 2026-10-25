@@ -4,7 +4,7 @@
 // so a sprite is a plain <span> the mockup's CSS already styles.
 import { FIGHTER_TYPES } from '../config/fighters.js';
 import { BOX, LABELS, ROSTER, stripUrl } from './sheet-roster.js';
-import { CUSTOM_GROUP, CUSTOM_KEY, DRAFT_KEY, isMinionKey } from './custom-roster.js';
+import { CUSTOM_GROUP, CUSTOM_KEY, DRAFT_KEY } from './custom-roster.js';
 
 /**
  * Roster entries by key.
@@ -67,10 +67,6 @@ export function pretty(key) {
  * @return {string}
  */
 export function nameOf(key) {
-  if (isMinionKey(key)) {
-    return BY_KEY[key]?.name ?? 'Minion';
-  }
-
   return BY_KEY[key]?.group === CUSTOM_GROUP || key === CUSTOM_KEY || key === DRAFT_KEY
     ? (BY_KEY[key]?.name ?? 'Custom')
     : pretty(key);
@@ -209,44 +205,13 @@ export function standOn(el, key, sc, floor) {
 }
 
 /**
- * How long a minion lies on the death strip before it gets up, as on the field
- * (`MINION_TYPES[…].reaction.holdMs`, and a custom minion's own reaction).
- * @type {number}
- */
-const MINION_FALL_HOLD_MS = 2000;
-
-/**
- * A custom minion's hotbar: idle, walk, its one attack, and the fall it plays when hit
- * — the death strip held, then played backwards to stand up. Each move carries both an
- * `id` (what the stage keys it by) and the `anim` it plays.
- *
- * @param {string} key The minion preview's roster key.
- * @return {Array<{id: string, anim: string, label: string, holdMs?: number, thenReverse?: boolean}>}
- */
-export function minionMoves(key) {
-  const list = [
-    { id: 'idle', anim: 'idle', label: 'Idle' },
-    { id: 'walk', anim: 'walk', label: 'Walk' },
-    { id: 'attack1', anim: 'attack1', label: 'Attack' },
-    { id: 'death', anim: 'death', label: 'Fall', holdMs: MINION_FALL_HOLD_MS, thenReverse: true },
-  ];
-  const anims = BY_KEY[key]?.anims;
-
-  return anims ? list.filter(m => anims[m.anim]) : list;
-}
-
-/**
  * A fighter's hotbar: idle, walk, its attacks (named by attack type), then
  * death and summon (death played backwards) — only the ones it has strips for.
- * A custom minion's preview key gets `minionMoves` instead.
  *
  * @param {string} key Fighter key.
  * @return {Array<{id: string, label: string, anim?: string, reverse?: boolean, holdMs?: number, thenReverse?: boolean}>}
  */
 export function moves(key) {
-  if (isMinionKey(key)) {
-    return minionMoves(key);
-  }
   const c = BY_KEY[key];
   const list = [{ id: 'idle', label: 'Idle' }, { id: 'walk', label: 'Walk' }];
   // a hero names each move and marks the big ones; the roster names attacks by fighting style

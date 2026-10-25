@@ -2,6 +2,7 @@
 
 namespace App\Services\CustomCharacter;
 
+use App\Enums\CustomSpriteState;
 use App\Exceptions\CustomCharacterBusyException;
 use App\Exceptions\CustomCharacterVersionException;
 use App\Models\User;
@@ -44,7 +45,7 @@ class DeleteCustomCharacterVersion
                 throw new CustomCharacterVersionException('That version is the one in use. Equip another first, or remove the fighter.');
             }
 
-            ($character->versions()->where('version_hash', $hash)->first() ?? throw new CustomCharacterVersionException)->delete();
+            ($character->versions()->where('state', CustomSpriteState::Previous->value)->where('version_hash', $hash)->first() ?? throw new CustomCharacterVersionException)->delete();
 
             // the files go while the lock is still held: a re-confirm of the same sheet cannot slip in between
             $this->store->forgetVersion($user->id, $hash);

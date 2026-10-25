@@ -206,24 +206,30 @@ describe('custom fighters', () => {
   });
 });
 
-describe('custom minions', () => {
-  const wire = [
-    { version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } },
-    { version: 'def', url_base: '/storage/custom-minions/7/def', body_px: 24, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } },
-  ];
+describe('the minion pool', () => {
+  const anim = { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } };
+  const wire = {
+    rev: 6,
+    defaults: ['demon-a', 'smw-bowser'],
+    custom: [
+      { version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: anim },
+      { version: 'def', url_base: '/storage/custom-minions/7/def', body_px: 24, animations: anim },
+    ],
+  };
 
-  test('customMinions round-trips through normalizeCustomMinions', async () => {
-    const { normalizeCustomMinions } = await import('@battlefield/minion-custom.js');
+  test('minionPool round-trips through normalizeMinionPool, rev included', async () => {
+    const { normalizeMinionPool } = await import('@battlefield/minion-custom.js');
     const scene = fakeScene();
-    scene.fighters.get(7).customMinions = normalizeCustomMinions(wire);
+    scene.fighters.get(7).minionPool = normalizeMinionPool(wire);
 
     const next = snapshotState({}, scene);
 
-    expect(next.fighters[0].customMinions).toHaveLength(2);
-    expect(normalizeCustomMinions(next.fighters[0].customMinions)).toEqual(normalizeCustomMinions(wire));
+    expect(next.fighters[0].minionPool.rev).toBe(6);
+    expect(next.fighters[0].minionPool.custom).toHaveLength(2);
+    expect(normalizeMinionPool(next.fighters[0].minionPool)).toEqual(normalizeMinionPool(wire));
   });
 
-  test('a fighter with no minions snapshots customMinions as []', () => {
-    expect(snapshotState({}, fakeScene()).fighters[0].customMinions).toEqual([]);
+  test('a fighter the server told nothing about snapshots a null pool, not an empty one', () => {
+    expect(snapshotState({}, fakeScene()).fighters[0].minionPool).toBeNull();
   });
 });

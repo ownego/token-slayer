@@ -8,10 +8,11 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Removes one minion from a player's set and deletes its files, and tells the
- * battlefield, which swaps the player's minions live. The caller decides who may do
- * this (the owner, or an admin: see CustomCharacterPolicy). It runs under the
- * owner's lock, so it cannot race an add, and the files go only after the database
- * change is in.
+ * battlefield, which swaps the player's minions live. The pool's revision goes up in
+ * the same transaction as the delete, so a client can tell this pool from the one
+ * before. The caller decides who may do this (the owner, or an admin holding
+ * `Delete:CustomMinion`: see CustomMinionPolicy). It runs under the owner's lock, so
+ * it cannot race an add, and the files go only after the database change is in.
  */
 class RemoveCustomMinion
 {
@@ -31,7 +32,7 @@ class RemoveCustomMinion
 
     /**
      * Removes the minion. A minion that is already gone (another tab, or an admin,
-     * got there first) is left alone.
+     * got there first) is left alone: no revision, no announcement.
      *
      * @param  CustomMinion  $minion  the minion to remove
      * @return void
@@ -49,7 +50,10 @@ class RemoveCustomMinion
                 return false;
             }
 
-            DB::transaction(fn () => $current->delete());
+            DB::transaction(function () use ($current, $owner): void {
+                $current->delete();
+                $owner->increment('minion_pool_rev');
+            });
 
             $this->store->forgetVersion($owner->id, $current->version_hash);
 

@@ -29,15 +29,18 @@ class PruneStaleCustomCharacterDrafts
 
     /**
      * Removes every fighter and minion draft older than the configured time limit.
+     * Each kind is read by id, a page at a time, so rows deleted along the way never
+     * make a later page skip any.
      *
+     * @param  int  $chunk  how many drafts to read per page
      * @return int how many drafts were removed, of both kinds
      */
-    public function execute(): int
+    public function execute(int $chunk = 200): int
     {
         $cutoff = now()->subHours((int) config('token_slayer.custom_character.draft_ttl_hours'));
         $removed = 0;
 
-        CustomCharacterDraft::with('user')->where('updated_at', '<', $cutoff)->each(function (CustomCharacterDraft $draft) use (&$removed): void {
+        CustomCharacterDraft::with('user')->where('updated_at', '<', $cutoff)->lazyById($chunk)->each(function (CustomCharacterDraft $draft) use (&$removed): void {
             try {
                 $this->discard->execute($draft->user);
                 $removed++;
@@ -46,7 +49,7 @@ class PruneStaleCustomCharacterDrafts
             }
         });
 
-        CustomMinionDraft::with('user')->where('updated_at', '<', $cutoff)->each(function (CustomMinionDraft $draft) use (&$removed, $cutoff): void {
+        CustomMinionDraft::with('user')->where('updated_at', '<', $cutoff)->lazyById($chunk)->each(function (CustomMinionDraft $draft) use (&$removed, $cutoff): void {
             try {
                 $this->discardMinion->execute($draft->user, $draft->version_hash, $cutoff);
                 $removed++;

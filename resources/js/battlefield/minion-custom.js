@@ -1,8 +1,10 @@
-import { normalizeCustomCharacter } from '@battlefield/fighter/custom-fighter.js';
+import { MINION_FALL_HOLD_MS, MINION_POOL_CUSTOM_CAP, MINION_TYPES } from '@battlefield/config.js';
+import { CUSTOM_FOOT_ROW, normalizeCustomCharacter } from '@battlefield/fighter/custom-fighter.js';
 
 /**
  * The attack frame a custom minion lands its hit on. `SpriteStripBuilder` holds
- * each attack pose for two frames, so the third pose starts at frame 4.
+ * each attack pose for two frames, so the third pose starts at frame 4. A strip with
+ * fewer frames lands on its last one (`customHitFrame`).
  * @type {number}
  */
 export const CUSTOM_MINION_HIT_FRAME = 4;
@@ -12,42 +14,83 @@ export const CUSTOM_MINION_HIT_FRAME = 4;
  * get back up. Same shape as a default minion's `reaction` (config/companions.js).
  * @type {{anim: string, holdMs: number, getUp: boolean}}
  */
-const CUSTOM_MINION_REACTION = { anim: 'death', holdMs: 2000, getUp: true };
+const CUSTOM_MINION_REACTION = { anim: 'death', holdMs: MINION_FALL_HOLD_MS, getUp: true };
 
 /**
- * Tallest and shortest a minion's measured body may be, in px of its 100 px frame.
+ * Tallest and shortest a minion's measured body may be, in px up from the foot row of its
+ * 100 px frame. The same range the server measures into (`MeasureStripBodyHeight`) and
+ * the sheet draws a minion's box in.
  * @type {{min: number, max: number}}
  */
-const BODY_PX_RANGE = { min: 1, max: 100 };
+const BODY_PX_RANGE = { min: 1, max: CUSTOM_FOOT_ROW };
 
 /**
- * Reads a player's set of custom minions off the wire (`custom_minions`, snake_case)
- * or off a snapshot / the boot payload (`customMinions`, already camelCase). Anything
- * that is not an array is `null`: "no information", which callers must keep apart
- * from `[]`, "the player has none". Within an array, an item that is not a complete
- * custom character, or whose `body_px` is not an integer from 1 to 100, is dropped,
- * and a version listed twice counts once.
+ * The keys of the default minion looks, which is all a pool may name.
+ * @type {Set<string>}
+ */
+const DEFAULT_LOOK_KEYS = new Set(MINION_TYPES.map(type => type.key));
+
+/**
+ * Reads a player's minion pool off the wire (`minion_pool`, snake_case), off the boot
+ * payload (`minionPool`, whose inner keys are snake_case too) or off a snapshot (already
+ * camelCase). Anything that is not an object with a whole-number `rev`, a `defaults` array
+ * and a `custom` array is `null`: "no information", which callers must keep apart from a
+ * pool that names nothing. Within it, a default key the game does not know is dropped (a
+ * look removed since the server last heard of it), so is a custom minion that is not a
+ * complete custom character or whose `body_px` is not a whole number from 1 to
+ * `CUSTOM_FOOT_ROW`; a version listed twice counts once; and `custom` is cut at
+ * `MINION_POOL_CUSTOM_CAP`.
  *
  * @param {*} raw
- * @return {?Array<{version: string, urlBase: string, animations: object, bodyPx: number}>}
+ * @return {?{rev: number, defaults: Array<string>, custom: Array<{version: string, urlBase: string, animations: object, bodyPx: number}>}}
  */
-export function normalizeCustomMinions(raw) {
-  if (!Array.isArray(raw)) {
+export function normalizeMinionPool(raw) {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return null;
   }
+  if (!Number.isInteger(raw.rev) || raw.rev < 0 || !Array.isArray(raw.defaults) || !Array.isArray(raw.custom)) {
+    return null;
+  }
+
+  const defaults = [...new Set(raw.defaults.filter(key => DEFAULT_LOOK_KEYS.has(key)))];
   const seen = new Set();
-  const minions = [];
-  for (const item of raw) {
+  const custom = [];
+  for (const item of raw.custom) {
     const spec = normalizeCustomCharacter(item);
     const bodyPx = item?.body_px ?? item?.bodyPx;
     if (!spec || !Number.isInteger(bodyPx) || bodyPx < BODY_PX_RANGE.min || bodyPx > BODY_PX_RANGE.max || seen.has(spec.version)) {
       continue;
     }
     seen.add(spec.version);
-    minions.push({ ...spec, bodyPx });
+    custom.push({ ...spec, bodyPx });
   }
 
-  return minions;
+  return { rev: raw.rev, defaults, custom: custom.slice(0, MINION_POOL_CUSTOM_CAP) };
+}
+
+/**
+ * Whether a pool that just arrived is newer than the one a fighter holds. Pools reach the
+ * client by three routes (a broadcast, a charge or join that read the pool a moment
+ * earlier, a resync), and Reverb orders none of them, so each carries the owner's `rev`
+ * and only a higher one wins. An equal `rev` is the same pool again.
+ *
+ * @param {?{rev: number}} current The pool the fighter holds, `null` when it holds none.
+ * @param {{rev: number}} incoming A normalised pool.
+ * @return {boolean}
+ */
+export function isNewerPool(current, incoming) {
+  return current == null || incoming.rev > current.rev;
+}
+
+/**
+ * The attack frame a custom minion's blow lands on: `CUSTOM_MINION_HIT_FRAME`, or the last
+ * frame of a strip too short to have one.
+ *
+ * @param {number} attackFrames How many frames the minion's attack strip has.
+ * @return {number}
+ */
+export function customHitFrame(attackFrames) {
+  return Math.max(0, Math.min(CUSTOM_MINION_HIT_FRAME, attackFrames - 1));
 }
 
 /**
@@ -89,7 +132,7 @@ export function customMinionType(userId, spec) {
       attack: { count: attack.frames, rate: attack.rate },
       death: { count: death.frames, rate: death.rate },
     },
-    attacks: [{ anim: 'attack', hitFrame: CUSTOM_MINION_HIT_FRAME }],
+    attacks: [{ anim: 'attack', hitFrame: customHitFrame(attack.frames) }],
     reaction: { ...CUSTOM_MINION_REACTION },
   };
 }
@@ -110,42 +153,29 @@ export function minionSpriteFrame(type) {
 }
 
 /**
- * Picks the look of one spawn: any of the player's loaded minions, or a default type
- * when none is loaded.
+ * Picks the look of one spawn, evenly from the player's pool: the default types its pool
+ * keeps and the custom minions whose textures are in (a custom one still loading is not a
+ * candidate yet). `random` is passed in so the choice is a pure function of its inputs.
  *
- * @param {Array<object>} loaded The player's custom types whose textures are in.
- * @param {Array<object>} defaults The default MINION_TYPES.
+ * @param {Array<object>} loadedCustom The player's custom types whose textures are in.
+ * @param {Array<object>} defaultTypes The MINION_TYPES entries the pool's `defaults` keep.
  * @param {number} random A number in [0, 1).
  * @return {object}
  */
-export function pickMinionType(loaded, defaults, random) {
-  const pool = loaded.length > 0 ? loaded : defaults;
+export function pickMinionType(loadedCustom, defaultTypes, random) {
+  const candidates = [...defaultTypes, ...loadedCustom];
 
-  return pool[Math.min(pool.length - 1, Math.floor(random * pool.length))];
+  return candidates[Math.min(candidates.length - 1, Math.floor(random * candidates.length))];
 }
 
 /**
- * Whether two sets hold the same minions (by version, in any order). `null` ("no
- * information" or none) and `[]` count as the same empty set.
- *
- * @param {?Array<{version: string}>} a
- * @param {?Array<{version: string}>} b
- * @return {boolean}
- */
-export function sameMinionSet(a, b) {
-  const left = new Set((a ?? []).map(minion => minion.version));
-  const right = new Set((b ?? []).map(minion => minion.version));
-
-  return left.size === right.size && [...left].every(version => right.has(version));
-}
-
-/**
- * What a spawn does about the player's set: use the custom looks, wait a little for
- * them to load, or give up and use a default.
+ * What a spawn does about the player's custom minions: draw from the pool with them in,
+ * wait a little for them to load, or give up and draw without them.
  *
  * @param {{setSize: number, settled: boolean, waitedMs: number, waitMs: number}} input
- *   `settled` is true once every look of the set is in (or failed for good).
- * @return {('custom'|'wait'|'default')}
+ *   `setSize` is how many custom minions the pool has; `settled` is true once every one of
+ *   them is in (or failed).
+ * @return {('custom'|'wait'|'default')} `custom`: draw from the pool with the loaded custom minions; `default`: draw without any that is not in.
  */
 export function spawnLookDecision({ setSize, settled, waitedMs, waitMs }) {
   if (setSize === 0) {

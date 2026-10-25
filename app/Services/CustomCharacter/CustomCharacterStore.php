@@ -9,12 +9,15 @@ use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
- * Owns where a player's fighter strips live and every write to them. Strips are
- * kept under `custom-characters/{user}/{hash}/` once confirmed and under
- * `custom-characters/{user}/staged/{hash}/` while only previewed, so a draft can
- * never be mistaken for the fighter in use. The folder name carries a hash of
- * the strips' content: a changed fighter gets a new URL and a cached copy of the
- * old one cannot be served for it.
+ * Owns where a player's custom sprite strips live and every write to them. This
+ * class is the fighter's store, rooted at `custom-characters/`; CustomMinionStore
+ * extends it and only changes the root, so a minion's files sit apart from the
+ * fighter's and one kind's sweeps (prune, discard, forget) never reach the other's.
+ * Strips are kept under `{root}/{user}/{hash}/` once confirmed and under
+ * `{root}/{user}/staged/{hash}/` while only previewed, so a draft can never be
+ * mistaken for the sprite in use. The folder name carries a hash of the strips'
+ * content: a changed sprite gets a new URL and a cached copy of the old one cannot
+ * be served for it.
  *
  * Every write is checked (a full or unwritable disk is an error, not silence),
  * and nothing is deleted here until the caller says a database change is safe.
@@ -161,11 +164,46 @@ class CustomCharacterStore
     }
 
     /**
+     * Copies a staged version into the confirmed folder and leaves the staged copy
+     * where it is. The staged files stay whole until all four strips are in place, so
+     * a failure half way leaves the draft usable and no half-confirmed folder. A
+     * version that is already confirmed (the same strips confirmed before, or an
+     * earlier try that copied and then met a database failure) is left as it is.
+     *
+     * The caller drops the staged copy (discardStaged) once its database change is in.
+     *
+     * @param  int  $userId  the owner
+     * @param  string  $hash  the version hash
+     * @return void
+     *
+     * @throws CustomCharacterStorageException when the version was never staged, or a file cannot be copied
+     */
+    public function copyStaged(int $userId, string $hash): void
+    {
+        $startedAt = microtime(true);
+        $disk = $this->usableDisk();
+        $from = static::stagedFolder($userId, $hash);
+        $to = static::folder($userId, $hash);
+
+        if ($this->isComplete($disk, $to)) {
+            $this->guardDeadline($startedAt);
+
+            return;
+        }
+
+        if (! $this->isComplete($disk, $from)) {
+            throw new CustomCharacterStorageException('The built sprite\'s files are gone. Please build it again.');
+        }
+
+        $this->copyStrips($disk, $from, $to, $startedAt);
+
+        $this->guardDeadline($startedAt);
+    }
+
+    /**
      * Copies a staged version into the confirmed folder, then drops the staged
-     * copy. The staged files stay whole until all four strips are in place, so a
-     * failure half way leaves the draft usable and no half-confirmed folder. A
-     * version that is already confirmed (the same strips confirmed before) just
-     * loses its staged copy; a confirmed folder missing some strips is completed.
+     * copy: copyStaged() followed by the delete, for a caller whose database change
+     * cannot fail between the two (a fighter's confirm, which keeps every version).
      *
      * @param  int  $userId  the owner
      * @param  string  $hash  the version hash
@@ -175,45 +213,28 @@ class CustomCharacterStore
      */
     public function promote(int $userId, string $hash): void
     {
-        $startedAt = microtime(true);
-        $disk = $this->usableDisk();
-        $from = static::stagedFolder($userId, $hash);
-        $to = static::folder($userId, $hash);
+        $this->copyStaged($userId, $hash);
 
-        if ($this->isComplete($disk, $to)) {
-            $this->guardDeadline($startedAt);
-            $this->safely(fn () => $disk->deleteDirectory($from));
-
-            return;
-        }
-
-        if (! $this->isComplete($disk, $from)) {
-            throw new CustomCharacterStorageException('The built fighter\'s files are gone. Please build it again.');
-        }
-
-        $this->copyStrips($disk, $from, $to, $startedAt);
-
-        $this->guardDeadline($startedAt);
-        $this->safely(fn () => $disk->deleteDirectory($from));
+        $this->safely(fn () => $this->usableDisk()->deleteDirectory(static::stagedFolder($userId, $hash)));
     }
 
     /**
-     * Copies another folder's four strips (on the same disk) into a confirmed
-     * version's folder, leaving the source alone. A version that is already in
-     * place is left as it is; a failure half way removes the half-written folder.
+     * Copies another folder's four strips (on the same disk) into the staged area,
+     * as a draft's files, leaving the source alone. A version that is already staged
+     * is left as it is; a failure half way removes the half-written folder.
      *
      * @param  int  $userId  the owner
-     * @param  string  $hash  the version hash the copy is stored under
+     * @param  string  $hash  the version hash the copy is staged under
      * @param  string  $fromFolder  the folder, on the disk, that holds the four strips
      * @return void
      *
      * @throws CustomCharacterStorageException when the source is incomplete, a file cannot be copied, or too little lock lifetime remains
      */
-    public function adopt(int $userId, string $hash, string $fromFolder): void
+    public function adoptStaged(int $userId, string $hash, string $fromFolder): void
     {
         $startedAt = microtime(true);
         $disk = $this->usableDisk();
-        $to = static::folder($userId, $hash);
+        $to = static::stagedFolder($userId, $hash);
 
         if ($this->isComplete($disk, $to)) {
             $this->guardDeadline($startedAt);

@@ -6,7 +6,7 @@ vi.mock('phaser', () => ({
 
 import { loadCustomFighter, loadStackedType } from '@battlefield/fighter/custom-fighter-loader.js';
 import { normalizeCustomCharacter } from '@battlefield/fighter/custom-fighter.js';
-import { customMinionType, normalizeCustomMinions } from '@battlefield/minion-custom.js';
+import { customMinionType, normalizeMinionPool } from '@battlefield/minion-custom.js';
 
 const SPEC = normalizeCustomCharacter({
   version: 'abc',
@@ -143,12 +143,16 @@ describe('loadCustomFighter', () => {
 });
 
 describe('loadStackedType', () => {
-  const minion = normalizeCustomMinions([{
-    version: 'abc',
-    url_base: '/storage/custom-minions/7/abc',
-    animations: SPEC.animations,
-    body_px: 22,
-  }])[0];
+  const minion = normalizeMinionPool({
+    rev: 1,
+    defaults: [],
+    custom: [{
+      version: 'abc',
+      url_base: '/storage/custom-minions/7/abc',
+      animations: SPEC.animations,
+      body_px: 22,
+    }],
+  }).custom[0];
 
   test('builds a minion texture with minion-prefixed frame names', async () => {
     const scene = fakeScene();

@@ -18,7 +18,7 @@ test('the character tab can be opened without the editor', function () {
         ->assertSessionHas('open_sheet', ['tab' => 'character', 'editor' => false]);
 });
 
-test('the minions target opens the editor on the Minions tab', function () {
+test('the minions target opens the Character tab on its Minions sub-tab', function () {
     $this->actingAs(User::factory()->create())
         ->get(route('battlefield.open-sheet', 'minions'))
         ->assertRedirect(route('battlefield'))
@@ -51,7 +51,7 @@ test('an old ?sheet= URL no longer opens anything: only the one-time flash does'
         ->assertDontSee('data-open-sheet', escape: false);
 });
 
-test('the minions link hands the Minions tab to the arena once, the plain editor link does not', function () {
+test('the minions link hands the Minions sub-tab to the arena once, the plain editor link does not (it opens the Fighter\'s Forge)', function () {
     $this->withoutVite()->actingAs(User::factory()->create());
 
     $this->get(route('battlefield.open-sheet', 'minions'));

@@ -35,6 +35,11 @@ class FighterJoined implements ShouldBroadcastNow
      * battlefield, instead of snapping to the default grid row. Null when the
      * fighter has never moved.
      *
+     * `minion_pool` is the whole pool a subagent summon draws from, with the `rev`
+     * that orders it against a later pool (see `MinionPool::get()`). It is read from
+     * the user's minions relation, so it costs no query beyond the one load that
+     * `custom_character` shares with it for the request.
+     *
      * @return array<string, mixed>
      */
     public function broadcastWith(): array
@@ -46,7 +51,7 @@ class FighterJoined implements ShouldBroadcastNow
             'avatar_url' => $this->user->avatarProxyUrl(),
             'character' => $this->user->characterForBoss($this->boss?->id),
             'custom_character' => $this->user->customFighterState(),
-            'custom_minions' => $this->user->customMinionsState(),
+            'minion_pool' => $this->user->minionPoolState(),
             'position' => app(FighterPositionCache::class)->get($this->user->id),
         ];
     }

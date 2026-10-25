@@ -4,7 +4,6 @@ namespace App\Services\CustomCharacter;
 
 use App\Exceptions\CustomCharacterBusyException;
 use App\Exceptions\CustomCharacterStorageException;
-use App\Models\CustomCharacter;
 use App\Models\CustomCharacterDraft;
 use App\Models\CustomCharacterVersion;
 use App\Models\CustomMinion;
@@ -15,7 +14,10 @@ use Illuminate\Contracts\Filesystem\Filesystem;
 /**
  * Removes old strip folders left behind when cleanup failed, without touching live versions.
  * Fighters (`custom-characters/`) and minions (`custom-minions/`) are swept as two separate
- * roots with their own references, so one kind's folder is never taken for the other's orphan.
+ * roots with their own references, so one kind's folder is never taken for the other's orphan:
+ * a hash a minion copied from the fighter holds in both roots is judged once in each. A
+ * player's references are read after their lock is taken, in both roots, so a confirm that
+ * lands during the pass is never swept.
  */
 class PruneOrphanCustomCharacterFiles
 {
@@ -80,13 +82,7 @@ class PruneOrphanCustomCharacterFiles
      */
     private function fighterReferences(int $userId): array
     {
-        $referenced = CustomCharacterVersion::query()
-            ->whereHas('customCharacter', fn ($query) => $query->where('user_id', $userId))
-            ->pluck('version_hash')->all();
-        $active = CustomCharacter::query()->where('user_id', $userId)->value('version_hash');
-        if ($active !== null) {
-            $referenced[] = $active;
-        }
+        $referenced = CustomCharacterVersion::query()->where('user_id', $userId)->pluck('version_hash')->all();
         $draft = CustomCharacterDraft::query()->where('user_id', $userId)->value('version_hash');
 
         return [$referenced, $draft];

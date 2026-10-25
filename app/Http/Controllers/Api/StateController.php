@@ -18,11 +18,11 @@ class StateController extends Controller
         $fighters = User::with(['customCharacter', 'customMinions'])
             ->where('last_event_at', '>=', $cutoff)
             ->orderByDesc('last_event_at')
-            ->get(['id', 'name', 'slack_handle', 'display_name', 'avatar_url', 'last_event_at'])
-            ->map(fn (User $u) => array_merge($u->toArray(), [
+            ->get(['id', 'name', 'slack_handle', 'display_name', 'avatar_url', 'last_event_at', 'minion_defaults_off', 'minion_pool_rev'])
+            ->map(fn (User $u) => array_merge($u->makeHidden(['minion_defaults_off', 'minion_pool_rev', 'customMinions'])->toArray(), [
                 'character' => $u->characterForBoss($boss?->id),
                 'custom_character' => $u->customFighterState(),
-                'custom_minions' => $u->customMinionsState(),
+                'minion_pool' => $u->minionPoolState(),
             ]));
 
         $log = Event::with('user:id,slack_handle')

@@ -55,18 +55,23 @@ test('state endpoint carries each fighter\'s custom character, null for one with
         ->and($fighters[$custom->id]['custom_character'])->toBe($custom->customFighterState());
 });
 
-test('state endpoint carries each fighter\'s custom minions as their broadcast state, not the raw rows', function () {
+test('state endpoint carries each fighter\'s minion pool, with its rev, and no longer custom_minions', function () {
     Boss::factory()->create();
     $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
     $owner = CustomMinion::factory()->create()->user;
-    CustomMinion::factory()->create(['user_id' => $owner->id]);
-    $owner->forceFill(['last_event_at' => now()->subMinute()])->save();
+    CustomMinion::factory()->create(['user_id' => $owner->id, 'slot' => 2]);
+    $owner->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool_rev' => 4, 'minion_defaults_off' => ['demon-a']])->save();
 
     $fighters = collect($this->getJson('/api/state')->assertOk()->json('fighters'))->keyBy('id');
-    $minions = $fighters[$owner->id]['custom_minions'];
+    $pool = $fighters[$owner->id]['minion_pool'];
 
-    expect($fighters[$plain->id])->toHaveKey('custom_minions', [])
-        ->and($minions)->toBe($owner->fresh()->customMinionsState())
-        ->and($minions)->toHaveCount(2)
-        ->and($minions[0])->not->toHaveKeys(['created_at', 'user_id', 'id']);
+    expect($pool)->toBe($owner->fresh()->minionPoolState())
+        ->and($pool['rev'])->toBe(4)
+        ->and($pool['defaults'])->not->toContain('demon-a')
+        ->and($pool['custom'])->toHaveCount(2)
+        ->and($pool['custom'][0])->not->toHaveKeys(['created_at', 'user_id', 'id'])
+        ->and($fighters[$plain->id]['minion_pool'])->toBe($plain->fresh()->minionPoolState())
+        ->and($fighters[$plain->id]['minion_pool']['custom'])->toBe([])
+        ->and($fighters[$owner->id])->not->toHaveKey('custom_minions')
+        ->and($fighters[$owner->id])->not->toHaveKeys(['minion_pool_rev', 'minion_defaults_off']);
 });

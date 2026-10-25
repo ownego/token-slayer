@@ -1,10 +1,13 @@
 <?php
 
 use App\Events\FighterMinionsChanged;
+use App\Filament\Resources\CustomMinions\CustomMinionResource;
 use App\Filament\Resources\CustomMinions\Pages\ListCustomMinions;
 use App\Models\CustomMinion;
 use App\Models\User;
 use App\Support\CacheKeys;
+use BezhanSalleh\FilamentShield\Facades\FilamentShield;
+use Filament\Facades\Filament;
 use Illuminate\Cache\Lock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -22,16 +25,17 @@ beforeEach(function () {
 });
 
 /**
- * A user who may open the minion list, and nothing else.
+ * A user whose only role grants exactly the given minion permissions.
  *
+ * @param  list<string>  $permissions  permission names, which the migrations already created
  * @return User
  */
-function adminMinionViewer(): User
+function adminMinionUserWith(array $permissions): User
 {
-    $viewer = User::factory()->create();
-    $viewer->assignRole(Role::create(['name' => 'minion-list-viewer', 'guard_name' => 'web'])->givePermissionTo(Permission::findByName('ViewAny:CustomCharacter')));
+    $user = User::factory()->create();
+    $user->assignRole(Role::create(['name' => 'minion-admin-role', 'guard_name' => 'web'])->givePermissionTo($permissions));
 
-    return $viewer;
+    return $user;
 }
 
 /**
@@ -49,21 +53,43 @@ function adminMinionHoldLock(User $owner): Lock
     return $held;
 }
 
-it('lists minions for a role with ViewAny:CustomCharacter', function () {
-    $one = CustomMinion::factory()->create();
-    $two = CustomMinion::factory()->fromFighter()->create();
+it('lists minions with slot, name and tick for a role with ViewAny:CustomMinion', function () {
+    $one = CustomMinion::factory()->create(['slot' => 2, 'name' => 'Glim', 'enabled' => true]);
+    $two = CustomMinion::factory()->fromFighter()->create(['slot' => 1, 'name' => 'Sprout', 'enabled' => false]);
 
-    Livewire::actingAs(adminMinionViewer())->test(ListCustomMinions::class)
+    Livewire::actingAs(adminMinionUserWith(['ViewAny:CustomMinion']))->test(ListCustomMinions::class)
         ->assertSuccessful()
         ->assertCanSeeTableRecords([$one, $two])
-        ->assertTableColumnStateSet('user.slack_handle', $one->user->displayHandle(), $one);
+        ->assertTableColumnStateSet('user.slack_handle', $one->user->displayHandle(), $one)
+        ->assertTableColumnStateSet('slot', 2, $one)
+        ->assertTableColumnStateSet('name', 'Glim', $one)
+        ->assertTableColumnStateSet('enabled', true, $one)
+        ->assertTableColumnStateSet('enabled', false, $two);
 });
 
 it('hides the list without it', function () {
     Livewire::actingAs(User::factory()->create())->test(ListCustomMinions::class)->assertForbidden();
 });
 
-it('removes a minion and broadcasts', function () {
+it('hides the list from a role that only has the CustomCharacter permissions', function () {
+    $moderator = adminMinionUserWith(['ViewAny:CustomCharacter', 'Delete:CustomCharacter']);
+
+    Livewire::actingAs($moderator)->test(ListCustomMinions::class)->assertForbidden();
+});
+
+it('shows the thumbnail from a full URL on the public disk', function () {
+    $minion = CustomMinion::factory()->create();
+
+    $component = Livewire::actingAs(adminMinionUserWith(['ViewAny:CustomMinion']))->test(ListCustomMinions::class);
+    $column = $component->instance()->getTable()->getColumn('minion')->record($minion);
+    $url = $column->getImageUrl($column->getState());
+
+    expect($url)->not->toBeNull()
+        ->and(filter_var($url, FILTER_VALIDATE_URL))->not->toBeFalse()
+        ->and($url)->toEndWith("/custom-minions/{$minion->user_id}/{$minion->version_hash}/idle.png");
+});
+
+it('removes a minion, bumps the owner\'s pool revision and broadcasts', function () {
     $admin = User::factory()->admin()->create();
     $minion = CustomMinion::factory()->create();
     Storage::disk('public')->put("custom-minions/{$minion->user_id}/{$minion->version_hash}/idle.png", 'x');
@@ -72,9 +98,33 @@ it('removes a minion and broadcasts', function () {
         ->callTableAction('remove', $minion)
         ->assertHasNoTableActionErrors();
 
-    expect(CustomMinion::count())->toBe(0);
+    expect(CustomMinion::count())->toBe(0)
+        ->and($minion->user->fresh()->minion_pool_rev)->toBe(1);
     Storage::disk('public')->assertMissing("custom-minions/{$minion->user_id}/{$minion->version_hash}/idle.png");
     Event::assertDispatched(FighterMinionsChanged::class, fn ($event) => $event->user->is($minion->user));
+});
+
+it('lets a role with Delete:CustomMinion remove through the list', function () {
+    $moderator = adminMinionUserWith(['ViewAny:CustomMinion', 'Delete:CustomMinion']);
+    $minion = CustomMinion::factory()->create();
+
+    Livewire::actingAs($moderator)->test(ListCustomMinions::class)
+        ->callTableAction('remove', $minion)
+        ->assertHasNoTableActionErrors();
+
+    expect(CustomMinion::count())->toBe(0);
+    Event::assertDispatched(FighterMinionsChanged::class);
+});
+
+it('does not offer Remove to a role with only ViewAny:CustomMinion', function () {
+    $viewer = adminMinionUserWith(['ViewAny:CustomMinion']);
+    $minion = CustomMinion::factory()->create();
+
+    Livewire::actingAs($viewer)->test(ListCustomMinions::class)
+        ->assertTableActionHidden('remove', $minion);
+
+    expect(CustomMinion::count())->toBe(1);
+    Event::assertNotDispatched(FighterMinionsChanged::class);
 });
 
 it('shows the busy message when the owner holds the lock', function () {
@@ -86,6 +136,19 @@ it('shows the busy message when the owner holds the lock', function () {
         ->callTableAction('remove', $minion)
         ->assertNotified();
 
-    expect(CustomMinion::count())->toBe(1);
+    expect(CustomMinion::count())->toBe(1)
+        ->and($minion->user->fresh()->minion_pool_rev)->toBe(0);
     Event::assertNotDispatched(FighterMinionsChanged::class);
+});
+
+it('lists the CustomMinion permissions in Shield as a group that is used', function () {
+    Filament::setCurrentPanel('admin');
+
+    $group = FilamentShield::transformResources()[CustomMinionResource::class] ?? null;
+    $keys = collect($group['permissions'] ?? [])->pluck('key');
+
+    expect($group)->not->toBeNull()
+        ->and($group['model'])->toBe('CustomMinion')
+        ->and($keys)->toContain('ViewAny:CustomMinion', 'Delete:CustomMinion')
+        ->and(Permission::whereIn('name', ['ViewAny:CustomMinion', 'Delete:CustomMinion'])->count())->toBe(2);
 });

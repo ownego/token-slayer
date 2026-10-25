@@ -5,9 +5,10 @@ namespace App\Services\CustomCharacter;
 use App\Models\User;
 
 /**
- * Describes a fighter version for a preview: its four strips (where each is served
- * from, its frame count and rate, and the name the player sees for it, the
- * sheet's own words: "Death" for the strip stored as `death`) and the payload the sheet plays it from.
+ * Describes a custom sprite for a preview. For a fighter version: its four strips
+ * (where each is served from, its frame count and rate, and the name the player sees
+ * for it, the sheet's own words: "Death" for the strip stored as `death`) and the
+ * payload the sheet plays it from.
  */
 class PreviewStrips
 {
@@ -22,12 +23,10 @@ class PreviewStrips
      * Create the describer.
      *
      * @param  CustomCharacterStore  $store  knows where the fighter's strips are served from
-     * @param  CustomMinionStore  $minionStore  knows where the minions' strips are served from
      * @return void
      */
     public function __construct(
         private readonly CustomCharacterStore $store,
-        private readonly CustomMinionStore $minionStore,
     ) {}
 
     /**
@@ -88,38 +87,11 @@ class PreviewStrips
             return null;
         }
 
-        $name = $user->customCharacter()->value('name') ?? (string) config('token_slayer.custom_character.default_name');
+        $name = $user->customCharacter()->first()?->name ?? (string) config('token_slayer.custom_character.default_name');
 
         return [
             'hash' => $draft->version_hash,
             'spec' => $this->spec($user->id, $draft->version_hash, $draft->animations, staged: true, name: $name),
-        ];
-    }
-
-    /**
-     * The player's pending minion draft as the sheet's stage takes it: its hash and its
-     * staged spec (version, where the strips are served from, animations, body height).
-     * Null when nothing is waiting.
-     *
-     * @param  User  $user  the owner
-     * @return array{hash: string, spec: array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, body_px: int}}|null
-     */
-    public function minionDraftPayload(User $user): ?array
-    {
-        $draft = $user->customMinionDraft()->first();
-
-        if ($draft === null) {
-            return null;
-        }
-
-        return [
-            'hash' => $draft->version_hash,
-            'spec' => [
-                'version' => $draft->version_hash,
-                'url_base' => $this->minionStore->baseUrl($user->id, $draft->version_hash, staged: true),
-                'animations' => $draft->animations,
-                'body_px' => $draft->body_px,
-            ],
         ];
     }
 }
