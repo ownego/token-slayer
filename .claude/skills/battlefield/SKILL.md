@@ -18,7 +18,7 @@ Read alongside (don't duplicate here):
 ```
 PHP Event ──broadcastAs()──▶ Reverb public 'battlefield' channel
                                       │
-                         index.js ECHO_EVENT_MAP  (PHP name → BusEvent key)
+                         constants.js ECHO_EVENT_MAP  (PHP name → BusEvent key; index.js wires Echo to it)
                                       ▼
 broadcastWith() payload ──▶ bus.emit(key, payload)
                                       ├─▶ scene.js _busHandlers[key] → manager.handleX(payload)
@@ -56,7 +56,7 @@ Echo listens with a leading dot (`.HitDealt`) because of the custom `broadcastAs
   currentUserId,
   fighters: [{id, handle, avatarUrl, character, charging: {activity}|null,
               position: {x, y} (0–1 fractions)|null, customCharacter: {version, url_base|urlBase, animations}|null,
-              customMinions: [{version, url_base|urlBase, animations, body_px|bodyPx}], agentCount}],  // `character` is always a roster key; a custom fighter's own key is synthetic; `customMinions` [] = default minion types
+              minionPool: {rev, defaults: [key], custom: [{version, url_base|urlBase, animations, body_px|bodyPx}]}|null, agentCount}],  // `character` is always a roster key; a custom fighter's own key is synthetic; `minionPool` null = no information (all five default minion types); a pool is applied only when its `rev` is newer
   leaderboard: [{userId, damage, handle}],
   damageTotals: [[userId, damage], ...],
   globalDamage: {allTime, monthly, daily, hourly}   // passed through untouched by the snapshot

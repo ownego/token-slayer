@@ -15,7 +15,7 @@ Before reviewing, read `.ai/domain/battlefield.md` (invariants #1–#11 + Compan
 
 1. **Snapshot ↔ boot payload parity.** `snapshot.js` output must match the `data-battlefield-state` payload built in `resources/views/livewire/battlefield.blade.php` (data from `app/Livewire/Battlefield.php`). An orientation flip snapshots and `scene.restart()`s, so a boot field that `create()`/a manager seed reads but the snapshot doesn't capture is lost on rotate. Diff both directions; check `tests/js/snapshot.test.js` covers any new field.
 2. **Phaser lifecycle / leaks.** Every `scene.add.*`, tween, `scene.time.*` timer, particle emitter, and `bus.on` must be released — on entity removal (fighter idle, boss kill, minion `_teardownMinion`) and on scene `shutdown` (the `events.once('shutdown')` block in `scene.js`). World-space objects that aren't container children (minions, badges, tool rings, handle labels, summon circles) need explicit `.destroy()`. Async callbacks must guard `sprite?.active` / `scene.isShuttingDown`.
-3. **Event-bus contract.** PHP `broadcastAs()` === `ECHO_EVENT_MAP` key (`index.js`) → `BusEvent` value (`constants.js`) === `_busHandlers` key (`scene.js`). Listeners also live in `battlefield.blade.php` via `window.__battlefield.bus` — include it when hunting dangling emits/ons. A new `BusEvent` must also be in `tests/js/constants.test.js`.
+3. **Event-bus contract.** PHP `broadcastAs()` === `ECHO_EVENT_MAP` key (`constants.js`) → `BusEvent` value (`constants.js`) === `_busHandlers` key (`scene.js`). Listeners also live in `battlefield.blade.php` via `window.__battlefield.bus` — include it when hunting dangling emits/ons. A new `BusEvent` must also be in `tests/js/constants.test.js`.
 4. **Key discipline.** `scene.fighters`, `scene.charges`, `scene.minions.byUser` are keyed by numeric `user_id` from payloads; confirm lookups use the same type.
 5. **Mid-tween baselines (invariant #9).** Flag any persistent value (`entry.pos`, a rest scale, a home position) read off a sprite property that another tween may be animating. Moves/hits must plan from `moveOrigin(...)`, flinch from a tracked rest scale.
 6. **Layout/scale.** Coordinates are logical (`LAYOUTS`), never canvas pixels; sizes derive from `fighterDisplayConfig`/`displaySize`/`charHeight`, not hard-coded px. Any canvas resize goes through `render-scale.js` (invariant #10).
@@ -35,7 +35,7 @@ Before reviewing, read `.ai/domain/battlefield.md` (invariants #1–#11 + Compan
 grep -n "scene\.add\.\|this\.add\.\|\.time\.\(delayedCall\|addEvent\)\|\.tweens\.add\|\.particles(\|bus\.on(" <changed files>
 grep -n "\.destroy()\|\.remove()\|\.remove(\|killTweensOf\|bus\.off(\|removeAllListeners" <changed files>
 # bus contract: Echo map + BusEvent + scene handlers + blade listeners
-grep -n "ECHO_EVENT_MAP" -A15 resources/js/battlefield/index.js
+grep -n "ECHO_EVENT_MAP" -A15 resources/js/battlefield/constants.js
 grep -n "BusEvent\.\|_busHandlers" resources/js/battlefield/scene.js
 grep -rn "bus\.emit(\|bus\.on(" resources/js/battlefield resources/views/livewire/battlefield.blade.php
 # snapshot round-trip — fields written vs fields read back

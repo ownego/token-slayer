@@ -78,7 +78,7 @@ Very short turns can leave only placeholder usage in the transcript. The hook re
 
 ## Subagent presence (cosmetic, never damage)
 
-`SubagentCountCache` (`app/Services/SubagentCountCache.php`) tracks how many dispatched subagents each user has running. This drives the minion swarm (`resources/js/battlefield/minions.js`, see `battlefield.md`) and never HP. Which minion look each dispatch summons is a client choice from the owner's custom minion set (`custom_minions` on the player payloads, see `custom-characters.md`), else the default types; the count is all the server decides.
+`SubagentCountCache` (`app/Services/SubagentCountCache.php`) tracks how many dispatched subagents each user has running. This drives the minion swarm (`resources/js/battlefield/minions.js`, see `battlefield.md`) and never HP. Which minion look each dispatch summons is a client choice from the owner's minion pool (`minion_pool` on the player payloads: the ticked default looks plus the ticked custom minions, see `custom-characters.md`); the count is all the server decides.
 
 - **Storage:** one Redis key per subagent, `subagent:presence:{userId}:{agentId}`, or `…:pending:{random}` before its `agent_id` is known. Each key has TTL = `config('game.subagent_idle_seconds')` (default **60**, raised from 30 on 2026-09-25 because a single >30 s tool call dropped a live subagent). Refreshing activity is one `EXPIRE`. A quiet subagent needs no cleanup, because Redis expires it.
 - **`recordDispatch()`** (parent's `PreToolUse` with `Task`/`Agent`): creates a pending key. `Agent` is what Claude Agent SDK harnesses report instead of `Task` (verified 2026-09-22).

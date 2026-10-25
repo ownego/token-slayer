@@ -26,7 +26,7 @@ No scheduler container in dev (staging adds `scheduler` = `schedule:work`). The 
 ## Architecture invariants
 
 - `POST /api/events` is the single write path for usage; `events` rows are append-only — aggregates always derive from them.
-- Broadcast three-name alignment: `broadcastAs()` === `ECHO_EVENT_MAP` key (`resources/js/battlefield/index.js`) → scene bus key. See `.ai/domain/broadcasting.md`.
+- Broadcast three-name alignment: `broadcastAs()` === `ECHO_EVENT_MAP` key (`resources/js/battlefield/constants.js`) → scene bus key. See `.ai/domain/broadcasting.md`.
 - `snapshotState()` must round-trip with the `data-battlefield-state` boot payload (scene reboots on rotate).
 - Fighter sprite sheets stay `frameWidth: 100` — never upscale.
 - Account attribution is per-event (`events.account_id`), never inferred from user membership.
@@ -215,7 +215,7 @@ These rules extend the Boost/Laravel defaults above. When they conflict, these w
 - Adding/removing a module under `resources/js/battlefield/**` → update the Key Files table in `resources/js/battlefield/CLAUDE.md` in the same commit. Changes there should go through the `battlefield-reviewer` agent.
 - Adding a fighter/boss/companion/minion sprite → follow `public/assets/battlefield/CLAUDE.md` (formats, naming) and credit it in `CREDITS.md`. Fighter source frames live in `resources/assets/battlefield/fighters/` and are packed into a gitignored atlas by `scripts/pack-sprites.js` (runs automatically in `npm run build` / `npm run dev`).
 - Tunables live in `resources/js/battlefield/config/` (`fighters.js`, `bosses.js`, `companions.js`, `layouts.js`, `timings.js`), not as literals in managers.
-- New real-time event → use the `scaffold-broadcast-event` skill (PHP event → `ECHO_EVENT_MAP` in `resources/js/battlefield/index.js` → scene bus key).
+- New real-time event → use the `scaffold-broadcast-event` skill (PHP event → `ECHO_EVENT_MAP` in `resources/js/battlefield/constants.js` → scene bus key).
 
 ## Build & verification
 

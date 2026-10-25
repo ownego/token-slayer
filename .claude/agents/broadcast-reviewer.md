@@ -15,7 +15,7 @@ Read `.ai/domain/broadcasting.md` first. Its event catalog lists every event's `
 
 Review ONLY the broadcast contract, not unrelated business logic.
 
-1. **Name chain.** `broadcastAs()` (e.g. `'HitDealt'`) must equal an `ECHO_EVENT_MAP` key in `resources/js/battlefield/index.js`. The map's value must be a `BusEvent` constant from `resources/js/battlefield/constants.js`, and that constant must have an entry in `scene.js` `_busHandlers`. Echo listens with a leading `.` (`.HitDealt`). A rename on one side without the others is the #1 bug.
+1. **Name chain.** `broadcastAs()` (e.g. `'HitDealt'`) must equal an `ECHO_EVENT_MAP` key in `resources/js/battlefield/constants.js`. The map's value must be a `BusEvent` constant from `resources/js/battlefield/constants.js`, and that constant must have an entry in `scene.js` `_busHandlers`. Echo listens with a leading `.` (`.HitDealt`). A rename on one side without the others is the #1 bug.
 2. **Second consumer.** `resources/js/ide-bridge.js` (+ `ide-bridge-internal.js`) listens directly to `.HitDealt`, `.BossKilled`, `.BossSpawned`, `.FighterCharging` and `.FighterIdled`, outside `ECHO_EVENT_MAP`. Renames and payload changes to those must update it too.
 3. **Payload shape.** `broadcastWith()` defines the keys the client receives, all snake_case scalars. Every key a JS handler reads must exist there; every key removed or renamed there must be updated in the handler. Client-ignored additions are info only.
 4. **Channel.** Everything is the public `battlefield` channel. Private/presence channels additionally need an authorization callback in `routes/channels.php`, which currently only has the default `App.Models.User.{id}`.
@@ -37,7 +37,7 @@ Review ONLY the broadcast contract, not unrelated business logic.
 grep -rn "return '" app/Events/ | grep -v "=>"
 grep -rln "ShouldBroadcast\b" app/Events/          # anything queued?
 # JS side: map, bus constants, scene handlers, IDE bridge
-grep -n "ECHO_EVENT_MAP" -A 15 resources/js/battlefield/index.js
+grep -n "ECHO_EVENT_MAP" -A 15 resources/js/battlefield/constants.js
 grep -n "BusEvent = " -A 15 resources/js/battlefield/constants.js
 grep -n "_busHandlers = " -A 15 resources/js/battlefield/scene.js
 grep -n "listen('\." resources/js/ide-bridge.js

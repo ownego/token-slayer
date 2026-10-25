@@ -42,8 +42,8 @@ Consequences that shape every decision:
 | Fighter | one per user on the field, assigned by user and boss, or the equipped one; charge ring, bubble, model flair ring. Heroes are fighters with their own atlas, flight drawn into the pixels and their own moves (a projectile normally, a big move on about one hit in five) | moment, session, social | keyed by user id; sprites are 100 px frames, never upscaled; a hero's move only changes the visuals, its hit lands once |
 | Roster and fighter sheet | the 20 fighters, filters by attack style, a Character tab with Equip and undo, a Profile tab with damage, tokens by model, quota gauges, alerts, the combo buddy, a mini stage | session, social | the sheet is a modal over the live battlefield |
 | Custom fighter | a player's own fighter built from an uploaded pose sheet, previewed as a draft slot and managed in a stage drawer | social | strips served per version; every client shows the same fighter; cosmetic only; admin Rename and Remove follow policy |
-| Minions and companions | subagent swarm (the five default types, or a random one of the owner's up-to-3 custom minions), bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
-| Custom minions | a player's own minions built from uploaded pose sheets, managed in the Forge Minions tab; an empty set means the defaults | social | same sheet contract as the custom fighter; the set is cosmetic and broadcast live; admin Remove follows policy |
+| Minions and companions | subagent swarm (a random look from the owner's pool: the five default types plus up to 3 custom minions, each with a tick), bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
+| Custom minions | a player's own minions built from uploaded pose sheets, managed in the Minions sub-tab of Character (pool cells with ticks, Add, Replace, Use my fighter); nothing ticked means the five defaults | social | same sheet contract as the custom fighter; the set is cosmetic and broadcast live; admin Remove follows policy |
 | HUD | team totals, your damage, the damage board with rank changes, boss plate, feed, herald, nav | session, social | follows the screen: landscape and portrait layouts, a phone stats sheet |
 | Ceremonies | join, kill, boss spawn | social | slow motion and shake are for kills; reduced motion is honoured |
 | Accounts and quota | org accounts, attribution, probing, rebalance, alerts | the work-tool layer | per-event attribution, never inferred from membership |
@@ -53,7 +53,7 @@ Consequences that shape every decision:
 
 1. **First run.** Install the hook -> the first event -> the fighter joins (the Necromancer ceremony) -> the sheet shows a `newbie` state with next steps. `(?)` Discovery of the sheet and of fighter choice.
 2. **A normal day.** Session starts (hook update check) -> events -> fighter charges while working -> finished turns hit -> idle window passes -> the sweep marks the fighter idle -> the next session starts again.
-3. **Equip a fighter.** Open the sheet -> Character tab -> pick a slot (filters, hotbar to try moves) -> Equip -> toast with undo -> the sheet folds and the camera pushes in on your fighter -> everyone sees the change.
+3. **Equip a fighter.** Open the sheet -> Character tab (Fighter sub-tab; the Minions sub-tab is where the swarm's pool is managed) -> pick a slot (filters, hotbar to try moves) -> Equip -> toast with undo -> the sheet folds and the camera pushes in on your fighter -> everyone sees the change.
 4. **A boss falls.** HP crosses zero -> kill ceremony -> herald and Slack -> next boss spawns (overflow carries) -> the board updates.
 5. **Reconnect or rotate.** The scene restarts from the boot payload; the state it rebuilds must equal what live events produced (`snapshotState()` round trip).
 6. **Quota and alerts.** Accounts reach a threshold or a token is rejected -> alert in the sheet and in Slack -> an admin reconnects.
@@ -72,7 +72,8 @@ Consequences that shape every decision:
 | Hero big-move share | 20% of a hero's hits, split evenly between its big moves | `battlefield/config/heroes.js` |
 | Hero effect cap | 120 live effect objects; past it a big move plays its main contact only | `battlefield/config/heroes.js` |
 | Hero main contact, latest | 2100 ms after the hit (the bat swarm) | `battlefield/config/heroes.js` |
-| Custom minions per player | 3 | `custom_character.minions_max` in `config/token_slayer.php` |
+| Custom minions per player | 3 (the cap counts custom minions only, the five defaults are extra) | `custom_character.minions_max` in `config/token_slayer.php`; mirrored by `MINION_POOL_CUSTOM_CAP` in `battlefield/config/companions.js` |
+| Minion pool changes | 30 per minute per player (ticks, Use my fighter, remove, retarget; each broadcasts the pool) | `custom_character.minion_changes_per_minute` in `config/token_slayer.php` |
 | Custom minion look wait | 2 s | `TIMINGS.customMinionWaitMs` (`battlefield/config/timings.js`) |
 
 A new knob has a name, a default, a reason for the default, and a place in this table.
