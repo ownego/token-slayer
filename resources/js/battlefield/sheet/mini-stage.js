@@ -2,8 +2,8 @@
 // and crew-Clawd blocks: the equipped fighter runs on the stage in its own
 // charge colours (grinding sparks off its heel), with one minion and one
 // crew Clawd per subagent the viewer has working right now. With no subagent
-// working, the minions of the viewer's pool stand idle beside the fighter, so
-// a change to the pool (an Add, a Replace, a tick) shows up here at once.
+// working the fighter runs alone: a minion is a subagent's, so none is drawn
+// until one is (the Minions tab's stage is where a pool change is seen).
 import { BusEvent } from '../constants.js';
 import { isNewerPool, normalizeMinionPool } from '@battlefield/minion-custom.js';
 import { FIGHTER_TYPES } from '../config/fighters.js';
@@ -60,30 +60,26 @@ function stageScale(h) {
 }
 
 /**
- * Minion spots. With subagents working there is one spot per live subagent, capped at the spots we
- * have, the first `busy` of them working (in a tool call) and the rest idle, each taking the pool's
- * looks in turn as each subagent summons one of them. With none working the stage is not left bare:
- * the pool's looks stand idle in the spots, each flagged `preview`. With no looks there is nothing to draw.
+ * Minion spots: one per live subagent, capped at the spots we have, the first `busy` of them working (in a
+ * tool call) and the rest idle, each taking the pool's looks in turn as each subagent summons one of them.
+ * With no subagent there is no minion to draw, and with no looks there is nothing to draw it with.
  *
  * @param {number} total Live subagents.
  * @param {number} [busy] How many are in a tool call right now.
  * @param {Array<import('./minion-preview.js').MinionLook>} [looks] The idle strip of each look in the viewer's pool.
- * @return {Array<{i: number, x: number, y: number, kind: string, busy: boolean, preview: boolean, look: import('./minion-preview.js').MinionLook}>}
+ * @return {Array<{i: number, x: number, y: number, kind: string, busy: boolean, look: import('./minion-preview.js').MinionLook}>}
  */
 export function minionSpots(total, busy = total, looks = []) {
-  if (looks.length === 0) {
+  if (total <= 0 || looks.length === 0) {
     return [];
   }
-  const preview = total <= 0;
-  const shown = Math.min(preview ? looks.length : total, MINION_SPOTS.length);
 
-  return MINION_SPOTS.slice(0, shown).map((spot, i) => ({
+  return MINION_SPOTS.slice(0, Math.min(total, MINION_SPOTS.length)).map((spot, i) => ({
     i,
     ...spot,
     kind: 'm-look',
     look: looks[i % looks.length],
-    busy: !preview && i < busy,
-    preview,
+    busy: i < busy,
   }));
 }
 
@@ -173,15 +169,11 @@ export function miniStage(equipped, total, me, custom = null, minionPool = null)
     /**
      * What the pointer says about a minion spot.
      *
-     * @param {{busy: boolean, preview: boolean}} spot A spot from `minionSpots`.
+     * @param {{busy: boolean}} spot A spot from `minionSpots`.
      * @return {string}
      */
     spotTitle(spot) {
-      if (spot.busy) {
-        return 'working';
-      }
-
-      return spot.preview ? 'in your pool' : 'idle';
+      return spot.busy ? 'working' : 'idle';
     },
     init() {
       this.crew = { total, busy: busyOnField(Number(me)) };

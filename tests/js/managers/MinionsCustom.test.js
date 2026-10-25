@@ -500,7 +500,7 @@ describe('handleMinionsChanged', () => {
     minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(1, ['a']) });
 
     expect(loadStackedType).not.toHaveBeenCalled();
-    expect(minions.looks.size).toBe(0);
+    expect(minions.looks.holdsAny(USER)).toBe(false);
   });
 
   test('stores the pool, and loads nothing while the player has no minions out', async () => {
@@ -516,18 +516,19 @@ describe('handleMinionsChanged', () => {
     expect(loadStackedType).not.toHaveBeenCalled();
   });
 
-  test('loads a custom minion added while minions are out, and keeps the swarm as it is', async () => {
+  test('loads a custom minion added while minions are out, and the swarm changes to it once it is in', async () => {
     const scene = makeScene();
     addFighter(scene, poolWire(1, [], ['demon-a']));
     const minions = new Minions(scene);
     await setCount(minions, 2);
 
-    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, ['a'], ['demon-a']) });
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, ['a']) });
     expect(loadStackedType).toHaveBeenCalledTimes(1);
+    expect(minions.byUser.get(USER).map(minion => minion.typeKey)).toEqual(['demon-a', 'demon-a']);
     await settle('a');
     vi.advanceTimersByTime(MOTION_MS);
 
-    expect(minions.byUser.get(USER).map(minion => minion.typeKey)).toEqual(['demon-a', 'demon-a']);
+    expect(minions.byUser.get(USER).map(minion => minion.typeKey)).toEqual([keyOf('a'), keyOf('a')]);
   });
 });
 
@@ -568,13 +569,13 @@ describe('swapping looks', () => {
     expect(list.map(minion => minion.typeKey)).toEqual(['smw-bowser', 'smw-bowser']);
   });
 
-  test('leaves a minion alone when the new pool still has its look', async () => {
+  test('leaves a minion alone when the new pool draws the look it already shows', async () => {
     const scene = makeScene({ reducedMotion: false });
     const minions = new Minions(scene);
     const list = await minionsOut(scene, minions, poolWire(1, ['a']), 2);
     const poofsBefore = poofs(scene).length;
 
-    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, ['a'], ['demon-a']) });
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, ['a']) });
     vi.advanceTimersByTime(MOTION_MS);
 
     expect(poofs(scene)).toHaveLength(poofsBefore);
@@ -670,6 +671,144 @@ describe('swapping looks', () => {
     expect(minion.typeKey).toBe('demon-a');
     expect(minion.sprite.plays.at(-1)).toBe('demon-a-idle');
   });
+
+  test('a newer pool with one look left puts every minion on the field on it, whatever it showed', async () => {
+    const scene = makeScene();
+    addFighter(scene, poolWire(1, [], DEFAULT_KEYS));
+    const minions = new Minions(scene);
+    const list = await setCount(minions, 10);
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, [], ['smw-bowser']) });
+
+    expect(list.every(minion => minion.typeKey === 'smw-bowser')).toBe(true);
+  });
+
+  test('each newer pool puts the swarm on the looks it keeps, one pool after the other', async () => {
+    const scene = makeScene();
+    addFighter(scene, poolWire(1, [], ['demon-a']));
+    const minions = new Minions(scene);
+    const list = await setCount(minions, 3);
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, [], ['smw-bowser']) });
+    expect(list.map(minion => minion.typeKey)).toEqual(['smw-bowser', 'smw-bowser', 'smw-bowser']);
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(3, [], ['demon-a']) });
+    expect(list.map(minion => minion.typeKey)).toEqual(['demon-a', 'demon-a', 'demon-a']);
+  });
+
+  test('a newer pool that adds a custom minion flags the swarm to draw again once it is in, and then draws from both', async () => {
+    const scene = makeScene();
+    addFighter(scene, poolWire(1, [], ['demon-a']));
+    const minions = new Minions(scene);
+    const list = await setCount(minions, 10);
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, ['a'], ['demon-a']) });
+
+    expect(list.every(minion => minion.typeKey === 'demon-a' && minion.awaitingCustom)).toBe(true);
+    await settle('a');
+    vi.advanceTimersByTime(MOTION_MS);
+
+    expect(list.every(minion => ['demon-a', keyOf('a')].includes(minion.typeKey))).toBe(true);
+    expect(list.every(minion => minion.awaitingCustom === false)).toBe(true);
+  });
+
+  test('a pool that is not newer changes no minion, even when it names other looks', async () => {
+    const scene = makeScene({ reducedMotion: false });
+    addFighter(scene, poolWire(4, [], ['demon-a']));
+    const minions = new Minions(scene);
+    const list = await setCount(minions, 3);
+    const poofsBefore = poofs(scene).length;
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(4, [], ['smw-bowser']) });
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(3, [], ['smw-bowser']) });
+    vi.advanceTimersByTime(MOTION_MS);
+
+    expect(list.map(minion => minion.typeKey)).toEqual(['demon-a', 'demon-a', 'demon-a']);
+    expect(poofs(scene)).toHaveLength(poofsBefore);
+  });
+
+  test('a minion that draws the look it shows keeps it, with no poof', async () => {
+    const scene = makeScene({ reducedMotion: false });
+    addFighter(scene, poolWire(1, [], ['demon-a']));
+    const minions = new Minions(scene);
+    const list = await setCount(minions, 3);
+    const poofsBefore = poofs(scene).length;
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, [], ['demon-a']) });
+    vi.advanceTimersByTime(MOTION_MS);
+
+    expect(poofs(scene)).toHaveLength(poofsBefore);
+    expect(list.every(minion => minion.typeKey === 'demon-a' && minion.pendingLook === null)).toBe(true);
+  });
+
+  test('plays a poof for each minion that changes look, and none for one that keeps it', async () => {
+    const scene = makeScene({ reducedMotion: false });
+    addFighter(scene, poolWire(1, [], ['demon-a', 'smw-bowser']));
+    const minions = new Minions(scene);
+    const list = await setCount(minions, 10);
+    const keeping = list.filter(minion => minion.typeKey === 'smw-bowser').length;
+    const poofsBefore = poofs(scene).length;
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, [], ['smw-bowser']) });
+    vi.advanceTimersByTime(MOTION_MS);
+
+    expect(list.every(minion => minion.typeKey === 'smw-bowser')).toBe(true);
+    expect(poofs(scene)).toHaveLength(poofsBefore + (list.length - keeping));
+  });
+
+  test('a minion still waiting for its first look is not forced to swap', async () => {
+    const scene = makeScene({ reducedMotion: false });
+    addFighter(scene, poolWire(1, ['a']));
+    const minions = new Minions(scene);
+    minions.handleAgentCountChanged({ user_id: USER, count: 1 });
+    const minion = minions.byUser.get(USER)[0];
+    expect(minion.waitingForLook).toBe(true);
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, ['a', 'b']) });
+
+    expect(minion.waitingForLook).toBe(true);
+    expect(minion.typeKey).toBeNull();
+    expect(minion.pendingLook).toBeNull();
+    expect(minion.swapping).toBe(false);
+    expect(poofs(scene)).toHaveLength(0);
+  });
+
+  test('a minion whose wait ends on a newer pool takes its first look from that pool', async () => {
+    const scene = makeScene();
+    addFighter(scene, poolWire(1, ['a']));
+    const minions = new Minions(scene);
+    minions.handleAgentCountChanged({ user_id: USER, count: 1 });
+    const minion = minions.byUser.get(USER)[0];
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, [], ['smw-bowser']) });
+    vi.advanceTimersByTime(MOTION_MS);
+
+    expect(minion.typeKey).toBe('smw-bowser');
+    expect(scene.necromancer.spawnSummonCircle).toHaveBeenCalledTimes(1);
+  });
+
+  test('a swap the new pool asks of a busy minion is parked until it is free, and applied once', async () => {
+    const scene = makeScene({ reducedMotion: false });
+    addFighter(scene, poolWire(1, [], ['demon-a']));
+    const minions = new Minions(scene);
+    const [minion] = await setCount(minions, 1);
+    minion.fighting = true;
+    const poofsBefore = poofs(scene).length;
+
+    minions.handleMinionsChanged({ user_id: USER, minion_pool: poolWire(2, [], ['smw-bowser']) });
+    vi.advanceTimersByTime(MOTION_MS);
+
+    expect(minion.typeKey).toBe('demon-a');
+    expect(minion.pendingLook.key).toBe('smw-bowser');
+    expect(poofs(scene)).toHaveLength(poofsBefore);
+
+    minion.fighting = false;
+    minions.looks.flushParked(minion);
+    vi.advanceTimersByTime(MOTION_MS);
+
+    expect(minion.typeKey).toBe('smw-bowser');
+    expect(poofs(scene)).toHaveLength(poofsBefore + 1);
+  });
 });
 
 describe('releasing looks', () => {
@@ -687,8 +826,8 @@ describe('releasing looks', () => {
     expect(scene.textures.remove).toHaveBeenCalledWith(keyOf('b'));
     expect(scene.anims.remove).toHaveBeenCalledWith(`${keyOf('b')}-idle`);
     expect(scene.anims.remove).toHaveBeenCalledWith(`${keyOf('b')}-death`);
-    expect(minions.looks.get(USER).has('b')).toBe(false);
-    expect(minions.looks.get(USER).has('a')).toBe(true);
+    expect(minions.looks.holds(USER, 'b')).toBe(false);
+    expect(minions.looks.holds(USER, 'a')).toBe(true);
   });
 
   test('keeps a look that left the pool while a minion still shows it, and releases it when the swap lands', async () => {
@@ -744,7 +883,7 @@ describe('releasing looks', () => {
 
     expect(scene.textures.remove).toHaveBeenCalledWith(keyOf('a'));
     expect(minions.byUser.has(USER)).toBe(false);
-    expect(minions.looks.has(USER)).toBe(false);
+    expect(minions.looks.holdsAny(USER)).toBe(false);
   });
 
   test('releases a look that left the pool while it was loading, as soon as it lands', async () => {

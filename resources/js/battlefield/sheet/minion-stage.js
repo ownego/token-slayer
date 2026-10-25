@@ -1,6 +1,6 @@
-// The Minions tab's stage: the look of the selected cell standing idle at stage size, and under it an
-// "At field size" strip with the equipped fighter beside the minion, each drawn in the proportion the
-// battlefield draws them. The blade re-creates the stage element (a new `wire:key`) whenever the selected
+// The Minions tab's stage: the look of the selected cell at stage size (idle until a move of the hotbar under it
+// is played), and under that an "At field size" strip with the equipped fighter beside the minion, each drawn
+// in the proportion the battlefield draws them. The blade re-creates the stage element (a new `wire:key`) whenever the selected
 // cell or its version changes, so one instance shows one look; `showLook` is what `init` calls, and what
 // a caller can use to swap the look in place.
 import { BY_KEY } from './sprite-strip.js';
@@ -8,6 +8,7 @@ import { BOX, stripUrl } from './sheet-roster.js';
 import { CUSTOM_KEY, registerCustomRoster } from './custom-roster.js';
 import { fieldSizeFighterScale, fieldSizeMinionScale } from './minion-preview.js';
 import { lookOf, lookStyle, thumbStyle } from './minion-thumb.js';
+import { movePlan, moveSet, playbackStyle } from './minion-moves.js';
 
 /**
  * The height, in px, the stage gives the selected look's body.
@@ -98,6 +99,13 @@ export function minionStage(initial = {}) {
     summoned: false,
     summonTimer: null,
     onChanged: null,
+    moveSet: null,
+    moves: [],
+    move: 'idle',
+    phase: 'loop',
+    strip: 'idle',
+    twin: true,
+    moveTimer: null,
     /**
      * Reads the viewer's motion preference, draws the first look and listens for the pool changing.
      *
@@ -115,13 +123,14 @@ export function minionStage(initial = {}) {
       }
     },
     /**
-     * Stops listening and cancels a pending summon end.
+     * Stops listening and cancels a pending summon end and the move being played.
      *
      * @return {void}
      */
     destroy() {
       window.removeEventListener('custom-minions-changed', this.onChanged);
       clearTimeout(this.summonTimer);
+      clearTimeout(this.moveTimer);
     },
     /**
      * The equipped fighter for the field-size strip: a roster fighter as is, the custom fighter after it
@@ -142,7 +151,8 @@ export function minionStage(initial = {}) {
       return fighterLook(key);
     },
     /**
-     * Puts a look on the stage, replacing the one that was there.
+     * Puts a look on the stage, replacing the one that was there. It stands idle: the move being played
+     * on the look before it is cut short.
      *
      * @param {*} spec The cell's spec (see `lookOf`).
      * @param {boolean} [preview] Whether the look is a minion that has not been added yet.
@@ -151,14 +161,69 @@ export function minionStage(initial = {}) {
     showLook(spec, preview = false) {
       this.look = lookOf(spec);
       this.preview = preview;
+      this.moveSet = moveSet(spec);
+      this.moves = this.moveSet?.moves ?? [];
+      this.settle();
     },
     /**
-     * The sprite's style: the look at stage size, held on its first frame under reduced motion.
+     * Plays a move of the hotbar on the stage sprite. Idle and Walk repeat; Attack plays once and Fall lies
+     * down, stays down and gets up, then the stage goes back to Idle. Another move cuts the one playing short;
+     * the move already playing is left alone. Under reduced motion nothing plays: the sprite stands on the
+     * first frame of the move's strip, and the move still changes.
+     *
+     * @param {string} id The move (`idle`, `walk`, `attack`, `fall`).
+     * @return {void}
+     */
+    play(id) {
+      const plan = movePlan(this.moveSet, id);
+
+      if (plan.length === 0 || (id === this.move && this.phase !== 'loop')) {
+        return;
+      }
+      clearTimeout(this.moveTimer);
+      this.move = id;
+      this.beat(plan, 0);
+    },
+    /**
+     * Starts one beat of a move and, unless it is a loop, schedules the next one (or the return to Idle).
+     *
+     * @param {Array<import('./minion-moves.js').MoveBeat>} plan The move's beats.
+     * @param {number} index The beat to start.
+     * @return {void}
+     */
+    beat(plan, index) {
+      const { phase, strip, ms } = plan[index];
+
+      this.phase = phase;
+      this.strip = strip;
+      this.twin = !this.twin;
+
+      if (ms === null || this.reduced) {
+        return;
+      }
+      this.moveTimer = setTimeout(() => (index + 1 < plan.length ? this.beat(plan, index + 1) : this.settle()), ms);
+    },
+    /**
+     * Goes back to standing idle, dropping any move still playing.
+     *
+     * @return {void}
+     */
+    settle() {
+      clearTimeout(this.moveTimer);
+      this.move = 'idle';
+      this.phase = 'loop';
+      this.strip = 'idle';
+    },
+    /**
+     * The sprite's style: the strip of the move being played at stage size, with the variables that play it
+     * (see `playbackStyle`; every beat swaps between twin keyframes so the animation restarts), held on its first frame under reduced motion.
      *
      * @return {Object<string, string|number>}
      */
     get spriteStyle() {
-      return this.look ? thumbStyle(this.look, STAGE_BODY_PX, this.reduced) : {};
+      const strip = this.moveSet?.strips[this.strip] ?? this.look;
+
+      return strip ? { ...thumbStyle(strip, STAGE_BODY_PX, this.reduced), ...playbackStyle(this.phase, strip, this.twin) } : {};
     },
     /**
      * The "At field size" strip's two sprites.

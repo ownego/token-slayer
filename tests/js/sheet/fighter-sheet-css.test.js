@@ -229,3 +229,41 @@ test('the Character sub-tabs are at least 44px to hit', () => {
 
   expect(height).toBe('44px');
 });
+
+test('the Minions stage move buttons are at least 44px to hit', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  let height = null;
+  root.walkRules('.fs .ms-move', rule => {
+    if (rule.parent.type === 'root') {
+      rule.walkDecls('min-height', d => { height = d.value; });
+    }
+  });
+
+  expect(height).toBe('44px');
+});
+
+test('the move on the Minions stage is chosen by the variables the stage sets, and its animation stops under reduced motion', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  const names = [];
+  const keyframes = [];
+  let stopped = null;
+  root.walkRules('.fs .ms-stage .ms-sprite', rule => {
+    if (rule.parent.type === 'root') {
+      rule.walkDecls('animation-name', d => names.push(d.value));
+    }
+  });
+  root.walkAtRules('keyframes', at => keyframes.push(at.params));
+  root.walkAtRules('media', at => {
+    if (at.params.includes('prefers-reduced-motion: reduce')) {
+      at.walkRules(rule => {
+        if (rule.selectors.includes('.fs .ms-stage .ms-sprite') && rule.selectors.includes('.fs .ms-stage .ms-sprite.summon')) {
+          rule.walkDecls('animation', d => { stopped = d.value; });
+        }
+      });
+    }
+  });
+
+  expect(names).toEqual(['var(--ms-anim, fs-pool-play)']);
+  expect(keyframes).toEqual(expect.arrayContaining(['fs-pool-play', 'fs-ms-once', 'fs-ms-once-b', 'fs-ms-back', 'fs-ms-back-b']));
+  expect(stopped).toBe('none');
+});

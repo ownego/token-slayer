@@ -4,6 +4,7 @@ import { MINION_SIZE_RATIO, MINION_TYPES, SPRITE_CHAR_HEIGHT } from '@battlefiel
 import { BOX } from '@battlefield/sheet/sheet-roster.js';
 import { BY_KEY } from '@battlefield/sheet/sprite-strip.js';
 import { registerCustomRoster } from '@battlefield/sheet/custom-roster.js';
+import { MINION_FALL_HOLD_MS } from '@battlefield/config.js';
 import { FIELD_SCALE, STAGE_BODY_PX, SUMMON_MS, fieldStyles, fighterLook, minionStage } from '@battlefield/sheet/minion-stage.js';
 
 const animations = { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 10 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } };
@@ -101,6 +102,208 @@ describe('the look on the stage', () => {
     const stage = start({ look: mine, preview: true });
     stage.showLook(demon);
     expect(stage.preview).toBe(false);
+  });
+});
+
+describe('the hotbar', () => {
+  const demonType = MINION_TYPES.find(type => type.key === 'demon-a');
+  const ms = (frames, rate) => Math.round(frames / rate * 1000);
+  const demonFall = ms(demonType.animFiles.death.count, demonType.animFiles.death.rate);
+
+  test('lists Idle, Walk, Attack and Fall for a default look, a custom look and a copied-in one alike', () => {
+    for (const look of [demon, bowser, mine]) {
+      expect(start({ look }).moves).toEqual([
+        { id: 'idle', label: 'Idle' },
+        { id: 'walk', label: 'Walk' },
+        { id: 'attack', label: 'Attack' },
+        { id: 'fall', label: 'Fall' },
+      ]);
+    }
+  });
+
+  test('lists only the moves the look has a strip for', () => {
+    const bare = { ...mine, animations: { idle: animations.idle, walk: animations.walk } };
+
+    expect(start({ look: bare }).moves.map(move => move.id)).toEqual(['idle', 'walk']);
+  });
+
+  test('lists nothing for a spec it cannot read', () => {
+    expect(start({ look: { kind: 'default', key: 'evil' } }).moves).toEqual([]);
+  });
+
+  test('stands idle to begin with, looping the idle strip', () => {
+    const stage = start({ look: demon });
+
+    expect(stage.move).toBe('idle');
+    expect(stage.spriteStyle['--strip']).toBe(`url("${demonType.animFiles.idle.file}")`);
+    expect(stage.spriteStyle['--ms-iter']).toBe('infinite');
+  });
+
+  test('Walk loops the walk strip at the same body height', () => {
+    const stage = start({ look: demon });
+
+    stage.play('walk');
+
+    expect(stage.move).toBe('walk');
+    expect(stage.spriteStyle['--strip']).toBe(`url("${demonType.animFiles.walk.file}")`);
+    expect(stage.spriteStyle['--frames']).toBe(demonType.animFiles.walk.count);
+    expect(stage.spriteStyle['--ms-iter']).toBe('infinite');
+    expect((parseFloat(stage.spriteStyle['--size']) / 100) * demonType.charHeight).toBeCloseTo(STAGE_BODY_PX, 0);
+  });
+
+  test('a custom look plays the strips of its animation table', () => {
+    const stage = start({ look: mine });
+
+    stage.play('attack');
+    expect(stage.spriteStyle['--strip']).toBe('url("/storage/custom-minions/7/abc123def456/attack.png")');
+    expect(stage.spriteStyle['--rate']).toBe(12);
+  });
+
+  test('Attack plays once, then goes back to Idle when the strip is done', () => {
+    const stage = start({ look: demon });
+    const attack = demonType.animFiles[demonType.attacks[0].anim];
+
+    stage.play('attack');
+    expect(stage.spriteStyle['--strip']).toBe(`url("${attack.file}")`);
+    expect(stage.spriteStyle['--ms-iter']).toBe('1');
+
+    vi.advanceTimersByTime(ms(attack.count, attack.rate) - 1);
+    expect(stage.move).toBe('attack');
+    vi.advanceTimersByTime(1);
+    expect(stage.move).toBe('idle');
+    expect(stage.spriteStyle['--strip']).toBe(`url("${demonType.animFiles.idle.file}")`);
+    expect(stage.spriteStyle['--ms-iter']).toBe('infinite');
+  });
+
+  test('Fall lies on the death strip, holds its last frame for MINION_FALL_HOLD_MS, gets up backwards, then goes back to Idle', () => {
+    const stage = start({ look: demon });
+    const death = `url("${demonType.animFiles.death.file}")`;
+
+    stage.play('fall');
+    expect(stage.spriteStyle['--strip']).toBe(death);
+    expect(stage.spriteStyle['--ms-anim']).toBe('fs-ms-once');
+
+    vi.advanceTimersByTime(demonFall + MINION_FALL_HOLD_MS - 1);
+    expect(stage.spriteStyle['--ms-anim']).toBe('fs-ms-once');
+    vi.advanceTimersByTime(1);
+    expect(stage.move).toBe('fall');
+    expect(stage.spriteStyle['--strip']).toBe(death);
+    expect(stage.spriteStyle['--ms-anim']).toBe('fs-ms-back-b');
+
+    vi.advanceTimersByTime(demonFall);
+    expect(stage.move).toBe('idle');
+    expect(stage.spriteStyle['--ms-iter']).toBe('infinite');
+  });
+
+  test('a move played while a one-shot is running starts its own animation again, not the one already running', () => {
+    const stage = start({ look: demon });
+
+    stage.play('attack');
+    const first = stage.spriteStyle['--ms-anim'];
+    stage.play('fall');
+    const second = stage.spriteStyle['--ms-anim'];
+    stage.play('attack');
+    const third = stage.spriteStyle['--ms-anim'];
+
+    expect([first, second, third]).toEqual(['fs-ms-once', 'fs-ms-once-b', 'fs-ms-once']);
+  });
+
+  test('a custom look falls the same way, for the same hold', () => {
+    const stage = start({ look: mine });
+
+    stage.play('fall');
+    vi.advanceTimersByTime(ms(3, 6) + MINION_FALL_HOLD_MS);
+    expect(stage.spriteStyle['--ms-anim']).toBe('fs-ms-back-b');
+    vi.advanceTimersByTime(ms(3, 6));
+    expect(stage.move).toBe('idle');
+  });
+
+  test('Idle brings a move back to a loop at once, and another move cuts the one playing short', () => {
+    const stage = start({ look: demon });
+
+    stage.play('fall');
+    vi.advanceTimersByTime(100);
+    stage.play('walk');
+    expect(stage.move).toBe('walk');
+    expect(stage.spriteStyle['--ms-iter']).toBe('infinite');
+
+    // the fall's timer is gone: it does not push the stage to its next beat or to Idle later
+    vi.advanceTimersByTime(demonFall + MINION_FALL_HOLD_MS + demonFall);
+    expect(stage.move).toBe('walk');
+
+    stage.play('attack');
+    stage.play('idle');
+    vi.advanceTimersByTime(5000);
+    expect(stage.move).toBe('idle');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('pressing the move already playing does not restart it, but a finished one can be played again', () => {
+    const stage = start({ look: demon });
+    const attack = demonType.animFiles[demonType.attacks[0].anim];
+
+    stage.play('attack');
+    vi.advanceTimersByTime(100);
+    stage.play('attack');
+    vi.advanceTimersByTime(ms(attack.count, attack.rate) - 100);
+    expect(stage.move).toBe('idle');
+
+    stage.play('attack');
+    expect(stage.move).toBe('attack');
+  });
+
+  test('ignores a move the look does not have', () => {
+    const stage = start({ look: { ...mine, animations: { idle: animations.idle } } });
+
+    stage.play('fall');
+
+    expect(stage.move).toBe('idle');
+  });
+
+  test('showing another look stands it idle and drops the move being played', () => {
+    const stage = start({ look: demon });
+
+    stage.play('fall');
+    stage.showLook(bowser);
+
+    expect(stage.move).toBe('idle');
+    expect(stage.spriteStyle['--strip']).toContain('smw-bowser/idle');
+    expect(vi.getTimerCount()).toBe(0);
+    expect(stage.moves.map(move => move.id)).toEqual(['idle', 'walk', 'attack', 'fall']);
+  });
+
+  test('cancels the move being played when the stage goes', () => {
+    const stage = start({ look: demon });
+
+    stage.play('fall');
+    stage.destroy();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('under reduced motion plays nothing: the button changes the move and the sprite stands on its first frame', () => {
+    reducedMotion(true);
+    const stage = start({ look: demon });
+
+    stage.play('fall');
+
+    expect(stage.move).toBe('fall');
+    expect(stage.spriteStyle['--strip']).toBe(`url("${demonType.animFiles.death.file}")`);
+    expect(stage.spriteStyle['--play']).toBe('paused');
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(10000);
+    expect(stage.move).toBe('fall');
+  });
+
+  test('leaves the At field size strip idling whatever the stage plays', () => {
+    const stage = start({ look: demon, equipped: 'orc-rider' });
+    const before = stage.field.minion['--strip'];
+
+    stage.play('fall');
+
+    expect(stage.field.minion['--strip']).toBe(before);
+    expect(before).toBe(`url("${demonType.animFiles.idle.file}")`);
   });
 });
 

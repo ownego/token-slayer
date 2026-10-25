@@ -169,6 +169,68 @@ export function pickMinionType(loadedCustom, defaultTypes, random) {
 }
 
 /**
+ * The custom minions of a pool, `[]` for a fighter that has no pool yet (an older entry,
+ * or a player the server has not told us about).
+ *
+ * @param {?{custom: Array<object>}} pool A normalised pool, or `null`.
+ * @return {Array<{version: string, urlBase: string, animations: object, bodyPx: number}>}
+ */
+export function customSpecsOf(pool) {
+  return pool?.custom ?? [];
+}
+
+/**
+ * The default minion types a pool keeps: the MINION_TYPES entries its `defaults` name, in
+ * MINION_TYPES order. Every default for a fighter with no pool.
+ *
+ * @param {?{defaults: Array<string>}} pool A normalised pool, or `null`.
+ * @return {Array<object>}
+ */
+export function defaultTypesOf(pool) {
+  if (!pool) {
+    return MINION_TYPES;
+  }
+
+  return MINION_TYPES.filter(type => pool.defaults.includes(type.key));
+}
+
+/**
+ * Whether a look still belongs to a pool: a custom one by its version, a default one by
+ * its key (every default for a fighter with no pool).
+ *
+ * @param {{key: string, custom?: boolean, spec?: {version: string}}} type A custom or a default minion type.
+ * @param {?{defaults: Array<string>, custom: Array<{version: string}>}} pool A normalised pool, or `null`.
+ * @return {boolean}
+ */
+export function isLookInPool(type, pool) {
+  if (type.custom) {
+    return customSpecsOf(pool).some(spec => spec.version === type.spec.version);
+  }
+
+  return defaultTypesOf(pool).some(candidate => candidate.key === type.key);
+}
+
+/**
+ * Draws again the look of a minion that is already out: evenly from the pool, as a spawn
+ * does. `null` when the pool offers nothing to draw from yet (it keeps no default and its
+ * custom minions are still loading), in which case the minion keeps what it shows.
+ * `change` is false when the draw is the look the minion already shows.
+ *
+ * @param {{loaded: Array<object>, defaults: Array<object>, shownKey: ?string, random: number}} input
+ *   `loaded`: the pool's custom types whose textures are in; `defaults`: the default types
+ *   it keeps; `shownKey`: the key of the look the minion shows; `random`: a number in [0, 1).
+ * @return {?{type: object, change: boolean}}
+ */
+export function pickSwapType({ loaded, defaults, shownKey, random }) {
+  if (loaded.length === 0 && defaults.length === 0) {
+    return null;
+  }
+  const type = pickMinionType(loaded, defaults, random);
+
+  return { type, change: type.key !== shownKey };
+}
+
+/**
  * What a spawn does about the player's custom minions: draw from the pool with them in,
  * wait a little for them to load, or give up and draw without them.
  *

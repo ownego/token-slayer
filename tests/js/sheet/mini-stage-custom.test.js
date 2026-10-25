@@ -193,11 +193,21 @@ describe('miniStage with a minion pool', () => {
     expect(mount(null).looks.length).toBeGreaterThan(1);
   });
 
-  test('with no subagent working the pool stands idle beside the fighter and says it is the pool\'s', () => {
+  test('with no subagent working no minion stands beside the fighter, however many looks the pool holds', () => {
     const stage = mount(poolOf(1, [minion('aaaaaaaaaaaa')]), 0);
 
-    expect(stage.minionSpots).toHaveLength(2);
-    expect(stage.minionSpots.map(spot => stage.spotTitle(spot))).toEqual(['in your pool', 'in your pool']);
+    expect(stage.looks).toHaveLength(2);
+    expect(stage.minionSpots).toEqual([]);
+  });
+
+  test('a pool change with no subagent working draws nothing new, and the next subagent takes its looks', () => {
+    const stage = mount(poolOf(1), 0);
+
+    expect(stage.onPoolChanged(poolOf(2, [minion('aaaaaaaaaaaa')]))).toBe(true);
+    expect(stage.minionSpots).toEqual([]);
+
+    stage.crew = { total: 1, busy: new Set() };
+    expect(stage.minionSpots[0].look.url).toBe('/storage/custom-minions/7/aaaaaaaaaaaa/idle.png');
   });
 
   test('a working minion says it is working, an idle crew member idle', () => {

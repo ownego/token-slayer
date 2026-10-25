@@ -1782,7 +1782,8 @@
 @keyframes fs-pool-lit { from { opacity: 1; } to { opacity: 0; } }
 
 /* a look's idle loop: the thumbnails stand on frame 0 and play on hover, focus and when selected (motion.md); the
-   stage plays always unless --play says paused (reduced motion, set by minion-stage.js) */
+   stage plays always unless --play says paused (reduced motion, set by minion-stage.js); the move being played
+   (Idle, Walk, Attack, Fall) is chosen by the variables minion-stage.js sets on the stage sprite */
 .fs .pool-sprite, .fs .ms-sprite { position: absolute; width: var(--size, 0px); height: var(--size, 0px); image-rendering: pixelated; background-image: var(--strip); background-repeat: no-repeat; background-size: calc(var(--frames) * var(--size)) var(--size); animation: fs-pool-play calc(var(--frames) / var(--rate) * 1s) steps(var(--frames)) infinite; }
 @keyframes fs-pool-play { to { background-position: calc(var(--frames) * var(--size) * -1) 0; } }
 .fs .pool-sprite { left: 50%; top: 50%; translate: -50% -50%; animation-play-state: paused; }
@@ -1798,6 +1799,20 @@
 .fs .ms-fighter { left: 36%; }
 .fs .ms-minion { left: 62%; }
 .fs .ms-sprite.summon { animation: fs-pool-play calc(var(--frames) / var(--rate) * 1s) steps(var(--frames)) infinite, fs-ms-summon 0.7s ease-out 1; }
+/* the stage sprite plays the move the hotbar picked: --ms-anim names the keyframes (a loop, a one-shot that holds
+   its last frame, or the same one-shot backwards), --ms-ease steps through every frame, --ms-iter says how often.
+   The one-shots run for the strip's own time (frames at rate), as the game plays it */
+.fs .ms-stage .ms-sprite { animation-name: var(--ms-anim, fs-pool-play); animation-duration: calc(var(--frames) / var(--rate) * 1s); animation-timing-function: var(--ms-ease, steps(var(--frames))); animation-iteration-count: var(--ms-iter, infinite); animation-fill-mode: forwards; }
+.fs .ms-stage .ms-sprite.summon { animation-name: var(--ms-anim, fs-pool-play), fs-ms-summon; animation-duration: calc(var(--frames) / var(--rate) * 1s), 0.7s; animation-timing-function: var(--ms-ease, steps(var(--frames))), ease-out; animation-iteration-count: var(--ms-iter, infinite), 1; animation-fill-mode: forwards, none; }
+@keyframes fs-ms-once { from { background-position: 0 0; } to { background-position: calc((var(--frames) - 1) * var(--size) * -1) 0; } }
+@keyframes fs-ms-once-b { from { background-position: 0 0; } to { background-position: calc((var(--frames) - 1) * var(--size) * -1) 0; } }
+@keyframes fs-ms-back-b { from { background-position: calc((var(--frames) - 1) * var(--size) * -1) 0; } to { background-position: 0 0; } }
+@keyframes fs-ms-back { from { background-position: calc((var(--frames) - 1) * var(--size) * -1) 0; } to { background-position: 0 0; } }
+.fs .ms-moves { display: flex; flex-wrap: wrap; gap: 6px; }
+.fs .ms-move { min-width: 44px; min-height: 44px; padding: 0 14px; font-size: 13px; border-color: #243150; background: #0e1a31; color: var(--parchment); transition: border-color 0.15s ease, background 0.15s ease; }
+.fs .ms-move:hover { border-color: rgba(251,191,36,0.55); }
+.fs .ms-move[aria-pressed="true"] { border-color: var(--rivet); background: #15233f; color: #fff; }
+.fs .ms-move:focus-visible { outline: 2px solid var(--rivet); outline-offset: 2px; }
 @keyframes fs-ms-summon { from { scale: 0.6; opacity: 0; filter: brightness(2.2); } 60% { scale: 1.12; opacity: 1; filter: brightness(1.6); } to { scale: 1; filter: none; } }
 .fs .ms-info { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .fs .ms-info strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 700 16px var(--display); color: var(--parchment); }
@@ -1806,6 +1821,7 @@
     .fs .ms-stage { height: 170px; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .fs .pool-sprite, .fs .ms-sprite, .fs .ms-sprite.summon { animation: none; }
+    .fs .pool-sprite, .fs .ms-sprite, .fs .ms-sprite.summon, .fs .ms-stage .ms-sprite, .fs .ms-stage .ms-sprite.summon { animation: none; }
+    .fs .ms-move { transition: none; }
     .fs .pool-cell.is-lit::after { animation: none; opacity: 0; }
 }

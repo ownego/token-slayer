@@ -7,12 +7,8 @@ import { homeSlotOffset, homeSlotAngle, isInFrontOfFighter } from './minion-layo
 import { sampleTrail, pushTrailSample } from './minion-trail.js';
 import { computeZones, zoneFanOffset } from './minion-grouping.js';
 import { countSidesNear, pickAttackerSide, travelLanding, pickRandom, fidgetAttacks, flipToFace, flipToFaceAngle } from './minion-fight.js';
-import {
-  customMinionType, isNewerPool, minionSpriteFrame, normalizeMinionPool, pickMinionType, spawnLookDecision,
-} from './minion-custom.js';
-import { loadStackedType } from '@battlefield/fighter/custom-fighter-loader.js';
-import { CUSTOM_RETRY_MS } from '@battlefield/fighter/custom-fighter-requests.js';
-import { releaseCustomFighter } from '@battlefield/fighter/custom-fighter.js';
+import { isNewerPool, minionSpriteFrame, normalizeMinionPool } from './minion-custom.js';
+import { MinionLooks } from '@battlefield/minion-looks.js';
 
 /**
  * The Clawd poof that plays before a minion appears: crouch-with-dust,
@@ -167,10 +163,16 @@ export class Minions {
     this.leaders = new Map();
     /** @type {Map<number|string, number>} the last-applied FighterAgentCountChanged seq per user, so a broadcast that arrives after a fresher one it already applied is discarded instead of regressing the swarm — see FighterAgentCountChanged's own docblock. */
     this.lastAppliedSeq = new Map();
-    /** @type {Map<number|string, Map<string, {type: object, state: ('loading'|'loaded'|'failed'), retryAt: number}>>} each player's custom looks by set version: the type, and whether its texture is on its way, in, or failed (and when it may be asked for again). A look is dropped from here when its texture is released. */
-    this.looks = new Map();
-    /** @type {boolean} set by destroy(): a load or poof that finishes after the scene shut down finds it and touches nothing (the scene's own isShuttingDown is re-armed by a restart, this flag is not). */
+    /** @type {boolean} set by destroy(): a poof or timer that finishes after the scene shut down finds it and touches nothing (the scene's own isShuttingDown is re-armed by a restart, this flag is not). */
     this.destroyed = false;
+    /** @type {MinionLooks} which looks the swarm shows: loading, drawing, swapping and releasing them (minion-looks.js). */
+    this.looks = new MinionLooks(scene, {
+      minionsOf: userId => this.byUser.get(userId) ?? [],
+      beginSummon: (userId, entry, minion) => this._beginSummon(userId, entry, minion),
+      playSwapPoof: (minion, entry, onDone) => {
+        this._playClawdPoof(minion.sprite.x, minion.sprite.y, this._minionScale(entry), onDone, minion.sprite);
+      },
+    });
   }
 
   /**
@@ -206,8 +208,8 @@ export class Minions {
 
     const list = this.byUser.get(userId) ?? [];
     const target = Phaser.Math.Clamp(payload.count, 0, MINION_MAX_VISIBLE);
-    if (target > list.length && this._setOf(entry).length > 0) {
-      this._loadSet(userId, entry);
+    if (target > list.length) {
+      this.looks.loadPool(userId, entry);
     }
     while (list.length < target) {
       list.push(this._spawnOne(userId, entry, list.length, target));
@@ -220,7 +222,7 @@ export class Minions {
     if (list.length === 0) {
       this._removeLeader(userId);
     }
-    this._releaseUnusedLooks(userId);
+    this.looks.releaseUnused(userId);
   }
 
   /**
@@ -230,9 +232,11 @@ export class Minions {
    * is not newer by `rev` than the one the fighter holds: the routes do not arrive in
    * order, so a charge that read the pool before a removal must not bring the removed
    * minion back. Otherwise the pool is stored on the entry (the only place it is written
-   * after the entry is created), the looks of its custom minions are loaded when the player
-   * has minions out, each minion showing a look that left the pool is swapped to another
-   * member, and looks nothing shows any more are released.
+   * after the entry is created), and `MinionLooks#poolChanged` does the rest: it loads the
+   * looks of its custom minions when the player has minions out, draws every minion on the
+   * field a look from the new pool (a minion that draws the look it shows keeps it, with no
+   * poof; one still waiting for its first look is left to its wait), and releases the looks
+   * nothing shows any more.
    *
    * @param {{user_id: number|string, minion_pool: *}} payload `minion_pool` as it is on the wire
    * @return {void}
@@ -249,13 +253,7 @@ export class Minions {
     }
 
     entry.minionPool = pool;
-    const list = this.byUser.get(userId) ?? [];
-    if (list.length > 0) {
-      this._loadSet(userId, entry);
-    }
-    this._swapLeftLooks(userId, entry, list);
-    this._resolveWaiting(userId);
-    this._releaseUnusedLooks(userId);
+    this.looks.poolChanged(userId, entry);
   }
 
   /**
@@ -674,14 +672,14 @@ export class Minions {
       this.byUser.delete(userId);
     }
     this._removeLeader(userId);
-    this._releaseUnusedLooks(userId, true);
+    this.looks.releaseUnused(userId, true);
   }
 
   /**
    * Creates one minion at its own home slot and returns it at once. Its look is picked at
    * random from the owner's pool (the default looks it keeps and its loaded custom
    * minions) when the custom minions are in (or failed), or when it has none; while they are
-   * still loading the minion is hidden with no look yet and `_waitForLooks` holds its summon
+   * still loading the minion is hidden with no look yet and `MinionLooks#holdForLook` holds its summon
    * back. Looks stay loaded between bursts, so only a pool's first swarm ever waits. Once it has a
    * look, `_beginSummon` plays a scaled-down version of the fighter-join summon
    * ceremony (ground circle + golden-glow rise-in) — without the Necromancer sprite
@@ -697,13 +695,8 @@ export class Minions {
     this._ensureLeader(userId);
     const foot = this._footPosition(entry);
     const home = homeSlotOffset(index, count, this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO);
-    const decision = spawnLookDecision({
-      setSize: this._setOf(entry).length,
-      settled: this._isSetSettled(userId, entry),
-      waitedMs: 0,
-      waitMs: TIMINGS.customMinionWaitMs,
-    });
-    const type = decision === 'wait' ? null : this._pickSpawnType(userId, entry);
+    const decision = this.looks.spawnDecision(userId, entry, 0);
+    const type = decision === 'wait' ? null : this.looks.pickSpawnType(userId, entry);
     const { texture, frame } = type ? minionSpriteFrame(type) : {};
 
     const sprite = this.scene.add
@@ -723,7 +716,7 @@ export class Minions {
       typeKey: type?.key ?? null,
       type,
       charHeight: type?.charHeight ?? BASE_CHAR_HEIGHT,
-      awaitingCustom: type ? this._isAwaitingCustom(type, userId, entry) : false,
+      awaitingCustom: type ? this.looks.isAwaitingCustom(type, userId, entry) : false,
       pendingLook: null,
       waitingForLook: type === null,
       waitStartedAt: this.scene.time.now,
@@ -753,7 +746,7 @@ export class Minions {
     if (type) {
       this._beginSummon(userId, entry, minion);
     } else {
-      this._waitForLooks(userId, minion);
+      this.looks.holdForLook(userId, minion);
     }
 
     return minion;
@@ -834,7 +827,7 @@ export class Minions {
                 onComplete: () => minion.sprite?.preFX?.remove(glow),
               });
             }
-            this._flushPendingLook(minion);
+            this.looks.flushParked(minion);
           },
         });
       });
@@ -1277,7 +1270,7 @@ export class Minions {
         if (minion.sprite?.active && !minion.fighting) {
           minion.sprite.play(`${minion.typeKey}-idle`);
         }
-        this._flushPendingLook(minion);
+        this.looks.flushParked(minion);
         this._scheduleFidget(minion);
       });
     });
@@ -1474,7 +1467,7 @@ export class Minions {
       minion.animState = 'idle';
       minion.sprite.play(`${minion.typeKey}-idle`);
     }
-    this._flushPendingLook(minion);
+    this.looks.flushParked(minion);
   }
 
   /**
@@ -1555,489 +1548,6 @@ export class Minions {
   }
 
   /**
-   * The custom minions of a fighter's pool, `[]` for an entry that has no pool yet (an
-   * older entry, or a player the server has not told us about).
-   *
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {Array<{version: string, urlBase: string, animations: object, bodyPx: number}>}
-   */
-  _setOf(entry) {
-    return entry.minionPool?.custom ?? [];
-  }
-
-  /**
-   * The default minion types a fighter's pool keeps: the MINION_TYPES entries its
-   * `defaults` name, in MINION_TYPES order. Every default for an entry with no pool.
-   *
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {Array<object>}
-   */
-  _defaultTypesOf(entry) {
-    const pool = entry.minionPool;
-    if (!pool) {
-      return MINION_TYPES;
-    }
-
-    return MINION_TYPES.filter(type => pool.defaults.includes(type.key));
-  }
-
-  /**
-   * The custom types of a player's pool whose textures are in, in pool order.
-   *
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {Array<object>}
-   */
-  _loadedTypes(userId, entry) {
-    const looks = this.looks.get(userId);
-    if (!looks) {
-      return [];
-    }
-
-    return this._setOf(entry)
-      .map(spec => looks.get(spec.version))
-      .filter(look => look?.state === 'loaded')
-      .map(look => look.type);
-  }
-
-  /**
-   * Whether every custom minion of the pool has an answer: loaded, or failed (a failed one
-   * stays out of the draw until its retry). True for a pool with no custom minion.
-   *
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {boolean}
-   */
-  _isSetSettled(userId, entry) {
-    const looks = this.looks.get(userId);
-
-    return this._setOf(entry).every(spec => {
-      const state = looks?.get(spec.version)?.state;
-
-      return state === 'loaded' || state === 'failed';
-    });
-  }
-
-  /**
-   * Whether some custom minion of the pool is not in yet (loading, or failed and waiting
-   * for its retry), so a minion drawn without it may still change to it.
-   *
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {boolean}
-   */
-  _hasUnloadedLook(userId, entry) {
-    const looks = this.looks.get(userId);
-
-    return this._setOf(entry).some(spec => looks?.get(spec.version)?.state !== 'loaded');
-  }
-
-  /**
-   * The type a new look is drawn as: evenly from the pool, that is the default looks it
-   * keeps and the custom minions that are loaded. A pool that keeps no default and has no
-   * custom minion in yet (the server never sends a pool with nothing in it, but a custom
-   * minion may still be loading) draws from every default, so a minion is never faceless.
-   *
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {object}
-   */
-  _pickSpawnType(userId, entry) {
-    const loaded = this._loadedTypes(userId, entry);
-    const defaults = this._defaultTypesOf(entry);
-
-    return pickMinionType(loaded, loaded.length === 0 && defaults.length === 0 ? MINION_TYPES : defaults, Math.random());
-  }
-
-  /**
-   * Whether a minion showing `type` should be looked at again once more of the pool lands:
-   * it shows a default although a custom minion of its player's pool is not in yet.
-   *
-   * @param {object} type
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {boolean}
-   */
-  _isAwaitingCustom(type, userId, entry) {
-    return !type.custom && this._hasUnloadedLook(userId, entry);
-  }
-
-  /**
-   * Starts loading every custom minion of the player's pool that is neither loaded,
-   * loading nor waiting out a retry after a failure. Idempotent: a repeat call for the same
-   * pool asks the loader for nothing.
-   *
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {void}
-   */
-  _loadSet(userId, entry) {
-    const looks = this.looks.get(userId) ?? new Map();
-    this.looks.set(userId, looks);
-    for (const spec of this._setOf(entry)) {
-      const look = looks.get(spec.version);
-      if (look?.state === 'loading' || look?.state === 'loaded') {
-        continue;
-      }
-      if (look?.state === 'failed' && this.scene.time.now < look.retryAt) {
-        continue;
-      }
-      look?.retryTimer?.remove();
-      const record = { type: look?.type ?? customMinionType(userId, spec), state: 'loading', retryAt: 0, retryTimer: null };
-      looks.set(spec.version, record);
-      loadStackedType(this.scene, record.type).then(
-        () => this._lookArrived(userId, record, 'loaded'),
-        () => this._lookArrived(userId, record, 'failed'),
-      );
-    }
-  }
-
-  /**
-   * A look's load ended. After this manager was destroyed or the scene is shutting down (a
-   * rotate-restart) it touches no state, and drops the texture the load just added unless
-   * the scene's fresh manager already asked for the same look (`_dropOrphanLook`).
-   * Otherwise it records the outcome and lets the waiting spawns, the minions waiting for a
-   * custom look and the release check react (a minion still showing a look that left the
-   * pool changes to this one if it is the first member in, a swap only a look that came in
-   * triggers); a failure also schedules the look's retry.
-   *
-   * @param {number|string} userId
-   * @param {{type: object, state: string, retryAt: number, retryTimer: ?object}} record
-   * @param {('loaded'|'failed')} state
-   * @return {void}
-   */
-  _lookArrived(userId, record, state) {
-    if (this.destroyed || this.scene.isShuttingDown) {
-      if (state === 'loaded') {
-        this._dropOrphanLook(userId, record);
-      }
-      return;
-    }
-    record.state = state;
-    if (state === 'failed') {
-      record.retryAt = this.scene.time.now + CUSTOM_RETRY_MS;
-      this._scheduleRetry(userId, record);
-    }
-    this._resolveWaiting(userId);
-    const entry = this.scene.fighters.get(userId);
-    // Only a look that came in can change what a minion shows: a failure leaves the pool as loaded as it was,
-    // and swapping on it again at every retry would poof the same default minions every CUSTOM_RETRY_MS.
-    if (state === 'loaded' && entry && this._loadedTypes(userId, entry).length > 0) {
-      for (const minion of this.byUser.get(userId) ?? []) {
-        if (minion.waitingForLook) {
-          continue;
-        }
-        if (minion.awaitingCustom || !this._isInPool(minion.pendingLook ?? minion.type, entry)) {
-          this._requestSwap(minion, entry);
-        }
-      }
-    }
-    this._releaseUnusedLooks(userId);
-  }
-
-  /**
-   * Takes out of the game the texture a load added after its manager was destroyed. The
-   * texture belongs to the game, so a restarted scene reuses it, which is why it is kept
-   * when the scene's current manager (a fresh one after a restart) already holds a record
-   * of the same look: it asked for it, and is about to register the animations on it.
-   * Anything else would be a canvas nobody releases.
-   *
-   * @param {number|string} userId
-   * @param {{type: object}} record
-   * @return {void}
-   */
-  _dropOrphanLook(userId, record) {
-    const successor = this.scene.minions;
-    const version = record.type.spec.version;
-    if (successor && successor !== this && successor.looks.get(userId)?.has(version)) {
-      return;
-    }
-    releaseCustomFighter(this.scene, record.type);
-  }
-
-  /**
-   * Retries a failed look on its own after `CUSTOM_RETRY_MS`, instead of waiting for the
-   * next change of the player's swarm to ask again. Only while the player has minions out;
-   * with none, the next spawn asks (and `_loadSet` still honours the retry window).
-   *
-   * @param {number|string} userId
-   * @param {{retryTimer: ?object}} record
-   * @return {void}
-   */
-  _scheduleRetry(userId, record) {
-    record.retryTimer = this.scene.time.delayedCall(CUSTOM_RETRY_MS, () => {
-      record.retryTimer = null;
-      // The timer's clock and `scene.time.now` are not the same reading, so it can fire a few ms before
-      // `retryAt`; the window it exists to wait out is over, so `_loadSet` must not honour it again.
-      record.retryAt = 0;
-      const entry = this.scene.fighters.get(userId);
-      if (this.destroyed || this.scene.isShuttingDown || !entry || (this.byUser.get(userId) ?? []).length === 0) {
-        return;
-      }
-      this._loadSet(userId, entry);
-    });
-  }
-
-  /**
-   * Holds a just-created minion back, hidden with no look, until its player's custom
-   * minions are in or `customMinionWaitMs` has passed, whichever comes first
-   * (`_resolveWait`).
-   *
-   * @param {number|string} userId
-   * @param {object} minion
-   * @return {void}
-   */
-  _waitForLooks(userId, minion) {
-    minion.waitTimer = this.scene.time.delayedCall(TIMINGS.customMinionWaitMs, () => {
-      const current = this.scene.fighters.get(userId);
-      if (this.destroyed || this.scene.isShuttingDown || !minion.sprite?.active || !current) {
-        return;
-      }
-      this._resolveWait(userId, current, minion, true);
-    });
-  }
-
-  /**
-   * Re-checks every minion of a player that is waiting for its look.
-   *
-   * @param {number|string} userId
-   * @return {void}
-   */
-  _resolveWaiting(userId) {
-    const entry = this.scene.fighters.get(userId);
-    if (!entry) {
-      return;
-    }
-    for (const minion of this.byUser.get(userId) ?? []) {
-      if (minion.waitingForLook) {
-        this._resolveWait(userId, entry, minion, false);
-      }
-    }
-  }
-
-  /**
-   * Ends a minion's wait when `spawnLookDecision` says so: it takes a look from the pool
-   * at random (a default one, flagged, while a custom minion is still not in, swapped once
-   * it lands), and starts its summon.
-   *
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @param {object} minion
-   * @param {boolean} timedOut true when called by the wait's own timer
-   * @return {void}
-   */
-  _resolveWait(userId, entry, minion, timedOut) {
-    const waitMs = TIMINGS.customMinionWaitMs;
-    const decision = spawnLookDecision({
-      setSize: this._setOf(entry).length,
-      settled: this._isSetSettled(userId, entry),
-      waitedMs: timedOut ? waitMs : this.scene.time.now - minion.waitStartedAt,
-      waitMs,
-    });
-    if (decision === 'wait') {
-      return;
-    }
-    minion.waitTimer?.remove();
-    minion.waitTimer = null;
-    minion.waitingForLook = false;
-    const type = this._pickSpawnType(userId, entry);
-    minion.awaitingCustom = this._isAwaitingCustom(type, userId, entry);
-    this._applyLook(minion, type);
-    this._beginSummon(userId, entry, minion);
-  }
-
-  /**
-   * Puts a look on a minion: type key, type and ink height change together, then the
-   * sprite takes the type's texture and frame and plays its idle loop.
-   *
-   * @param {object} minion
-   * @param {object} type a custom or a default minion type
-   * @return {void}
-   */
-  _applyLook(minion, type) {
-    const { texture, frame } = minionSpriteFrame(type);
-    minion.typeKey = type.key;
-    minion.type = type;
-    minion.charHeight = type.charHeight;
-    minion.animState = 'idle';
-    minion.sprite.setTexture(texture, frame);
-    minion.sprite.play(`${type.key}-idle`);
-  }
-
-  /**
-   * Whether a look still belongs to a fighter's pool: a custom one by its version, a
-   * default one by its key (every default for an entry with no pool).
-   *
-   * @param {object} type a custom or a default minion type
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {boolean}
-   */
-  _isInPool(type, entry) {
-    if (type.custom) {
-      return this._setOf(entry).some(spec => spec.version === type.spec.version);
-    }
-
-    return this._defaultTypesOf(entry).some(candidate => candidate.key === type.key);
-  }
-
-  /**
-   * Swaps every minion of a changed pool that shows (or has parked) a look which is no
-   * longer in it: a custom minion that left, or a default look the player unticked. A
-   * flagged default minion whose player no longer has an unloaded custom minion is
-   * unflagged.
-   *
-   * @param {number|string} userId
-   * @param {object} entry the fighter entry from scene.fighters
-   * @param {Array<object>} list the player's minions
-   * @return {void}
-   */
-  _swapLeftLooks(userId, entry, list) {
-    for (const minion of list) {
-      if (minion.waitingForLook) {
-        continue;
-      }
-      const shown = minion.pendingLook ?? minion.type;
-      if (!this._isInPool(shown, entry)) {
-        this._requestSwap(minion, entry);
-      } else if (minion.awaitingCustom && !this._hasUnloadedLook(userId, entry)) {
-        minion.awaitingCustom = false;
-      }
-    }
-  }
-
-  /**
-   * Asks a minion to change to another look of its player's pool. The target is parked on
-   * `minion.pendingLook`, replacing an older one, and `_flushPendingLook` applies it unless
-   * the minion is busy. Nothing happens when the pool offers nothing to change to yet (no
-   * default kept, the custom minions still loading), and a pick that is the look the
-   * minion already shows only clears what was parked.
-   *
-   * @param {object} minion
-   * @param {object} entry the fighter entry from scene.fighters
-   * @return {void}
-   */
-  _requestSwap(minion, entry) {
-    const loaded = this._loadedTypes(minion.userId, entry);
-    const defaults = this._defaultTypesOf(entry);
-    if (loaded.length === 0 && defaults.length === 0) {
-      return;
-    }
-    const type = pickMinionType(loaded, defaults, Math.random());
-    minion.awaitingCustom = this._isAwaitingCustom(type, minion.userId, entry);
-    if (type.key === minion.type?.key) {
-      minion.pendingLook = null;
-      return;
-    }
-    minion.pendingLook = type;
-    this._flushPendingLook(minion);
-  }
-
-  /**
-   * Starts a parked look swap when the minion is free: not summoning, fidgeting,
-   * fighting, already swapping or waiting for its first look. Called at the end of the
-   * summon, the fidget and the fight, and whenever a swap is requested. The swap poof
-   * follows the minion, which keeps walking while it plays.
-   *
-   * @param {object} minion
-   * @return {void}
-   */
-  _flushPendingLook(minion) {
-    if (!minion.pendingLook || !minion.sprite?.active || this.destroyed || this.scene.isShuttingDown) {
-      return;
-    }
-    if (minion.summoning || minion.fidgeting || minion.fighting || minion.swapping || minion.waitingForLook) {
-      return;
-    }
-    const entry = this.scene.fighters.get(minion.userId);
-    if (this.scene.reducedMotion || !entry) {
-      this._applyPendingLook(minion);
-      return;
-    }
-    minion.swapping = true;
-    this._playClawdPoof(minion.sprite.x, minion.sprite.y, this._minionScale(entry), () => {
-      minion.swapping = false;
-      if (this.destroyed || this.scene.isShuttingDown) {
-        return;
-      }
-      this._applyPendingLook(minion);
-    }, minion.sprite);
-  }
-
-  /**
-   * Applies the look parked on a minion (the newest one asked for), then releases any
-   * look nothing shows any more. A minion whose sprite is gone just drops it.
-   *
-   * @param {object} minion
-   * @return {void}
-   */
-  _applyPendingLook(minion) {
-    const type = minion.pendingLook;
-    minion.pendingLook = null;
-    if (type && minion.sprite?.active) {
-      this._applyLook(minion, type);
-    }
-    this._releaseUnusedLooks(minion.userId);
-  }
-
-  /**
-   * Takes custom looks out of the game once nothing needs them: no minion of the player
-   * shows or has parked the look, and it either left the player's pool or the fighter left
-   * the field. A look in the pool is kept whether or not minions are out, so the next
-   * burst of subagents finds it loaded instead of hiding its first minions while it loads
-   * again. A look still loading is left alone (its arrival runs this again); a failed look
-   * stays (its retry window) while it is in the pool.
-   *
-   * @param {number|string} userId
-   * @param {boolean} [fighterLeft] True when the fighter left the field: nothing is in its pool any more.
-   * @return {void}
-   */
-  _releaseUnusedLooks(userId, fighterLeft = false) {
-    const looks = this.looks.get(userId);
-    if (!looks) {
-      return;
-    }
-    const list = this.byUser.get(userId) ?? [];
-    const versions = new Set(this._setOf(this.scene.fighters.get(userId) ?? {}).map(spec => spec.version));
-    for (const [version, look] of looks) {
-      if (look.state === 'loading') {
-        continue;
-      }
-      const inPool = !fighterLeft && versions.has(version);
-      if (look.state === 'failed') {
-        if (!inPool) {
-          look.retryTimer?.remove();
-          looks.delete(version);
-        }
-        continue;
-      }
-      const shown = list.some(minion => minion.type?.key === look.type.key || minion.pendingLook?.key === look.type.key);
-      if (shown || inPool) {
-        continue;
-      }
-      releaseCustomFighter(this.scene, look.type);
-      looks.delete(version);
-    }
-    if (looks.size === 0) {
-      this.looks.delete(userId);
-    }
-  }
-
-  /**
-   * Takes a look out of the game while the manager is being destroyed. On a page teardown the game's
-   * texture and animation managers may already be gone, and there is nothing left to free then.
-   *
-   * @param {object} type The custom minion type to release.
-   * @return {void}
-   */
-  _releaseOnTeardown(type) {
-    try {
-      releaseCustomFighter(this.scene, type);
-    } catch {
-      // the game is being torn down with the page: its textures go with it
-    }
-  }
-
-  /**
    * Registers every MINION_TYPES and MINION_CLASH_EFFECTS animation against
    * its own individually-loaded spritesheet, idempotent.
    *
@@ -2063,10 +1573,10 @@ export class Minions {
    * Stops every pending timer/tween for every fighter's minions (including a spawn's
    * wait for its look) — called on scene shutdown. Does not destroy the sprites
    * themselves: Phaser's own scene teardown destroys the full display list. Custom
-   * look textures and animations are KEPT: they belong to the game, a restarted scene
-   * reuses them, and this manager (a fresh one after a restart) releases them when the
-   * swarm is gone. A load or poof that finishes after this finds `destroyed` set and
-   * touches nothing.
+   * look textures and animations are KEPT for a player whose swarm is out (`MinionLooks#destroy`):
+   * they belong to the game, a restarted scene reuses them, and this manager (a fresh one after a
+   * restart) releases them when the swarm is gone. A load or poof that finishes after this finds
+   * `destroyed` set and touches nothing.
    *
    * @return {void}
    */
@@ -2077,20 +1587,8 @@ export class Minions {
         this._teardownMinion(minion);
       }
     }
-    for (const [userId, looks] of this.looks) {
-      // A player with no minion out keeps nothing that a swarm will ask for again, and the fresh manager of a
-      // restart never sees these looks (its `looks` starts empty, so it could not release them later):
-      // let the textures go now. A player with minions out keeps them, their swarm is rebuilt on the same ones.
-      const swarmOut = (this.byUser.get(userId) ?? []).length > 0;
-      for (const look of looks.values()) {
-        look.retryTimer?.remove();
-        if (!swarmOut && look.state === 'loaded') {
-          this._releaseOnTeardown(look.type);
-        }
-      }
-    }
+    this.looks.destroy();
     this.byUser.clear();
     this.leaders.clear();
-    this.looks.clear();
   }
 }

@@ -4,10 +4,14 @@ import {
   customHitFrame,
   customMinionKey,
   customMinionType,
+  customSpecsOf,
+  defaultTypesOf,
+  isLookInPool,
   isNewerPool,
   minionSpriteFrame,
   normalizeMinionPool,
   pickMinionType,
+  pickSwapType,
   spawnLookDecision,
 } from '@battlefield/minion-custom.js';
 import { MINION_FALL_HOLD_MS, MINION_POOL_CUSTOM_CAP, MINION_TYPES } from '@battlefield/config.js';
@@ -215,5 +219,68 @@ describe('spawnLookDecision', () => {
     ['an unsettled set, wait over', { setSize: 2, settled: false, waitedMs: 2000, waitMs: 2000 }, 'default'],
   ])('%s gives %s', (_, input, expected) => {
     expect(spawnLookDecision(input)).toBe(expected);
+  });
+});
+
+describe('customSpecsOf, defaultTypesOf', () => {
+  test('a fighter with no pool has no custom minion and every default look', () => {
+    expect(customSpecsOf(null)).toEqual([]);
+    expect(defaultTypesOf(null)).toBe(MINION_TYPES);
+  });
+
+  test('a pool lists its custom minions and keeps the default looks it names, in MINION_TYPES order', () => {
+    const pool = normalizeMinionPool(wirePool({ defaults: [DEFAULT_KEYS[2], DEFAULT_KEYS[0]] }));
+
+    expect(customSpecsOf(pool).map(spec => spec.version)).toEqual(['abc']);
+    expect(defaultTypesOf(pool).map(type => type.key)).toEqual([DEFAULT_KEYS[0], DEFAULT_KEYS[2]]);
+  });
+
+  test('a pool that keeps no default look has none', () => {
+    expect(defaultTypesOf(normalizeMinionPool(wirePool({ defaults: [] })))).toEqual([]);
+  });
+});
+
+describe('isLookInPool', () => {
+  const pool = normalizeMinionPool(wirePool({ defaults: [DEFAULT_KEYS[0]] }));
+  const defaultType = key => MINION_TYPES.find(type => type.key === key);
+
+  test('a default look is in the pool when the pool keeps it', () => {
+    expect(isLookInPool(defaultType(DEFAULT_KEYS[0]), pool)).toBe(true);
+    expect(isLookInPool(defaultType(DEFAULT_KEYS[1]), pool)).toBe(false);
+  });
+
+  test('a custom look is in the pool by its version', () => {
+    expect(isLookInPool(customMinionType(7, pool.custom[0]), pool)).toBe(true);
+    expect(isLookInPool(customMinionType(7, { ...pool.custom[0], version: 'other' }), pool)).toBe(false);
+  });
+
+  test('every default look is in the pool of a fighter with none, and no custom look', () => {
+    expect(DEFAULT_KEYS.every(key => isLookInPool(defaultType(key), null))).toBe(true);
+    expect(isLookInPool(customMinionType(7, pool.custom[0]), null)).toBe(false);
+  });
+});
+
+describe('pickSwapType', () => {
+  const defaults = [{ key: 'x' }, { key: 'y' }];
+  const loaded = [{ key: 'a' }];
+
+  test('offers nothing to change to when the pool has no default and no custom minion in', () => {
+    expect(pickSwapType({ loaded: [], defaults: [], shownKey: 'x', random: 0.3 })).toBeNull();
+  });
+
+  test('draws evenly from the defaults and the loaded custom minions, like a spawn', () => {
+    expect(pickSwapType({ loaded, defaults, shownKey: 'q', random: 0 }).type).toBe(defaults[0]);
+    expect(pickSwapType({ loaded, defaults, shownKey: 'q', random: 0.999 }).type).toBe(loaded[0]);
+  });
+
+  test('says whether the draw is another look than the one shown', () => {
+    expect(pickSwapType({ loaded, defaults, shownKey: 'q', random: 0 }).change).toBe(true);
+    expect(pickSwapType({ loaded, defaults, shownKey: 'x', random: 0 }).change).toBe(false);
+  });
+
+  test('a pool with a single look draws it whatever the roll', () => {
+    const picks = [0, 0.4, 0.999].map(random => pickSwapType({ loaded: [], defaults: [defaults[1]], shownKey: 'x', random }));
+
+    expect(picks.every(pick => pick.type === defaults[1] && pick.change)).toBe(true);
   });
 });
