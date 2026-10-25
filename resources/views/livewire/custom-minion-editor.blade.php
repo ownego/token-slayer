@@ -3,9 +3,12 @@
      .confirm-row) plus the pool classes at the end of fighter-sheet.css; listed in .ai/design/components.md.
      Every button is a wire:click of this component, so nothing waits for a browser event to reach a component that
      might not be mounted yet. What is selected, replaced or being confirmed lives in locked component state.
-     A change to the pool is announced as `custom-minions-changed {pool, changed}`; a result line as `sheet-toast`. --}}
+     A change to the pool is announced as `custom-minions-changed {pool, changed}`; a result line as `sheet-toast`.
+     Ticking a look only changes the choice held in the component ($unsaved); Save is the one button that stores it,
+     with the hash of every cell this view drew ($pool['hashes']) so a tab that drew an older set is turned away. --}}
 {{-- No Alpine state on this root, for the reason given in custom-character-editor.blade.php: what is pending
      (a confirm row) lives in $confirming. --}}
+@use('App\Enums\MinionStageMode')
 @php($id = $this->getId())
 <div class="cce cme" id="cme-{{ $id }}">
     @error('action')
@@ -78,20 +81,30 @@
         </div>
 
         @if ($pool['nothingTicked'])
-            <p class="cce-note" role="status">Nothing ticked: subagents summon the defaults.</p>
+            <p class="cce-note" role="status">Nothing ticked: subagents summon the defaults.@if ($unsaved) Not saved yet. @endif</p>
         @endif
+
+        <div class="equip-row">
+            <span class="equip-note" id="cme-save-note-{{ $id }}" role="status">{{ $unsaved ? 'Not saved yet.' : 'Saved.' }}</span>
+            @if ($unsaved)
+                <button type="button" class="btn" id="cme-reset-{{ $id }}" wire:click="resetPending" wire:loading.attr="disabled" wire:target="save">Reset</button>
+            @endif
+            <button type="button" class="btn primary" id="cme-save-{{ $id }}" wire:click="save(@js($pool['hashes']))" wire:loading.attr="disabled" wire:target="save" @disabled(! $unsaved) aria-describedby="cme-save-note-{{ $id }}">
+                <span wire:loading.remove wire:target="save">Save pool</span><span wire:loading wire:target="save">Saving…</span>
+            </button>
+        </div>
     </section>
 
     <section class="cme-panel" aria-labelledby="cme-stage-title-{{ $id }}">
-        @if ($stage['mode'] !== 'empty')
+        @if ($stage->mode !== MinionStageMode::Empty)
             <div
                 class="ms"
-                wire:key="stage-{{ $stage['mode'] }}-{{ $stage['look'] }}-{{ $stage['spec']['version'] ?? $stage['spec']['key'] }}"
+                wire:key="stage-{{ $stage->mode->value }}-{{ $stage->look }}-{{ $stage->spec['version'] ?? $stage->spec['key'] }}"
                 x-data="minionStage(@js([
-                    'look' => $stage['spec'],
-                    'lookKey' => $stage['look'],
-                    'preview' => in_array($stage['mode'], ['draft', 'overflow'], true),
-                    'summon' => $changed === $stage['look'],
+                    'look' => $stage->spec,
+                    'lookKey' => $stage->look,
+                    'preview' => $stage->isPreview(),
+                    'summon' => $changed === $stage->look,
                     'equipped' => $fieldFighter['key'],
                     'custom' => $fieldFighter['custom'],
                 ]))"
@@ -99,7 +112,12 @@
                 <div class="ms-stage" aria-hidden="true">
                     <span class="ms-sprite" x-bind:class="{ summon: summoning }" x-bind:style="spriteStyle"></span>
                 </div>
-                <div class="ms-field" role="group" aria-label="{{ $stage['name'] }} at field size, beside your fighter">
+                <div class="ms-moves" role="toolbar" aria-label="{{ $stage->name }} moves">
+                    <template x-for="m in moves" x-bind:key="m.id">
+                        <button type="button" class="btn ms-move" x-on:click="play(m.id)" x-bind:aria-pressed="move === m.id ? 'true' : 'false'" x-text="m.label"></button>
+                    </template>
+                </div>
+                <div class="ms-field" role="group" aria-label="{{ $stage->name }} at field size, beside your fighter">
                     <span class="ms-field-cap" aria-hidden="true">At field size</span>
                     <span class="ms-sprite ms-fighter" aria-hidden="true" x-show="field.fighter" x-bind:style="field.fighter"></span>
                     <span class="ms-sprite ms-minion" aria-hidden="true" x-bind:style="field.minion"></span>
@@ -108,37 +126,37 @@
         @endif
 
         <div class="ms-info">
-            <strong id="cme-stage-title-{{ $id }}">{{ $stage['mode'] === 'empty' ? 'Empty slot '.$stage['slot'] : $stage['name'] }}</strong>
-            @if (in_array($stage['mode'], ['draft', 'overflow'], true))
+            <strong id="cme-stage-title-{{ $id }}">{{ $stage->mode === MinionStageMode::Empty ? 'Empty slot '.$stage->slot : $stage->name }}</strong>
+            @if ($stage->isPreview())
                 <span class="show-state previewing">Preview</span>
-            @elseif ($stage['mode'] === 'default' || $stage['mode'] === 'minion')
-                @php($inPool = $stage['ticked'] || ($stage['mode'] === 'default' && $pool['nothingTicked']))
-                <span class="show-state {{ $inPool ? '' : 'previewing' }}">{{ $inPool ? 'In the pool' : 'Not in the pool' }}</span>
+            @elseif ($stage->isTickable())
+                @php($inPool = $stage->ticked || ($stage->mode === MinionStageMode::Default && $pool['nothingTicked']))
+                <span class="show-state {{ $inPool ? '' : 'previewing' }}">{{ $inPool ? 'In the pool' : 'Not in the pool' }}@if ($stageUnsaved) · not saved @endif</span>
             @endif
         </div>
 
-        @if ($stage['mode'] === 'minion' && ! $replacingSelected)
+        @if ($stage->mode === MinionStageMode::Minion && ! $replacingSelected)
             @if ($confirmingSelected)
-                <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $stage['name'] }}" wire:keydown.escape.stop.prevent="dismissConfirm">
-                    <span>Remove {{ $stage['name'] }}? Your subagents stop summoning it.</span>
+                <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $stage->name }}" wire:keydown.escape.stop.prevent="dismissConfirm">
+                    <span>Remove {{ $stage->name }}? Your subagents stop summoning it.</span>
                     <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
-                    <button type="button" class="btn blood" wire:click="removeMinion({{ $stage['slot'] }})" wire:loading.attr="disabled" wire:target="removeMinion">
+                    <button type="button" class="btn blood" wire:click="removeMinion({{ $stage->slot }}, '{{ $pool['hashes'][$stage->slot] }}')" wire:loading.attr="disabled" wire:target="removeMinion">
                         <span wire:loading.remove wire:target="removeMinion">Remove</span><span wire:loading wire:target="removeMinion">Removing…</span>
                     </button>
                 </div>
             @else
                 <div class="cce-row ms-actions">
-                    <button type="button" class="btn" id="cme-remove-open-{{ $id }}" wire:click="askToConfirm('slot-{{ $stage['slot'] }}')">Remove</button>
-                    <button type="button" class="btn primary" id="cme-replace-open-{{ $id }}" wire:click="startReplace({{ $stage['slot'] }})">Replace</button>
+                    <button type="button" class="btn" id="cme-remove-open-{{ $id }}" wire:click="askToConfirm('slot-{{ $stage->slot }}')">Remove</button>
+                    <button type="button" class="btn primary" id="cme-replace-open-{{ $id }}" wire:click="startReplace({{ $stage->slot }})">Replace</button>
                 </div>
             @endif
         @endif
 
-        @if ($stage['mode'] === 'empty' || ($stage['mode'] === 'minion' && $replacingSelected))
+        @if ($stage->mode === MinionStageMode::Empty || ($stage->mode === MinionStageMode::Minion && $replacingSelected))
             <div class="cme-make">
                 @if ($replacingSelected)
                     <div class="cce-head">
-                        <h3>Replace {{ $stage['name'] }}</h3>
+                        <h3>Replace {{ $stage->name }}</h3>
                         <button type="button" class="cce-link" wire:click="cancelReplace">Cancel</button>
                     </div>
                 @endif
@@ -220,8 +238,8 @@
             </div>
         @endif
 
-        @if ($stage['mode'] === 'draft')
-            @php($draft = $stage['draft'])
+        @if ($stage->mode === MinionStageMode::Draft)
+            @php($draft = $stage->draft)
             <p class="cce-note">Not in the pool until you add it.</p>
             <div class="cce-row ms-actions">
                 <button type="button" class="btn" wire:click="discard('{{ $draft['hash'] }}')" wire:loading.attr="disabled" wire:target="discard">Discard</button>
@@ -235,8 +253,8 @@
             </div>
         @endif
 
-        @if ($stage['mode'] === 'overflow')
-            @php($draft = $stage['draft'])
+        @if ($stage->mode === MinionStageMode::Overflow)
+            @php($draft = $stage->draft)
             @php($held = collect($pool['slots'])->filter(fn (array $cell): bool => $cell['idle'] !== null)->values())
             <p class="cce-note" role="status">Your set filled up. Pick a minion to replace, or discard this preview.</p>
             <div class="cce-row" role="group" aria-label="Minions you can replace">

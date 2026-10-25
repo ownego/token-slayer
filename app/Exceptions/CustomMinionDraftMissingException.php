@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when a player adds a minion preview they no longer have: never built, already replaced, or someone else's.
  */
-class CustomMinionDraftMissingException extends Exception
+class CustomMinionDraftMissingException extends PlayerFacingException
 {
     /**
      * The message the player sees.

@@ -55,7 +55,7 @@ test('a guest viewer can trigger a resync', function () {
 
 test('sends each fighter\'s minion pool with the positions', function () {
     $owner = CustomMinion::factory()->create()->user;
-    $owner->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool_rev' => 4])->save();
+    $owner->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool' => ['rev' => 4, 'defaults_off' => [], 'slots_off' => []]])->save();
     $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
     $idle = CustomMinion::factory()->create()->user;
     $idle->forceFill(['last_event_at' => now()->subHour()])->save();

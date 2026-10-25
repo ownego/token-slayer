@@ -337,6 +337,22 @@ test('the custom character payload has exactly these keys, so a rename on either
     }
 });
 
+test('a saved selection reaches every event as the same wire pool, never as the stored column', function () {
+    $minion = CustomMinion::factory()->create(['slot' => 1]);
+    $second = CustomMinion::factory()->create(['user_id' => $minion->user_id, 'slot' => 2]);
+    $minion->user->forceFill(['minion_pool' => ['rev' => 5, 'defaults_off' => ['demon-a', 'smw-bowser'], 'slots_off' => [1]]])->save();
+    $user = $minion->user->fresh();
+
+    foreach ([new FighterJoined($user), new FighterCharging($user, 'thinking…'), new FighterMinionsChanged($user)] as $event) {
+        $pool = $event->broadcastWith()['minion_pool'];
+
+        expect(array_keys($pool))->toBe(['rev', 'defaults', 'custom'])
+            ->and($pool['rev'])->toBe(5)
+            ->and($pool['defaults'])->toBe(['blood-monster-a', 'smw-goomba', 'smw-babybowser'])
+            ->and($pool['custom'])->toBe([$second->fresh()->broadcastState()]);
+    }
+});
+
 test('FighterMinionsChanged carries the player\'s minion pool', function () {
     $minion = CustomMinion::factory()->create(['version_hash' => 'abc123def456']);
     $user = $minion->user->fresh();

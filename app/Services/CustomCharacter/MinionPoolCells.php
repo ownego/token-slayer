@@ -2,10 +2,10 @@
 
 namespace App\Services\CustomCharacter;
 
+use App\Enums\MinionStageMode;
 use App\Models\CustomMinion;
 use App\Models\CustomMinionDraft;
 use App\Models\User;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -21,6 +21,8 @@ use Illuminate\Support\Str;
  *
  * Everything is read off the relations the player is loaded with (`customMinions`,
  * `customMinionDraft`), so the caller decides when they are fresh and the cells add no query.
+ * Which looks are ticked comes from a `MinionPoolSelection`: the stored one by default, or the
+ * one the player is still choosing and has not saved.
  */
 class MinionPoolCells
 {
@@ -53,18 +55,20 @@ class MinionPoolCells
      * The cells of the player's pool.
      *
      * @param  User  $user  the player, with `customMinions` and `customMinionDraft` loaded
+     * @param  MinionPoolSelection|null  $selection  the ticks to draw (the player's pending choice); the stored selection when null
      * @return array{
      *     defaults: list<array{look: string, key: string, label: string, ticked: bool, idle: array{kind: string, key: string}}>,
      *     slots: list<array{look: string, slot: int, name: ?string, ticked: bool, idle: ?array<string, mixed>, body_px: ?int, source: ?string, draft: ?array<string, mixed>}>,
      *     overflowDraft: ?array<string, mixed>,
      *     nothingTicked: bool,
+     *     hashes: array<int, string>,
      *     used: int,
      *     max: int
      * }
      */
-    public function get(User $user): array
+    public function get(User $user, ?MinionPoolSelection $selection = null): array
     {
-        $off = $user->minion_defaults_off ?? [];
+        $selection ??= MinionPoolSelection::of($user);
         $minions = $user->customMinions->keyBy('slot');
         $max = (int) config('token_slayer.custom_character.minions_max');
         $draft = $user->customMinionDraft;
@@ -75,24 +79,89 @@ class MinionPoolCells
             'look' => "default:{$key}",
             'key' => $key,
             'label' => self::LABELS[$key] ?? Str::headline($key),
-            'ticked' => ! in_array($key, $off, true),
+            'ticked' => $selection->defaultTicked($key),
             'idle' => ['kind' => 'default', 'key' => $key],
-        ], array_values(config('token_slayer.custom_character.default_minions')));
+        ], MinionPoolSelection::defaultKeys());
 
         $slots = [];
 
         for ($slot = 1; $slot <= $max; $slot++) {
-            $slots[] = $this->slotCell($slot, $minions->get($slot), $slot === $target ? $preview : null);
+            $slots[] = $this->slotCell($slot, $minions->get($slot), $slot === $target ? $preview : null, $selection);
         }
 
         return [
             'defaults' => $defaults,
             'slots' => $slots,
             'overflowDraft' => $preview !== null && $target === null ? $preview : null,
-            'nothingTicked' => $this->nothingTicked($defaults, $minions),
+            'nothingTicked' => $selection->isEmpty($minions->keys()->map(fn (mixed $slot): int => (int) $slot)->all()),
+            'hashes' => $minions->map(fn (CustomMinion $minion): string => $minion->version_hash)->all(),
             'used' => $minions->count(),
             'max' => $max,
         ];
+    }
+
+    /**
+     * The cell to draw on the stage: the selected one when it exists, else the cell holding the
+     * preview, else the first default look.
+     *
+     * @param  array<string, mixed>  $pool  the pool as `get()` returned it
+     * @param  string  $selected  the cell the player picked: `default:<key>`, `slot:<n>` or `overflow`
+     * @param  bool  $preferPreview  take the preview's cell even though another is selected
+     * @return string
+     */
+    public function resolveSelected(array $pool, string $selected, bool $preferPreview = false): string
+    {
+        $previewLook = $pool['overflowDraft'] !== null ? 'overflow' : collect($pool['slots'])->firstWhere('draft', '!=', null)['look'] ?? null;
+
+        if ($preferPreview && $previewLook !== null) {
+            return $previewLook;
+        }
+
+        $looks = [
+            ...array_column($pool['defaults'], 'look'),
+            ...array_column($pool['slots'], 'look'),
+            ...($pool['overflowDraft'] !== null ? ['overflow'] : []),
+        ];
+
+        if (in_array($selected, $looks, true)) {
+            return $selected;
+        }
+
+        return $previewLook ?? $pool['defaults'][0]['look'];
+    }
+
+    /**
+     * What the stage shows for a cell, and which of the panels goes with it.
+     *
+     * @param  array<string, mixed>  $pool  the pool as `get()` returned it
+     * @param  string  $selected  the cell on the stage, one `resolveSelected()` returned
+     * @return MinionStage
+     */
+    public function stageOf(array $pool, string $selected): MinionStage
+    {
+        if ($selected === 'overflow') {
+            $draft = $pool['overflowDraft'];
+
+            return new MinionStage(MinionStageMode::Overflow, $selected, $draft['name'], $draft, $draft['spec'], false, null);
+        }
+
+        $default = collect($pool['defaults'])->firstWhere('look', $selected);
+
+        if ($default !== null) {
+            return new MinionStage(MinionStageMode::Default, $selected, $default['label'], null, $default['idle'], $default['ticked'], null);
+        }
+
+        $cell = collect($pool['slots'])->firstWhere('look', $selected);
+
+        if ($cell['draft'] !== null) {
+            return new MinionStage(MinionStageMode::Draft, $selected, $cell['draft']['name'], $cell['draft'], $cell['draft']['spec'], $cell['ticked'], $cell['slot']);
+        }
+
+        if ($cell['idle'] === null) {
+            return new MinionStage(MinionStageMode::Empty, $selected, null, null, null, false, $cell['slot']);
+        }
+
+        return new MinionStage(MinionStageMode::Minion, $selected, $cell['name'], null, $cell['idle'], $cell['ticked'], $cell['slot']);
     }
 
     /**
@@ -124,15 +193,16 @@ class MinionPoolCells
      * @param  int  $slot  the slot
      * @param  CustomMinion|null  $minion  the minion in it, if any
      * @param  array<string, mixed>|null  $preview  the preview that sits in it, if any
+     * @param  MinionPoolSelection  $selection  the ticks to draw
      * @return array{look: string, slot: int, name: ?string, ticked: bool, idle: ?array<string, mixed>, body_px: ?int, source: ?string, draft: ?array<string, mixed>}
      */
-    private function slotCell(int $slot, ?CustomMinion $minion, ?array $preview): array
+    private function slotCell(int $slot, ?CustomMinion $minion, ?array $preview, MinionPoolSelection $selection): array
     {
         return [
             'look' => "slot:{$slot}",
             'slot' => $slot,
             'name' => $minion === null ? null : $this->nameOf($minion),
-            'ticked' => $minion?->enabled ?? false,
+            'ticked' => $minion !== null && $selection->slotTicked($slot),
             'idle' => $minion === null ? null : ['kind' => 'custom', ...$minion->broadcastState()],
             'body_px' => $minion?->body_px,
             'source' => $minion?->source?->value,
@@ -179,17 +249,5 @@ class MinionPoolCells
     private function nameOf(CustomMinion $minion): string
     {
         return $minion->name ?? "Minion {$minion->slot}";
-    }
-
-    /**
-     * Whether nothing is ticked, so the swarm falls back to the defaults.
-     *
-     * @param  array<int, array{ticked: bool}>  $defaults  the default cells
-     * @param  Collection<int, CustomMinion>  $minions  the player's minions
-     * @return bool
-     */
-    private function nothingTicked(array $defaults, Collection $minions): bool
-    {
-        return ! collect($defaults)->contains('ticked', true) && ! $minions->contains('enabled', true);
     }
 }

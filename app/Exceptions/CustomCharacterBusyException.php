@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when the player already has a build running and this one gave up waiting.
  */
-class CustomCharacterBusyException extends Exception
+class CustomCharacterBusyException extends PlayerFacingException
 {
     /**
      * The message the player sees.

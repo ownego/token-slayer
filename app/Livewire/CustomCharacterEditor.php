@@ -3,6 +3,8 @@
 namespace App\Livewire;
 
 use App\Exceptions\CustomCharacterVersionException;
+use App\Livewire\Concerns\ActsAsSheetPanel;
+use App\Livewire\Concerns\ConfirmsInPlace;
 use App\Livewire\Concerns\UploadsPoseSheet;
 use App\Services\BossArena;
 use App\Services\CustomCharacter\ConfirmCustomCharacter;
@@ -28,12 +30,13 @@ use Throwable;
  * around it (the `custom-character-changed` browser event) so the roster follows
  * without a reload, and a result worth a line is announced as a `sheet-toast`.
  *
- * The upload rule, the hourly allowance, the list of failures a player gets to read, the toast
- * and the in-place confirm question are shared with the minion editor (UploadsPoseSheet).
+ * The upload rule and the hourly allowance (UploadsPoseSheet), the toast, the placeholder and the
+ * list of failures a player gets to read (ActsAsSheetPanel) and the in-place confirm question
+ * (ConfirmsInPlace) are shared with the minion editor.
  */
 class CustomCharacterEditor extends Component
 {
-    use UploadsPoseSheet;
+    use ConfirmsInPlace, ActsAsSheetPanel, UploadsPoseSheet;
 
     /**
      * The name box: what the fighter is (or is about to be) called.

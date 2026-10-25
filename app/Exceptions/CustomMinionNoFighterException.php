@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when a player asks to make a minion from their custom fighter but has not made one.
  */
-class CustomMinionNoFighterException extends Exception
+class CustomMinionNoFighterException extends PlayerFacingException
 {
     /**
      * The message the player sees.

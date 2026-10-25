@@ -64,8 +64,7 @@ class User extends Authenticatable implements FilamentUser
             'equipped_character' => FighterCharacter::class,
             'incomplete_events' => 'integer',
             'incomplete_reason' => IncompleteUsageReason::class,
-            'minion_defaults_off' => 'array',
-            'minion_pool_rev' => 'integer',
+            'minion_pool' => 'array',
         ];
     }
 
@@ -210,7 +209,8 @@ class User extends Authenticatable implements FilamentUser
     /**
      * The minion pool a subagent summon draws from: the default looks still ticked
      * plus the ticked custom minions, with the counter that orders one pool against
-     * another (see MinionPool::get()).
+     * another (see MinionPool::get()). What is ticked is stored in `users.minion_pool`
+     * (see MinionPoolSelection); the relation `customMinions` supplies the looks.
      *
      * @return array{rev: int, defaults: list<string>, custom: list<array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, body_px: int}>}
      */

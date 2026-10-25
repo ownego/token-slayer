@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when a player adds a minion while their set already holds the most it can; they replace one instead.
  */
-class CustomMinionSetFullException extends Exception
+class CustomMinionSetFullException extends PlayerFacingException
 {
     /**
      * The message the player sees.

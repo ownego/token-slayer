@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when the minion a player adds is already in their set (the same sheet built twice, or the fighter added twice).
  */
-class CustomMinionDuplicateException extends Exception
+class CustomMinionDuplicateException extends PlayerFacingException
 {
     /**
      * The message the player sees.

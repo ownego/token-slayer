@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when a player confirms a draft they do not have: never staged, already replaced, or someone else's.
  */
-class CustomCharacterDraftMissingException extends Exception
+class CustomCharacterDraftMissingException extends PlayerFacingException
 {
     /**
      * The message the player sees.

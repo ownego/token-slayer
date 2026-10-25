@@ -47,7 +47,7 @@ it('keeps the largest minion pool payload under 10000 bytes', function () {
     CustomMinion::factory()->count(3)
         ->sequence(fn ($sequence) => ['slot' => $sequence->index + 1])
         ->create(['user_id' => $user->id]);
-    $user->forceFill(['display_name' => str_repeat('x', 100), 'minion_pool_rev' => 999999])->save();
+    $user->forceFill(['display_name' => str_repeat('x', 100), 'minion_pool' => ['rev' => 999999, 'defaults_off' => [], 'slots_off' => []]])->save();
     $user = $user->fresh();
 
     expect($user->minionPoolState()['custom'])->toHaveCount(3)

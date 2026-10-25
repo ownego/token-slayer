@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Services\CustomCharacter\ConfirmCustomCharacter;
 use App\Services\CustomCharacter\ConfirmCustomMinion;
 use App\Services\CustomCharacter\DiscardCustomMinionDraft;
+use App\Services\CustomCharacter\MinionPoolSelection;
 use App\Services\CustomCharacter\MeasureStripBodyHeight;
 use App\Services\CustomCharacter\RemoveCustomCharacter;
 use App\Services\CustomCharacter\RemoveCustomMinion;
@@ -96,7 +97,31 @@ function fighterWithFiles(User $user): CustomCharacter
  */
 function poolRev(User $user): int
 {
-    return (int) User::whereKey($user->id)->value('minion_pool_rev');
+    return MinionPoolSelection::of(User::find($user->id))->rev;
+}
+
+/**
+ * Leaves the slots out of the player's pool, as ticks saved earlier would have, keeping the revision.
+ *
+ * @param  User  $user  the player
+ * @param  list<int>  $slots  the slots to leave out
+ * @return void
+ */
+function leaveSlotsOut(User $user, array $slots): void
+{
+    $selection = MinionPoolSelection::of(User::find($user->id));
+    User::whereKey($user->id)->update(['minion_pool' => json_encode($selection->withChoice($selection->defaultsOff, $slots)->toColumn())]);
+}
+
+/**
+ * The slots the player has left out of their pool, read from the database.
+ *
+ * @param  User  $user  the player
+ * @return list<int>
+ */
+function slotsLeftOut(User $user): array
+{
+    return MinionPoolSelection::of(User::find($user->id))->slotsOff;
 }
 
 test('builds a minion draft with its measured body height', function () {
@@ -176,7 +201,7 @@ test('adds the previewed minion into the lowest free slot, named after it and ti
     expect($confirmed->outcome)->toBe(CustomMinionOutcome::Added)
         ->and($minion->slot)->toBe(2)
         ->and($minion->name)->toBe('Minion 2')
-        ->and($minion->enabled)->toBeTrue()
+        ->and(slotsLeftOut($user))->toBe([])
         ->and($minion->version_hash)->toBe($draft->version_hash)
         ->and($minion->source)->toBe(CustomMinionSource::Upload)
         ->and($minion->body_px)->toBe($draft->body_px)
@@ -187,15 +212,15 @@ test('adds the previewed minion into the lowest free slot, named after it and ti
     Storage::disk('public')->assertExists("custom-minions/{$user->id}/{$draft->version_hash}/idle.png");
     Storage::disk('public')->assertMissing("custom-minions/{$user->id}/staged/{$draft->version_hash}/idle.png");
     Event::assertDispatchedTimes(FighterMinionsChanged::class, 1);
-    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->is($user) && $event->user->minion_pool_rev === 1);
+    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->is($user) && $event->user->minionPoolState()['rev'] === 1);
 });
 
 test('replacing keeps the slot, the name and the tick, and changes the look', function () {
     $user = User::factory()->create();
     $old = confirmedMinionFor($user, 0);
     $old->name = 'Biter';
-    $old->enabled = false;
     $old->save();
+    leaveSlotsOut($user, [$old->slot]);
     $draft = stagedMinionFor($user, 1, slot: $old->slot);
 
     $confirmed = app(ConfirmCustomMinion::class)->execute($user, $draft->version_hash);
@@ -204,7 +229,7 @@ test('replacing keeps the slot, the name and the tick, and changes the look', fu
     expect($confirmed->outcome)->toBe(CustomMinionOutcome::Replaced)
         ->and($minion->slot)->toBe($old->slot)
         ->and($minion->name)->toBe('Biter')
-        ->and($minion->enabled)->toBeFalse()
+        ->and(slotsLeftOut($user))->toBe([$old->slot])
         ->and($minion->version_hash)->toBe($draft->version_hash)
         ->and($old->version_hash)->not->toBe($draft->version_hash)
         ->and(CustomMinion::count())->toBe(1)
@@ -213,6 +238,41 @@ test('replacing keeps the slot, the name and the tick, and changes the look', fu
     Storage::disk('public')->assertMissing("custom-minions/{$user->id}/{$old->version_hash}/idle.png");
     Storage::disk('public')->assertExists("custom-minions/{$user->id}/{$draft->version_hash}/idle.png");
     Event::assertDispatchedTimes(FighterMinionsChanged::class, 2);
+});
+
+test('replacing a ticked minion leaves it ticked, and the new look is in the pool', function () {
+    $user = User::factory()->create();
+    $old = confirmedMinionFor($user, 0);
+    $draft = stagedMinionFor($user, 1, slot: $old->slot);
+
+    app(ConfirmCustomMinion::class)->execute($user, $draft->version_hash);
+
+    expect(slotsLeftOut($user))->toBe([])
+        ->and($user->fresh()->minionPoolState()['custom'])->toHaveCount(1)
+        ->and($user->fresh()->minionPoolState()['custom'][0]['version'])->toBe($draft->version_hash);
+});
+
+test('a minion added into the slot a removed, unticked minion left is ticked', function () {
+    $user = User::factory()->create();
+    $gone = confirmedMinionFor($user, 0);
+    leaveSlotsOut($user, [$gone->slot]);
+    app(RemoveCustomMinion::class)->execute($gone);
+
+    $added = app(ConfirmCustomMinion::class)->execute($user, stagedMinionFor($user, 1)->version_hash)->minion;
+
+    expect($added->slot)->toBe($gone->slot)
+        ->and(slotsLeftOut($user))->toBe([])
+        ->and($user->fresh()->minionPoolState()['custom'])->toHaveCount(1);
+});
+
+test('a minion added into a slot the pool still leaves out is ticked all the same', function () {
+    $user = User::factory()->create();
+    leaveSlotsOut($user, [1]);
+
+    $added = app(ConfirmCustomMinion::class)->execute($user, stagedMinionFor($user)->version_hash)->minion;
+
+    expect($added->slot)->toBe(1)
+        ->and(slotsLeftOut($user))->toBe([]);
 });
 
 test('a draft aimed at a slot whose minion was removed meanwhile takes that slot as a new minion', function () {
@@ -417,7 +477,7 @@ test('announces the revision the database holds even when the player was loaded 
     app(ConfirmCustomMinion::class)->execute($stale, $draft->version_hash);
 
     expect(poolRev($user))->toBe(2);
-    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->is($user) && $event->user->minion_pool_rev === 2);
+    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->is($user) && $event->user->minionPoolState()['rev'] === 2);
 });
 
 test('keeps the staged files and the draft when the insert fails, and a retry adds the minion', function () {
@@ -693,27 +753,51 @@ test('removes a minion and its files, and bumps the revision', function () {
     $removed = confirmedMinionFor($user, 0);
     $kept = confirmedMinionFor($user, 1);
 
-    app(RemoveCustomMinion::class)->execute($removed);
+    $result = app(RemoveCustomMinion::class)->execute($removed);
 
-    expect(CustomMinion::pluck('id')->all())->toBe([$kept->id])
+    expect($result)->toBeTrue()
+        ->and(CustomMinion::pluck('id')->all())->toBe([$kept->id])
         ->and(poolRev($user))->toBe(3);
     Storage::disk('public')->assertMissing("custom-minions/{$user->id}/{$removed->version_hash}/idle.png");
     Storage::disk('public')->assertExists("custom-minions/{$user->id}/{$kept->version_hash}/idle.png");
     Event::assertDispatchedTimes(FighterMinionsChanged::class, 3);
-    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->is($user) && $event->user->minion_pool_rev === 3);
+    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->is($user) && $event->user->minionPoolState()['rev'] === 3);
 });
 
 test('removing a minion that is already gone is a no-op', function () {
     $user = User::factory()->create();
     $minion = confirmedMinionFor($user);
     $stale = CustomMinion::find($minion->id);
-    app(RemoveCustomMinion::class)->execute($minion);
+    expect(app(RemoveCustomMinion::class)->execute($minion))->toBeTrue();
 
-    app(RemoveCustomMinion::class)->execute($stale);
+    expect(app(RemoveCustomMinion::class)->execute($stale))->toBeFalse();
 
     expect(CustomMinion::count())->toBe(0)
         ->and(poolRev($user))->toBe(2);
     Event::assertDispatchedTimes(FighterMinionsChanged::class, 2);
+});
+
+test('removing a minion takes its slot out of the pool\'s unticked slots, in the same revision step', function () {
+    $user = User::factory()->create();
+    $minion = confirmedMinionFor($user);
+    leaveSlotsOut($user, [$minion->slot]);
+
+    app(RemoveCustomMinion::class)->execute($minion);
+
+    expect(slotsLeftOut($user))->toBe([])
+        ->and(poolRev($user))->toBe(2);
+});
+
+test('removing a minion through a stale owner model announces the revision the database holds', function () {
+    $user = User::factory()->create();
+    $minion = confirmedMinionFor($user);
+    $minion->setRelation('user', User::find($user->id));
+    leaveSlotsOut($user, [$minion->slot]);
+
+    app(RemoveCustomMinion::class)->execute($minion);
+
+    expect(poolRev($user))->toBe(2);
+    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->minionPoolState()['rev'] === 2);
 });
 
 test('a failed delete keeps the minion, its files and the revision', function () {

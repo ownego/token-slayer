@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when a player asks for a minion they do not have, or one that is already gone.
  */
-class CustomMinionMissingException extends Exception
+class CustomMinionMissingException extends PlayerFacingException
 {
     /**
      * The message the player sees.

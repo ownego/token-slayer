@@ -409,7 +409,7 @@ test('battlefield boot payload carries each fighter\'s minion pool, the defaults
         ->assertDontSeeHtml('customMinions');
 
     $minion = CustomMinion::factory()->create(['version_hash' => 'bead1234cafe']);
-    $minion->user->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool_rev' => 7])->save();
+    $minion->user->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool' => ['rev' => 7, 'defaults_off' => [], 'slots_off' => []]])->save();
 
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('&quot;rev&quot;:7')
@@ -420,7 +420,7 @@ test('battlefield boot payload carries each fighter\'s minion pool, the defaults
 
 test('battlefield boot payload leaves a default look out of the pool once its owner unticked it', function () {
     Boss::factory()->create(['number' => 1]);
-    User::factory()->create(['last_event_at' => now()->subMinute(), 'minion_defaults_off' => ['smw-bowser']]);
+    User::factory()->create(['last_event_at' => now()->subMinute(), 'minion_pool' => ['rev' => 1, 'defaults_off' => ['smw-bowser'], 'slots_off' => []]]);
 
     Livewire::test(Battlefield::class)
         ->assertSeeHtml('&quot;defaults&quot;:[&quot;demon-a&quot;,&quot;blood-monster-a&quot;,&quot;smw-goomba&quot;,&quot;smw-babybowser&quot;]');

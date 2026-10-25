@@ -37,8 +37,8 @@ class FighterCharging implements ShouldBroadcastNow
      * the fighter was swept idle) restores it instead of defaulting to the
      * grid. Null when the fighter has never moved.
      *
-     * `minion_pool` is the whole pool a subagent summon draws from, with the `rev`
-     * that orders it against a later pool: this event can be read before a pool
+     * `minion_pool` is the whole pool a subagent summon draws from (what the player saved in
+     * the Minions tab), with the `rev` that orders it against a later pool: this event can be read before a pool
      * change yet arrive after the `FighterMinionsChanged` that announces it, and the
      * client drops the older one by `rev` (see `isNewerPool()` in `minion-custom.js`).
      *

@@ -11,6 +11,7 @@ use Filament\Facades\Filament;
 use Illuminate\Cache\Lock;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -54,8 +55,9 @@ function adminMinionHoldLock(User $owner): Lock
 }
 
 it('lists minions with slot, name and tick for a role with ViewAny:CustomMinion', function () {
-    $one = CustomMinion::factory()->create(['slot' => 2, 'name' => 'Glim', 'enabled' => true]);
-    $two = CustomMinion::factory()->fromFighter()->create(['slot' => 1, 'name' => 'Sprout', 'enabled' => false]);
+    $one = CustomMinion::factory()->create(['slot' => 2, 'name' => 'Glim']);
+    $two = CustomMinion::factory()->fromFighter()->create(['slot' => 1, 'name' => 'Sprout']);
+    $two->user->forceFill(['minion_pool' => ['rev' => 1, 'defaults_off' => [], 'slots_off' => [1]]])->save();
 
     Livewire::actingAs(adminMinionUserWith(['ViewAny:CustomMinion']))->test(ListCustomMinions::class)
         ->assertSuccessful()
@@ -63,8 +65,32 @@ it('lists minions with slot, name and tick for a role with ViewAny:CustomMinion'
         ->assertTableColumnStateSet('user.slack_handle', $one->user->displayHandle(), $one)
         ->assertTableColumnStateSet('slot', 2, $one)
         ->assertTableColumnStateSet('name', 'Glim', $one)
-        ->assertTableColumnStateSet('enabled', true, $one)
-        ->assertTableColumnStateSet('enabled', false, $two);
+        ->assertTableColumnStateSet('ticked', true, $one)
+        ->assertTableColumnStateSet('ticked', false, $two);
+});
+
+it('reads the tick from the owner\'s pool, not from the minion row, and adds no query per row', function () {
+    $viewer = adminMinionUserWith(['ViewAny:CustomMinion']);
+    $unflagged = CustomMinion::factory()->create(['slot' => 1, 'enabled' => false]);
+    $countQueries = function () use ($viewer): int {
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        Livewire::actingAs($viewer)->test(ListCustomMinions::class)->assertSuccessful();
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    };
+
+    $countQueries(); // the first render also loads the permission cache and the panel
+    $few = $countQueries();
+    $rows = CustomMinion::factory()->count(5)->create(['slot' => 1]);
+    $many = $countQueries();
+
+    expect($many)->toBe($few);
+    Livewire::actingAs($viewer)->test(ListCustomMinions::class)
+        ->assertTableColumnStateSet('ticked', true, $unflagged)
+        ->assertTableColumnStateSet('ticked', true, $rows->first());
 });
 
 it('hides the list without it', function () {
@@ -99,9 +125,19 @@ it('removes a minion, bumps the owner\'s pool revision and broadcasts', function
         ->assertHasNoTableActionErrors();
 
     expect(CustomMinion::count())->toBe(0)
-        ->and($minion->user->fresh()->minion_pool_rev)->toBe(1);
+        ->and($minion->user->fresh()->minionPoolState()['rev'])->toBe(1);
     Storage::disk('public')->assertMissing("custom-minions/{$minion->user_id}/{$minion->version_hash}/idle.png");
     Event::assertDispatched(FighterMinionsChanged::class, fn ($event) => $event->user->is($minion->user));
+});
+
+it('takes the removed minion\'s slot out of the owner\'s unticked slots', function () {
+    $admin = User::factory()->admin()->create();
+    $minion = CustomMinion::factory()->create(['slot' => 2]);
+    $minion->user->forceFill(['minion_pool' => ['rev' => 4, 'defaults_off' => ['demon-a'], 'slots_off' => [2]]])->save();
+
+    Livewire::actingAs($admin)->test(ListCustomMinions::class)->callTableAction('remove', $minion);
+
+    expect($minion->user->fresh()->minion_pool)->toBe(['rev' => 5, 'defaults_off' => ['demon-a'], 'slots_off' => []]);
 });
 
 it('lets a role with Delete:CustomMinion remove through the list', function () {
@@ -137,7 +173,7 @@ it('shows the busy message when the owner holds the lock', function () {
         ->assertNotified();
 
     expect(CustomMinion::count())->toBe(1)
-        ->and($minion->user->fresh()->minion_pool_rev)->toBe(0);
+        ->and($minion->user->fresh()->minionPoolState()['rev'])->toBe(0);
     Event::assertNotDispatched(FighterMinionsChanged::class);
 });
 

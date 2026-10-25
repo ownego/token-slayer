@@ -42,18 +42,17 @@ test('lists a player\'s minions by slot, whatever order they were added in', fun
         ->and(User::factory()->create()->customMinions)->toBeEmpty();
 });
 
-test('a minion is named after its slot until it is renamed, and keeps its tick', function () {
+test('a minion is named after its slot until it is renamed, and its row stays enabled', function () {
     $minion = CustomMinion::factory()->create(['slot' => 3]);
 
     expect($minion->name)->toBe('Minion 3')
         ->and($minion->enabled)->toBeTrue();
 
     $minion->name = 'Pip';
-    $minion->enabled = false;
     $minion->save();
 
     expect($minion->fresh()->name)->toBe('Pip')
-        ->and($minion->fresh()->enabled)->toBeFalse()
+        ->and($minion->fresh()->enabled)->toBeTrue()
         ->and($minion->fresh()->animations)->toBe($minion->animations);
 });
 

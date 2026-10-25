@@ -17,8 +17,9 @@ use Illuminate\Support\Facades\DB;
  * Puts a player's previewed minion into their set. It only ever acts on the draft
  * of the player who asks (never one staged by someone else), and asking twice for
  * a minion already in the set (a double click) is harmless. A draft with a slot
- * replaces the minion there, keeping its slot, name and tick; one without takes the
- * lowest free slot. A full set refuses and keeps the draft. The files are copied
+ * replaces the minion there, keeping its slot, name and tick (the tick lives in the
+ * player's pool, which a replace leaves as it is); one without takes the lowest free slot,
+ * and the new minion is ticked into the pool. A full set refuses and keeps the draft. The files are copied
  * into place before the database change and the staged copy goes only after that
  * change is committed, so a failed insert or copy leaves the draft whole to retry.
  */
@@ -31,6 +32,7 @@ class ConfirmCustomMinion
      * @param  CustomCharacterLock  $lock  keeps one player's changes from interleaving
      * @param  AnnounceCustomMinions  $announce  tells the battlefield
      * @param  CustomMinionSlots  $slots  knows which slot is free and whether the set is full
+     * @param  MinionPoolWriter  $pool  writes the pool's selection and moves its revision
      * @return void
      */
     public function __construct(
@@ -38,6 +40,7 @@ class ConfirmCustomMinion
         private readonly CustomCharacterLock $lock,
         private readonly AnnounceCustomMinions $announce,
         private readonly CustomMinionSlots $slots,
+        private readonly MinionPoolWriter $pool,
     ) {}
 
     /**
@@ -105,14 +108,13 @@ class ConfirmCustomMinion
             $minion = $user->customMinions()->create([
                 'version_hash' => $draft->version_hash,
                 'slot' => $slot,
-                'enabled' => $replaced?->enabled ?? true,
                 'name' => $replaced?->name ?? $this->nameFor($draft, $slot),
                 'animations' => $draft->animations,
                 'body_px' => $draft->body_px,
                 'source' => $draft->source ?? CustomMinionSource::Upload,
             ]);
             $draft->delete();
-            $user->increment('minion_pool_rev');
+            $this->pool->write($user->id, fn (MinionPoolSelection $selection): MinionPoolSelection => $replaced === null ? $selection->withSlot($slot, true) : $selection);
 
             return $minion;
         });

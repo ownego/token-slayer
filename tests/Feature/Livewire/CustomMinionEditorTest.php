@@ -4,11 +4,16 @@ use App\Events\FighterMinionsChanged;
 use App\Exceptions\CustomMinionDuplicateException;
 use App\Exceptions\CustomMinionNoFighterException;
 use App\Exceptions\CustomMinionSetFullException;
+use App\Exceptions\MinionPoolChangedException;
+use App\Enums\MinionStageMode;
 use App\Livewire\CustomMinionEditor;
 use App\Models\Boss;
 use App\Models\CustomMinion;
 use App\Models\User;
+use App\Services\CustomCharacter\ApplyMinionPool;
 use App\Services\CustomCharacter\ConfirmCustomCharacter;
+use App\Services\CustomCharacter\MinionPoolSelection;
+use App\Services\CustomCharacter\MinionStage;
 use App\Services\CustomCharacter\RetargetCustomMinionDraft;
 use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -74,6 +79,30 @@ function confirmedFighterFor(User $user): void
     app(ConfirmCustomCharacter::class)->execute($user, stagedFor($user)->version_hash);
 }
 
+/**
+ * The player's pool column, read straight from the database.
+ *
+ * @param  User  $user  the player
+ * @return array{rev: int, defaults_off: list<string>, slots_off: list<int>}|null
+ */
+function minionPoolColumn(User $user): ?array
+{
+    $raw = DB::table('users')->where('id', $user->id)->value('minion_pool');
+
+    return $raw === null ? null : json_decode($raw, true);
+}
+
+/**
+ * The hash of each minion the player holds, by slot, as the tab draws them.
+ *
+ * @param  User  $user  the player
+ * @return array<int, string>
+ */
+function minionHashes(User $user): array
+{
+    return CustomMinion::query()->where('user_id', $user->id)->orderBy('slot')->pluck('version_hash', 'slot')->all();
+}
+
 test('shows the five default looks and the three slots', function () {
     $editor = minionEditorFor(User::factory()->create())
         ->assertSee('Demon')
@@ -105,32 +134,215 @@ test('shows a minion in its slot with its name and a tick', function () {
         ->and($pool['slots'][1]['idle'])->toBeNull();
 });
 
-test('ticking a look out of the pool saves it and tells the page the new pool', function () {
+test('ticking a look only changes the choice: nothing is stored, counted or announced', function () {
     Event::fake([FighterMinionsChanged::class]);
+    $user = User::factory()->create();
+    minionsFor($user, 2);
+
+    $editor = minionEditorFor($user)
+        ->call('toggleTick', 'default:demon-a', false)
+        ->call('toggleTick', 'slot:2', false)
+        ->assertHasNoErrors()
+        ->assertNotDispatched('custom-minions-changed')
+        ->assertNotDispatched('sheet-toast')
+        ->assertSet('pending', ['defaults_off' => ['demon-a'], 'slots_off' => [2]])
+        ->assertSee('Not saved yet.');
+
+    $pool = $editor->viewData('pool');
+    expect(collect($pool['defaults'])->firstWhere('key', 'demon-a')['ticked'])->toBeFalse()
+        ->and($pool['slots'][1]['ticked'])->toBeFalse()
+        ->and($editor->viewData('unsaved'))->toBeTrue()
+        ->and(minionPoolColumn($user))->toBeNull()
+        ->and(RateLimiter::attempts(CacheKeys::customMinionChange($user->id)))->toBe(0);
+    Event::assertNotDispatched(FighterMinionsChanged::class);
+});
+
+test('ticking a look back to what is saved leaves nothing to save', function () {
+    $user = User::factory()->create();
+
+    $editor = minionEditorFor($user)
+        ->call('toggleTick', 'default:demon-a', false)
+        ->assertSet('pending', ['defaults_off' => ['demon-a'], 'slots_off' => []])
+        ->call('toggleTick', 'default:demon-a', true)
+        ->assertSet('pending', null)
+        ->assertSee('Saved.');
+
+    expect($editor->viewData('unsaved'))->toBeFalse();
+});
+
+test('Save stores the whole choice: one write, one revision step, one broadcast', function () {
+    Event::fake([FighterMinionsChanged::class]);
+    $user = User::factory()->create();
+    minionsFor($user, 2);
+
+    minionEditorFor($user)
+        ->call('toggleTick', 'default:demon-a', false)
+        ->call('toggleTick', 'default:smw-bowser', false)
+        ->call('toggleTick', 'slot:2', false)
+        ->call('save', minionHashes($user))
+        ->assertHasNoErrors()
+        ->assertSet('pending', null)
+        ->assertDispatched('sheet-toast', message: 'Pool saved.')
+        ->assertDispatched('custom-minions-changed', fn (string $event, array $params): bool => $params['changed'] === null
+            && $params['pool']['rev'] === 1
+            && $params['pool']['defaults'] === ['blood-monster-a', 'smw-goomba', 'smw-babybowser']
+            && count($params['pool']['custom']) === 1)
+        ->assertSee('Saved.');
+
+    expect(minionPoolColumn($user))->toBe(['rev' => 1, 'defaults_off' => ['demon-a', 'smw-bowser'], 'slots_off' => [2]])
+        ->and(CustomMinion::where('user_id', $user->id)->where('enabled', false)->count())->toBe(0);
+    Event::assertDispatchedTimes(FighterMinionsChanged::class, 1);
+});
+
+test('Save with a choice equal to the saved one writes nothing, bumps nothing and broadcasts nothing', function () {
+    Event::fake([FighterMinionsChanged::class]);
+    $user = User::factory()->create(['minion_pool' => ['rev' => 3, 'defaults_off' => ['demon-a'], 'slots_off' => []]]);
+
+    minionEditorFor($user)
+        ->call('save', [])
+        ->assertHasNoErrors()
+        ->assertDispatched('sheet-toast', message: 'Pool already saved.');
+
+    expect(minionPoolColumn($user)['rev'])->toBe(3);
+    Event::assertNotDispatched(FighterMinionsChanged::class);
+});
+
+test('Save counts once against the per-minute allowance, and ticking does not', function () {
+    config(['token_slayer.custom_character.minion_changes_per_minute' => 1]);
+    $user = User::factory()->create();
+    $editor = minionEditorFor($user);
+
+    foreach (['demon-a', 'blood-monster-a', 'smw-goomba'] as $key) {
+        $editor->call('toggleTick', "default:{$key}", false)->assertHasNoErrors();
+    }
+
+    $editor->call('save', [])->assertHasNoErrors();
+    $editor->call('toggleTick', 'default:smw-bowser', false)
+        ->call('save', [])
+        ->assertHasErrors('action')
+        ->assertSee('Try again in 1 minute.')
+        ->assertDispatched('sheet-error');
+
+    expect(minionPoolColumn($user)['rev'])->toBe(1);
+});
+
+test('Save from a tab that drew minions another tab has since changed is turned away and keeps the choice', function (string $what) {
+    Event::fake([FighterMinionsChanged::class]);
+    $user = User::factory()->create();
+    $minions = minionsFor($user, 2);
+    $drawn = minionHashes($user);
+
+    $editor = minionEditorFor($user)->call('toggleTick', 'default:demon-a', false);
+
+    match ($what) {
+        'replaced' => $minions->last()->update(['version_hash' => 'f00dfeed1234']),
+        'removed' => $minions->last()->delete(),
+        'added' => CustomMinion::factory()->create(['user_id' => $user->id, 'slot' => 3]),
+    };
+
+    $editor->call('save', $drawn)
+        ->assertHasErrors('action')
+        ->assertDispatched('sheet-error', message: (new MinionPoolChangedException)->getMessage())
+        ->assertSet('pending', ['defaults_off' => ['demon-a'], 'slots_off' => []]);
+
+    expect(minionPoolColumn($user))->toBeNull();
+    Event::assertNotDispatched(FighterMinionsChanged::class);
+})->with(['replaced' => 'replaced', 'removed' => 'removed', 'added' => 'added']);
+
+test('a Save sent with a forged hash is turned away', function () {
+    $user = User::factory()->create();
+    minionsFor($user, 1);
+
+    minionEditorFor($user)
+        ->call('save', [1 => 'forged'])
+        ->assertHasErrors('action')
+        ->call('save', [1 => ['nested']])
+        ->assertHasErrors('action');
+
+    expect(minionPoolColumn($user))->toBeNull();
+});
+
+test('a tab loaded before another tab saved still saves exactly the choice it sends, and the database, the revision and the broadcast agree', function () {
+    Event::fake([FighterMinionsChanged::class]);
+    $user = User::factory()->create();
+    $tabA = minionEditorFor($user->fresh());
+
+    // tab B unticks Demon and saves
+    app(ApplyMinionPool::class)->execute($user->fresh(), collect(config('token_slayer.custom_character.default_minions'))->mapWithKeys(fn (string $key): array => [$key => $key !== 'demon-a'])->all(), []);
+    expect(minionPoolColumn($user))->toBe(['rev' => 1, 'defaults_off' => ['demon-a'], 'slots_off' => []]);
+
+    // tab A, whose user model was loaded before that, ticks Demon back on and saves
+    $tabA->call('toggleTick', 'default:demon-a', true)->call('save', [])->assertHasNoErrors();
+
+    $stored = minionPoolColumn($user);
+    expect($stored)->toBe(['rev' => 2, 'defaults_off' => [], 'slots_off' => []]);
+    Event::assertDispatchedTimes(FighterMinionsChanged::class, 2);
+    Event::assertDispatched(FighterMinionsChanged::class, fn (FighterMinionsChanged $event) => $event->user->minionPoolState()['rev'] === $stored['rev']
+        && $event->user->minionPoolState()['defaults'] === config('token_slayer.custom_character.default_minions'));
+});
+
+test('a tab with no choice of its own neither undoes another tab\'s save nor bumps the revision', function () {
+    Event::fake([FighterMinionsChanged::class]);
+    $user = User::factory()->create();
+    $tabA = minionEditorFor($user->fresh());
+    app(ApplyMinionPool::class)->execute($user->fresh(), collect(config('token_slayer.custom_character.default_minions'))->mapWithKeys(fn (string $key): array => [$key => $key !== 'demon-a'])->all(), []);
+
+    // tab A saves with no choice of its own: it must not undo tab B's save, nor bump the revision for nothing
+    $tabA->call('save', [])->assertHasNoErrors();
+
+    expect(minionPoolColumn($user))->toBe(['rev' => 1, 'defaults_off' => ['demon-a'], 'slots_off' => []]);
+    Event::assertDispatchedTimes(FighterMinionsChanged::class, 1);
+});
+
+test('Reset drops the choice that is not saved', function () {
+    $user = User::factory()->create(['minion_pool' => ['rev' => 2, 'defaults_off' => ['smw-bowser'], 'slots_off' => []]]);
+
+    $editor = minionEditorFor($user)
+        ->call('toggleTick', 'default:demon-a', false)
+        ->assertSet('pending', ['defaults_off' => ['demon-a', 'smw-bowser'], 'slots_off' => []])
+        ->assertSeeHtml('cme-reset-')
+        ->call('resetPending')
+        ->assertSet('pending', null)
+        ->assertSee('Saved.')
+        ->assertDontSeeHtml('cme-reset-');
+
+    $pool = $editor->viewData('pool');
+    expect(collect($pool['defaults'])->firstWhere('key', 'demon-a')['ticked'])->toBeTrue()
+        ->and(collect($pool['defaults'])->firstWhere('key', 'smw-bowser')['ticked'])->toBeFalse();
+});
+
+test('a refresh from another tab puts the choice back to the saved one', function () {
     $user = User::factory()->create();
 
     minionEditorFor($user)
         ->call('toggleTick', 'default:demon-a', false)
-        ->assertHasNoErrors()
-        ->assertDispatched('custom-minions-changed', fn (string $event, array $params): bool => ! in_array('demon-a', $params['pool']['defaults'], true)
-            && $params['pool']['rev'] === 1
-            && $params['changed'] === null);
-
-    expect($user->fresh()->minion_defaults_off)->toBe(['demon-a']);
-    Event::assertDispatchedTimes(FighterMinionsChanged::class, 1);
+        ->assertSet('pending', ['defaults_off' => ['demon-a'], 'slots_off' => []])
+        ->dispatch('custom-minions-refresh')
+        ->assertSet('pending', null);
 });
 
-test('ticking a custom minion out of the pool turns off its enabled flag', function () {
+test('the Save button is there, enabled only while there is a choice to save', function () {
     $user = User::factory()->create();
-    minionsFor($user, 2);
 
-    minionEditorFor($user)->call('toggleTick', 'slot:2', false)->assertHasNoErrors();
+    $clean = minionEditorFor($user)->assertSeeHtml('cme-save-')->assertSee('Save pool');
+    expect($clean->html())->toMatch('~id="cme-save-[^"]+"[^>]*\sdisabled~');
 
-    expect($user->customMinions()->where('slot', 2)->first()->enabled)->toBeFalse()
-        ->and($user->customMinions()->where('slot', 1)->first()->enabled)->toBeTrue();
+    $dirty = $clean->call('toggleTick', 'default:demon-a', false);
+    expect($dirty->html())->not->toMatch('~id="cme-save-[^"]+"[^>]*\sdisabled~');
 });
 
-test('a forged look key changes nothing, bumps no revision and broadcasts nothing', function (string $look) {
+test('the note and the stage label follow the choice, and say when it is not saved', function () {
+    $user = User::factory()->create();
+
+    minionEditorFor($user)
+        ->call('select', 'default:demon-a')
+        ->assertSee('In the pool')
+        ->call('toggleTick', 'default:demon-a', false)
+        ->assertSee('Not in the pool')
+        ->assertSee('not saved');
+});
+
+test('a forged look key changes nothing, keeps no choice and broadcasts nothing', function (string $look) {
     Event::fake([FighterMinionsChanged::class]);
     $user = User::factory()->create();
     $theirs = CustomMinion::factory()->create(['slot' => 2]);
@@ -138,11 +350,11 @@ test('a forged look key changes nothing, bumps no revision and broadcasts nothin
     minionEditorFor($user)
         ->call('toggleTick', $look, false)
         ->assertHasErrors('action')
+        ->assertSet('pending', null)
         ->assertDispatched('sheet-error');
 
-    expect($user->fresh()->minion_pool_rev)->toBe(0)
-        ->and($user->fresh()->minion_defaults_off)->toBeNull()
-        ->and($theirs->fresh()->enabled)->toBeTrue();
+    expect(minionPoolColumn($user))->toBeNull()
+        ->and(minionPoolColumn($theirs->user))->toBeNull();
     Event::assertNotDispatched(FighterMinionsChanged::class);
 })->with([
     'a default that does not exist' => 'default:evil',
@@ -424,7 +636,7 @@ test('discarding a preview leaves the set as it was', function () {
 
     expect($user->customMinionDraft()->exists())->toBeFalse()
         ->and($user->customMinions()->count())->toBe(0)
-        ->and($user->fresh()->minion_pool_rev)->toBe(0);
+        ->and(minionPoolColumn($user))->toBeNull();
 });
 
 test('a stale tab\'s discard says the preview was replaced and keeps the newer draft', function () {
@@ -444,7 +656,7 @@ test('a stale tab\'s discard says the preview was replaced and keeps the newer d
 test('removing asks first, in the right-hand panel, and then removes by name', function () {
     Event::fake([FighterMinionsChanged::class]);
     $user = User::factory()->create();
-    minionsFor($user, 1);
+    $minion = minionsFor($user, 1)->first();
 
     $editor = minionEditorFor($user)
         ->call('select', 'slot:1')
@@ -453,6 +665,7 @@ test('removing asks first, in the right-hand panel, and then removes by name', f
         ->assertSee('Remove Minion 1? Your subagents stop summoning it.')
         ->assertSeeHtml('wire:keydown.escape.stop.prevent="dismissConfirm"')
         ->assertSeeHtml('x-init="$el.focus()"')
+        ->assertSeeHtml("removeMinion(1, '{$minion->version_hash}')")
         ->assertDontSeeHtml('wire:confirm');
 
     expect($user->customMinions()->count())->toBe(1);
@@ -461,7 +674,7 @@ test('removing asks first, in the right-hand panel, and then removes by name', f
     expect($user->customMinions()->count())->toBe(1);
 
     $editor->call('askToConfirm', 'slot-1')
-        ->call('removeMinion', 1)
+        ->call('removeMinion', 1, $minion->version_hash)
         ->assertHasNoErrors()
         ->assertSet('confirming', null)
         ->assertSet('selected', 'slot:1')
@@ -477,10 +690,57 @@ test('a player cannot remove a slot they do not hold, or somebody else\'s minion
     $theirs = CustomMinion::factory()->create(['slot' => 1]);
 
     minionEditorFor($user)
-        ->call('removeMinion', 1)
+        ->call('removeMinion', 1, $theirs->version_hash)
         ->assertDispatched('sheet-error', message: 'That minion is not available.');
 
     expect(CustomMinion::find($theirs->id))->not->toBeNull();
+});
+
+test('removing a minion takes its slot out of the unsaved choice, so what is added there next is ticked', function () {
+    $user = User::factory()->create();
+    $minion = minionsFor($user, 1)->first();
+
+    $editor = minionEditorFor($user)
+        ->call('toggleTick', 'slot:1', false)
+        ->assertSet('pending', ['defaults_off' => [], 'slots_off' => [1]])
+        ->call('removeMinion', 1, $minion->version_hash)
+        ->assertSet('pending', ['defaults_off' => [], 'slots_off' => []]);
+
+    expect($editor->viewData('unsaved'))->toBeFalse();
+});
+
+test('removing a cell another tab has just replaced is refused, and the new minion stays', function () {
+    Event::fake([FighterMinionsChanged::class]);
+    $user = User::factory()->create();
+    $shown = minionsFor($user, 1)->first();
+    $shownHash = $shown->version_hash;
+    $editor = minionEditorFor($user)->call('select', 'slot:1');
+
+    // another tab replaces slot 1 with a different look
+    $shown->update(['version_hash' => 'f00dfeed1234']);
+
+    $editor->call('removeMinion', 1, $shownHash)
+        ->assertHasErrors('action')
+        ->assertDispatched('sheet-error', message: (new MinionPoolChangedException)->getMessage())
+        ->assertNotDispatched('sheet-toast');
+
+    expect($user->customMinions()->count())->toBe(1)
+        ->and(minionPoolColumn($user))->toBeNull();
+    Event::assertNotDispatched(FighterMinionsChanged::class);
+});
+
+test('removing a minion that is already gone says nothing was removed', function () {
+    $user = User::factory()->create();
+    $shown = minionsFor($user, 1)->first();
+    $editor = minionEditorFor($user)->call('select', 'slot:1');
+    $service = Mockery::mock(\App\Services\CustomCharacter\RemoveCustomMinion::class);
+    $service->shouldReceive('execute')->once()->andReturn(false);
+    app()->instance(\App\Services\CustomCharacter\RemoveCustomMinion::class, $service);
+
+    $editor->call('removeMinion', 1, $shown->version_hash)
+        ->assertHasNoErrors()
+        ->assertSet('selected', 'slot:1')
+        ->assertNotDispatched('sheet-toast');
 });
 
 test('a busy lock on remove shows the busy message and keeps the minion', function () {
@@ -491,7 +751,7 @@ test('a busy lock on remove shows the busy message and keeps the minion', functi
     $held->get();
 
     minionEditorFor($user)
-        ->call('removeMinion', 1)
+        ->call('removeMinion', 1, CustomMinion::where('user_id', $user->id)->value('version_hash'))
         ->assertHasErrors('action')
         ->assertDispatched('sheet-error');
 
@@ -503,13 +763,14 @@ test('what is pending a confirm cannot be set from the browser', function () {
         ->toThrow(CannotUpdateLockedPropertyException::class);
 });
 
-test('what is selected, replaced or lit cannot be set from the browser either', function (string $property, mixed $value) {
+test('what is selected, replaced, lit or chosen cannot be set from the browser either', function (string $property, mixed $value) {
     expect(fn () => minionEditorFor(User::factory()->create())->set($property, $value))
         ->toThrow(CannotUpdateLockedPropertyException::class);
 })->with([
     'selected' => ['selected', 'slot:1'],
     'replacing' => ['replacing', 1],
     'changed' => ['changed', 'slot:1'],
+    'pending' => ['pending', ['defaults_off' => ['demon-a'], 'slots_off' => []]],
 ]);
 
 test('a confirm token that is not a held slot is forgotten, and none of it reaches a script', function () {
@@ -524,29 +785,63 @@ test('changes to the pool are rate limited per minute, in words that fit the wai
     config(['token_slayer.custom_character.minion_changes_per_minute' => 1]);
     $user = User::factory()->create();
 
-    $editor = minionEditorFor($user)->call('toggleTick', 'default:demon-a', false)->assertHasNoErrors();
+    $editor = minionEditorFor($user)->call('toggleTick', 'default:demon-a', false)->call('save', [])->assertHasNoErrors();
 
     $editor->call('toggleTick', 'default:demon-a', true)
+        ->call('save', [])
         ->assertHasErrors('action')
         ->assertSee('Try again in 1 minute.')
         ->assertDontSee('1 minutes')
         ->assertDispatched('sheet-error');
 
-    expect($user->fresh()->minion_defaults_off)->toBe(['demon-a']);
+    expect(minionPoolColumn($user)['defaults_off'])->toBe(['demon-a']);
 });
 
-test('a tick costs a bounded number of queries however many cells there are', function () {
-    // The ceiling is the measured count (16) and guards against a query per cell (8 cells) creeping back in (#15).
+test('adding, discarding and removing are held to the same per-minute allowance', function (string $action) {
+    config(['token_slayer.custom_character.minion_changes_per_minute' => 1]);
     $user = User::factory()->create();
-    minionsFor($user, 3);
+    $minion = minionsFor($user, 1)->first();
+    $draft = stagedMinionFor($user, 1);
+    $key = CacheKeys::customMinionChange($user->id);
+    RateLimiter::clear($key);
+    RateLimiter::hit($key, 60);
+
     $editor = minionEditorFor($user);
+    match ($action) {
+        'confirm' => $editor->call('confirm', $draft->version_hash, null),
+        'discard' => $editor->call('discard', $draft->version_hash),
+        'remove' => $editor->call('removeMinion', 1, $minion->version_hash),
+    };
 
-    DB::enableQueryLog();
-    $editor->call('toggleTick', 'default:demon-a', false);
-    $queries = count(DB::getQueryLog());
-    DB::disableQueryLog();
+    $editor->assertHasErrors('action')->assertSee('Try again in 1 minute.');
+    expect($user->customMinions()->count())->toBe(1)
+        ->and($user->fresh()->customMinionDraft->version_hash)->toBe($draft->version_hash)
+        ->and(minionPoolColumn($user))->toBeNull();
+})->with(['confirm' => 'confirm', 'discard' => 'discard', 'remove' => 'remove']);
 
-    expect($queries)->toBeLessThanOrEqual(16);
+test('a tick and a Save cost the same number of queries however many minions there are', function () {
+    $measure = function (User $user): array {
+        $editor = minionEditorFor($user);
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $editor->call('toggleTick', 'default:demon-a', false);
+        $tick = count(DB::getQueryLog());
+        DB::flushQueryLog();
+        $editor->call('save', minionHashes($user));
+        $save = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return [$tick, $save];
+    };
+
+    $few = User::factory()->create();
+    minionsFor($few, 1);
+    $many = User::factory()->create();
+    minionsFor($many, 3);
+
+    // a query per cell (8 cells) creeping back in (#15) would make the second count larger
+    expect($measure($many))->toBe($measure($few));
 });
 
 test('re-renders on a refresh so an admin removal makes the minion go', function () {
@@ -571,10 +866,50 @@ test('opens on the cell that holds a preview', function () {
 
 test('nothing ticked says the swarm falls back to the defaults', function () {
     $user = User::factory()->create();
-    $user->forceFill(['minion_defaults_off' => ['demon-a', 'blood-monster-a', 'smw-goomba', 'smw-babybowser', 'smw-bowser']])->save();
+    $user->forceFill(['minion_pool' => ['rev' => 1, 'defaults_off' => ['demon-a', 'blood-monster-a', 'smw-goomba', 'smw-babybowser', 'smw-bowser'], 'slots_off' => []]])->save();
 
-    minionEditorFor($user->fresh())->assertSee('Nothing ticked: subagents summon the defaults.');
+    minionEditorFor($user->fresh())->assertSee('Nothing ticked: subagents summon the defaults.')->assertDontSee('Not saved yet.');
 });
+
+test('the nothing-ticked note follows the choice and says it is not saved', function () {
+    $user = User::factory()->create();
+    $editor = minionEditorFor($user)->assertDontSee('Nothing ticked');
+
+    foreach (config('token_slayer.custom_character.default_minions') as $key) {
+        $editor->call('toggleTick', "default:{$key}", false);
+    }
+
+    $editor->assertSee('Nothing ticked: subagents summon the defaults.')->assertSee('Not saved yet.');
+    expect(minionPoolColumn($user))->toBeNull();
+});
+
+test('the stage is a value object the view only reads', function () {
+    $user = User::factory()->create();
+    minionsFor($user, 1);
+
+    $editor = minionEditorFor($user)->call('select', 'slot:1');
+    $stage = $editor->viewData('stage');
+
+    expect($stage)->toBeInstanceOf(MinionStage::class)
+        ->and($stage->mode)->toBe(MinionStageMode::Minion)
+        ->and($stage->slot)->toBe(1);
+    $editor->call('select', 'slot:2');
+    expect($editor->viewData('stage')->mode)->toBe(MinionStageMode::Empty);
+    $editor->call('select', 'default:smw-goomba');
+    expect($editor->viewData('stage')->mode)->toBe(MinionStageMode::Default);
+});
+
+test('the stage carries the move hotbar the stage script fills in', function () {
+    minionEditorFor(User::factory()->create())
+        ->assertSeeHtml('class="ms-moves"')
+        ->assertSeeHtml('role="toolbar"')
+        ->assertSeeHtml('x-for="m in moves"')
+        ->assertSeeHtml('x-on:click="play(m.id)"')
+        ->assertSeeHtml("x-bind:aria-pressed=\"move === m.id ? 'true' : 'false'\"")
+        ->assertSee('Demon moves');
+});
+
+
 
 test('confirming a preview another tab re-aimed at a different slot is refused, and nothing is replaced', function () {
     Event::fake([FighterMinionsChanged::class]);

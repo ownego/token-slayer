@@ -129,8 +129,8 @@ class FighterSheet extends Component
     public ?array $customDraft = null;
 
     /**
-     * The player's minion pool (`User::minionPoolState()`): the five default looks they have not unticked
-     * and their own minions, handed to the Profile mini stage when it is built. The stage keeps itself
+     * The player's minion pool (`User::minionPoolState()`): the default looks and their own minions that they have
+     * ticked into the pool and saved (all of them until they save a selection), handed to the Profile mini stage when it is built. The stage keeps itself
      * current after that, from the editor's `custom-minions-changed` and the `FighterMinionsChanged`
      * broadcast, so nothing here listens for them: a re-read on every change would re-render the sheet
      * for a stage that has already redrawn itself.

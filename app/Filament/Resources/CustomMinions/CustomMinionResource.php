@@ -7,6 +7,7 @@ use App\Exceptions\CustomCharacterBusyException;
 use App\Filament\Resources\CustomMinions\Pages\ListCustomMinions;
 use App\Models\CustomMinion;
 use App\Services\CustomCharacter\CustomMinionStore;
+use App\Services\CustomCharacter\MinionPoolSelection;
 use App\Services\CustomCharacter\RemoveCustomMinion;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -24,7 +25,7 @@ use UnitEnum;
 /**
  * The players' custom minions, for the people who may take one down. There is no
  * create or edit surface (players build their own in the fighter sheet): the
- * list shows who has what (slot, name, whether it is ticked into the pool), and
+ * list shows who has what (slot, name, whether the owner has it ticked into their pool), and
  * the only action is removing a minion, which drops it from every client's field
  * live. Viewing needs `ViewAny:CustomMinion` and removing needs `Delete:CustomMinion`.
  */
@@ -63,9 +64,10 @@ class CustomMinionResource extends Resource
 
     /**
      * Builds the table: who owns each minion, its slot and name, how it looks,
-     * whether it is ticked into the pool, where it came from, and the row action
-     * that removes it. The name lives in the row's JSON data, so it is shown but
-     * neither sortable nor searchable.
+     * whether its owner has it ticked into their pool (read off the owner's `minion_pool`,
+     * the owner being loaded with the rows), where it came from, and the row action that
+     * removes it. The name lives in the row's JSON data, so it is shown but neither sortable
+     * nor searchable, and neither is the tick, which is not a column of this table.
      *
      * @param  Table  $table  the table being configured
      * @return Table
@@ -86,7 +88,10 @@ class CustomMinionResource extends Resource
                     ->label('Minion')
                     ->state(fn (CustomMinion $record): string => url(app(CustomMinionStore::class)->stripUrls($record->user_id, $record->version_hash)['idle']))
                     ->height(40),
-                IconColumn::make('enabled')->label('Ticked')->boolean()->sortable(),
+                IconColumn::make('ticked')
+                    ->label('Ticked')
+                    ->boolean()
+                    ->state(fn (CustomMinion $record): bool => MinionPoolSelection::of($record->user)->slotTicked($record->slot)),
                 TextColumn::make('source')
                     ->label('Source')
                     ->badge()

@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when a custom fighter's strips cannot be written to or moved on the disk.
  */
-class CustomCharacterStorageException extends Exception
+class CustomCharacterStorageException extends PlayerFacingException
 {
     /**
      * The message the player sees.

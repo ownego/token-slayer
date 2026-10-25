@@ -7,8 +7,8 @@ use App\Models\User;
 /**
  * The looks a player's subagent summons draw from, worked out in one place and sent
  * to every client as `minion_pool`: the default looks still ticked plus the ticked
- * custom minions. Only what the player un-ticked is stored (`users.minion_defaults_off`
- * and `enabled` on a minion), so a player who never touched a tick gets the five
+ * custom minions. What the player left out is stored once, in `users.minion_pool`
+ * (see MinionPoolSelection), so a player who never touched a tick gets the five
  * defaults and every minion they add. The pool is never empty: with nothing ticked
  * it is the five defaults.
  */
@@ -22,12 +22,12 @@ class MinionPool
      */
     public function get(User $user): array
     {
-        $allDefaults = array_values(config('token_slayer.custom_character.default_minions'));
-        $off = $user->minion_defaults_off ?? [];
+        $selection = MinionPoolSelection::of($user);
+        $allDefaults = MinionPoolSelection::defaultKeys();
 
-        $defaults = array_values(array_diff($allDefaults, $off));
+        $defaults = array_values(array_diff($allDefaults, $selection->defaultsOff));
         $custom = $user->customMinions
-            ->filter(fn ($minion): bool => $minion->enabled)
+            ->filter(fn ($minion): bool => $selection->slotTicked($minion->slot))
             ->map(fn ($minion): array => $minion->broadcastState())
             ->values()
             ->all();
@@ -37,7 +37,7 @@ class MinionPool
         }
 
         return [
-            'rev' => (int) $user->minion_pool_rev,
+            'rev' => $selection->rev,
             'defaults' => $defaults,
             'custom' => $custom,
         ];

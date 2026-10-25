@@ -9,12 +9,13 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Broadcasts a user's whole minion pool after it changes (a look ticked or unticked,
- * a minion added, replaced or removed, or one taken down by an admin), so every client
+ * Broadcasts a user's whole minion pool after it changes (a saved selection of
+ * ticks, a minion added, replaced or removed, or one taken down by an admin), so every client
  * already watching the battlefield swaps the minions that fighter's subagents summon,
  * instead of waiting for the fighter's next FighterJoined/FighterCharging.
  *
- * The pool carries a `rev` that grows with every change. A FighterCharging built from
+ * The pool carries a `rev` that grows with every change (one per saved selection, never one per
+ * tick: ticks are only a choice until the player saves). A FighterCharging built from
  * the pool before this change can still arrive after it, so a client keeps whichever
  * pool has the higher `rev`.
  */

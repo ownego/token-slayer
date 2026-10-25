@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Removes one minion from a player's set and deletes its files, and tells the
  * battlefield, which swaps the player's minions live. The pool's revision goes up in
- * the same transaction as the delete, so a client can tell this pool from the one
+ * the same transaction as the delete (and the slot stops being left out of the pool, so
+ * a minion added there later is ticked), so a client can tell this pool from the one
  * before. The caller decides who may do this (the owner, or an admin holding
  * `Delete:CustomMinion`: see CustomMinionPolicy). It runs under the owner's lock, so
  * it cannot race an add, and the files go only after the database change is in.
@@ -22,12 +23,14 @@ class RemoveCustomMinion
      * @param  CustomMinionStore  $store  owns the minions' files
      * @param  CustomCharacterLock  $lock  keeps one player's changes from interleaving
      * @param  AnnounceCustomMinions  $announce  tells the battlefield
+     * @param  MinionPoolWriter  $pool  writes the pool's selection and moves its revision
      * @return void
      */
     public function __construct(
         private readonly CustomMinionStore $store,
         private readonly CustomCharacterLock $lock,
         private readonly AnnounceCustomMinions $announce,
+        private readonly MinionPoolWriter $pool,
     ) {}
 
     /**
@@ -35,11 +38,11 @@ class RemoveCustomMinion
      * got there first) is left alone: no revision, no announcement.
      *
      * @param  CustomMinion  $minion  the minion to remove
-     * @return void
+     * @return bool whether this call removed it
      *
      * @throws CustomCharacterBusyException when another change of this player's is still running
      */
-    public function execute(CustomMinion $minion): void
+    public function execute(CustomMinion $minion): bool
     {
         $owner = $minion->user;
 
@@ -52,7 +55,7 @@ class RemoveCustomMinion
 
             DB::transaction(function () use ($current, $owner): void {
                 $current->delete();
-                $owner->increment('minion_pool_rev');
+                $this->pool->write($owner->id, fn (MinionPoolSelection $selection): MinionPoolSelection => $selection->withSlot($current->slot, true));
             });
 
             $this->store->forgetVersion($owner->id, $current->version_hash);
@@ -63,5 +66,7 @@ class RemoveCustomMinion
         if ($removed) {
             $this->announce->execute($owner);
         }
+
+        return $removed;
     }
 }
