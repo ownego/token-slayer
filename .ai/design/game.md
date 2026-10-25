@@ -31,7 +31,7 @@ Consequences that shape every decision:
 | Progress (days) | boss after boss, kills accumulate, ranks settle | boss number rotates through monsters; ThaNode comes after every seventh generic boss and gains an infinity stone at 09:30, 14:00 and 17:50 (Asia/Ho_Chi_Minh), up to six; per-user kill count and per-day best combo |
 | Social (always) | being seen -> seeing others -> shared moments | join ceremony (the Necromancer summons a new fighter), the herald strip (kills and spawns, 4.5 s), the kill ceremony (slow motion, the killer's card, countdown), a Slack post on a kill, rank overtakes |
 
-`(?)` There is no spending, unlocking or crafting loop: all 20 roster fighters can be equipped from the first day. Whether progress should unlock anything is open.
+`(?)` There is no spending, unlocking or crafting loop: all 24 roster fighters (the 20 originals and 4 heroes: Iron Man, Captain America, Batman, Superman) can be equipped from the first day, and players who never chose are assigned from all 24. Whether progress should unlock anything is open.
 
 ## 4. Systems map
 
@@ -39,7 +39,7 @@ Consequences that shape every decision:
 |---|---|---|---|
 | Event ledger | every hook event appended; damage and totals derive from it | all | append-only; aggregates derive from events |
 | Boss arena | the current boss, HP (1,000,000 base), overflow to the next boss, kill chain, rotation, ThaNode and stones | moment, progress | damage lands on the boss only; overflow rolls over |
-| Fighter | one per user on the field, assigned by user and boss, or the equipped one; charge ring, bubble, model flair ring | moment, session, social | keyed by user id; sprites are 100 px frames, never upscaled |
+| Fighter | one per user on the field, assigned by user and boss, or the equipped one; charge ring, bubble, model flair ring. Heroes are fighters with their own atlas, flight drawn into the pixels and their own moves (a projectile normally, a big move on about one hit in five) | moment, session, social | keyed by user id; sprites are 100 px frames, never upscaled; a hero's move only changes the visuals, its hit lands once |
 | Roster and fighter sheet | the 20 fighters, filters by attack style, a Character tab with Equip and undo, a Profile tab with damage, tokens by model, quota gauges, alerts, the combo buddy, a mini stage | session, social | the sheet is a modal over the live battlefield |
 | Custom fighter | a player's own fighter built from an uploaded pose sheet, previewed as a draft slot and managed in a stage drawer | social | strips served per version; every client shows the same fighter; cosmetic only; admin Rename and Remove follow policy |
 | Minions and companions | subagent swarm, bats, the Necromancer | moment, social | cosmetic only, never feed damage or HP |
@@ -68,6 +68,9 @@ Consequences that shape every decision:
 | Combo window | 60 s | `sheet/clawd-buddy.js` |
 | Herald duration | 4.5 s | HUD |
 | Fighter size by headcount | 45/36/27 px landscape, 54/45 px portrait | `battlefield/layout.js` |
+| Hero big-move share | 20% of a hero's hits, split evenly between its big moves | `battlefield/config/heroes.js` |
+| Hero effect cap | 120 live effect objects; past it a big move plays its main contact only | `battlefield/config/heroes.js` |
+| Hero main contact, latest | 2100 ms after the hit (the bat swarm) | `battlefield/config/heroes.js` |
 
 A new knob has a name, a default, a reason for the default, and a place in this table.
 
