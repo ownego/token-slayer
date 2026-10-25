@@ -89,6 +89,7 @@ class FleetQuotaOverview extends Widget
             'contributors' => $contributors->get($filters, $totalAcrossAccounts, $showUntracked),
             'accountTotals' => $accountTotals,
             'totalUsage' => array_sum($accountTotals),
+            'usageFilters' => $filters,
         ];
     }
 }

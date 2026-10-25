@@ -3,14 +3,17 @@
     ['provider', 'label', 'email', 'plan', 'util_5h', 'util_7d', 'projected_5h', 'projected_7d',
      'reset_5h_at', 'reset_7d_at', 'near_cap', 'model_limits', 'codex_windows'].
     Optionally $members = a list of the account's contributors, each
-    ['handle', 'avatar_url', 'status', 'tokens']; omitted (empty) on the
+    ['handle', 'avatar_url', 'status', 'tokens', 'incomplete_label']; omitted (empty) on the
     single-account gauge, populated on the Fleet Quota dashboard card.
+    Optionally $usageFilters = the dashboard's UsageFilters, which formats
+    amounts as tokens or dollars; plain token counts when absent.
     Layout/colour are inline so the card renders identically inside the
     Filament panel regardless of which utility classes the panel ships.
 --}}
 @php
     $members = $members ?? [];
     $accountTotal = $accountTotal ?? null;
+    $formatAmount = fn (int $amount): string => isset($usageFilters) ? $usageFilters->formatAmount($amount) : number_format($amount);
     $nearCap = $g['near_cap'];
     $cardStyle = $nearCap
         ? 'border:1px solid rgba(220,38,38,.55); background:rgba(220,38,38,.06);'
@@ -51,7 +54,7 @@
 
     @if ($accountTotal !== null)
         <div style="margin-top:.3rem; font-size:.72rem; opacity:.7;">
-            usage <span style="font-weight:600; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:1;">{{ number_format($accountTotal) }}</span>
+            usage <span style="font-weight:600; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:1;">{{ $formatAmount($accountTotal) }}</span>
         </div>
     @endif
 
@@ -103,6 +106,10 @@
     @endif
 
     @if (! empty($members))
+        {{-- Each status dot is a tiny glyph, so it gets a padded hit box (pulled
+             back with a negative margin to keep the row layout) and Filament's
+             tooltip, which shows on hover instead of after a still second. --}}
+        @php($dotStyle = 'flex:none; display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin:0 -5px; font-size:.55rem; cursor:help;')
         <div style="margin-top:.75rem; border-top:1px solid rgba(120,120,140,.16); padding-top:.55rem; display:flex; flex-direction:column; gap:.4rem;">
             <div style="font-size:.62rem; text-transform:uppercase; letter-spacing:.05em; opacity:.55;">Members</div>
             @foreach ($members as $m)
@@ -115,12 +122,15 @@
                         @endif
                         <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.74rem;">{{ $m['handle'] }}</span>
                         @if ($m['status'] === 'pending')
-                            <span title="Pending" style="flex:none; font-size:.55rem; color:#3b82f6;">●</span>
+                            <span x-tooltip="{ content: @js('Pending'), theme: $store.theme }" aria-label="Pending" style="{{ $dotStyle }} color:#3b82f6;">●</span>
                         @elseif ($m['status'] === 'untracked')
-                            <span title="Untracked" style="flex:none; font-size:.55rem; color:#ef4444;">●</span>
+                            <span x-tooltip="{ content: @js('Untracked'), theme: $store.theme }" aria-label="Untracked" style="{{ $dotStyle }} color:#ef4444;">●</span>
+                        @endif
+                        @if ($m['incomplete_label'] ?? null)
+                            <span x-tooltip="{ content: @js($m['incomplete_label']), theme: $store.theme }" aria-label="{{ $m['incomplete_label'] }}" style="{{ $dotStyle }} color:#f59e0b;">●</span>
                         @endif
                     </span>
-                    <span style="flex:none; font-size:.68rem; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:.8;">{{ number_format($m['tokens']) }}</span>
+                    <span style="flex:none; font-size:.68rem; font-variant-numeric:tabular-nums; font-family:ui-monospace,monospace; opacity:.8;">{{ $formatAmount($m['tokens']) }}</span>
                 </div>
             @endforeach
         </div>

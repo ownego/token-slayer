@@ -2,6 +2,7 @@
 
 namespace App\Services\Analytics;
 
+use App\Enums\IncompleteUsageReason;
 use App\Enums\MembershipStatus;
 use App\Models\Event;
 use Illuminate\Database\Query\JoinClause;
@@ -39,10 +40,13 @@ final class AccountContributorsQuery
      * exceed the account's own usage; it answers "how much did this person
      * burn", not "how much landed on this account".
      *
+     * Each entry also carries `incomplete_label`: the tooltip for the card's
+     * incomplete-usage dot while the member's counter is above zero, else null.
+     *
      * @param  ?UsageFilters  $filters  the dashboard time filter, or null for all-time
      * @param  bool  $totalAcrossAccounts  show each user's whole-footprint total instead of the per-account amount
      * @param  bool  $includeUntracked  whether to also include Untracked contributors (default: hidden)
-     * @return array<int, array<int, array{user_id:int, handle:string, avatar_url:?string, status:string, tokens:int}>>
+     * @return array<int, array<int, array{user_id:int, handle:string, avatar_url:?string, status:string, tokens:int, incomplete_label:?string}>>
      */
     public function get(?UsageFilters $filters = null, bool $totalAcrossAccounts = false, bool $includeUntracked = false): array
     {
@@ -56,9 +60,9 @@ final class AccountContributorsQuery
             })
             ->whereNotNull('events.account_id')
             ->when($filters !== null, fn ($q) => $q->whereBetween('events.created_at', [$filters->from, $filters->to]))
-            ->groupBy('events.account_id', 'users.id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url', 'account_user.status')
+            ->groupBy('events.account_id', 'users.id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url', 'users.incomplete_events', 'users.incomplete_reason', 'account_user.status')
             ->selectRaw('events.account_id as account_id')
-            ->selectRaw('users.id as user_id, users.slack_handle, users.display_name, users.name, users.avatar_url')
+            ->selectRaw('users.id as user_id, users.slack_handle, users.display_name, users.name, users.avatar_url, users.incomplete_events, users.incomplete_reason')
             ->selectRaw('account_user.status as status')
             ->selectRaw("SUM({$tokenExpr}) as tokens")
             ->get();
@@ -66,7 +70,7 @@ final class AccountContributorsQuery
         $memberRows = DB::table('account_user')
             ->join('users', 'users.id', '=', 'account_user.user_id')
             ->whereIn('account_user.status', [MembershipStatus::Tracked->value, MembershipStatus::Pending->value])
-            ->select('account_user.account_id', 'account_user.status', 'users.id as user_id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url')
+            ->select('account_user.account_id', 'account_user.status', 'users.id as user_id', 'users.slack_handle', 'users.display_name', 'users.name', 'users.avatar_url', 'users.incomplete_events', 'users.incomplete_reason')
             ->get();
 
         $userTotals = $totalAcrossAccounts ? $this->userTotals($filters) : [];
@@ -86,6 +90,7 @@ final class AccountContributorsQuery
                 'handle' => $this->displayHandle($row, $userId),
                 'avatar_url' => $row->avatar_url,
                 'status' => $row->status,
+                'incomplete_label' => $this->incompleteLabel($row),
                 '_attributed' => 0,
             ];
         }
@@ -107,6 +112,7 @@ final class AccountContributorsQuery
                 'handle' => $this->displayHandle($row, $userId),
                 'avatar_url' => $row->avatar_url,
                 'status' => $row->status ?? MembershipStatus::Untracked->value,
+                'incomplete_label' => $this->incompleteLabel($row),
                 '_attributed' => (int) $row->tokens,
             ];
         }
@@ -121,6 +127,7 @@ final class AccountContributorsQuery
                     'avatar_url' => $member['avatar_url'],
                     'status' => $member['status'],
                     'tokens' => $totalAcrossAccounts ? ($userTotals[$member['user_id']] ?? 0) : $member['_attributed'],
+                    'incomplete_label' => $member['incomplete_label'],
                 ];
             }, array_values($members));
 
@@ -137,6 +144,22 @@ final class AccountContributorsQuery
         }
 
         return $result;
+    }
+
+    /**
+     * The tooltip for a member's incomplete-usage dot, or null while their
+     * counter is zero (a complete turn has reset it).
+     *
+     * @param  object  $row  a row carrying incomplete_events/incomplete_reason columns
+     * @return ?string
+     */
+    private function incompleteLabel(object $row): ?string
+    {
+        if ((int) $row->incomplete_events === 0) {
+            return null;
+        }
+
+        return IncompleteUsageReason::tryFrom((string) $row->incomplete_reason)?->getLabel();
     }
 
     /**

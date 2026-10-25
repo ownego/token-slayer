@@ -10,9 +10,9 @@ Related: `accounts.md` (who the usage is attributed to), `broadcasting.md` (ever
    1. `AccountResolver::resolve(account_org_id, account_email, provider)` → `?int $accountId` (see `accounts.md`).
    2. `hook_event_name` → kebab-case (`PreToolUse` → `pre-tool-use`).
    3. `resolveStopUsage()` → `TurnUsage` (Stop/SubagentStop only); `ModelUsageParser::primaryModel()` picks `events.model`.
-   4. Stamps `users.last_event_at`, `client_version`, `hook_version`.
+   4. Stamps `users.last_event_at`, `client_version`, `hook_version`, plus the incomplete-usage counter (`IncompleteUsageFlag`, see *Event cost*) in the same save.
    5. Per-type branch (table below) — charging cache + broadcasts, subagent presence.
-   6. Stop/SubagentStop with `tokens > 0`: `Event::create` (append-only), `AccountMembershipRecorder::record()` (best-effort), `DamageService::apply()`, then `BossKilled`×n → `BossSpawned` → `HitDealt` (+ flair from `ModelFlairResolver`).
+   6. Stop/SubagentStop with `tokens > 0`: `EventCostResolver` prices the turn (never fails ingest), `Event::create` (append-only, with `cost_micro_usd`), `MissingModelRecorder::record()` after the insert when the model has no price, `AccountMembershipRecorder::record()` (best-effort), `DamageService::apply()`, then `BossKilled`×n → `BossSpawned` → `HitDealt` (+ flair from `ModelFlairResolver`).
    7. Responds `201` with the **update signal**: `hook_version`, `install_sha256`, `install_ps1_sha256`, `wheel_sha256`, `paused`. The hook saves that body to `~/.config/{namespace}/update-state`; on `SessionStart` it runs `token-slayer update --if-newer` (skipped when `SLAYER_NO_AUTO_UPDATE` is set). No separate update endpoint exists.
 4. Every broadcast goes through `dispatchSafely()` → `rescue(fn () => event($e))`: a downed Reverb must never 500 the hook.
 
@@ -103,8 +103,24 @@ Very short turns can leave only placeholder usage in the transcript. The hook re
 | `FighterPositionCache` | last dragged position (`FighterMoved`) — despite the name, DB-backed (`fighter_positions` table) | written by `Livewire\Battlefield::move` |
 | `ModelFlairResolver` | enabled flair models from `ai_models` | 60 s |
 | `AccountMembershipRecorder` | known member ids per account | 1 h; flushed by `Account` model events |
+| `ModelPriceLookup` | each model's current price, or its absence | 1 h on `CacheKeys::modelPrice()`; no invalidation (accepted lag) |
 
 All aggregates derive from `events`. There are no mutable usage counters. `GET /api/state` (unauthenticated) returns the alive boss, the fighters active within `idle_minutes`, and the last 10 events.
+
+## Event cost (`events.cost_micro_usd`, `Services/Pricing/`)
+
+Each complete turn stores its list-price cost in **micro-dollars** (tokens x USD per MTok). `null` means the turn cannot be priced; it is never estimated.
+
+- **Priced providers:** `claude-code` and `codex` only (`PricedUsage::PRICED_PROVIDERS`). Others send output tokens only.
+- **Complete** (`PricedUsage::hasFullData()`): a model plus some input/cache tokens. Hooks below v6 (first version sending input/cache, Sep 2026) and modified clients send neither.
+- **Formula** (`EventCostCalculator`, pure): Claude = input + output + cache read + cache write at the **1h** rate on the main thread, the **5m** rate in a subagent (session id `parent:agentId`). Codex = `(input - cache_read)` x input + `cache_read` x cached + output (Codex input already contains cached input; no cache writes).
+- **Prices:** `model_prices`, effective-dated (a model gets a new row only when its price changes). A stored cost keeps the price of its day; nothing re-prices. `ModelPrice::candidateIds()` also tries the id without a `-YYYYMMDD` suffix.
+- **Lookup:** `ModelPriceLookup::current()` caches each model's price, or its absence, for 1h (`CacheKeys::modelPrice()`, TTL only); `effectiveOn()` (uncached) gives the row in force on an event's UTC day, else the earliest row.
+- **Feed:** `model-prices:sync` (daily 06:00 Asia/Ho_Chi_Minh, `withoutOverlapping`) → `ModelPriceSyncer`: seeds `database/data/model_price_history.json` (dated points before the first sync), fetches LiteLLM through `LiteLlmPriceFeed` (fixed URL in config, no redirects, timeouts, 10 MB and depth caps, ETag), `PriceFeedParser` reads only our models and five numeric fields (finite, 0 to the column max; a bad entry is skipped and keeps its old price), then `MissingModelCostFiller`. Feed state (etag, sha256) is in `price_feed_states`.
+- **Missing models:** a complete turn whose model has no price is stored unpriced and its model upserted into `missing_models` after the insert. `model-prices:sync --if-missing` runs hourly but only fetches while a row was first seen within `hourly_window_hours` (48); older rows wait for the daily run. `MissingModelCostFiller` is the only code that prices stored events: it fills a now-priced model's events at each day's price and deletes the row only if nothing touched it after the fill began.
+- **Backfill:** `event-costs:backfill {--dry-run} {--force}` (temporary) queues every model of unpriced events and runs the sync.
+- **Incomplete-usage counter:** `IncompleteUsageFlag` bumps `users.incomplete_events` (+ `incomplete_reason`: `old_hook` below v6, `modified_hook` otherwise) on each incomplete company turn (`account_id` set, priced provider) and resets it on a complete one; personal-account turns never touch it. Shown as a dot on the account card (`accounts.md`).
+- **Dashboard:** `UsageFilters` token modes are `output`, `total` (Codex cache reads not added twice) and `cost` (`COALESCE(cost_micro_usd, 0)`, shown in dollars via `formatAmount()`/`displayAmount()`). The *Model prices* page (`View:ModelPrices`) lists prices in use and missing models, read-only.
 
 ## Install scripts
 

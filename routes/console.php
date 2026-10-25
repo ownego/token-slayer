@@ -53,3 +53,14 @@ Schedule::command('accounts:anchor-sessions')
 Schedule::command('accounts:sync-profiles')
     ->daily()
     ->withoutOverlapping();
+
+// Model list prices for event costs. Daily always; hourly only while a model first seen in the last
+// token_slayer.model_prices.hourly_window_hours has no price, so a new model is priced within the hour.
+Schedule::command('model-prices:sync')
+    ->dailyAt('06:00')
+    ->timezone('Asia/Ho_Chi_Minh')
+    ->withoutOverlapping();
+
+Schedule::command('model-prices:sync --if-missing')
+    ->hourly()
+    ->withoutOverlapping();

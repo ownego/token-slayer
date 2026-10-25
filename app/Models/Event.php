@@ -26,6 +26,7 @@ class Event extends Model
             'input_tokens' => 'integer',
             'cache_creation_input_tokens' => 'integer',
             'cache_read_input_tokens' => 'integer',
+            'cost_micro_usd' => 'integer',
         ];
     }
 

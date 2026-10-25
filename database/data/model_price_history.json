@@ -1,0 +1,22 @@
+[
+    {
+        "model": "claude-sonnet-5-5",
+        "provider": "anthropic",
+        "effective_from": "2026-09-01",
+        "input": 2,
+        "output": 10,
+        "cache_read": 0.2,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 4
+    },
+    {
+        "model": "claude-sonnet-5-5",
+        "provider": "anthropic",
+        "effective_from": "2026-10-07",
+        "input": 2,
+        "output": 10,
+        "cache_read": 0.1,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 4
+    }
+]

@@ -63,14 +63,15 @@ it('keeps the token mode select showing Output tokens against a stale pre-featur
     expect($html)->toContain('token_mode&quot;:&quot;output&quot;');
 });
 
-it('offers a Quota tokens option alongside Output and Total, describing what it excludes', function () {
+it('offers Cost (USD) alongside Output and Total, and no longer Quota', function () {
     $admin = User::factory()->admin()->create();
 
     $this->actingAs($admin)
         ->get(Dashboard::getUrl(panel: 'admin'))
         ->assertOk()
-        ->assertSeeInOrder(['Output tokens', 'Total tokens', 'Quota tokens'])
-        ->assertSee('real rate-limit cost', escape: false);
+        ->assertSeeInOrder(['Output tokens', 'Total tokens', 'Cost (USD)'])
+        ->assertSee('events from old or modified hooks have no cost', escape: false)
+        ->assertDontSee('Quota tokens');
 });
 
 it('nudges an admin on a hook too old to self-update, in the topbar of every panel page', function () {

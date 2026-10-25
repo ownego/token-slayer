@@ -88,8 +88,11 @@ class TokensByModelChart extends ChartWidget
     {
         $filters = UsageFilters::fromPageFilters($this->filters ?? []);
         $unknown = app(TokensByModelQuery::class)->unknownShare($filters);
+        $caveat = $filters->isCostMode()
+            ? 'list-price USD; events without full usage data count as zero'
+            : 'raw output tokens, not cost- or quota-equivalent across models';
 
-        return 'raw output tokens, not cost- or quota-equivalent across models'
+        return $caveat
             .($unknown > 0 ? ' · '.rtrim(rtrim(number_format($unknown, 1), '0'), '.').'% unknown' : '');
     }
 
@@ -117,9 +120,11 @@ class TokensByModelChart extends ChartWidget
      */
     public function getContributorLines(): array
     {
+        $filters = UsageFilters::fromPageFilters($this->filters ?? []);
+
         return array_map(
             fn (array $row): array => array_map(
-                fn (array $user): string => $user['handle'].' — '.number_format($user['tokens']),
+                fn (array $user): string => $user['handle'].' — '.$filters->formatAmount($user['tokens']),
                 $row['top_users'],
             ),
             $this->contributors(),
@@ -138,17 +143,20 @@ class TokensByModelChart extends ChartWidget
     }
 
     /**
+     * One bar per model, valued in tokens or in dollars by the token mode.
+     *
      * @return array<string, mixed>
      */
     protected function getData(): array
     {
+        $filters = UsageFilters::fromPageFilters($this->filters ?? []);
         $rows = $this->contributors();
         $colors = array_map(fn (array $row): string => self::colorFor($row['family']), $rows);
 
         return [
             'datasets' => [[
-                'label' => 'Tokens',
-                'data' => array_column($rows, 'tokens'),
+                'label' => $filters->amountLabel(),
+                'data' => array_map(fn (array $row): int|float => $filters->displayAmount($row['tokens']), $rows),
                 'backgroundColor' => $colors,
                 'borderColor' => $colors,
             ]],
@@ -196,22 +204,24 @@ class TokensByModelChart extends ChartWidget
     private function buildOptions(): RawJs
     {
         $lines = Js::from($this->getContributorLines());
+        $isCostMode = Js::from(UsageFilters::fromPageFilters($this->filters ?? [])->isCostMode());
 
         return RawJs::make(<<<JS
             (() => {
                 const contributors = {$lines};
+                const isCostMode = {$isCostMode};
                 return {
                     plugins: {
                         legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: (item) => item.formattedValue + ' tokens',
+                                label: (item) => isCostMode ? '$' + item.parsed.y.toFixed(2) : item.formattedValue + ' tokens',
                                 afterBody: (items) => contributors[items[0].dataIndex] ?? [],
                             },
                         },
                     },
                     scales: {
-                        y: { beginAtZero: true },
+                        y: { beginAtZero: true, ticks: isCostMode ? { callback: (value) => '$' + value } : {} },
                     },
                 };
             })()

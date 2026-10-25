@@ -87,6 +87,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Model prices
+    |--------------------------------------------------------------------------
+    |
+    | List prices used to cost each usage event, pulled from the LiteLLM price
+    | file. The URL is fixed here on purpose (no env override): the feed is an
+    | outside source, so where it comes from is a code change, not a setting.
+    |
+    */
+
+    'model_prices' => [
+        // The one file prices are read from.
+        'feed_url' => 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json',
+        // Whole-request limit for one fetch; the file is about 3 MB.
+        'timeout_seconds' => 20,
+        // Limit for opening the connection.
+        'connect_timeout_seconds' => 5,
+        // A response larger than this is refused without parsing (10 MB, about 3x the real file).
+        'max_bytes' => 10 * 1024 * 1024,
+        // Deepest JSON nesting accepted; a real entry nests about four levels.
+        'json_max_depth' => 32,
+        // How long ingest reuses a model's price (or its absence) before reading the table again.
+        'cache_ttl_seconds' => 3600,
+        // Hourly retries only chase models first seen this recently; LiteLLM listed a new model about a day
+        // after our first use of it (measured on opus-5-5). Older missing models are retried by the daily sync.
+        'hourly_window_hours' => 48,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Usage snapshot retention
     |--------------------------------------------------------------------------
     */

@@ -18,9 +18,14 @@ use App\Services\Accounts\AccountMembershipRecorder;
 use App\Services\Battlefield\ModelFlairResolver;
 use App\Services\Client\ReleaseArtifacts;
 use App\Services\DamageService;
+use App\Services\Events\IncompleteUsageFlag;
 use App\Services\Events\ModelUsageParser;
 use App\Services\Events\TurnUsage;
 use App\Services\FighterChargingCache;
+use App\Services\Pricing\EventCost;
+use App\Services\Pricing\EventCostResolver;
+use App\Services\Pricing\MissingModelRecorder;
+use App\Services\Pricing\PricedUsage;
 use App\Services\SubagentCountCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,6 +63,9 @@ class EventController extends Controller
         private AccountResolver $accounts,
         private AccountMembershipRecorder $membership,
         private SubagentCountCache $subagentCounts,
+        private EventCostResolver $costs,
+        private MissingModelRecorder $missingModels,
+        private IncompleteUsageFlag $incompleteUsage,
     ) {}
 
     public function store(Request $request): JsonResponse
@@ -79,11 +87,16 @@ class EventController extends Controller
         $usage = $this->resolveStopUsage($eventType, $payload);
         $tokens = $usage?->tokens ?? 0;
         $model = $usage !== null ? $this->models->primaryModel($usage->modelTokens) : null;
+        $pricedUsage = $usage !== null ? PricedUsage::fromTurn($provider, $model, $usage, $payload['session_id'] ?? null) : null;
+
+        $flaggedUsage = $tokens > 0 ? $pricedUsage : null;
+        $incompleteUsageAttributes = $this->incompleteUsage->attributesFor($user, $flaggedUsage, $accountId, $hookVersion);
 
         $user->forceFill([
             'last_event_at' => now(),
             'client_version' => $clientVersion ?? $user->client_version,
             'hook_version' => $hookVersion ?? $user->hook_version,
+            ...$incompleteUsageAttributes,
         ])->save();
 
         if ($eventType === 'user-prompt-submit' || $eventType === 'pre-invocation') {
@@ -190,6 +203,7 @@ class EventController extends Controller
 
             if ($tokens > 0) {
                 $boss = $this->aliveBoss();
+                $cost = $this->resolveCost($pricedUsage);
 
                 Event::create([
                     'user_id' => $user->id,
@@ -200,12 +214,17 @@ class EventController extends Controller
                     'input_tokens' => $usage?->inputTokens ?? 0,
                     'cache_creation_input_tokens' => $usage?->cacheCreationInputTokens ?? 0,
                     'cache_read_input_tokens' => $usage?->cacheReadInputTokens ?? 0,
+                    'cost_micro_usd' => $cost->microUsd,
                     'session_id' => $payload['session_id'] ?? null,
                     'account_id' => $accountId,
                     'account_email' => $accountEmail,
                     'account_source' => $accountSource,
                     'account_org_id' => $accountOrgId,
                 ]);
+
+                if ($cost->missingModel !== null) {
+                    rescue(fn () => $this->missingModels->record($cost->missingModel), report: true);
+                }
 
                 try {
                     if ($accountId !== null) {
@@ -265,6 +284,26 @@ class EventController extends Controller
             'wheel_sha256' => $this->artifacts->wheelDigest(),
             'paused' => config('token_slayer.updates_paused'),
         ], fn (mixed $value): bool => $value !== null), 201);
+    }
+
+    /**
+     * Price a turn without ever failing ingest: a lookup error is reported
+     * and the turn is stored unpriced, its model queued (when the turn is
+     * complete) so the hourly missing-model fill prices it later.
+     *
+     * @param  ?PricedUsage  $pricedUsage  the turn's token counts, null for a non-Stop event
+     * @return EventCost
+     */
+    private function resolveCost(?PricedUsage $pricedUsage): EventCost
+    {
+        if ($pricedUsage === null) {
+            return new EventCost(null, null);
+        }
+
+        $isPriceable = $pricedUsage->isPricedProvider() && $pricedUsage->hasFullData();
+        $fallback = new EventCost(null, $isPriceable ? $pricedUsage->model : null);
+
+        return rescue(fn (): EventCost => $this->costs->resolve($pricedUsage), $fallback, report: true);
     }
 
     private function aliveBoss(): ?Boss

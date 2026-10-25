@@ -84,6 +84,18 @@ final class CacheKeys
     public const int PROVISIONED_GRANT_PENDING_BADGE_SECONDS = 86400;
 
     /**
+     * Build the cache key for one model's current list price (or its known
+     * absence), read by ingest for every priced event.
+     *
+     * @param  string  $model  the raw model id from the event
+     * @return string
+     */
+    public static function modelPrice(string $model): string
+    {
+        return "model-price:{$model}";
+    }
+
+    /**
      * Build the cache key for one account's tracked-members aggregate map.
      *
      * @param  int  $accountId  the owning account id

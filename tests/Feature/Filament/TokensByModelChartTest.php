@@ -130,3 +130,18 @@ test('renders the options inside the x-data attribute even for a hostile handle'
     expect($xData)->toContain('afterBody')
         ->and($xData)->toContain('injector');
 });
+
+test('in cost mode the bars, hover lines and caveat speak in dollars', function () {
+    $tung = User::factory()->create(['slack_handle' => 'tung']);
+    Event::factory()->for($tung)->create(['model' => 'claude-opus-5', 'tokens' => 900, 'cost_micro_usd' => 3_500_000]);
+
+    $chart = new TokensByModelChart;
+    $chart->pageFilters = ['range' => 'all', 'token_mode' => 'cost'];
+
+    expect($chart->getChartData()['datasets'][0])
+        ->label->toBe('Cost (USD)')
+        ->data->toBe([3.5])
+        ->and($chart->getContributorLines())->toBe([['tung — $3.50']])
+        ->and($chart->getDescription())->toContain('list-price USD')
+        ->and((string) $chart->getChartOptions())->toContain('isCostMode = true')->toContain('toFixed(2)');
+});
