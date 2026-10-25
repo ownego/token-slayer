@@ -5,6 +5,7 @@ import { blast } from './blast.js';
 import { shuriken } from './shuriken.js';
 import { blade } from './blade.js';
 import { arrow } from './arrow.js';
+import { heroAttack } from './hero/index.js';
 
 /** Handles all per-fighter attack animations and dispatches projectiles. */
 export class Attacks {
@@ -29,6 +30,7 @@ export class Attacks {
       case AttackType.SHURIKEN: return shuriken(this.scene, fighter, opts);
       case AttackType.BLADE:    return blade(this.scene, fighter, opts);
       case AttackType.ARROW:    return arrow(this.scene, fighter, opts);
+      case AttackType.HERO:     return heroAttack(this.scene, fighter, opts);
       case AttackType.BLAST:
       default:                  return blast(this.scene, fighter, opts);
     }

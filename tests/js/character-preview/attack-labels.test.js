@@ -34,8 +34,12 @@ describe('getAttackLabel', () => {
   test('every real character attack resolves to a themed label, not the generic fallback', () => {
     for (const ft of FIGHTER_TYPES) {
       ft.attacks.forEach((_, i) => {
-        expect(getAttackLabel(ft.attackType, i)).not.toMatch(/^Attack \d+$/);
+        expect(getAttackLabel(ft.attackType, i, ft.attacks[i])).not.toMatch(/^Attack \d+$/);
       });
     }
+  });
+
+  test('a hero\'s move is labelled by the move, not by its attack style', () => {
+    expect(getAttackLabel('hero', 1, { label: 'Dollar Palm' })).toBe('Dollar Palm');
   });
 });

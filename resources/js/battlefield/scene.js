@@ -5,10 +5,15 @@ import { BusEvent, TextureKey, SCENE_KEY, WORLD_ZOOM } from '@battlefield/consta
 import { bindBus } from '@battlefield/shared/bus-bindings.js';
 import { focusPlan, restoreCenter } from '@battlefield/shared/camera-focus.js';
 import { ATLAS_VERSION } from './config/atlas-version.js';
+import { HEROES_ATLAS_VERSION } from './config/heroes-atlas-version.js';
 import { bus } from './bus.js';
 import { Impact } from './impact.js';
 import { Projectile } from './projectile.js';
 import { Attacks } from './attacks.js';
+import { HeroEffects } from './attacks/hero/effects.js';
+import { heroFxKey } from './attacks/hero/juice.js';
+import { HERO_FX } from './config/hero-fx.js';
+import { HERO_EFFECT_CAP } from './config/heroes.js';
 import { Boss, queueBossLoad } from './boss.js';
 import { Charge } from './charge.js';
 import { Bubble } from './bubble.js';
@@ -47,6 +52,15 @@ export class BattlefieldScene extends Phaser.Scene {
         `/assets/battlefield/fighters/fighters-atlas.json?v=${ATLAS_VERSION}`,
       );
     }
+    // The heroes have their own atlas: the fighter atlas is at the 4096 px
+    // texture limit many phones have.
+    if (!this.textures.exists(TextureKey.HEROES)) {
+      this.load.atlas(
+        TextureKey.HEROES,
+        `/assets/battlefield/heroes/heroes-atlas.png?v=${HEROES_ATLAS_VERSION}`,
+        `/assets/battlefield/heroes/heroes-atlas.json?v=${HEROES_ATLAS_VERSION}`,
+      );
+    }
     // Every boss type preloaded here (rather than just the one about to be
     // shown) blew mobile GPUs' 4096px texture budget once the roster grew;
     // only the active boss type loads up front. Boss.preloadNextType()
@@ -65,6 +79,11 @@ export class BattlefieldScene extends Phaser.Scene {
       this.load.spritesheet(TextureKey.FIREBALL, '/assets/battlefield/fx/fireball.png', { frameWidth: 16, frameHeight: 16 });
     if (!this.textures.exists(TextureKey.EXPLOSION))
       this.load.spritesheet(TextureKey.EXPLOSION, '/assets/battlefield/fx/explosion.png', { frameWidth: 32, frameHeight: 32 });
+    for (const [k, fx] of Object.entries(HERO_FX)) {
+      if (!this.textures.exists(heroFxKey(k))) {
+        this.load.spritesheet(heroFxKey(k), `/assets/battlefield/heroes/fx/${fx.file}`, { frameWidth: fx.frameWidth, frameHeight: fx.frameHeight });
+      }
+    }
     const loaderBar = document.getElementById('bf-loader-bar');
     const loader    = document.getElementById('bf-loader');
     // the loader's runner rides the real preload progress (partials/runner.blade.php)
@@ -96,6 +115,16 @@ export class BattlefieldScene extends Phaser.Scene {
       }
       // Fighter atlas: NEAREST filter + register all animations from named frames
       this.textures.get(TextureKey.FIGHTERS)?.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      // When the hero atlas fails, heroes are drawn as roster fighters (fighter/resolve-type.js).
+      this.heroesLoaded = this.textures.exists(TextureKey.HEROES);
+      if (this.heroesLoaded) {
+        this.textures.get(TextureKey.HEROES).setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+      for (const k of Object.keys(HERO_FX)) {
+        if (this.textures.exists(heroFxKey(k))) {
+          this.textures.get(heroFxKey(k)).setFilter(Phaser.Textures.FilterMode.NEAREST);
+        }
+      }
       registerAllFighterAnimations(this);
     });
   }
@@ -190,6 +219,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.impact = new Impact(this);
     this.projectile = new Projectile(this);
     this.attacks = new Attacks(this);
+    this.heroEffects = new HeroEffects(this, HERO_EFFECT_CAP);
 
     this.fighters = new Map();
     this.damageTotals = new Map();
@@ -279,6 +309,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this._unbindBus?.();
     this.boss?.destroy?.();
     this.minions?.destroy?.();
+    this.heroEffects?.clear();
     this.environment?.destroy?.();
     this.tooltip = null;
     this.hoveredUserId = null;

@@ -22,6 +22,9 @@ export function ceremonyTimeline({ reduced }) {
  * @return {Promise<void>}
  */
 export async function runCeremony(scene, kill) {
+  // earlier hero moves still in flight end here (their main contacts still land, attacks/hero/effects.js); the
+  // killing move starts after this, since BossKilled arrives before its HitDealt, and plays out in the slow motion
+  scene.heroEffects?.clear();
   const t = ceremonyTimeline({ reduced: globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false });
   try {
     if (t.slowMs) {
