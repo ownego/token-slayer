@@ -2,7 +2,7 @@
 
 ## Simple bosses & FX (Super Grotto Escape)
 
-Pixel art from **Warped: Super Grotto Escape Collection** by **Ansimuz** — the single-sheet bosses (`bosses/ghost.png`, `ghost-fury.png`, `skeleton.png`, `slime.png`, `mini-demon.png`) and every file in `fx/` (added in `5fb7b02`). No background/environment art from this pack is in use; the battlefield background is a flat `BG_COLOR` plus a generated vignette.
+Pixel art from **Warped: Super Grotto Escape Collection** by **Ansimuz** — the single-sheet bosses (`bosses/ghost.png`, `ghost-fury.png`, `skeleton.png`, `slime.png`, `mini-demon.png`) and every file in `fx/` (added in `5fb7b02`). No background/environment art from this pack is in use; the battlefield sky is generated in code (see `.ai/domain/battlefield.md`, Living sky).
 
 - Original page: https://ansimuz.itch.io/super-grotto-escape-pack
 - License: **CC0 1.0 Universal** (public domain)

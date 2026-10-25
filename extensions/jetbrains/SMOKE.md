@@ -1,7 +1,7 @@
 # token-slayer JetBrains — Smoke Test
 
 Run this checklist before every release. The JCEF ↔ plugin bridge, the
-`jetbrains://` deep-link round-trip, and the full Slack auth flow are not
+loopback / `jetbrains://` sign-in round-trip, and the full Slack auth flow are not
 covered by unit tests.
 
 ## Setup
@@ -20,8 +20,8 @@ covered by unit tests.
 
 ## Steps
 
-- [ ] **Cold sign-in (spec open item #1 — `jetbrains://` host prefix):** Open the token-slayer tool window → signed-out HTML with a "Sign in with Slack" button (or run **Find Action → `token-slayer: Sign in with Slack`**). Your default browser opens at `…/auth/slack?return=ide&client=jetbrains&state=…`. Complete Slack OAuth. The browser must hand back to PhpStorm via `jetbrains://php-storm/token-slayer?token=…&state=…`, a "signed in" balloon appears, and the tool window reloads into the battlefield.
-  - If the OS does **not** route the deep link, note the actual product prefix from `runIde` logs / JetBrains docs and update the single string in `SlackController::redirectToIde` (Task 9), redeploy, and re-test.
+- [ ] **Cold sign-in (loopback callback, `jetbrains://` fallback):** Open the token-slayer tool window → signed-out HTML with a "Sign in with Slack" button (or run **Find Action → `token-slayer: Sign in with Slack`**). Your default browser opens at `…/auth/slack?return=ide&client=jetbrains&state=…&redirect=<loopback url>`. Complete Slack OAuth. The browser must hand back to the plugin's loopback server with `?token=…&state=…`, a "signed in" balloon appears, and the tool window reloads into the battlefield.
+  - If the loopback redirect is not used, `SlackController::redirectToIde` falls back to the OS deep link `jetbrains://phpstorm/token-slayer?token=…&state=…`. If the OS does **not** route it, note the actual product prefix from `runIde` logs / JetBrains docs and update that string, redeploy, and re-test.
 - [ ] **Battlefield renders (spec open item #2 — JCEF framing):** The Phaser canvas renders inside JCEF (boss + fighters visible). No blank frame and no CSP `frame-ancestors` error in the JCEF devtools console. If blocked, add the JCEF origin scheme to `EstablishIdeSession::relaxFramingFor()` and re-test.
 - [ ] **Status bar — connecting → boss:** Status bar widget shows `↻ token-slayer…` (connecting) → `⚡ {boss name}` once a snapshot arrives. Hover shows boss HP % and "Your damage".
 - [ ] **Hit fires native surfaces:** Trigger a Claude Code Stop hook (or `curl` `/api/events`) for your user. Status bar updates to the new boss HP and your damage. A balloon notification appears within ~1 s.

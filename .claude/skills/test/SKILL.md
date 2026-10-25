@@ -18,7 +18,7 @@ spin exec php php artisan test --compact tests/Feature/Accounts          # a who
 - `service "php" is not running` → `docker start token-slayer-php-1`, then retry.
 - A single file should finish in seconds. If a run hangs or throws DB/Redis connection errors, check `docker ps` for other projects' stacks contending for ports before re-running, and report what you find.
 - Test env (`phpunit.xml`): sqlite `:memory:`, `CACHE_STORE=array`. Feature tests opt into `RefreshDatabase` per file (it is **not** global in `tests/Pest.php`), so copy the `uses(...)` line from a sibling.
-- No real Redis or network: use `fakeRedis($store)` for `SubagentCountCache`, and `fakeAnthropic()` (calls `Http::preventStrayRequests()`) / `Http::fake` for Anthropic, Codex, GitHub and Slack. Fixtures live in `tests/fixtures/{anthropic,codex}/`.
+- No real Redis or network: use `fakeRedis($store)` for `SubagentCountCache`, and `fakeAnthropic()` (calls `Http::preventStrayRequests()`) / `Http::fake` for Anthropic, Codex, GitHub and Slack. Fixtures live in `tests/fixtures/{anthropic,codex,litellm}/`.
 
 ### Minimum gates by area
 
@@ -30,11 +30,13 @@ spin exec php php artisan test --compact tests/Feature/Accounts          # a who
 | Accounts / rebalance | `tests/Feature/Accounts tests/Unit/Services/Accounts` |
 | Provisioning | `tests/Feature/Provisioning tests/Feature/Api/ProvisionedConfirmTest.php` |
 | Filament admin | `tests/Feature/Filament` |
+| Custom characters | `tests/Feature/Services/CustomCharacter tests/Unit/Services/CustomCharacter tests/Feature/Livewire/CustomCharacterEditorTest.php tests/Feature/CustomCharacterConfigTest.php` |
+| Event cost / model prices | `tests/Feature/Services/Pricing tests/Unit/Services/Pricing tests/Feature/Api/EventCostIngestionTest.php` |
 
 ## JavaScript (Vitest)
 
 ```bash
-npx vitest run                              # all (~30 files)
+npx vitest run                              # all (~120 files)
 npx vitest run tests/js/layout.test.js
 npx vitest run tests/js/managers            # a folder
 ```

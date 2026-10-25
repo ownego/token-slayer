@@ -6,7 +6,7 @@ State vocabulary used below: default, hover, `:focus-visible`, active (pressed),
 
 ## Sheet frame
 
-`.overlay` (fixed, dimmed `rgba(2,6,23,0.45)`) > `.sheet` (the riveted panel: `2px solid var(--rivet)`, four `.rivet` corners, max 1000 px wide, never taller than the viewport). Header `.sheet-head` (title `h1` 26 px `--display` gold, meta in `--dim`, `.head-links`, `.close`), then tabs, then a body whose column scrolls while header and footer stay put. A new screen inside the sheet is a tab panel or a panel that replaces the stage in place (`.tab-panel`, `.is-active`); it is not a second modal on top.
+`.overlay` (fixed, dimmed `rgba(2,6,23,0.45)`) > `.sheet` (the riveted panel: `2px solid var(--rivet)`, four `.rivet` corners, max 1240 px wide (`min(1240px, 100vw - 48px)`), never taller than the viewport). Header `.sheet-head` (title `h1` 26 px `--display` gold, meta in `--dim`, `.head-links`, `.close`), then tabs, then a body whose column scrolls while header and footer stay put. A new screen inside the sheet is a tab panel or a panel that replaces the stage in place (`.tab-panel`, `.is-active`); it is not a second modal on top.
 
 ## Buttons
 
@@ -47,7 +47,7 @@ Rules: one `.primary` per view. Squared, no radius. Hover is `filter: brightness
 
 ## Show stage (preview of a fighter)
 
-`.show-stage` (270 px desktop, 190 px portrait, 120 px landscape; accent glow floor line, sprite at `scale: 4`, boss on the right), `.show-info` (name, type and `.show-state`), `.hotbar`, `.inspector` (Pause, Frame, Play for a draft or version peek), and `.equip-row`. A draft is a `.slot .badge.draft` roster entry, using the same stage and moves as a saved fighter. Do not build a second preview widget.
+`.show-stage` (280 px desktop, 190 px portrait, 120 px landscape; accent glow floor line, sprite at `scale: 4`, boss on the right), `.show-info` (name, type and `.show-state`), `.hotbar`, `.inspector` (Pause, Frame, Play for a draft or version peek), and `.equip-row`. A draft is a `.slot .badge.draft` roster entry, using the same stage and moves as a saved fighter. Do not build a second preview widget.
 
 `.show-author` (12 px `--display` gold, hidden when empty): its own line under `.show-type` reading "Created by <handle>" for a custom fighter and its draft; never merged into the description line, never shown for a roster fighter. The author is plain text (`textContent`), and it lives only in `sheetState()`, never in the public broadcast.
 

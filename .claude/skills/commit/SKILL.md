@@ -24,7 +24,7 @@ Co-Authored-By: <current Claude model> <noreply@anthropic.com>
 | `battlefield` also covers the fighter sheet | `FighterSheet` (Profile/Character tabs) — the old `character-select`/`character-preview`/`profile` scopes are historical: those components and `/profile` were removed |
 | `api` | `EventController` ingestion, IDE/state endpoints (`routes/api.php`) |
 | `hooks` | Install scripts, hook template, cowork watcher, userscript (history also has `hook` and `install`; use `hooks`) |
-| `events` | `events` ledger / model tracking (`ModelUsageParser`, `events.model`) |
+| `events` | `events` ledger / model tracking / event cost (`ModelUsageParser`, `events.model`, `Services/Pricing/`) |
 | `accounts` | Org accounts, OAuth, probing, anchoring, rebalance |
 | `codex` | Codex-specific provider work |
 | `provisioning` | Device grants, `/api/provisioned/*`, `AccountProvisioningService` |
