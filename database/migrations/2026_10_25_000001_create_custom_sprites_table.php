@@ -39,6 +39,12 @@ return new class extends Migration
      * drops the oldest version. The minion tables only ever existed on staging, so
      * they are copied only where they exist. Files on the disk are not touched.
      *
+     * What `enabled` means depends on the row's `type` and `state`: on a fighter
+     * `current` row it is whether the fighter is equipped; on a fighter `previous` or
+     * `draft` row it is always true and never read; on a minion row (`current` or
+     * `draft`) it is also always true and never read, because which minions are ticked
+     * into the player's pool is stored on `users.minion_pool`, not on the row.
+     *
      * @return void
      */
     public function up(): void
@@ -226,7 +232,7 @@ return new class extends Migration
      * @param  string  $state  `draft`, `current` or `previous`
      * @param  int|null  $slot  the slot, null for a draft
      * @param  string  $hash  the version hash
-     * @param  bool  $enabled  whether the row is equipped or ticked
+     * @param  bool  $enabled  whether a fighter `current` row is equipped; true on every other row (see `up()`)
      * @param  array<string, mixed>  $data  what lives in the `data` column
      * @param  string|null  $createdAt  the row's original creation time
      * @param  string|null  $updatedAt  the row's original update time

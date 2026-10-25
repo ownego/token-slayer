@@ -5,9 +5,7 @@ namespace App\Models;
 use App\Enums\CustomSpriteState;
 use App\Enums\CustomSpriteType;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
@@ -15,20 +13,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * it goes live. The fighter `draft` row of `custom_sprites`; one per user, and
  * a new build replaces it.
  *
- * @property array<string, mixed> $data the JSON column behind `animations`
- * @property array<string, array{frames: int, rate: int}> $animations each strip's frame count and playback rate
+ * `enabled` is always true on a draft and never read.
  */
-class CustomCharacterDraft extends Model
+class CustomCharacterDraft extends CustomSprite
 {
     /** @use HasFactory<\Illuminate\Database\Eloquent\Factories\Factory<static>> */
     use HasFactory;
-
-    /**
-     * The table every custom fighter and minion version lives in.
-     *
-     * @var string
-     */
-    protected $table = 'custom_sprites';
 
     /**
      * The attributes that are mass assignable.
@@ -70,34 +60,5 @@ class CustomCharacterDraft extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    /**
-     * Each strip's frame count and playback rate, kept in `data`.
-     *
-     * @return Attribute<array<string, array{frames: int, rate: int}>, array<string, array{frames: int, rate: int}>>
-     */
-    protected function animations(): Attribute
-    {
-        return Attribute::make(
-            get: fn (): array => $this->data['animations'] ?? [],
-            set: fn (array $value): array => ['data' => $this->castAttributeAsJson('data', [...($this->data ?? []), 'animations' => $value])],
-        );
-    }
-
-    /**
-     * Cast the stored columns into their PHP types.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'type' => CustomSpriteType::class,
-            'state' => CustomSpriteState::class,
-            'slot' => 'integer',
-            'enabled' => 'boolean',
-            'data' => 'array',
-        ];
     }
 }

@@ -8,7 +8,6 @@ use App\Services\CustomCharacter\CustomCharacterStore;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -18,16 +17,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * every confirmed version the player can switch back to is in `versions`, and `active`
  * says whether the fighter is the one equipped (the `enabled` column).
  *
- * `name` and `animations` live in the row's `data` and are read and written through
- * accessors, so the model is used as before; a query builder sees only real columns
- * (`enabled`, `version_hash`, ...), never `name` or `animations`.
+ * `name` and `animations` live in the row's `data` and are read and written through the
+ * accessors of `CustomSprite`, so the model is used as before; a query builder sees only
+ * real columns (`enabled`, `version_hash`, ...), never `name` or `animations`.
  *
- * @property array<string, mixed> $data the JSON column behind `name` and `animations`
+ * On this row `enabled` is the one column that means something: the fighter is equipped.
+ *
  * @property string|null $name what the player called the fighter
- * @property array<string, array{frames: int, rate: int}> $animations each strip's frame count and playback rate
  * @property bool $active whether the fighter is the one equipped
  */
-class CustomCharacter extends Model
+class CustomCharacter extends CustomSprite
 {
     /** @use HasFactory<\Database\Factories\CustomCharacterFactory> */
     use HasFactory;
@@ -38,13 +37,6 @@ class CustomCharacter extends Model
      * @var string
      */
     public const string SHEET_KEY = 'custom';
-
-    /**
-     * The table every custom fighter and minion version lives in.
-     *
-     * @var string
-     */
-    protected $table = 'custom_sprites';
 
     /**
      * The attributes that are mass assignable.
@@ -105,6 +97,15 @@ class CustomCharacter extends Model
      * Move this row into the history: it stops being the fighter in use and loses the
      * name, which belongs to whichever version is in use.
      *
+     * The name is not kept per version: it goes with the fighter, so it is dropped here
+     * and `CustomCharacterVersion::promote()` writes it back onto whichever row takes
+     * over. After the call this instance is a `previous` row, which the global scope of this
+     * class no longer matches: `CustomCharacter` queries will not return it. Do not use it
+     * again as the fighter in use (`active`, `broadcastState()`, `sheetState()`) and do not
+     * `refresh()` it (that reloads the row, still typed as the fighter in use, even though
+     * it is a history row now). Load the row through `CustomCharacterVersion` if it is
+     * needed.
+     *
      * @return void
      */
     public function demote(): void
@@ -152,32 +153,6 @@ class CustomCharacter extends Model
     }
 
     /**
-     * The name the player gave the fighter, kept in `data`.
-     *
-     * @return Attribute<string|null, string|null>
-     */
-    protected function name(): Attribute
-    {
-        return Attribute::make(
-            get: fn (): ?string => $this->data['name'] ?? null,
-            set: fn (?string $value): array => ['data' => $this->castAttributeAsJson('data', [...($this->data ?? []), 'name' => $value])],
-        );
-    }
-
-    /**
-     * Each strip's frame count and playback rate, kept in `data`.
-     *
-     * @return Attribute<array<string, array{frames: int, rate: int}>, array<string, array{frames: int, rate: int}>>
-     */
-    protected function animations(): Attribute
-    {
-        return Attribute::make(
-            get: fn (): array => $this->data['animations'] ?? [],
-            set: fn (array $value): array => ['data' => $this->castAttributeAsJson('data', [...($this->data ?? []), 'animations' => $value])],
-        );
-    }
-
-    /**
      * Whether the fighter is the one equipped: the `enabled` column under its older name.
      *
      * @return Attribute<bool, bool>
@@ -188,21 +163,5 @@ class CustomCharacter extends Model
             get: fn (): bool => (bool) $this->enabled,
             set: fn (bool $value): array => ['enabled' => $value],
         );
-    }
-
-    /**
-     * Cast the stored columns into their PHP types.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'type' => CustomSpriteType::class,
-            'state' => CustomSpriteState::class,
-            'slot' => 'integer',
-            'enabled' => 'boolean',
-            'data' => 'array',
-        ];
     }
 }

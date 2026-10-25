@@ -5,9 +5,7 @@ namespace App\Models;
 use App\Enums\CustomSpriteState;
 use App\Enums\CustomSpriteType;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
@@ -15,21 +13,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * of `custom_sprites` that is `current` or `previous`. Its strips live in a folder
  * named by `version_hash`, `animations` records each strip's frame count and rate.
  *
- * @property array<string, mixed> $data the JSON column behind `animations`
- * @property array<string, array{frames: int, rate: int}> $animations each strip's frame count and playback rate
+ * `enabled` means something only on the `current` row (the fighter is equipped, see
+ * `CustomCharacter::$active`); on a `previous` row it is always true and never read.
+ *
  * @property CustomSpriteState $state whether this is the version in use or an earlier one
  */
-class CustomCharacterVersion extends Model
+class CustomCharacterVersion extends CustomSprite
 {
     /** @use HasFactory<\Database\Factories\CustomCharacterVersionFactory> */
     use HasFactory;
-
-    /**
-     * The table every custom fighter and minion version lives in.
-     *
-     * @var string
-     */
-    protected $table = 'custom_sprites';
 
     /**
      * The attributes that are mass assignable.
@@ -78,6 +70,12 @@ class CustomCharacterVersion extends Model
     /**
      * Make this earlier version the fighter in use, equipped, under the given name.
      *
+     * The name is not stored per version, it follows the fighter: the caller passes the
+     * name of the version being replaced, so switching back to an older version keeps
+     * the name the fighter has now. After the call this row is the one `CustomCharacter`
+     * returns, so a `CustomCharacter` instance loaded before the call is stale (it holds the
+     * row that was in use, which must be demoted first): load it again rather than reuse it.
+     *
      * @param  string  $name  the fighter's name, carried over from the version it replaces
      * @param  array<string, array{frames: int, rate: int}>  $animations  the animation table to keep
      * @return void
@@ -89,34 +87,5 @@ class CustomCharacterVersion extends Model
             'enabled' => true,
             'data' => ['name' => $name, 'animations' => $animations],
         ])->save();
-    }
-
-    /**
-     * Each strip's frame count and playback rate, kept in `data`.
-     *
-     * @return Attribute<array<string, array{frames: int, rate: int}>, array<string, array{frames: int, rate: int}>>
-     */
-    protected function animations(): Attribute
-    {
-        return Attribute::make(
-            get: fn (): array => $this->data['animations'] ?? [],
-            set: fn (array $value): array => ['data' => $this->castAttributeAsJson('data', [...($this->data ?? []), 'animations' => $value])],
-        );
-    }
-
-    /**
-     * Cast the stored columns into their PHP types.
-     *
-     * @return array<string, string>
-     */
-    protected function casts(): array
-    {
-        return [
-            'type' => CustomSpriteType::class,
-            'state' => CustomSpriteState::class,
-            'slot' => 'integer',
-            'enabled' => 'boolean',
-            'data' => 'array',
-        ];
     }
 }
