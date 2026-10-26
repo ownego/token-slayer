@@ -3,7 +3,7 @@ import { MINION_TYPES, MINION_CLASH_EFFECTS, MINION_SIZE_RATIO, TIMINGS } from '
 import { TextureKey } from '@battlefield/constants.js';
 import { setDepthIfChanged } from '@battlefield/shared/depth.js';
 import { randomWanderPoint } from './boss/bat-wander.js';
-import { homeSlotOffset, homeSlotAngle, isInFrontOfFighter } from './minion-layout.js';
+import { homeSlotOffset, homeSlotAngle, isInFrontOfFighter, minionBadgeCenterY, toolRingRadius, TOOL_RING_STROKE_PX } from './minion-layout.js';
 import { sampleTrail, pushTrailSample } from './minion-trail.js';
 import { computeZones, zoneFanOffset } from './minion-grouping.js';
 import { countSidesNear, pickAttackerSide, travelLanding, pickRandom, fidgetAttacks, flipToFace, flipToFaceAngle } from './minion-fight.js';
@@ -31,7 +31,7 @@ const POOF_PUFF_COUNT = 10;
 const BASE_CHAR_HEIGHT = 20;
 /** A minion's own avatar badge (the owning fighter's avatar image, shrunk down) as a fraction of the minion's current display size — small enough to read as a tag, not compete with the minion sprite itself. */
 const MINION_BADGE_SIZE_RATIO = 0.55;
-/** How far above the minion's own top the badge sits, as a fraction of the minion's current visual height. */
+/** How far above the sprite centre the badge sits for a DEFAULT type, as a fraction of the minion's current visual height (their ink is roughly centred in the frame; a custom type is placed above its measured head top instead, leaving room for the tool ring — see minionBadgeCenterY). */
 const MINION_BADGE_OFFSET_RATIO = 0.65;
 /** Caps how many minions render per fighter regardless of the real dispatched count, so a burst of parallel subagents never clutters the battlefield. Raised from 6 to 10 — live 2026-09-25 a fighter with genuinely 7+ concurrent subagents (a busy `Agent` SDK-based harness) was visibly clamped below its real count. */
 const MINION_MAX_VISIBLE = 10;
@@ -100,8 +100,6 @@ const MINION_WALK_SPEED_PX_PER_S = 150;
 
 /** Pulsing ring color for a minion's "using a tool right now" indicator — the same cyan Charge.createChargingRing uses for a fighter's own charging ring ("vòng và nhấp nháy như user"), duplicated here (rather than importing Charge) for the same reason CLASH_PARTICLE_TINTS is duplicated above. */
 const TOOL_RING_COLOR = 0x22d3ee;
-/** How far the ring sits outside the minion's badge edge, as a fraction of the badge's own current display size — mirrors Charge.createChargingRing's own `avR + max(4, displaySize*0.08)` margin shape, just scaled down since a minion's badge is far smaller in absolute px than a fighter's avatar. */
-const TOOL_RING_MARGIN_RATIO = 0.15;
 /** Duration (ms) of the ring's fade-out when a subagent's tool call ends, instead of an instant pop — same shape as _dismissSummonCircle's own fade. */
 const TOOL_RING_FADE_OUT_MS = 200;
 
@@ -786,8 +784,9 @@ export class Minions {
     // the instant summoning flips false — caught live as "bụp 1 phát từ to
     // hóa về bình thường".
     const badgePx = finalScale * minion.charHeight * MINION_BADGE_SIZE_RATIO;
+    const badgeY = this._badgeCenterY(minion, spawnY, finalScale);
     minion.badge = this.scene.add
-      .image(spawnX, spawnY, entry.head?.texture?.key ?? sprite.texture.key)
+      .image(spawnX, badgeY, entry.head?.texture?.key ?? sprite.texture.key)
       .setDisplaySize(badgePx, badgePx)
       .setAlpha(0)
       .setDepth(MINION_DEPTH_FRONT);
@@ -1187,9 +1186,32 @@ export class Minions {
     }
     const visualHeight = scale * minion.charHeight;
     const badgePx = visualHeight * MINION_BADGE_SIZE_RATIO;
-    minion.badge.setPosition(point.x, point.y - visualHeight * MINION_BADGE_OFFSET_RATIO);
+    minion.badge.setPosition(point.x, this._badgeCenterY(minion, point.y, scale));
     minion.badge.setDisplaySize(badgePx, badgePx);
     setDepthIfChanged(minion.badge, minionDepth + 0.01);
+  }
+
+  /**
+   * World Y of the centre of a minion's avatar badge, which its tool ring shares. A custom look
+   * lifts the badge by the ring's clearance (ring on or off, so it never jumps) so the ring stays
+   * off the head; a default look keeps the old fraction. Read from
+   * `minion.type` / `minion.charHeight` on every call and never cached, so a look swap
+   * (custom <-> default) moves the badge on the next frame.
+   *
+   * @param {object} minion
+   * @param {number} pointY the minion sprite centre's world Y
+   * @param {number} scale the minion's sprite scale
+   * @return {number}
+   */
+  _badgeCenterY(minion, pointY, scale) {
+    return minionBadgeCenterY({
+      pointY,
+      scale,
+      type: minion.type,
+      charHeight: minion.charHeight,
+      sizeRatio: MINION_BADGE_SIZE_RATIO,
+      offsetRatio: MINION_BADGE_OFFSET_RATIO,
+    });
   }
 
   /**
@@ -1213,10 +1235,10 @@ export class Minions {
     }
     const visualHeight = scale * minion.charHeight;
     const badgePx = visualHeight * MINION_BADGE_SIZE_RATIO;
-    const badgeY = point.y - visualHeight * MINION_BADGE_OFFSET_RATIO;
-    const r = badgePx / 2 + Math.max(2, badgePx * TOOL_RING_MARGIN_RATIO);
+    const badgeY = this._badgeCenterY(minion, point.y, scale);
+    const r = toolRingRadius(badgePx);
     minion.toolRing.clear();
-    minion.toolRing.lineStyle(2, TOOL_RING_COLOR, 1);
+    minion.toolRing.lineStyle(TOOL_RING_STROKE_PX, TOOL_RING_COLOR, 1);
     minion.toolRing.strokeCircle(0, 0, r);
     minion.toolRing.setPosition(point.x, badgeY);
     setDepthIfChanged(minion.toolRing, minionDepth + 0.02);

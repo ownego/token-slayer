@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'vitest';
-import { homeSlotOffset, homeSlotAngle, shortestAngleDelta, isInFrontOfFighter } from '@battlefield/minion-layout.js';
+import {
+  homeSlotOffset,
+  homeSlotAngle,
+  shortestAngleDelta,
+  isInFrontOfFighter,
+  minionBadgeCenterY,
+  toolRingRadius,
+  toolRingClearance,
+  TOOL_RING_MARGIN_RATIO,
+  TOOL_RING_MIN_MARGIN_PX,
+  TOOL_RING_STROKE_PX,
+} from '@battlefield/minion-layout.js';
+import { MINION_TYPES } from '@battlefield/config.js';
+import { CUSTOM_FOOT_ROW, CUSTOM_FRAME } from '@battlefield/fighter/custom-fighter.js';
 
 describe('homeSlotOffset', () => {
   test('places the only slot (count=1) directly to the right at the given radius', () => {
@@ -107,5 +120,66 @@ describe('isInFrontOfFighter', () => {
 
   test('above the foot anchor (smaller Y) is behind', () => {
     expect(isInFrontOfFighter(60, 100)).toBe(false);
+  });
+});
+
+describe('minionBadgeCenterY', () => {
+  const SIZE_RATIO = 0.55;
+  const OFFSET_RATIO = 0.65;
+  const POINT_Y = 300;
+
+  /**
+   * @param {object} type a minion type
+   * @param {number} scale the sprite scale
+   * @return {number}
+   */
+  const badgeY = (type, scale) => minionBadgeCenterY({
+    pointY: POINT_Y, scale, type, charHeight: type.charHeight, sizeRatio: SIZE_RATIO, offsetRatio: OFFSET_RATIO,
+  });
+
+  test.each([1, 40, CUSTOM_FOOT_ROW])('a custom minion of bodyPx %i wears its badge above its head, clear of the tool ring', (bodyPx) => {
+    const scale = 0.8;
+    const badgePx = scale * bodyPx * SIZE_RATIO;
+    const headTopY = POINT_Y + (CUSTOM_FOOT_ROW - bodyPx - CUSTOM_FRAME / 2) * scale;
+    const centerY = badgeY({ custom: true, charHeight: bodyPx }, scale);
+    const ringOuterBottomY = centerY + toolRingRadius(badgePx) + TOOL_RING_STROKE_PX / 2;
+    const gap = headTopY - (centerY + badgePx / 2);
+
+    expect(ringOuterBottomY).toBeCloseTo(headTopY, 9);
+    expect(gap).toBeCloseTo(Math.max(TOOL_RING_MIN_MARGIN_PX, badgePx * TOOL_RING_MARGIN_RATIO) + TOOL_RING_STROKE_PX / 2, 9);
+  });
+
+  test('a Naruto-sized custom minion (bodyPx 54, scale 0.417) leaves about 3 world px between badge and head', () => {
+    const scale = 0.417;
+    const bodyPx = 54;
+    const badgePx = scale * bodyPx * SIZE_RATIO;
+    const headTopY = POINT_Y + (CUSTOM_FOOT_ROW - bodyPx - CUSTOM_FRAME / 2) * scale;
+    const gap = headTopY - (badgeY({ custom: true, charHeight: bodyPx }, scale) + badgePx / 2);
+
+    expect(gap).toBeCloseTo(3, 1);
+  });
+
+  test.each(MINION_TYPES.map(type => [type.key, type]))('the default %s keeps the old offset from its sprite centre', (_, type) => {
+    const scale = 1.3;
+
+    expect(badgeY(type, scale)).toBeCloseTo(POINT_Y - scale * type.charHeight * OFFSET_RATIO);
+  });
+
+  test('a minion with no type yet falls back to the default formula', () => {
+    const y = minionBadgeCenterY({ pointY: POINT_Y, scale: 2, type: null, charHeight: 20, sizeRatio: SIZE_RATIO, offsetRatio: OFFSET_RATIO });
+
+    expect(y).toBeCloseTo(POINT_Y - 2 * 20 * OFFSET_RATIO);
+  });
+});
+
+describe('tool ring', () => {
+  test('its radius is the badge radius plus the larger of the minimum margin and the margin ratio', () => {
+    expect(toolRingRadius(10)).toBeCloseTo(5 + TOOL_RING_MIN_MARGIN_PX);
+    expect(toolRingRadius(40)).toBeCloseTo(20 + 40 * TOOL_RING_MARGIN_RATIO);
+  });
+
+  test('it clears the badge edge by the margin plus half the stroke', () => {
+    expect(toolRingClearance(10)).toBeCloseTo(TOOL_RING_MIN_MARGIN_PX + TOOL_RING_STROKE_PX / 2);
+    expect(toolRingClearance(40)).toBeCloseTo(40 * TOOL_RING_MARGIN_RATIO + TOOL_RING_STROKE_PX / 2);
   });
 });
