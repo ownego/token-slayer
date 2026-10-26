@@ -1750,12 +1750,20 @@
 .fs .cme-make { display: grid; gap: 10px; }
 .fs .cme-or { display: flex; align-items: center; gap: 8px; color: var(--dim); font: 500 12px var(--display); }
 .fs .cme-or::before, .fs .cme-or::after { content: ''; flex: 1; border-top: 1px solid #243150; }
-@media (min-width: 760px) {
+/* the pool and the stage side by side from desktop width; one column (pool, then stage) on a tablet and a phone */
+@media (min-width: 1001px) {
     .fs .cce.cme { grid-template-columns: minmax(300px, 5fr) minmax(0, 6fr); column-gap: 20px; }
     .fs .cme-panel { padding-left: 20px; border-left: 1px solid rgba(251,191,36,0.18); }
 }
+/* phone portrait: the Save pool row stays in reach at the bottom, like the Fighter tab's Equip row */
 @media (max-width: 640px) {
     .fs .cce.cme { padding: 12px 14px 20px; }
+    .fs .cme .equip-row { position: sticky; bottom: 0; z-index: 8; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); background: var(--night-deep); }
+    .fs .cme .equip-row .btn.primary { flex: 1 1 auto; }
+}
+/* phone on its side: the pool and a short stage side by side, the field-size strip left out so the actions stay in view */
+@media (max-height: 500px) and (orientation: landscape) {
+    .fs .cce.cme { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; padding: 10px 14px; }
 }
 
 .fs .pool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -1826,6 +1834,11 @@
 .fs .ms-actions { justify-content: flex-end; }
 @media (max-width: 640px) {
     .fs .ms-stage { height: 170px; }
+}
+/* after the phone height above, so a small phone on its side still gets the short stage */
+@media (max-height: 500px) and (orientation: landscape) {
+    .fs .ms-stage { height: 120px; }
+    .fs .ms-field { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
     .fs .pool-sprite, .fs .ms-sprite, .fs .ms-sprite.summon, .fs .ms-stage .ms-sprite, .fs .ms-stage .ms-sprite.summon { animation: none; }

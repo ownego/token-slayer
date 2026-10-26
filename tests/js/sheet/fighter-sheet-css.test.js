@@ -286,3 +286,44 @@ test('the Minions tab keeps its two-column grid around the browser state, pops i
   expect(decls('.fs .ms-stage .fx-circle').bottom).toBeDefined();
   expect(decls('.fs .ms-stage .fx-burst').bottom).toBeDefined();
 });
+
+/**
+ * The declarations of a selector inside the media query whose params contain `media` (top level when null).
+ *
+ * @param {string} selector The exact selector.
+ * @param {?string} media A piece of the media query's params.
+ * @return {Object<string, string>}
+ */
+function cssIn(selector, media) {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  const found = {};
+  root.walkRules(rule => {
+    const params = rule.parent.type === 'atrule' ? rule.parent.params : null;
+    const inMedia = media === null ? params === null : params?.includes(media);
+    if (inMedia && rule.selectors.includes(selector)) {
+      rule.walkDecls(d => { found[d.prop] = d.value; });
+    }
+  });
+
+  return found;
+}
+
+test('the Minions tab uses only the four layout classes: two columns from desktop width, no breakpoint of its own', () => {
+  const css = readFileSync('resources/css/fighter-sheet.css', 'utf8');
+
+  expect(css).not.toContain('min-width: 760px');
+  expect(cssIn('.fs .cce.cme', 'min-width: 1001px')['grid-template-columns']).toBeDefined();
+});
+
+test('on a phone the Save pool row is sticky at the bottom with a full-width Save', () => {
+  expect(cssIn('.fs .cme .equip-row', 'max-width: 640px')).toMatchObject({ position: 'sticky', bottom: '0' });
+  expect(cssIn('.fs .cme .equip-row .btn.primary', 'max-width: 640px').flex).toBe('1 1 auto');
+});
+
+test('on a phone on its side the pool and the stage sit side by side, and the stage is short enough to show its actions', () => {
+  const landscape = '(max-height: 500px) and (orientation: landscape)';
+
+  expect(cssIn('.fs .cce.cme', landscape)['grid-template-columns']).toBeDefined();
+  expect(parseInt(cssIn('.fs .ms-stage', landscape).height, 10)).toBeLessThanOrEqual(120);
+  expect(cssIn('.fs .ms-field', landscape).display).toBe('none');
+});

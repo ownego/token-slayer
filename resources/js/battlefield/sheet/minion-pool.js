@@ -301,9 +301,8 @@ export function minionPool(initial = {}) {
       }
       this.sel = look;
       this.$wire.$set('selected', look, false);
-      if (typeof matchMedia === 'function' && matchMedia('(max-width: 759px)').matches) {
-        this.$el.querySelector('.cme-panel')?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-      }
+      // the stage sits under the pool on a tablet and a phone; beside it, `nearest` scrolls nothing
+      this.$el.querySelector('.cme-panel')?.scrollIntoView?.({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
     },
     /**
      * Opens the Replace of a minion: the upload area and Use my fighter now aim at its slot.
