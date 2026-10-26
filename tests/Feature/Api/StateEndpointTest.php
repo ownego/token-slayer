@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\Boss;
+use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\Event;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -44,11 +46,33 @@ test('state endpoint includes display_name for each fighter', function () {
 test('state endpoint carries each fighter\'s custom character, null for one without', function () {
     Boss::factory()->create();
     $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
-    $custom = App\Models\CustomCharacter::factory()->create()->user;
+    $custom = CustomCharacter::factory()->create()->user;
     $custom->forceFill(['last_event_at' => now()->subMinute()])->save();
 
     $fighters = collect($this->getJson('/api/state')->assertOk()->json('fighters'))->keyBy('id');
 
     expect($fighters[$plain->id])->toHaveKey('custom_character', null)
         ->and($fighters[$custom->id]['custom_character'])->toBe($custom->customFighterState());
+});
+
+test('state endpoint carries each fighter\'s minion pool, with its rev, and no longer custom_minions', function () {
+    Boss::factory()->create();
+    $plain = User::factory()->create(['last_event_at' => now()->subMinute()]);
+    $owner = CustomMinion::factory()->create()->user;
+    CustomMinion::factory()->create(['user_id' => $owner->id, 'slot' => 2]);
+    $owner->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool' => ['rev' => 4, 'defaults_off' => ['demon-a'], 'slots_off' => []]])->save();
+
+    $fighters = collect($this->getJson('/api/state')->assertOk()->json('fighters'))->keyBy('id');
+    $pool = $fighters[$owner->id]['minion_pool'];
+
+    expect($pool)->toBe($owner->fresh()->minionPoolState())
+        ->and($pool['rev'])->toBe(4)
+        ->and($pool['defaults'])->not->toContain('demon-a')
+        ->and($pool['custom'])->toHaveCount(2)
+        ->and($pool['custom'][0])->not->toHaveKeys(['created_at', 'user_id', 'id'])
+        ->and($fighters[$plain->id]['minion_pool'])->toBe($plain->fresh()->minionPoolState())
+        ->and($fighters[$plain->id]['minion_pool']['custom'])->toBe([])
+        ->and($fighters[$owner->id])->not->toHaveKey('custom_minions')
+        ->and($pool)->not->toHaveKeys(['defaults_off', 'slots_off'])
+        ->and(array_keys($pool))->toBe(['rev', 'defaults', 'custom']);
 });

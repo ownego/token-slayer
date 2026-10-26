@@ -42,6 +42,7 @@
                 'avatarUrl' => $f->avatarProxyUrl(),
                 'character' => $f->characterForBoss($boss->id),
                 'customCharacter' => $f->customFighterState(),
+                'minionPool' => $f->minionPoolState(),
                 'charging' => $this->chargingByUser[$f->id] ?? null,
                 'position' => $this->positionsByUser[$f->id] ?? null,
                 'agentCount' => $this->agentCountsByUser[$f->id] ?? 0,
@@ -80,7 +81,7 @@
                      separate profile page any more. A guest is sent to log in. --}}
                 @auth
                     {{-- A deep link waits for the arena before opening the sheet or editor. --}}
-                    <button type="button" aria-label="Profile" @if (session('open_sheet')) data-open-sheet="{{ session('open_sheet.tab') }}" @if (session('open_sheet.editor')) data-open-editor="1" @endif x-init="window.whenBattlefieldReady(() => { if ($el.dataset.openEditor) { window.__openCustomEditor = true; window.dispatchEvent(new Event('open-custom-editor')) } $dispatch('open-fighter-sheet', { tab: $el.dataset.openSheet }) })" @endif @click="$dispatch('open-fighter-sheet', { tab: 'profile' })" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
+                    <button type="button" aria-label="Profile" @if (session('open_sheet')) data-open-sheet="{{ session('open_sheet.tab') }}" @if (session('open_sheet.editor')) data-open-editor="1" @endif @if (session('open_sheet.editor_tab')) data-open-editor-tab="{{ session('open_sheet.editor_tab') }}" @endif x-init="window.whenBattlefieldReady(() => { if ($el.dataset.openEditor) { const forgeTab = $el.dataset.openEditorTab || 'fighter'; window.__openCustomEditor = forgeTab === 'fighter' ? true : forgeTab; window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: forgeTab } })) } $dispatch('open-fighter-sheet', { tab: $el.dataset.openSheet }) })" @endif @click="$dispatch('open-fighter-sheet', { tab: 'profile' })" class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-medium text-slate-400 backdrop-blur-sm transition-colors hover:border-amber-500/40 hover:text-amber-300">
                         <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
                     </svg>

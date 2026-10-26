@@ -9,10 +9,12 @@ use App\Events\FighterChargeCleared;
 use App\Events\FighterCharging;
 use App\Events\FighterIdled;
 use App\Events\FighterJoined;
+use App\Events\FighterMinionsChanged;
 use App\Events\FighterMoved;
 use App\Events\HitDealt;
 use App\Models\Boss;
 use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\User;
 use App\Services\FighterPositionCache;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -61,6 +63,7 @@ test('every battlefield event broadcasts now on the battlefield channel with a s
         'FighterIdled' => new FighterIdled($user),
         'FighterChargeCleared' => new FighterChargeCleared($user),
         'FighterCharacterChanged' => new FighterCharacterChanged($user),
+        'FighterMinionsChanged' => new FighterMinionsChanged($user),
         'FighterMoved' => new FighterMoved($user, 0.5, 0.7),
         'FighterAgentCountChanged' => new FighterAgentCountChanged($user, 1, 1),
         'FighterAgentToolUsed' => new FighterAgentToolUsed($user, 'agent-abc123', true),
@@ -332,4 +335,123 @@ test('the custom character payload has exactly these keys, so a rename on either
             ],
         ]);
     }
+});
+
+test('a saved selection reaches every event as the same wire pool, never as the stored column', function () {
+    $minion = CustomMinion::factory()->create(['slot' => 1]);
+    $second = CustomMinion::factory()->create(['user_id' => $minion->user_id, 'slot' => 2]);
+    $minion->user->forceFill(['minion_pool' => ['rev' => 5, 'defaults_off' => ['demon-a', 'smw-bowser'], 'slots_off' => [1]]])->save();
+    $user = $minion->user->fresh();
+
+    foreach ([new FighterJoined($user), new FighterCharging($user, 'thinking…'), new FighterMinionsChanged($user)] as $event) {
+        $pool = $event->broadcastWith()['minion_pool'];
+
+        expect(array_keys($pool))->toBe(['rev', 'defaults', 'custom'])
+            ->and($pool['rev'])->toBe(5)
+            ->and($pool['defaults'])->toBe(['blood-monster-a', 'smw-goomba', 'smw-babybowser'])
+            ->and($pool['custom'])->toBe([$second->fresh()->broadcastState()]);
+    }
+});
+
+test('FighterMinionsChanged carries the player\'s minion pool', function () {
+    $minion = CustomMinion::factory()->create(['version_hash' => 'abc123def456']);
+    $user = $minion->user->fresh();
+    $plain = User::factory()->create()->fresh();
+
+    $payload = (new FighterMinionsChanged($user))->broadcastWith();
+    $plainPayload = (new FighterMinionsChanged($plain))->broadcastWith();
+
+    expect(array_keys($payload))->toBe(['user_id', 'minion_pool'])
+        ->and($payload['user_id'])->toBe($user->id)
+        ->and($payload['minion_pool'])->toBe($user->minionPoolState())
+        ->and($payload['minion_pool']['custom'])->toBe([$minion->broadcastState()])
+        ->and($plainPayload)->toBe(['user_id' => $plain->id, 'minion_pool' => $plain->minionPoolState()])
+        ->and($plainPayload['minion_pool']['rev'])->toBe(0)
+        ->and($plainPayload['minion_pool']['defaults'])->toBe(config('token_slayer.custom_character.default_minions'))
+        ->and($plainPayload['minion_pool']['custom'])->toBe([]);
+});
+
+test('FighterJoined and FighterCharging carry minion_pool, and no longer custom_minions', function () {
+    $boss = Boss::factory()->create(['number' => 1]);
+    $plain = User::factory()->create();
+    $owner = CustomMinion::factory()->create()->user;
+    CustomMinion::factory()->create(['user_id' => $owner->id, 'slot' => 2]);
+    $owner = $owner->fresh();
+
+    $joined = (new FighterJoined($owner, $boss))->broadcastWith();
+    $charging = (new FighterCharging($owner, 'thinking…'))->broadcastWith();
+
+    expect((new FighterJoined($plain, $boss))->broadcastWith()['minion_pool'])->toBe($plain->minionPoolState())
+        ->and((new FighterCharging($plain, 'thinking…'))->broadcastWith()['minion_pool'])->toBe($plain->minionPoolState())
+        ->and($joined['minion_pool'])->toBe($owner->minionPoolState())
+        ->and($charging['minion_pool'])->toBe($owner->minionPoolState())
+        ->and($joined['minion_pool']['custom'])->toHaveCount(2)
+        ->and($joined)->not->toHaveKey('custom_minions')
+        ->and($charging)->not->toHaveKey('custom_minions');
+});
+
+test('the minion pool has exactly these keys on every event that carries it, so a rename on either side is caught', function () {
+    $minion = CustomMinion::factory()->create(['version_hash' => 'abc123def456']);
+    $user = $minion->user->fresh();
+    $folder = '/storage/custom-minions/'.$user->id.'/abc123def456';
+
+    foreach ([
+        new FighterJoined($user),
+        new FighterCharging($user, 'thinking…'),
+        new FighterMinionsChanged($user),
+    ] as $event) {
+        expect($event->broadcastWith()['minion_pool'])->toBe([
+            'rev' => 0,
+            'defaults' => config('token_slayer.custom_character.default_minions'),
+            'custom' => [[
+                'version' => 'abc123def456',
+                'url_base' => $folder,
+                'animations' => [
+                    'idle' => ['frames' => 6, 'rate' => 8],
+                    'walk' => ['frames' => 8, 'rate' => 10],
+                    'attack' => ['frames' => 6, 'rate' => 12],
+                    'death' => ['frames' => 3, 'rate' => 6],
+                ],
+                'body_px' => 22,
+            ]],
+        ]);
+    }
+});
+
+it('never puts the minion pool on BossSpawned', function () {
+    // BossSpawned repeats every active fighter and is dispatched through rescue(), so a
+    // pool per row could push it past Reverb's request limit and silently drop the spawn.
+    $boss = Boss::factory()->create(['number' => 2]);
+    $minion = CustomMinion::factory()->create();
+    $minion->user->forceFill(['last_event_at' => now()])->save();
+    User::factory()->create(['last_event_at' => now()]);
+
+    $payload = (new BossSpawned($boss))->broadcastWith();
+
+    expect($payload)->not->toHaveKey('minion_pool')->not->toHaveKey('custom_minions')
+        ->and($payload['fighters'])->toHaveCount(2);
+    foreach ($payload['fighters'] as $row) {
+        expect(array_keys($row))->toBe(['user_id', 'character', 'custom_character']);
+    }
+});
+
+test('ECHO_EVENT_MAP lists exactly the broadcastAs name of every battlefield event', function () {
+    $names = collect(glob(app_path('Events/*.php')))
+        ->filter(fn (string $file): bool => str_contains((string) file_get_contents($file), 'function broadcastAs'))
+        ->map(function (string $file): string {
+            preg_match("/function broadcastAs\\(\\): string\\s*\\{\\s*return '(\\w+)';/", (string) file_get_contents($file), $match);
+
+            return $match[1] ?? basename($file);
+        })
+        ->sort()
+        ->values()
+        ->all();
+
+    $source = (string) file_get_contents(resource_path('js/battlefield/constants.js'));
+    preg_match('/export const ECHO_EVENT_MAP = \{(.*?)\n\};/s', $source, $block);
+    preg_match_all('/^\s*(\w+):\s*BusEvent\./m', $block[1] ?? '', $keys);
+    $mapped = collect($keys[1])->sort()->values()->all();
+
+    expect($names)->not->toBeEmpty()
+        ->and($mapped)->toBe($names);
 });

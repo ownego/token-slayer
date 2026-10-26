@@ -2,12 +2,10 @@
 
 namespace App\Livewire;
 
-use App\Exceptions\CustomCharacterBusyException;
-use App\Exceptions\CustomCharacterDraftMissingException;
-use App\Exceptions\CustomCharacterStorageException;
 use App\Exceptions\CustomCharacterVersionException;
-use App\Exceptions\InvalidPoseSheetException;
-use App\Models\CustomCharacter;
+use App\Livewire\Concerns\ActsAsSheetPanel;
+use App\Livewire\Concerns\ConfirmsInPlace;
+use App\Livewire\Concerns\UploadsPoseSheet;
 use App\Services\BossArena;
 use App\Services\CustomCharacter\ConfirmCustomCharacter;
 use App\Services\CustomCharacter\DeleteCustomCharacterVersion;
@@ -19,11 +17,8 @@ use App\Services\CustomCharacter\RenameCustomCharacter;
 use App\Services\CustomCharacter\StageCustomCharacter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\On;
 use Livewire\Component;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
-use Livewire\WithFileUploads;
 use Throwable;
 
 /**
@@ -35,20 +30,13 @@ use Throwable;
  * around it (the `custom-character-changed` browser event) so the roster follows
  * without a reload, and a result worth a line is announced as a `sheet-toast`.
  *
- * Method names avoid `upload`, `removeUpload`, `uploadMultiple` and `cancelUpload`:
- * in the browser those are Livewire's own file-upload functions and win over a
- * component method of the same name.
+ * The upload rule and the hourly allowance (UploadsPoseSheet), the toast, the placeholder and the
+ * list of failures a player gets to read (ActsAsSheetPanel) and the in-place confirm question
+ * (ConfirmsInPlace) are shared with the minion editor.
  */
 class CustomCharacterEditor extends Component
 {
-    use WithFileUploads;
-
-    /**
-     * The pose sheet chosen in the form, before it is built.
-     *
-     * @var TemporaryUploadedFile|null
-     */
-    public $sheet = null;
+    use ConfirmsInPlace, ActsAsSheetPanel, UploadsPoseSheet;
 
     /**
      * The name box: what the fighter is (or is about to be) called.
@@ -56,14 +44,6 @@ class CustomCharacterEditor extends Component
      * @var string
      */
     public string $name = '';
-
-    /**
-     * What the player is being asked to confirm, in place: `remove` (the fighter) or
-     * `version-<hash>` (deleting one earlier version); null when nothing is pending.
-     *
-     * @var string|null
-     */
-    public ?string $confirming = null;
 
     /**
      * Whether the change in flight should play the equip ceremony on the stage
@@ -80,23 +60,20 @@ class CustomCharacterEditor extends Component
      */
     public function mount(): void
     {
-        $this->name = (string) auth()->user()->customCharacter()->value('name');
+        $this->name = (string) auth()->user()->customCharacter()->first()?->name;
     }
 
     /**
-     * Validation rules. The sheet's byte limit is the one the decoder enforces
-     * (this only fails fast, before the file is read); the name's is the longest
-     * the fighter may be called.
+     * Validation rules: the shared sheet rule, and the longest the fighter may be called.
      *
      * @return array<string, array<int, string>>
      */
     protected function rules(): array
     {
-        $maxKilobytes = intdiv((int) config('token_slayer.custom_character.max_bytes'), 1024);
         $nameMax = (int) config('token_slayer.custom_character.name_max');
 
         return [
-            'sheet' => ['required', 'file', 'mimes:png,jpg,jpeg,webp', "max:{$maxKilobytes}"],
+            ...$this->sheetRules(),
             'name' => ['nullable', 'string', "max:{$nameMax}"],
         ];
     }
@@ -110,21 +87,14 @@ class CustomCharacterEditor extends Component
      */
     public function build(StageCustomCharacter $stage): void
     {
-        $this->resetErrorBag();
-        $this->validateOnly('sheet');
+        $bytes = $this->takeSheetBytes();
 
-        $user = auth()->user();
-        $key = "custom-character-upload:{$user->id}";
-
-        if (! RateLimiter::attempt($key, (int) config('token_slayer.custom_character.uploads_per_hour'), fn (): bool => true, 3600)) {
-            $minutes = (int) ceil(RateLimiter::availableIn($key) / 60);
-            $this->addError('sheet', "Too many uploads. Try again in {$minutes} minutes.");
-
+        if ($bytes === null) {
             return;
         }
 
         try {
-            $stage->execute($user, (string) file_get_contents($this->sheet->getRealPath()));
+            $stage->execute(auth()->user(), $bytes);
             $this->toast('Built. It goes live only when you use it.');
             $this->announce();
         } catch (Throwable $exception) {
@@ -151,30 +121,6 @@ class CustomCharacterEditor extends Component
             $this->toast('Your fighter is equipped.');
             $this->dispatch('sheet-focus', target: 'equipped-slot');
         });
-    }
-
-    /**
-     * Asks for the player's go-ahead before something destructive, in the panel (never a
-     * browser dialog). It only remembers the question; the change itself is a separate action.
-     *
-     * @param  string  $what  `remove` or `version-<hash>`
-     * @return void
-     */
-    public function askToConfirm(string $what): void
-    {
-        $this->confirming = preg_match('/^(remove|version-[a-f0-9]{12})$/', $what) === 1 ? $what : null;
-    }
-
-    /**
-     * Drops the question without changing anything, and puts focus back on what opened it.
-     *
-     * @return void
-     */
-    public function dismissConfirm(): void
-    {
-        $opener = $this->confirming === 'remove' ? 'cce-remove-open-' : 'cce-version-open-'.substr((string) $this->confirming, 8).'-';
-        $this->confirming = null;
-        $this->js('setTimeout(() => document.getElementById("'.$opener.'" + $wire.$id)?.focus(), 0)');
     }
 
     /**
@@ -301,18 +247,6 @@ class CustomCharacterEditor extends Component
     }
 
     /**
-     * What the panel shows while it loads: it is mounted when the player first opens it.
-     *
-     * @return string
-     */
-    public function placeholder(): string
-    {
-        return <<<'HTML'
-        <div class="cce-skel" role="status" aria-label="Loading your fighter"><i></i><i></i><i></i></div>
-        HTML;
-    }
-
-    /**
      * Renders the editor with the player's draft, fighter and versions.
      *
      * @param  PreviewStrips  $previews  describes the strips to preview
@@ -341,14 +275,27 @@ class CustomCharacterEditor extends Component
     }
 
     /**
-     * Tells the sheet to show a short result line (its toast).
-     *
-     * @param  string  $message  the line
-     * @return void
+     * @inheritDoc
      */
-    private function toast(string $message): void
+    protected function loadingLabel(): string
     {
-        $this->dispatch('sheet-toast', message: $message);
+        return 'Loading your fighter';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function confirmPattern(): string
+    {
+        return '/^(remove|version-[a-f0-9]{12})$/';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function confirmOpener(): string
+    {
+        return $this->confirming === 'remove' ? 'cce-remove-open-' : 'cce-version-open-'.substr((string) $this->confirming, 8).'-';
     }
 
     /**
@@ -378,39 +325,6 @@ class CustomCharacterEditor extends Component
     }
 
     /**
-     * Shows why a change did not happen: the sheet's own problem under the file
-     * box, anything else the player can act on as a general message. Anything
-     * unexpected is let through, not hidden behind a friendly line.
-     *
-     * @param  Throwable  $exception  what went wrong
-     * @param  string  $field  where to show it
-     * @return void
-     *
-     * @throws Throwable when the failure is not one the player can do something about
-     */
-    private function fail(Throwable $exception, string $field): void
-    {
-        if ($exception instanceof InvalidPoseSheetException) {
-            $this->addError('sheet', $exception->getMessage().' '.$exception->problem->hint());
-
-            return;
-        }
-
-        if ($exception instanceof CustomCharacterBusyException
-            || $exception instanceof CustomCharacterStorageException
-            || $exception instanceof CustomCharacterDraftMissingException
-            || $exception instanceof CustomCharacterVersionException) {
-            $this->addError($field, $exception->getMessage());
-            $this->dispatch('sheet-error', message: $exception->getMessage());
-            $this->announce();
-
-            return;
-        }
-
-        throw $exception;
-    }
-
-    /**
      * Tells the page around the editor what the player has now: their fighter, the
      * draft waiting to be used, and which one is equipped. A ceremony plays only
      * after an equip the player asked for.
@@ -418,7 +332,7 @@ class CustomCharacterEditor extends Component
      * @param  bool  $ceremony  whether the stage should play the equip ceremony
      * @return void
      */
-    private function announce(bool $ceremony = false): void
+    protected function announce(bool $ceremony = false): void
     {
         $user = auth()->user()->fresh();
         $character = $user->customCharacter()->first();

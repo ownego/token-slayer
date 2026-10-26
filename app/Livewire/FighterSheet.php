@@ -129,6 +129,17 @@ class FighterSheet extends Component
     public ?array $customDraft = null;
 
     /**
+     * The player's minion pool (`User::minionPoolState()`): the default looks and their own minions that they have
+     * ticked into the pool and saved (all of them until they save a selection), handed to the Profile mini stage when it is built. The stage keeps itself
+     * current after that, from the editor's `custom-minions-changed` and the `FighterMinionsChanged`
+     * broadcast, so nothing here listens for them: a re-read on every change would re-render the sheet
+     * for a stage that has already redrawn itself.
+     *
+     * @var array<string, mixed>
+     */
+    public array $minionPool = [];
+
+    /**
      * The roster key the Character tab uses for the custom fighter's slot, in
      * $equipped and in equip().
      *
@@ -160,6 +171,7 @@ class FighterSheet extends Component
         $this->equippedKey = $user->equipped_character?->value;
         $this->customCharacter = $user->customCharacter()->first()?->sheetState();
         $this->customDraft = app(PreviewStrips::class)->draftPayload($user);
+        $this->minionPool = $user->minionPoolState();
     }
 
     /**

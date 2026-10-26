@@ -2,6 +2,8 @@
 
 use App\Models\CustomCharacter;
 use App\Models\CustomCharacterDraft;
+use App\Models\CustomMinion;
+use App\Models\CustomMinionDraft;
 use App\Models\User;
 use App\Services\CustomCharacter\CustomCharacterLock;
 use App\Services\CustomCharacter\CustomCharacterStore;
@@ -80,6 +82,98 @@ test('the sweep rechecks version references after acquiring the player lock', fu
     $lock->shouldReceive('within')->once()->andReturnUsing(function (int $userId, Closure $callback) use ($owner): int {
         expect($userId)->toBe($owner->id);
         CustomCharacter::factory()->for($owner)->create(['version_hash' => 'justsaved000']);
+
+        return $callback();
+    });
+
+    expect((new PruneOrphanCustomCharacterFiles(app(CustomCharacterStore::class), $lock))->execute())->toBe(0);
+    Storage::disk('public')->assertExists("{$folder}/idle.png");
+});
+
+test('it sweeps an unreferenced minion folder older than an hour and keeps referenced ones', function () {
+    $owner = User::factory()->create();
+    CustomMinion::factory()->for($owner)->create(['version_hash' => 'minlive00000']);
+    CustomMinionDraft::factory()->create(['user_id' => $owner->id, 'version_hash' => 'mindraft0000']);
+    $base = "custom-minions/{$owner->id}";
+    oldStrip("{$base}/minlive00000");
+    oldStrip("{$base}/minorphan000");
+    oldStrip("{$base}/staged/mindraft0000");
+    Storage::disk('public')->put("{$base}/minrecent000/idle.png", 'new');
+    $strayStaged = User::factory()->create();
+    oldStrip("custom-minions/{$strayStaged->id}/staged/minunused000");
+
+    expect(app(PruneOrphanCustomCharacterFiles::class)->execute())->toBe(2);
+    Storage::disk('public')->assertExists("{$base}/minlive00000/idle.png");
+    Storage::disk('public')->assertExists("{$base}/staged/mindraft0000/idle.png");
+    Storage::disk('public')->assertExists("{$base}/minrecent000/idle.png");
+    Storage::disk('public')->assertMissing("{$base}/minorphan000/idle.png");
+    Storage::disk('public')->assertMissing("custom-minions/{$strayStaged->id}/staged/minunused000/idle.png");
+});
+
+test('it never sweeps minion folders as fighter orphans, nor fighter folders as minion orphans', function () {
+    $minionOnly = User::factory()->create();
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'minionone000', 'slot' => 1]);
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'miniontwo000', 'slot' => 2]);
+    oldStrip("custom-minions/{$minionOnly->id}/minionone000");
+    oldStrip("custom-minions/{$minionOnly->id}/miniontwo000");
+    $fighterOnly = User::factory()->create();
+    CustomCharacter::factory()->for($fighterOnly)->create(['version_hash' => 'fighterone00']);
+    oldStrip("custom-characters/{$fighterOnly->id}/fighterone00");
+
+    expect(app(PruneOrphanCustomCharacterFiles::class)->execute())->toBe(0);
+    Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/minionone000/idle.png");
+    Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/miniontwo000/idle.png");
+    Storage::disk('public')->assertExists("custom-characters/{$fighterOnly->id}/fighterone00/idle.png");
+});
+
+test('it keeps a hash referenced in both roots, and sweeps only the root that lost it', function () {
+    $both = User::factory()->create();
+    CustomCharacter::factory()->for($both)->create(['version_hash' => 'sharedhash00']);
+    CustomMinion::factory()->for($both)->create(['version_hash' => 'sharedhash00']);
+    oldStrip("custom-characters/{$both->id}/sharedhash00");
+    oldStrip("custom-minions/{$both->id}/sharedhash00");
+    $minionOnly = User::factory()->create();
+    CustomMinion::factory()->for($minionOnly)->create(['version_hash' => 'copiedhash00']);
+    oldStrip("custom-characters/{$minionOnly->id}/copiedhash00");
+    oldStrip("custom-minions/{$minionOnly->id}/copiedhash00");
+    $fighterOnly = User::factory()->create();
+    CustomCharacter::factory()->for($fighterOnly)->create(['version_hash' => 'keptfighter0']);
+    oldStrip("custom-characters/{$fighterOnly->id}/keptfighter0");
+    oldStrip("custom-minions/{$fighterOnly->id}/keptfighter0");
+
+    expect(app(PruneOrphanCustomCharacterFiles::class)->execute())->toBe(2);
+
+    Storage::disk('public')->assertExists("custom-characters/{$both->id}/sharedhash00/idle.png");
+    Storage::disk('public')->assertExists("custom-minions/{$both->id}/sharedhash00/idle.png");
+    Storage::disk('public')->assertMissing("custom-characters/{$minionOnly->id}/copiedhash00/idle.png");
+    Storage::disk('public')->assertExists("custom-minions/{$minionOnly->id}/copiedhash00/idle.png");
+    Storage::disk('public')->assertExists("custom-characters/{$fighterOnly->id}/keptfighter0/idle.png");
+    Storage::disk('public')->assertMissing("custom-minions/{$fighterOnly->id}/keptfighter0/idle.png");
+});
+
+test('the sweep rechecks minion references after acquiring the player lock', function () {
+    $owner = User::factory()->create();
+    $folder = "custom-minions/{$owner->id}/justadded000";
+    oldStrip($folder);
+    $lock = Mockery::mock(CustomCharacterLock::class);
+    $lock->shouldReceive('within')->once()->andReturnUsing(function (int $userId, Closure $callback) use ($owner): int {
+        expect($userId)->toBe($owner->id);
+        CustomMinion::factory()->for($owner)->create(['version_hash' => 'justadded000']);
+
+        return $callback();
+    });
+
+    expect((new PruneOrphanCustomCharacterFiles(app(CustomCharacterStore::class), $lock))->execute())->toBe(0);
+    Storage::disk('public')->assertExists("{$folder}/idle.png");
+});
+
+test('the sweep rechecks a minion draft after acquiring the player lock', function () {
+    $owner = User::factory()->create();
+    $folder = "custom-minions/{$owner->id}/staged/justbuilt000";
+    oldStrip($folder);
+    $lock = Mockery::mock(CustomCharacterLock::class);
+    $lock->shouldReceive('within')->once()->andReturnUsing(function (int $userId, Closure $callback) use ($owner): int {
+        CustomMinionDraft::factory()->create(['user_id' => $owner->id, 'version_hash' => 'justbuilt000']);
 
         return $callback();
     });

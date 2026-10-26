@@ -481,6 +481,9 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     if (m.id === 'idle' || m.id === 'walk') {
       pressed?.style.setProperty('--dur', `${c.anims[m.id].frames / c.anims[m.id].rate}s`);
       fighter(m.id, { loop: true });
+      if (!inspectorState.playing) {
+        $$('show-sprite').style.animationPlayState = 'paused';
+      }
 
       return;
     }
@@ -538,6 +541,15 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     }
   }
 
+  // The label of the stage's main action for what is on it: a fighter is equipped, a draft is used.
+  function equipLabelFor(key) {
+    if (key === DRAFT_KEY) {
+      return previewMode === 'peek' ? `Equip version ${previewNumber}` : 'Use this fighter';
+    }
+
+    return key === equipped ? 'Equipped' : `Equip ${nameOf(key)}`;
+  }
+
   // ---- selection ----
   function select(key, { keepEditor = false } = {}) {
     if (!keepEditor) {
@@ -579,7 +591,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     $$('show-state').classList.toggle('previewing', !mine);
     $$('equip-btn').hidden = isOtherCustom;
     $$('equip-btn').disabled = mine || isOtherCustom || heroArtMissing(key, window.__battlefield?.scene?.heroesLoaded);
-    $$('equip-label').textContent = isPeek ? `Equip version ${previewNumber}` : isDraft ? 'Use this fighter' : mine ? 'Equipped' : `Equip ${nameOf(key)}`;
+    $$('equip-label').textContent = equipLabelFor(key);
     $$('back-equipped').hidden = mine || isDraft;
     $$('discard-draft').hidden = !isDraft;
     $$('discard-draft').textContent = isPeek ? 'Close preview' : 'Discard';
@@ -716,7 +728,8 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     select(n.dataset.key);
   });
   on(document, 'keydown', e => {
-    if (!root.closest('.tab-panel')?.classList.contains('is-active') || e.target.tagName === 'INPUT') {
+    // the number keys play this stage's moves only while it is on screen: not behind the Minions sub-tab
+    if (!root.closest('.tab-panel')?.classList.contains('is-active') || root.closest('[hidden]') || e.target.tagName === 'INPUT') {
       return;
     }
     const n = parseInt(e.key, 10);
@@ -766,7 +779,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const button = $$('equip-btn');
     button.setAttribute('aria-busy', String(on));
     button.disabled = on || previewing === equipped || otherKeys.includes(previewing) || heroArtMissing(previewing, window.__battlefield?.scene?.heroesLoaded);
-    $$('equip-label').textContent = on ? 'Equipping…' : previewing === DRAFT_KEY && previewMode === 'peek' ? `Equip version ${previewNumber}` : previewing === DRAFT_KEY ? 'Use this fighter' : previewing === equipped ? 'Equipped' : `Equip ${nameOf(previewing)}`;
+    $$('equip-label').textContent = on ? 'Equipping…' : equipLabelFor(previewing);
     if (on) {
       equippingTimer = setTimeout(() => {
         setEquipping(false);
@@ -942,7 +955,7 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     const own = known(CUSTOM_KEY) ? CUSTOM_KEY : known(DRAFT_KEY) ? DRAFT_KEY : null;
     if (own) {
       if (previewing !== own) {
-        select(own);
+        select(own, { keepEditor: true });
       }
       const walk = moves(own).find(m => m.id === 'walk');
       if (walk) {
@@ -957,6 +970,34 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     $$('show-type').textContent = 'Upload a pose sheet and it appears here';
     $$('show-state').textContent = '';
   }
+  // The Forge's upload/build phase the stage shows, announced by the fighter editor. The Minions tab has an editor and
+  // a stage of its own, so a phase announced for minions never paints this one.
+  let forgePhase = null;
+  /**
+   * Shows the fighter editor's last announced phase on the stage, or clears it when there is none.
+   *
+   * @return {void}
+   */
+  function showForgePhase() {
+    if (forgePhase) {
+      showcase.dataset.forgePhase = forgePhase;
+    } else {
+      delete showcase.dataset.forgePhase;
+    }
+  }
+  /**
+   * Opens the drawer under the stage, which shows the player's own fighter, and puts focus on the opener.
+   *
+   * @return {void}
+   */
+  function openForge() {
+    if (!editing) {
+      showOwn();
+    }
+    enterEditor({ focus: false });
+    add.focus();
+  }
+
   on(add, 'click', () => {
     if (editing) {
       leaveEditor();
@@ -970,8 +1011,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
     on(panelBack, 'click', () => leaveEditor());
   }
   on(window, 'custom-forge-phase', (event) => {
-    if (editing && ['idle', 'uploading', 'ready', 'building', 'done', 'failed'].includes(event.detail?.phase)) {
-      showcase.dataset.forgePhase = event.detail.phase;
+    const phase = event.detail?.phase;
+    if (!['idle', 'uploading', 'ready', 'building', 'done', 'failed'].includes(phase) || event.detail?.source === 'minions') {
+      return;
+    }
+    forgePhase = phase;
+    if (editing) {
+      showForgePhase();
     }
   });
   const editButton = $$('edit-custom');
@@ -985,13 +1031,20 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
       leaveEditor();
     }
   });
-  function openEditorFromLink() {
-    window.__openCustomEditor = false;
-    if (!editing) {
-      showOwn();
+  /**
+   * Opens the Forge from a deep link. The Minions sub-tab is not the Forge's: a link to it is the sheet's
+   * `characterTabs` to answer, so it is left alone here, flag and all.
+   *
+   * @param {CustomEvent|undefined} event `open-custom-editor`; absent when the stage mounts after the event (the request then comes from `window.__openCustomEditor`).
+   * @return {void}
+   */
+  function openEditorFromLink(event) {
+    const requested = event?.detail?.tab ?? window.__openCustomEditor;
+    if (requested === 'minions') {
+      return;
     }
-    enterEditor({ focus: false });
-    add.focus();
+    window.__openCustomEditor = false;
+    openForge();
   }
   on(window, 'open-custom-editor', openEditorFromLink);
 
@@ -1279,8 +1332,13 @@ export function mountCharacterStage(root, { equipped: startingKey, roommates: ev
         const active = panel.classList.contains('is-active');
         if (active && !wasActive) {
           restart(grid, 'is-popping');
-          select(previewing);
-          setTimeout(() => root.querySelector('.slot[aria-selected="true"]')?.focus({ preventScroll: true }), 0);
+          if (editing) {
+            // opened straight into the Forge (the guide's "Open the Character editor" link): the drawer stays
+            showOwn();
+          } else {
+            select(previewing);
+            setTimeout(() => root.querySelector('.slot[aria-selected="true"]')?.focus({ preventScroll: true }), 0);
+          }
         }
         wasActive = active;
       });

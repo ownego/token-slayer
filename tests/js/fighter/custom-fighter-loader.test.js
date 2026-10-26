@@ -4,8 +4,9 @@ vi.mock('phaser', () => ({
   default: { Textures: { FilterMode: { NEAREST: 1 } } },
 }));
 
-import { loadCustomFighter } from '@battlefield/fighter/custom-fighter-loader.js';
+import { loadCustomFighter, loadStackedType } from '@battlefield/fighter/custom-fighter-loader.js';
 import { normalizeCustomCharacter } from '@battlefield/fighter/custom-fighter.js';
+import { customMinionType, normalizeMinionPool } from '@battlefield/minion-custom.js';
 
 const SPEC = normalizeCustomCharacter({
   version: 'abc',
@@ -138,5 +139,60 @@ describe('loadCustomFighter', () => {
     expect(scene.stored.textures.has('custom-7-abc')).toBe(false);
 
     await expect(loadCustomFighter(scene, 7, SPEC, fakeBrowser())).resolves.toMatchObject({ key: 'custom-7-abc' });
+  });
+});
+
+describe('loadStackedType', () => {
+  const minion = normalizeMinionPool({
+    rev: 1,
+    defaults: [],
+    custom: [{
+      version: 'abc',
+      url_base: '/storage/custom-minions/7/abc',
+      animations: SPEC.animations,
+      body_px: 22,
+    }],
+  }).custom[0];
+
+  test('builds a minion texture with minion-prefixed frame names', async () => {
+    const scene = fakeScene();
+    const browser = fakeBrowser();
+
+    const type = await loadStackedType(scene, customMinionType(7, minion), browser);
+
+    const texture = scene.stored.textures.get('minion-7-abc');
+    expect(type.key).toBe('minion-7-abc');
+    expect(texture.frames).toContainEqual({ name: 'minion-7-abc-idle-0', x: 0, y: 0, w: 100, h: 100 });
+    expect(browser.drawn[0]).toEqual({ url: '/storage/custom-minions/7/abc/idle.png', x: 0, y: 0 });
+    expect(scene.stored.anims.has('minion-7-abc-death')).toBe(true);
+  });
+
+  test('registers only the stacked animations, never an attackN built from the fight description', async () => {
+    const scene = fakeScene();
+
+    await loadStackedType(scene, customMinionType(7, minion), fakeBrowser());
+
+    expect([...scene.stored.anims].some(key => /attack\d/.test(key))).toBe(false);
+  });
+
+  test('a minion and a fighter of the same version load apart', async () => {
+    const scene = fakeScene();
+    const browser = fakeBrowser();
+
+    await loadCustomFighter(scene, 7, SPEC, browser);
+    await loadStackedType(scene, customMinionType(7, minion), browser);
+
+    expect([...scene.stored.textures.keys()].sort()).toEqual(['custom-7-abc', 'minion-7-abc']);
+  });
+
+  test('two requests for the same minion at once load it once', async () => {
+    const scene = fakeScene();
+    const browser = fakeBrowser();
+    const type = customMinionType(7, minion);
+
+    await Promise.all([loadStackedType(scene, type, browser), loadStackedType(scene, type, browser)]);
+
+    expect(browser.loadImage).toHaveBeenCalledTimes(4);
+    expect(scene.textures.addCanvas).toHaveBeenCalledTimes(1);
   });
 });

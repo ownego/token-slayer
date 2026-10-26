@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, MINION_TYPES, NECROMANCER_CONFIG } from '@battlefield/config.js';
+import { BAT_CONFIG, BOSS_TYPES, FIGHTER_TYPES, LAYOUTS, MINION_FALL_HOLD_MS, MINION_POOL_CUSTOM_CAP, MINION_SIZE_RATIO, MINION_TYPES, NECROMANCER_CONFIG, SPRITE_CHAR_HEIGHT, TIMINGS } from '@battlefield/config.js';
 import { AttackType } from '@battlefield/constants.js';
 
 const publicFile = (urlPath) => join(process.cwd(), 'public', urlPath.split('?')[0]);
@@ -243,6 +243,16 @@ describe('companion configs (Bat, Necromancer)', () => {
   });
 });
 
+describe('custom minion tunables', () => {
+  test('a minion stands half as tall as its fighter, from the shared config rather than minions.js', () => {
+    expect(MINION_SIZE_RATIO).toBe(0.5);
+  });
+
+  test('a spawn waits two seconds for the owner\'s custom looks before using a default', () => {
+    expect(TIMINGS.customMinionWaitMs).toBe(2000);
+  });
+});
+
 describe('MINION_TYPES', () => {
   test.each(MINION_TYPES.map((t) => [t.key, t]))('%s every animFiles strip exists on disk with a valid frame grid', (name, cfg) => {
     for (const [anim, info] of Object.entries(cfg.animFiles)) {
@@ -300,5 +310,23 @@ describe('LAYOUTS companion zones', () => {
     expect(LAYOUTS[mode].bats.radiusY).toBeGreaterThan(0);
     expect(LAYOUTS[mode].necromancer.anchor.x).toBeGreaterThan(0);
     expect(LAYOUTS[mode].necromancer.anchor.y).toBeGreaterThan(0);
+  });
+});
+
+describe('constants the sheet and the field share', () => {
+  test('a roster fighter\'s body is 18 px of its 100 px frame', () => {
+    expect(SPRITE_CHAR_HEIGHT).toBe(18);
+  });
+
+  test('a player\'s pool holds three custom minions (the server\'s minions_max, locked by CustomCharacterConfigTest)', () => {
+    expect(MINION_POOL_CUSTOM_CAP).toBe(3);
+  });
+
+  test('every default minion that falls stays down for MINION_FALL_HOLD_MS', () => {
+    const fallers = MINION_TYPES.filter(type => type.reaction.getUp);
+
+    expect(fallers.length).toBeGreaterThan(0);
+    expect(fallers.every(type => type.reaction.holdMs === MINION_FALL_HOLD_MS)).toBe(true);
+    expect(MINION_FALL_HOLD_MS).toBe(2000);
   });
 });

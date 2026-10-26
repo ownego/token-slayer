@@ -17,7 +17,9 @@ beforeEach(() => {
     <section class="showcase">${IDS.map(id => `<span id="${id}"></span>`).join('')}<div class="floor"></div><div class="equip-row"></div>
       <button type="button" id="discard-draft" hidden>Discard</button><span id="draft-status" role="status"></span>
       <div id="inspector" hidden><button id="inspect-toggle">Pause</button><button id="inspect-prev">Previous frame</button><button id="inspect-next">Next frame</button><span id="inspect-label"></span></div>
-      <section class="cce-drawer" id="custom-panel" hidden><button type="button" id="panel-back">Back</button><div class="cce-row"><button type="button" data-focus="upload">Choose file</button></div><input type="text" data-focus="name"></section>
+      <section class="cce-drawer" id="custom-panel" hidden><button type="button" id="panel-back">Back</button>
+        <div id="forge-pane-fighter"><div class="cce-row"><button type="button" data-focus="upload">Choose file</button></div><input type="text" data-focus="name"></div>
+      </section>
     </section>
   </div></div><div id="toast"></div><div id="tipbox"></div>`;
   // the stage's own floor lives inside #show-stage in the real markup
@@ -376,6 +378,30 @@ test('the editor deep link opens after the stage mounts even when its event arri
   window.dispatchEvent(new Event('open-custom-editor'));
   expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
   window.__openCustomEditor = false;
+});
+
+test('a deep link to the Minions sub-tab leaves the Forge shut and the request where the sub-tabs can answer it', () => {
+  window.__openCustomEditor = 'minions';
+  mount();
+
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(false);
+  expect(document.getElementById('custom-panel').hidden).toBe(true);
+  expect(window.__openCustomEditor).toBe('minions');
+});
+
+test('opening the editor for minions does not open the Forge, but opening it for the fighter, or with no tab, does', () => {
+  mount();
+  const editing = () => document.querySelector('.showcase').classList.contains('editing');
+
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+  expect(editing()).toBe(false);
+
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'fighter' } }));
+  expect(editing()).toBe(true);
+
+  document.getElementById('panel-back').click();
+  window.dispatchEvent(new Event('open-custom-editor'));
+  expect(editing()).toBe(true);
 });
 
 test('the broadcast echo of a just-announced local change does not request another refresh', () => {
@@ -979,4 +1005,127 @@ test('opening from the guide link with no fighter yet selects Create and shows t
   expect(tile.getAttribute('aria-pressed')).toBe('true');
   expect(document.querySelector('.showcase').classList.contains('blank')).toBe(true);
   expect(document.activeElement).toBe(tile);
+});
+
+// ---- the Minions sub-tab is not this stage's ----
+
+const MINION = {
+  version: 'mnn123def456',
+  url_base: '/storage/custom-minions/7/mnn123def456',
+  body_px: 22,
+  animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } },
+};
+const MINION_DRAFT = { hash: 'dhash0000001', spec: MINION };
+const MINION_POOL = { rev: 3, defaults: ['demon-a'], custom: [MINION] };
+
+/** What the Minions editor and the sheet could still send this stage about minions. */
+function sendMinionNews() {
+  window.dispatchEvent(new CustomEvent('custom-minions-changed', { detail: { pool: MINION_POOL, draft: MINION_DRAFT } }));
+  window.dispatchEvent(new CustomEvent('custom-minion-peek', { detail: { spec: { id: 3, ...MINION } } }));
+  window.dispatchEvent(new CustomEvent('sheet-own-minions-broadcast', { detail: { user_id: 7 } }));
+}
+
+test('the fighter stage has no key for a minion: a draft, a pool or a preview from the Minions tab adds no slot and changes nothing on the stage', () => {
+  mount({ me: 7, equipped: 'orc-rider' });
+  const before = document.getElementById('show-name').textContent;
+
+  sendMinionNews();
+
+  expect(document.querySelector('.slot[data-key^="minion"]')).toBeNull();
+  expect(document.querySelectorAll('.slot')).toHaveLength(24);
+  expect(document.getElementById('roster-count').textContent).toBe('24 fighters');
+  expect(document.getElementById('show-name').textContent).toBe(before);
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('orc-rider');
+});
+
+test('a minion draft handed to the stage is not a slot either: the sheet no longer carries one here', () => {
+  mount({ minionDraft: MINION_DRAFT });
+
+  expect(document.querySelector('.slot[data-key="minion-draft"]')).toBeNull();
+  expect(document.querySelectorAll('.badge')).toHaveLength(0);
+  expect(document.getElementById('roster-count').textContent).toBe('24 fighters');
+});
+
+test('the equip button is never alive for a minion: it stays the equipped fighter\'s, and never offers to add one (#2)', () => {
+  const { equip } = mount({ equipped: 'orc-rider' });
+
+  sendMinionNews();
+
+  expect(document.getElementById('equip-btn').disabled).toBe(true);
+  expect(document.getElementById('equip-label').textContent).toBe('Equipped');
+  expect(document.querySelector('.showcase').textContent).not.toMatch(/Add to minions/);
+  document.getElementById('equip-btn').click();
+  expect(equip).not.toHaveBeenCalled();
+});
+
+test('picking another fighter after minion news still equips that fighter, not a minion', () => {
+  vi.useFakeTimers();
+  const livewire = vi.fn();
+  vi.stubGlobal('Livewire', { dispatch: livewire });
+  const { equip } = mount({ equipped: 'orc-rider' });
+  sendMinionNews();
+
+  document.querySelector('.slot[data-key="wizard"]').click();
+  expect(document.getElementById('equip-btn').disabled).toBe(false);
+  document.getElementById('equip-btn').click();
+  vi.advanceTimersByTime(2300);
+
+  expect(equip).toHaveBeenCalledWith('wizard');
+  expect(livewire).not.toHaveBeenCalledWith('custom-minion-draft-confirm', expect.anything());
+});
+
+test('a minion building never paints the fighter stage as building (#3): only the fighter editor\'s phase does', () => {
+  mount();
+  document.querySelector('.slot-add').click();
+  const phase = () => document.querySelector('.showcase').dataset.forgePhase;
+  const announce = (source, value) => window.dispatchEvent(new CustomEvent('custom-forge-phase', { detail: { phase: value, source } }));
+
+  announce('minions', 'building');
+  expect(phase()).toBeUndefined();
+
+  announce('fighter', 'building');
+  expect(phase()).toBe('building');
+
+  announce('minions', 'ready');
+  expect(phase()).toBe('building');
+
+  announce(undefined, 'ready');
+  expect(phase()).toBe('ready');
+});
+
+test('the number keys play this stage\'s moves only while it is on screen, not while the Minions sub-tab hides it', () => {
+  mount();
+  const panel = document.querySelector('.tab-panel');
+  panel.classList.add('is-active');
+  const played = vi.fn();
+  document.querySelector('.move').addEventListener('click', played);
+  const press = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: '1' }));
+
+  press();
+  expect(played).toHaveBeenCalledTimes(1);
+
+  panel.hidden = true;
+  press();
+  expect(played).toHaveBeenCalledTimes(1);
+});
+
+test('an event that arrives after the sheet is gone touches nothing', () => {
+  mount();
+  cleanup.forEach(fn => fn());
+  cleanup = [];
+
+  expect(() => sendMinionNews()).not.toThrow();
+  expect(document.querySelector('.slot[data-key="minion-draft"]')).toBeNull();
+});
+
+test('the Character tab becoming active straight after the editor link keeps the drawer open', async () => {
+  mount({ equipped: 'custom', custom: CUSTOM });
+  const panel = document.querySelector('.tab-panel');
+
+  window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'fighter' } }));
+  panel.classList.add('is-active');
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  expect(document.querySelector('.showcase').classList.contains('editing')).toBe(true);
+  expect(document.querySelector('.slot[aria-selected="true"]').dataset.key).toBe('custom');
 });

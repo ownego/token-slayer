@@ -12,7 +12,7 @@ import { avatarSrc } from './fighter/avatar-stack.js';
 import { createPreviewGame, destroyPreviewGame } from './character-preview/game.js';
 import { loadoutLayout, fitScale } from './character-preview/modal-fit.js';
 import { thumbGeometry, scrollTopForThumb } from './character-preview/scroll-thumb.js';
-import { BusEvent, SCENE_KEY, WORLD_ZOOM } from './constants.js';
+import { BusEvent, ECHO_EVENT_MAP, SCENE_KEY, WORLD_ZOOM } from './constants.js';
 import { bindBus } from './shared/bus-bindings.js';
 import { keepHudOnCanvas, measureHudBand } from './hud/sync.js';
 import { createBossPlate } from './hud/boss-plate.js';
@@ -26,20 +26,6 @@ import { announceReady } from './ready-signal.js';
 // A small fixed palette for the TOP DAMAGE board's avatar swatch, shown
 // behind the real /avatars/{id} image (and left visible if that 404s).
 const BOARD_AVATAR_COLORS = ['#f97316', '#0ea5e9', '#22c55e', '#a855f7', '#ec4899', '#eab308'];
-
-const ECHO_EVENT_MAP = {
-  HitDealt:        BusEvent.HIT,
-  BossSpawned:     BusEvent.BOSS_SPAWNED,
-  BossKilled:      BusEvent.BOSS_KILLED,
-  FighterJoined:   BusEvent.FIGHTER_JOINED,
-  FighterCharging: BusEvent.FIGHTER_CHARGING,
-  FighterIdled:    BusEvent.FIGHTER_IDLED,
-  FighterMoved:    BusEvent.FIGHTER_MOVED,
-  FighterChargeCleared: BusEvent.FIGHTER_CHARGE_CLEARED,
-  FighterCharacterChanged: BusEvent.CHARACTER_CHANGED,
-  FighterAgentCountChanged: BusEvent.FIGHTER_AGENT_COUNT_CHANGED,
-  FighterAgentToolUsed: BusEvent.FIGHTER_AGENT_TOOL_USED,
-};
 
 const ECHO_RETRY_INTERVAL_MS = 200;
 const ECHO_RETRY_TIMEOUT_MS = 10_000;
@@ -64,10 +50,12 @@ function attachEchoListeners() {
 /**
  * Wires a one-time listener so that whenever the Echo/Reverb connection
  * (re)establishes, the Battlefield Livewire component is asked for the
- * current authoritative fighter positions. Reverb broadcasts have no replay,
- * so a `FighterMoved` that fired while this tab's WebSocket was disconnected
- * is otherwise lost forever for this one client; requesting a resync repairs
- * whatever drifted instead of leaving it wrong until the next full reload.
+ * current authoritative fighter positions and minion pools. Reverb broadcasts have no
+ * replay, so a `FighterMoved` that fired while this tab's WebSocket was disconnected
+ * is otherwise lost forever for this one client, and so is a `FighterMinionsChanged`;
+ * requesting a resync repairs whatever drifted instead of leaving it wrong until the next
+ * full reload. The pools are applied by their `rev`, so a stale response loses to a newer
+ * broadcast.
  *
  * @return {void}
  */
@@ -77,8 +65,8 @@ function bindResyncOnReconnect() {
   }
   resyncBound = true;
 
-  window.Livewire.on('battlefield-resynced', ({ positions }) => {
-    bus.emit(BusEvent.POSITIONS_RESYNCED, { positions });
+  window.Livewire.on('battlefield-resynced', ({ positions, minionPools }) => {
+    bus.emit(BusEvent.POSITIONS_RESYNCED, { positions, minionPools });
   });
 
   window.Echo.connector.pusher.connection.bind('connected', () => {

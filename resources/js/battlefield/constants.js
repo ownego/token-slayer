@@ -33,10 +33,35 @@ export const BusEvent = {
   CHARACTER_CHANGED: 'character-changed',
   FIGHTER_AGENT_COUNT_CHANGED: 'fighter-agent-count-changed',
   FIGHTER_AGENT_TOOL_USED: 'fighter-agent-tool-used',
+  MINIONS_CHANGED: 'minions-changed',
   // Local-only (never Echo-sourced): Impact's HP counter tween ticks this
   // on every retargeted-tween frame so the DOM boss plate (hud/boss-plate.js)
   // stays in sync without Impact drawing Phaser text itself.
   BOSS_HP_TICK: 'boss-hp-tick',
+};
+
+/**
+ * Which bus event each public-channel broadcast (`broadcastAs()` on the PHP event) is
+ * re-emitted as: `index.js` listens to every key here and emits the value, `scene.js` binds
+ * the value. The three names of an event (`broadcastAs()`, this key, the bus key) must
+ * line up. Lives here, not in `index.js`, because `index.js` assigns `window.bootBattlefield`
+ * when it loads and so cannot be imported under Vitest.
+ *
+ * @type {Object<string, string>}
+ */
+export const ECHO_EVENT_MAP = {
+  HitDealt:        BusEvent.HIT,
+  BossSpawned:     BusEvent.BOSS_SPAWNED,
+  BossKilled:      BusEvent.BOSS_KILLED,
+  FighterJoined:   BusEvent.FIGHTER_JOINED,
+  FighterCharging: BusEvent.FIGHTER_CHARGING,
+  FighterIdled:    BusEvent.FIGHTER_IDLED,
+  FighterMoved:    BusEvent.FIGHTER_MOVED,
+  FighterChargeCleared: BusEvent.FIGHTER_CHARGE_CLEARED,
+  FighterCharacterChanged: BusEvent.CHARACTER_CHANGED,
+  FighterAgentCountChanged: BusEvent.FIGHTER_AGENT_COUNT_CHANGED,
+  FighterAgentToolUsed: BusEvent.FIGHTER_AGENT_TOOL_USED,
+  FighterMinionsChanged: BusEvent.MINIONS_CHANGED,
 };
 
 /** Animation state identifiers shared across scene and managers. */

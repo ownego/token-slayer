@@ -3,6 +3,7 @@
 use App\Livewire\Battlefield;
 use App\Models\Boss;
 use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\FighterChargingCache;
@@ -395,4 +396,32 @@ test('battlefield boot payload carries each fighter\'s custom character, null wh
         ->assertSeeHtml('&quot;customCharacter&quot;:null')
         ->assertSeeHtml('&quot;version&quot;:&quot;feedfacecafe&quot;')
         ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-characters\/'.$custom->id.'\/feedfacecafe&quot;');
+});
+
+test('battlefield boot payload carries each fighter\'s minion pool, the defaults alone when they have no custom minion', function () {
+    Boss::factory()->create(['number' => 1]);
+    User::factory()->create(['last_event_at' => now()->subMinute()]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;minionPool&quot;:{&quot;rev&quot;:0')
+        ->assertSeeHtml('&quot;custom&quot;:[]')
+        ->assertSeeHtml('&quot;demon-a&quot;')
+        ->assertDontSeeHtml('customMinions');
+
+    $minion = CustomMinion::factory()->create(['version_hash' => 'bead1234cafe']);
+    $minion->user->forceFill(['last_event_at' => now()->subMinute(), 'minion_pool' => ['rev' => 7, 'defaults_off' => [], 'slots_off' => []]])->save();
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;rev&quot;:7')
+        ->assertSeeHtml('&quot;custom&quot;:[{&quot;version&quot;:&quot;bead1234cafe&quot;')
+        ->assertSeeHtml('&quot;url_base&quot;:&quot;\/storage\/custom-minions\/'.$minion->user_id.'\/bead1234cafe&quot;')
+        ->assertDontSeeHtml('customMinions');
+});
+
+test('battlefield boot payload leaves a default look out of the pool once its owner unticked it', function () {
+    Boss::factory()->create(['number' => 1]);
+    User::factory()->create(['last_event_at' => now()->subMinute(), 'minion_pool' => ['rev' => 1, 'defaults_off' => ['smw-bowser'], 'slots_off' => []]]);
+
+    Livewire::test(Battlefield::class)
+        ->assertSeeHtml('&quot;defaults&quot;:[&quot;demon-a&quot;,&quot;blood-monster-a&quot;,&quot;smw-goomba&quot;,&quot;smw-babybowser&quot;]');
 });

@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\CustomCharacter;
+use App\Models\CustomCharacterDraft;
+use App\Models\CustomCharacterVersion;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -44,4 +46,23 @@ test('the sheet state names the author, and the public broadcast state never doe
         'name' => 'Sir Pixel',
         'author' => $character->user->displayHandle(),
     ])->and($character->broadcastState())->not->toHaveKey('author');
+});
+
+test('the fighter in use is one of its own versions, and earlier versions are listed with it', function () {
+    $character = CustomCharacter::factory()->create(['version_hash' => 'current00000']);
+    CustomCharacterVersion::factory()->for($character->user)->create(['version_hash' => 'earlier00000']);
+
+    expect($character->versions()->pluck('version_hash')->all())->toBe(['current00000', 'earlier00000'])
+        ->and(CustomCharacter::count())->toBe(1)
+        ->and(CustomCharacterVersion::count())->toBe(2);
+});
+
+test('a draft is not the fighter in use, and another player\'s versions are not this one\'s', function () {
+    $character = CustomCharacter::factory()->create();
+    CustomCharacterDraft::create(['user_id' => $character->user_id, 'version_hash' => 'draft0000000', 'animations' => $character->animations]);
+    CustomCharacter::factory()->create();
+
+    expect(CustomCharacter::count())->toBe(2)
+        ->and($character->user->customCharacter->is($character))->toBeTrue()
+        ->and($character->versions()->count())->toBe(1);
 });

@@ -209,7 +209,7 @@ export function standOn(el, key, sc, floor) {
  * death and summon (death played backwards) — only the ones it has strips for.
  *
  * @param {string} key Fighter key.
- * @return {Array<{id: string, label: string, anim?: string, reverse?: boolean}>}
+ * @return {Array<{id: string, label: string, anim?: string, reverse?: boolean, holdMs?: number, thenReverse?: boolean}>}
  */
 export function moves(key) {
   const c = BY_KEY[key];

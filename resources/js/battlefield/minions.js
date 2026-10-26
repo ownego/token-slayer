@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { MINION_TYPES, MINION_CLASH_EFFECTS, TIMINGS } from '@battlefield/config.js';
+import { MINION_TYPES, MINION_CLASH_EFFECTS, MINION_SIZE_RATIO, TIMINGS } from '@battlefield/config.js';
 import { TextureKey } from '@battlefield/constants.js';
 import { setDepthIfChanged } from '@battlefield/shared/depth.js';
 import { randomWanderPoint } from './boss/bat-wander.js';
@@ -7,6 +7,8 @@ import { homeSlotOffset, homeSlotAngle, isInFrontOfFighter } from './minion-layo
 import { sampleTrail, pushTrailSample } from './minion-trail.js';
 import { computeZones, zoneFanOffset } from './minion-grouping.js';
 import { countSidesNear, pickAttackerSide, travelLanding, pickRandom, fidgetAttacks, flipToFace, flipToFaceAngle } from './minion-fight.js';
+import { isNewerPool, minionSpriteFrame, normalizeMinionPool } from './minion-custom.js';
+import { MinionLooks } from '@battlefield/minion-looks.js';
 
 /**
  * The Clawd poof that plays before a minion appears: crouch-with-dust,
@@ -27,8 +29,6 @@ const POOF_PUFF_COUNT = 10;
 
 /** Reference ink height (px) the badge/ring/clash-burst ratios below were tuned against — Demon_A/Blood Monster_A's native idle height. A type's own sprite scale comes from its own `charHeight` (config/companions.js) so every type renders at the same visual height; everything sized from "the minion's visual height" goes through this reference instead of a per-type value. */
 const BASE_CHAR_HEIGHT = 20;
-/** A minion's visual height as a fraction of its fighter's own current effective size (baseSize * the container's own live scaleX — see _currentSize) — recomputed every frame since minions are independent world-space sprites now (not container children), so nothing else carries crowd/damage growth for them. */
-const MINION_SIZE_RATIO = 0.5;
 /** A minion's own avatar badge (the owning fighter's avatar image, shrunk down) as a fraction of the minion's current display size — small enough to read as a tag, not compete with the minion sprite itself. */
 const MINION_BADGE_SIZE_RATIO = 0.55;
 /** How far above the minion's own top the badge sits, as a fraction of the minion's current visual height. */
@@ -163,6 +163,16 @@ export class Minions {
     this.leaders = new Map();
     /** @type {Map<number|string, number>} the last-applied FighterAgentCountChanged seq per user, so a broadcast that arrives after a fresher one it already applied is discarded instead of regressing the swarm — see FighterAgentCountChanged's own docblock. */
     this.lastAppliedSeq = new Map();
+    /** @type {boolean} set by destroy(): a poof or timer that finishes after the scene shut down finds it and touches nothing (the scene's own isShuttingDown is re-armed by a restart, this flag is not). */
+    this.destroyed = false;
+    /** @type {MinionLooks} which looks the swarm shows: loading, drawing, swapping and releasing them (minion-looks.js). */
+    this.looks = new MinionLooks(scene, {
+      minionsOf: userId => this.byUser.get(userId) ?? [],
+      beginSummon: (userId, entry, minion) => this._beginSummon(userId, entry, minion),
+      playSwapPoof: (minion, entry, onDone) => {
+        this._playClawdPoof(minion.sprite.x, minion.sprite.y, this._minionScale(entry), onDone, minion.sprite);
+      },
+    });
   }
 
   /**
@@ -198,6 +208,9 @@ export class Minions {
 
     const list = this.byUser.get(userId) ?? [];
     const target = Phaser.Math.Clamp(payload.count, 0, MINION_MAX_VISIBLE);
+    if (target > list.length) {
+      this.looks.loadPool(userId, entry);
+    }
     while (list.length < target) {
       list.push(this._spawnOne(userId, entry, list.length, target));
     }
@@ -209,6 +222,38 @@ export class Minions {
     if (list.length === 0) {
       this._removeLeader(userId);
     }
+    this.looks.releaseUnused(userId);
+  }
+
+  /**
+   * Applies a minion pool that reached the client (`FighterMinionsChanged`, a re-join or
+   * charge that carries the pool, a resync). A payload without a readable `minion_pool`
+   * means "no information" and is ignored, as is a fighter not on the field and a pool that
+   * is not newer by `rev` than the one the fighter holds: the routes do not arrive in
+   * order, so a charge that read the pool before a removal must not bring the removed
+   * minion back. Otherwise the pool is stored on the entry (the only place it is written
+   * after the entry is created), and `MinionLooks#poolChanged` does the rest: it loads the
+   * looks of its custom minions when the player has minions out, draws every minion on the
+   * field a look from the new pool (a minion that draws the look it shows keeps it, with no
+   * poof; one still waiting for its first look is left to its wait), and releases the looks
+   * nothing shows any more.
+   *
+   * @param {{user_id: number|string, minion_pool: *}} payload `minion_pool` as it is on the wire
+   * @return {void}
+   */
+  handleMinionsChanged(payload) {
+    if (!payload || payload.user_id == null) {
+      return;
+    }
+    const userId = payload.user_id;
+    const pool = normalizeMinionPool(payload.minion_pool);
+    const entry = this.scene.fighters.get(userId);
+    if (pool === null || !entry?.sprite?.active || !isNewerPool(entry.minionPool, pool)) {
+      return;
+    }
+
+    entry.minionPool = pool;
+    this.looks.poolChanged(userId, entry);
   }
 
   /**
@@ -224,7 +269,9 @@ export class Minions {
    * lighter assignment layer sits on top of it and is accurate for the
    * common case (dispatched count <= MINION_MAX_VISIBLE); beyond the cap,
    * an agent_id with nothing free to claim just never gets a ring, the same
-   * existing limitation the count itself already has.
+   * existing limitation the count itself already has. A minion still waiting
+   * for its look is hidden at its spawn point, so it is not free to claim: a
+   * ring would be drawn there for as long as the wait lasts.
    *
    * @param {{user_id: number|string, agent_id: string, busy: boolean}} payload
    * @return {void}
@@ -242,7 +289,7 @@ export class Minions {
       if (list.some(m => m.assignedAgentId === payload.agent_id)) {
         return;
       }
-      const free = list.find(m => m.assignedAgentId == null && m.sprite?.active);
+      const free = list.find(m => m.assignedAgentId == null && m.sprite?.active && !m.waitingForLook);
       if (!free) {
         return;
       }
@@ -609,7 +656,7 @@ export class Minions {
    * Clears a fighter's minion bookkeeping and leader trail state when it
    * leaves the battlefield. Unlike a container child, an independent
    * world-space sprite is never destroyed for free — this must destroy each
-   * minion sprite itself.
+   * minion sprite itself. The fighter's custom looks go with it.
    *
    * @param {number|string} userId
    * @return {void}
@@ -625,12 +672,17 @@ export class Minions {
       this.byUser.delete(userId);
     }
     this._removeLeader(userId);
+    this.looks.releaseUnused(userId, true);
   }
 
   /**
-   * Spawns one minion of a randomly-chosen type at its own home slot,
-   * playing a scaled-down version of the fighter-join summon ceremony
-   * (ground circle + golden-glow rise-in) — without the Necromancer sprite
+   * Creates one minion at its own home slot and returns it at once. Its look is picked at
+   * random from the owner's pool (the default looks it keeps and its loaded custom
+   * minions) when the custom minions are in (or failed), or when it has none; while they are
+   * still loading the minion is hidden with no look yet and `MinionLooks#holdForLook` holds its summon
+   * back. Looks stay loaded between bursts, so only a pool's first swarm ever waits. Once it has a
+   * look, `_beginSummon` plays a scaled-down version of the fighter-join summon
+   * ceremony (ground circle + golden-glow rise-in) — without the Necromancer sprite
    * itself performing it, since a whole team of them would be visual noise.
    *
    * @param {number|string} userId
@@ -641,20 +693,80 @@ export class Minions {
    */
   _spawnOne(userId, entry, index, count) {
     this._ensureLeader(userId);
-    const type = MINION_TYPES[Phaser.Math.Between(0, MINION_TYPES.length - 1)];
     const foot = this._footPosition(entry);
     const home = homeSlotOffset(index, count, this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO);
-    const spawnX = foot.x + home.x;
-    const spawnY = foot.y + home.y;
-    const finalScale = this._minionScale(entry, type.charHeight);
-
-    const summonCircle = this.scene.necromancer?.spawnSummonCircle(spawnX, spawnY, SUMMON_CIRCLE_SCALE) ?? null;
+    const decision = this.looks.spawnDecision(userId, entry, 0);
+    const type = decision === 'wait' ? null : this.looks.pickSpawnType(userId, entry);
+    const { texture, frame } = type ? minionSpriteFrame(type) : {};
 
     const sprite = this.scene.add
-      .sprite(spawnX, spawnY, `${type.key}-idle`)
+      .sprite(foot.x + home.x, foot.y + home.y, texture, frame)
       .setDepth(MINION_DEPTH_FRONT)
-      .setAlpha(0)
-      .play(`${type.key}-idle`);
+      .setAlpha(0);
+    if (type) {
+      sprite.play(`${type.key}-idle`);
+    }
+
+    const minion = {
+      userId,
+      sprite,
+      badge: null,
+      spawnX: foot.x + home.x,
+      spawnY: foot.y + home.y,
+      typeKey: type?.key ?? null,
+      type,
+      charHeight: type?.charHeight ?? BASE_CHAR_HEIGHT,
+      awaitingCustom: type ? this.looks.isAwaitingCustom(type, userId, entry) : false,
+      pendingLook: null,
+      waitingForLook: type === null,
+      waitStartedAt: this.scene.time.now,
+      waitTimer: null,
+      swapping: false,
+      pinned: false,
+      reacting: false,
+      fightTimers: [],
+      animState: 'idle',
+      fidgeting: false,
+      fighting: false,
+      summoning: true,
+      fightCooldownUntil: 0,
+      fidgetTimer: null,
+      idleTimer: null,
+      summonTimer: null,
+      idleOffset: { x: 0, y: 0 },
+      homeAngle: homeSlotAngle(index, count),
+      homeRadius: this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO,
+      zoneKey: null,
+      wasTrailFollowing: false,
+      summonCircle: null,
+      assignedAgentId: null,
+      toolRing: null,
+    };
+
+    if (type) {
+      this._beginSummon(userId, entry, minion);
+    } else {
+      this.looks.holdForLook(userId, minion);
+    }
+
+    return minion;
+  }
+
+  /**
+   * Starts a minion's summon ceremony: the ground circle, the avatar badge, the Clawd
+   * poof (skipped under reduced motion) and the rise-in, then the idle fidget and wander
+   * timers. A look swap parked while it was summoning is applied when the rise-in ends.
+   *
+   * @param {number|string} userId
+   * @param {object} entry the fighter entry from scene.fighters
+   * @param {object} minion a minion that already has its look
+   * @return {void}
+   */
+  _beginSummon(userId, entry, minion) {
+    const { spawnX, spawnY, sprite } = minion;
+    const finalScale = this._minionScale(entry, minion.charHeight);
+
+    minion.summonCircle = this.scene.necromancer?.spawnSummonCircle(spawnX, spawnY, SUMMON_CIRCLE_SCALE) ?? null;
 
     // Reuses the owning fighter's OWN already-loaded avatar texture (real
     // photo once loaded, or its generated fallback in the meantime) rather
@@ -673,48 +785,24 @@ export class Minions {
     // for the whole ~SUMMON_RISE_MS window, then snap down to correct size
     // the instant summoning flips false — caught live as "bụp 1 phát từ to
     // hóa về bình thường".
-    const badgePx = finalScale * type.charHeight * MINION_BADGE_SIZE_RATIO;
-    const badge = this.scene.add
+    const badgePx = finalScale * minion.charHeight * MINION_BADGE_SIZE_RATIO;
+    minion.badge = this.scene.add
       .image(spawnX, spawnY, entry.head?.texture?.key ?? sprite.texture.key)
       .setDisplaySize(badgePx, badgePx)
       .setAlpha(0)
       .setDepth(MINION_DEPTH_FRONT);
 
-    const minion = {
-      sprite,
-      badge,
-      typeKey: type.key,
-      type,
-      charHeight: type.charHeight,
-      pinned: false,
-      reacting: false,
-      fightTimers: [],
-      animState: 'idle',
-      fidgeting: false,
-      fighting: false,
-      summoning: true,
-      fightCooldownUntil: 0,
-      fidgetTimer: null,
-      idleTimer: null,
-      summonTimer: null,
-      idleOffset: { x: 0, y: 0 },
-      homeAngle: homeSlotAngle(index, count),
-      homeRadius: this._currentSize(entry) * IDLE_HOME_RADIUS_RATIO,
-      zoneKey: null,
-      wasTrailFollowing: false,
-      summonCircle,
-      assignedAgentId: null,
-      toolRing: null,
-    };
-
     const beginRiseIn = () => {
+      if (this.destroyed || this.scene.isShuttingDown) {
+        return;
+      }
       minion.summonTimer = this.scene.time.delayedCall(SUMMON_CIRCLE_LEAD_MS, () => {
         if (!minion.sprite?.active) {
           return;
         }
         minion.sprite.setAlpha(1);
         minion.badge?.setAlpha(1);
-        const visualHeight = finalScale * type.charHeight;
+        const visualHeight = finalScale * minion.charHeight;
         const riseOffset = visualHeight * SUMMON_RISE_OFFSET_RATIO;
         minion.sprite.setScale(0);
         minion.sprite.y = spawnY + riseOffset;
@@ -739,6 +827,7 @@ export class Minions {
                 onComplete: () => minion.sprite?.preFX?.remove(glow),
               });
             }
+            this.looks.flushParked(minion);
           },
         });
       });
@@ -755,39 +844,51 @@ export class Minions {
 
     this._scheduleFidget(minion);
     this._scheduleIdleWander(userId, minion);
-    return minion;
   }
 
   /**
    * Plays `POOF_SEQUENCE` (each frame `POOF_FRAME_MS`) at `(x, y)`, then a
    * `POOF_PUFF_COUNT`-particle puff burst, then `onDone`.
    *
+   * With an `anchor` (a sprite that keeps walking while the poof plays) the poof follows
+   * it, frame by frame, and bursts where it ended; once the anchor is gone it stays where
+   * the anchor last was.
+   *
    * @param {number} x
    * @param {number} y
    * @param {number} scale
    * @param {function(): void} onDone
+   * @param {?{x: number, y: number, active: boolean}} [anchor] A sprite the poof follows.
    * @return {void}
    */
-  _playClawdPoof(x, y, scale, onDone) {
+  _playClawdPoof(x, y, scale, onDone, anchor = null) {
     let clawd = null;
     let i = 0;
+    let at = { x, y };
+    const follow = () => {
+      if (anchor?.active) {
+        at = { x: anchor.x, y: anchor.y };
+        clawd?.setPosition(at.x, at.y);
+      }
+    };
     const step = () => {
+      follow();
       if (i >= POOF_SEQUENCE.length) {
         clawd?.destroy();
-        this._spawnPuffBurst(x, y);
+        this._spawnPuffBurst(at.x, at.y);
         onDone();
         return;
       }
       const [pose, dust] = POOF_SEQUENCE[i];
       const key = pose === 'crouch' ? TextureKey.CLAWD_CROUCH : pose === 'arms-up' ? TextureKey.CLAWD_ARMS : TextureKey.CLAWD_DEFAULT;
       if (!clawd) {
-        clawd = this.scene.add.image(x, y, key).setDepth(MINION_DEPTH_FRONT).setScale(scale);
+        clawd = this.scene.add.image(at.x, at.y, key).setDepth(MINION_DEPTH_FRONT).setScale(scale);
       } else {
         clawd.setTexture(key);
       }
       if (dust) {
         const dx = dust === '·' ? -1 : 1;
-        const glyph = this.scene.addSharpText(x + dx * 10 * scale, y - 6 * scale, dust, {
+        const glyph = this.scene.addSharpText(at.x + dx * 10 * scale, at.y - 6 * scale, dust, {
           fontFamily: 'monospace', fontSize: '12px', color: '#94a3b8',
         }).setDepth(MINION_DEPTH_FRONT);
         this.scene.time.delayedCall(POOF_FRAME_MS, () => glyph.destroy());
@@ -847,6 +948,9 @@ export class Minions {
     minion.fidgetTimer?.remove();
     minion.idleTimer?.remove();
     minion.summonTimer?.remove();
+    minion.waitTimer?.remove();
+    minion.waitTimer = null;
+    minion.pendingLook = null;
     for (const timer of minion.fightTimers ?? []) {
       timer.remove();
     }
@@ -1154,7 +1258,7 @@ export class Minions {
       if (!minion.sprite?.active) {
         return;
       }
-      if (minion.animState !== 'idle' || minion.fighting) {
+      if (minion.animState !== 'idle' || minion.fighting || minion.swapping) {
         this._scheduleFidget(minion);
         return;
       }
@@ -1166,6 +1270,7 @@ export class Minions {
         if (minion.sprite?.active && !minion.fighting) {
           minion.sprite.play(`${minion.typeKey}-idle`);
         }
+        this.looks.flushParked(minion);
         this._scheduleFidget(minion);
       });
     });
@@ -1210,7 +1315,7 @@ export class Minions {
    * @return {boolean} whether this minion is free to start a new fight right now
    */
   _isFightEligible(minion, time) {
-    return minion.sprite?.active && !minion.fighting && !minion.fidgeting && !minion.summoning && !minion.pinned && time >= minion.fightCooldownUntil;
+    return minion.sprite?.active && !minion.fighting && !minion.fidgeting && !minion.summoning && !minion.swapping && !minion.pinned && time >= minion.fightCooldownUntil;
   }
 
   /**
@@ -1362,6 +1467,7 @@ export class Minions {
       minion.animState = 'idle';
       minion.sprite.play(`${minion.typeKey}-idle`);
     }
+    this.looks.flushParked(minion);
   }
 
   /**
@@ -1464,18 +1570,24 @@ export class Minions {
   }
 
   /**
-   * Stops every pending timer/tween for every fighter's minions — called on
-   * scene shutdown. Does not destroy the sprites themselves: Phaser's own
-   * scene teardown destroys the full display list.
+   * Stops every pending timer/tween for every fighter's minions (including a spawn's
+   * wait for its look) — called on scene shutdown. Does not destroy the sprites
+   * themselves: Phaser's own scene teardown destroys the full display list. Custom
+   * look textures and animations are KEPT for a player whose swarm is out (`MinionLooks#destroy`):
+   * they belong to the game, a restarted scene reuses them, and this manager (a fresh one after a
+   * restart) releases them when the swarm is gone. A load or poof that finishes after this finds
+   * `destroyed` set and touches nothing.
    *
    * @return {void}
    */
   destroy() {
+    this.destroyed = true;
     for (const list of this.byUser.values()) {
       for (const minion of list) {
         this._teardownMinion(minion);
       }
     }
+    this.looks.destroy();
     this.byUser.clear();
     this.leaders.clear();
   }

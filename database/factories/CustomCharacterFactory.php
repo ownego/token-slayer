@@ -7,25 +7,13 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
+ * A fighter in use. The version in use is itself the fighter's one history row,
+ * so nothing else is created; earlier versions come from CustomCharacterVersionFactory.
+ *
  * @extends Factory<CustomCharacter>
  */
 class CustomCharacterFactory extends Factory
 {
-    /**
-     * A fighter always has a history row for the version in use.
-     *
-     * @return static
-     */
-    public function configure(): static
-    {
-        return $this->afterCreating(function (CustomCharacter $character): void {
-            $character->versions()->firstOrCreate(
-                ['version_hash' => $character->version_hash],
-                ['animations' => $character->animations],
-            );
-        });
-    }
-
     /**
      * Define the model's default state.
      *

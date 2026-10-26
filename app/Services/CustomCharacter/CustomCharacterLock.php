@@ -9,10 +9,12 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Serialises the changes one player makes to their fighter. The rate limiter
- * counts attempts, it does not stop two tabs from building at once, and two
- * builds that overlap can each delete the other's files and leave the database
- * pointing at a folder that is gone. Different players never wait on each other.
+ * Serialises the changes one player makes to their custom sprites, the fighter and
+ * the minions alike: they share one lock per player, because a minion can be
+ * copied from the fighter and both keep files the other's sweep must not cut. The
+ * rate limiter counts attempts, it does not stop two tabs from building at once,
+ * and two builds that overlap can each delete the other's files and leave the
+ * database pointing at a folder that is gone. Different players never wait on each other.
  */
 class CustomCharacterLock
 {

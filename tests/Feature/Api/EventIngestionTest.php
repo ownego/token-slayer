@@ -11,6 +11,7 @@ use App\Events\HitDealt;
 use App\Models\Account;
 use App\Models\AiModel;
 use App\Models\Boss;
+use App\Models\CustomMinion;
 use App\Models\Event;
 use App\Models\User;
 use App\Services\Battlefield\ModelFlairResolver;
@@ -18,6 +19,7 @@ use App\Services\FighterChargingCache;
 use App\Services\SubagentCountCache;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
@@ -1086,3 +1088,28 @@ test('a parent Stop never touches the agent count, since a single "stop"-shaped 
     expect(app(SubagentCountCache::class)->get($this->user->id))->toBe(1);
     Illuminate\Support\Facades\Event::assertNotDispatched(FighterAgentCountChanged::class);
 });
+
+it('adds no query per event for the minion pool beyond the one minion load', function (array $payload) {
+    // The pool rides FighterJoined/FighterCharging, which fire on the hot path (every prompt and
+    // tool call): reading it must reuse the one load of the player's minions rather than add a query.
+    CustomMinion::factory()->count(3)
+        ->sequence(fn ($sequence) => ['slot' => $sequence->index + 1])
+        ->create(['user_id' => $this->user->id]);
+
+    $minionLoads = 0;
+    DB::listen(function ($query) use (&$minionLoads): void {
+        if (str_contains($query->sql, 'custom_sprites') && in_array('minion', $query->bindings, true)) {
+            $minionLoads++;
+        }
+    });
+
+    $this->withHeader('Authorization', 'Bearer tok')
+        ->postJson('/api/events', $payload)
+        ->assertCreated();
+
+    expect($minionLoads)->toBe(1);
+})->with([
+    'session start' => [['hook_event_name' => 'SessionStart', 'session_id' => 'sess-pool']],
+    'prompt submit' => [['hook_event_name' => 'UserPromptSubmit', 'session_id' => 'sess-pool']],
+    'pre tool use' => [['hook_event_name' => 'PreToolUse', 'tool_name' => 'Bash']],
+]);

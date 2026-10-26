@@ -1,7 +1,6 @@
 import { activityFit } from '@battlefield/bubble-y.js';
 import { horizonYFor } from '@battlefield/layout.js';
-const SPRITE_CHAR_HEIGHT = 18;
-// Kept separate to avoid transitive Phaser import into this pure module; must sync if bubble.js value changes.
+import { SPRITE_CHAR_HEIGHT } from '@battlefield/config/fighters.js';
 
 /**
  * Returns a fighter's vertical extent from feet to the top of its action

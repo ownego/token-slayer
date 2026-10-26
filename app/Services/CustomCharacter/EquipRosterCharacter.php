@@ -37,7 +37,7 @@ class EquipRosterCharacter
     {
         $this->lock->within($user->id, function () use ($user, $character): void {
             $user->forceFill(['equipped_character' => $character])->save();
-            $user->customCharacter()->update(['active' => false]);
+            $user->customCharacter()->update(['enabled' => false]);
         });
 
         $this->announce->execute($user);

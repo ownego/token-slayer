@@ -6,6 +6,7 @@ use App\Exceptions\CustomCharacterBusyException;
 use App\Exceptions\CustomCharacterVersionException;
 use App\Models\CustomCharacter;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Switches a player's fighter to one of their earlier confirmed versions, and
@@ -38,12 +39,22 @@ class EquipCustomCharacterVersion
     public function execute(User $user, string $hash): CustomCharacter
     {
         $character = $this->lock->within($user->id, function () use ($user, $hash): CustomCharacter {
-            $character = $user->customCharacter()->first() ?? throw new CustomCharacterVersionException;
-            $version = $character->versions()->where('version_hash', $hash)->first() ?? throw new CustomCharacterVersionException;
+            $current = $user->customCharacter()->first() ?? throw new CustomCharacterVersionException;
+            $version = $current->versions()->where('version_hash', $hash)->first() ?? throw new CustomCharacterVersionException;
 
-            $character->update(['version_hash' => $version->version_hash, 'animations' => $version->animations, 'active' => true]);
+            if ($version->getKey() === $current->getKey()) {
+                $current->update(['active' => true]);
 
-            return $character;
+                return $current;
+            }
+
+            return DB::transaction(function () use ($current, $version): CustomCharacter {
+                $name = (string) $current->name;
+                $current->demote();
+                $version->promote($name, $version->animations);
+
+                return CustomCharacter::query()->findOrFail($version->getKey());
+            });
         });
 
         $this->announce->execute($user);

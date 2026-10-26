@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  CUSTOM_FOOT_ROW,
   CUSTOM_FRAME,
   customFighterKey,
   customFighterType,
@@ -135,5 +136,12 @@ describe('customFighterType spec', () => {
 describe('normalizeCustomCharacter limits', () => {
   test('refuses a frame count no strip of ours would have, rather than build a huge texture', () => {
     expect(normalizeCustomCharacter({ ...WIRE, animations: { ...ANIMATIONS, walk: { frames: 500, rate: 10 } } })).toBeNull();
+  });
+});
+
+describe('CUSTOM_FOOT_ROW', () => {
+  test('is the row a standing custom fighter\'s feet are on, in the 100 px frame', () => {
+    expect(CUSTOM_FOOT_ROW).toBe(58);
+    expect(CUSTOM_FOOT_ROW).toBeLessThan(CUSTOM_FRAME);
   });
 });

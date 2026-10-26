@@ -1,8 +1,11 @@
 // The Profile tab's mini stage, ported from the approved mockup's paintMini
 // and crew-Clawd blocks: the equipped fighter runs on the stage in its own
 // charge colours (grinding sparks off its heel), with one minion and one
-// crew Clawd per subagent the viewer has working right now.
+// crew Clawd per subagent the viewer has working right now. With no subagent
+// working the fighter runs alone: a minion is a subagent's, so none is drawn
+// until one is (the Minions tab's stage is where a pool change is seen).
 import { BusEvent } from '../constants.js';
+import { isNewerPool, normalizeMinionPool } from '@battlefield/minion-custom.js';
 import { FIGHTER_TYPES } from '../config/fighters.js';
 import { chargeAnim } from '../fighter/charge-anim.js';
 import { BOX } from './sheet-roster.js';
@@ -11,6 +14,7 @@ import { forgetHeel, heelOf, sparkField, sparkPoint } from './stage-sparks.js';
 import { registerCustomRoster } from './custom-roster.js';
 import { draw, ENTRANCES, ON_CLICK, play, SEQ } from './clawd-kit.js';
 import { crewCounts, crewReducer } from './sheet-ui.js';
+import { minionLooks } from './minion-preview.js';
 
 /**
  * Where minions stand around the fighter, in px from the stage centre,
@@ -35,6 +39,14 @@ const FLOOR = 26;
 const BODY_PX = 84;
 
 /**
+ * The body height every minion of the pool is drawn at on the mini stage, in px: the field draws them
+ * all one height whatever their sheet (config `MINION_TYPES[…].charHeight`), and so does this stage.
+ *
+ * @type {number}
+ */
+const MINION_BODY_PX = 19;
+
+/**
  * The scale the stage draws a body `h` px tall at: a whole number from 3 to 5
  * for the small roster bodies (crisp pixels), and for a body too tall for
  * three times (the 50-61 px heroes) the exact scale to BODY_PX.
@@ -48,15 +60,27 @@ function stageScale(h) {
 }
 
 /**
- * Minion spots: one per live subagent, capped at the spots we have, the
- * first `busy` of them working (in a tool call) and the rest idle.
+ * Minion spots: one per live subagent, capped at the spots we have, the first `busy` of them working (in a
+ * tool call) and the rest idle, each taking the pool's looks in turn as each subagent summons one of them.
+ * With no subagent there is no minion to draw, and with no looks there is nothing to draw it with.
  *
  * @param {number} total Live subagents.
  * @param {number} [busy] How many are in a tool call right now.
- * @return {Array<{i: number, x: number, y: number, kind: string, busy: boolean}>}
+ * @param {Array<import('./minion-preview.js').MinionLook>} [looks] The idle strip of each look in the viewer's pool.
+ * @return {Array<{i: number, x: number, y: number, kind: string, busy: boolean, look: import('./minion-preview.js').MinionLook}>}
  */
-export function minionSpots(total, busy = total) {
-  return MINION_SPOTS.slice(0, Math.max(0, total)).map((s, i) => ({ i, ...s, kind: i % 2 ? 'm-demon' : 'm-goomba', busy: i < busy }));
+export function minionSpots(total, busy = total, looks = []) {
+  if (total <= 0 || looks.length === 0) {
+    return [];
+  }
+
+  return MINION_SPOTS.slice(0, Math.min(total, MINION_SPOTS.length)).map((spot, i) => ({
+    i,
+    ...spot,
+    kind: 'm-look',
+    look: looks[i % looks.length],
+    busy: i < busy,
+  }));
 }
 
 /**
@@ -99,14 +123,19 @@ function busyOnField(me) {
  * @param {?object} custom The viewer's own custom fighter (`FighterSheet::$customCharacter`), equipped or not.
  *   Registered here, not left to the Character tab: this tab mounts first, and until the custom fighter
  *   is known to the sheet it cannot be shown.
+ * @param {?{rev: number, defaults: Array<string>, custom: Array<object>}} minionPool The viewer's minion pool (`FighterSheet::$minionPool`);
+ *   the swarm is drawn from it. Later pools replace it only when their `rev` is newer.
  * @return {object}
  */
-export function miniStage(equipped, total, me, custom = null) {
+export function miniStage(equipped, total, me, custom = null, minionPool = null) {
   registerCustomRoster(BY_KEY, BOX, custom);
+  const pool = normalizeMinionPool(minionPool);
 
   return {
     key: BY_KEY[equipped] ? equipped : Object.keys(BY_KEY)[0],
     crew: { total, busy: new Set() },
+    pool,
+    looks: minionLooks(pool),
     stopSparks: null,
     unbind: null,
     tabObserver: null,
@@ -117,7 +146,34 @@ export function miniStage(equipped, total, me, custom = null) {
       return crewCounts(this.crew);
     },
     get minionSpots() {
-      return minionSpots(this.counts.total, this.counts.busy);
+      return minionSpots(this.counts.total, this.counts.busy, this.looks);
+    },
+    /**
+     * The style properties of one minion spot: where it stands and its strip, drawn at the size that
+     * gives its body the stage's minion height. Set as properties (not a style string) so a URL can
+     * never break out of its value.
+     *
+     * @param {{x: number, y: number, look: import('./minion-preview.js').MinionLook}} spot A spot from `minionSpots`.
+     * @return {Object<string, string|number>}
+     */
+    spotStyle(spot) {
+      return {
+        '--mx': `${spot.x}px`,
+        '--my': `${spot.y}px`,
+        '--strip': `url("${spot.look.url}")`,
+        '--frames': spot.look.frames,
+        '--rate': spot.look.rate,
+        '--size': `${(spot.look.frame * MINION_BODY_PX / spot.look.bodyPx).toFixed(1)}px`,
+      };
+    },
+    /**
+     * What the pointer says about a minion spot.
+     *
+     * @param {{busy: boolean}} spot A spot from `minionSpots`.
+     * @return {string}
+     */
+    spotTitle(spot) {
+      return spot.busy ? 'working' : 'idle';
     },
     init() {
       this.crew = { total, busy: busyOnField(Number(me)) };
@@ -165,12 +221,50 @@ export function miniStage(equipped, total, me, custom = null) {
             }
           },
           [BusEvent.CHARACTER_CHANGED]: p => this.onCharacterBroadcast(p),
+          [BusEvent.MINIONS_CHANGED]: p => this.onMinionsBroadcast(p),
         });
       };
       attach();
       // the editor in the Character tab says what the fighter is after every change
       this.onCustomEvent = event => this.onCustomChanged(event.detail ?? {});
       window.addEventListener('custom-character-changed', this.onCustomEvent);
+      // the Minions tab's editor says what the pool is after every change
+      this.onMinionsEvent = event => this.onPoolChanged(event.detail?.pool);
+      window.addEventListener('custom-minions-changed', this.onMinionsEvent);
+    },
+    /**
+     * Follows a pool the stage is told about: the swarm is drawn from it, unless it is older than (or as
+     * old as) the one already held. Anything that is not a pool leaves the stage alone.
+     *
+     * @param {*} raw A pool, in the shape of the wire (`minion_pool`) or the editor's `pool`.
+     * @return {boolean} Whether the stage took it.
+     */
+    onPoolChanged(raw) {
+      const incoming = normalizeMinionPool(raw);
+      if (!incoming || !isNewerPool(this.pool, incoming)) {
+        return false;
+      }
+      this.pool = incoming;
+      this.looks = minionLooks(incoming);
+
+      return true;
+    },
+    /**
+     * Reuses the Profile stage's bus subscription: this player's pool changed somewhere the editor did
+     * not report (an admin removal, another tab), so the swarm follows and the Minions tab's editor is
+     * asked to re-read. A pool the stage already holds (the editor's own change reported it first) asks
+     * for nothing. Another player's change is none of this stage's business.
+     *
+     * @param {{user_id: number, minion_pool?: object}} payload The public `FighterMinionsChanged` broadcast.
+     * @return {void}
+     */
+    onMinionsBroadcast(payload) {
+      if (Number(payload.user_id) !== Number(me)) {
+        return;
+      }
+      if (this.onPoolChanged(payload.minion_pool)) {
+        window.Livewire?.dispatch('custom-minions-refresh');
+      }
     },
     /**
      * The fighter to show for a CHARACTER_CHANGED broadcast: the custom one while the player
@@ -278,6 +372,7 @@ export function miniStage(equipped, total, me, custom = null) {
     },
     destroy() {
       window.removeEventListener('custom-character-changed', this.onCustomEvent);
+      window.removeEventListener('custom-minions-changed', this.onMinionsEvent);
       this.tabObserver?.disconnect();
       this.stopSparks?.();
       this.unbind?.();

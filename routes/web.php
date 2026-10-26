@@ -98,9 +98,16 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/battlefield', fn () => view('battlefield'))->name('battlefield');
 
     // A one-time "open the fighter sheet" request: flashed for the next request only, so a reload shows the arena.
+    // `editor` opens the Character tab's editor; `editor_tab` says which: the Forge under the Fighter sub-tab (the
+    // default) or the Minions sub-tab, which is the minion editor itself.
     Route::get('/battlefield/open/{target}', function (string $target) {
-        return redirect()->route('battlefield')->with('open_sheet', ['tab' => 'character', 'editor' => $target === 'editor']);
-    })->whereIn('target', ['character', 'editor'])->name('battlefield.open-sheet');
+        $request = ['tab' => 'character', 'editor' => $target !== 'character'];
+        if ($target === 'minions') {
+            $request['editor_tab'] = 'minions';
+        }
+
+        return redirect()->route('battlefield')->with('open_sheet', $request);
+    })->whereIn('target', ['character', 'editor', 'minions'])->name('battlefield.open-sheet');
 
     Route::get('/avatars/{user}', AvatarProxyController::class)->name('avatar');
 

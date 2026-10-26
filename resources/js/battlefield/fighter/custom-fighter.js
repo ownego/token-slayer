@@ -32,10 +32,12 @@ const CUSTOM_BODY_PX = 52;
 const CUSTOM_STAND_PX = 22;
 
 /**
- * Row of a standing custom fighter's lowest pixel (the server's `FOOT_ROW`).
+ * Row of a standing custom fighter's lowest pixel (the server's `FOOT_ROW`). A custom
+ * minion's measured body is a height up from this row, so it is also the tallest `body_px`
+ * the client accepts (`minion-custom.js`, `sheet/custom-roster.js`).
  * @type {number}
  */
-const CUSTOM_FOOT_ROW = 58;
+export const CUSTOM_FOOT_ROW = 58;
 
 /**
  * The row a fighter's frame is centred on; a sprite scales about it.

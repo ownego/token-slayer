@@ -7,6 +7,8 @@ use App\Enums\FighterCharacter;
 use App\Enums\IncompleteUsageReason;
 use App\Enums\MembershipStatus;
 use App\Services\CustomCharacter\CustomCharacterStore;
+use App\Services\CustomCharacter\CustomMinionStore;
+use App\Services\CustomCharacter\MinionPool;
 use App\Services\Roles\DefaultRolePermissions;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
@@ -62,6 +64,7 @@ class User extends Authenticatable implements FilamentUser
             'equipped_character' => FighterCharacter::class,
             'incomplete_events' => 'integer',
             'incomplete_reason' => IncompleteUsageReason::class,
+            'minion_pool' => 'array',
         ];
     }
 
@@ -170,14 +173,50 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Deleting a user cascades their fighter's rows away in the database; this
-     * clears the files the rows pointed at, which the database cannot.
+     * The custom minions this user has confirmed, by slot.
+     *
+     * @return HasMany<CustomMinion, $this>
+     */
+    public function customMinions(): HasMany
+    {
+        return $this->hasMany(CustomMinion::class)->orderBy('slot');
+    }
+
+    /**
+     * The minion this user has built but not yet added (their preview), if any.
+     *
+     * @return HasOne<CustomMinionDraft, $this>
+     */
+    public function customMinionDraft(): HasOne
+    {
+        return $this->hasOne(CustomMinionDraft::class);
+    }
+
+    /**
+     * Deleting a user cascades their fighter's and minions' rows away in the
+     * database; this clears the files the rows pointed at, which the database cannot.
      *
      * @return void
      */
     protected static function booted(): void
     {
-        static::deleted(fn (User $user) => app(CustomCharacterStore::class)->forget($user->id));
+        static::deleted(function (User $user): void {
+            app(CustomCharacterStore::class)->forget($user->id);
+            app(CustomMinionStore::class)->forget($user->id);
+        });
+    }
+
+    /**
+     * The minion pool a subagent summon draws from: the default looks still ticked
+     * plus the ticked custom minions, with the counter that orders one pool against
+     * another (see MinionPool::get()). What is ticked is stored in `users.minion_pool`
+     * (see MinionPoolSelection); the relation `customMinions` supplies the looks.
+     *
+     * @return array{rev: int, defaults: list<string>, custom: list<array{version: string, url_base: string, animations: array<string, array{frames: int, rate: int}>, body_px: int}>}
+     */
+    public function minionPoolState(): array
+    {
+        return app(MinionPool::class)->get($this);
     }
 
     /**

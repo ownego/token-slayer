@@ -20,7 +20,7 @@ class OtherCustomCharacters
     {
         return CustomCharacter::query()
             ->with('user')
-            ->where('active', true)
+            ->where('enabled', true)
             ->where('user_id', '!=', $viewer->id)
             ->orderBy('user_id')
             ->get()

@@ -3,6 +3,7 @@
 use App\Events\FighterCharacterChanged;
 use App\Exceptions\CustomCharacterVersionException;
 use App\Models\CustomCharacter;
+use App\Models\CustomCharacterVersion;
 use App\Models\User;
 use App\Services\CustomCharacter\ConfirmCustomCharacter;
 use App\Services\CustomCharacter\DeleteCustomCharacterVersion;
@@ -116,7 +117,7 @@ test('removing the fighter deletes the row, every version and every file, and te
     app(RemoveCustomCharacter::class)->execute($character);
 
     expect(CustomCharacter::count())->toBe(0)
-        ->and(DB::table('custom_character_versions')->count())->toBe(0)
+        ->and(CustomCharacterVersion::count())->toBe(0)
         ->and($user->fresh()->customCharacter)->toBeNull();
     Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$first}/idle.png");
     Storage::disk('public')->assertMissing("custom-characters/{$user->id}/{$second}/idle.png");

@@ -9,12 +9,15 @@ use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 /**
- * Owns where a player's fighter strips live and every write to them. Strips are
- * kept under `custom-characters/{user}/{hash}/` once confirmed and under
- * `custom-characters/{user}/staged/{hash}/` while only previewed, so a draft can
- * never be mistaken for the fighter in use. The folder name carries a hash of
- * the strips' content: a changed fighter gets a new URL and a cached copy of the
- * old one cannot be served for it.
+ * Owns where a player's custom sprite strips live and every write to them. This
+ * class is the fighter's store, rooted at `custom-characters/`; CustomMinionStore
+ * extends it and only changes the root, so a minion's files sit apart from the
+ * fighter's and one kind's sweeps (prune, discard, forget) never reach the other's.
+ * Strips are kept under `{root}/{user}/{hash}/` once confirmed and under
+ * `{root}/{user}/staged/{hash}/` while only previewed, so a draft can never be
+ * mistaken for the sprite in use. The folder name carries a hash of the strips'
+ * content: a changed sprite gets a new URL and a cached copy of the old one cannot
+ * be served for it.
  *
  * Every write is checked (a full or unwritable disk is an error, not silence),
  * and nothing is deleted here until the caller says a database change is safe.
@@ -58,7 +61,7 @@ class CustomCharacterStore
      */
     public static function folder(int $userId, string $hash): string
     {
-        return self::ROOT."/{$userId}/{$hash}";
+        return static::ROOT."/{$userId}/{$hash}";
     }
 
     /**
@@ -70,7 +73,7 @@ class CustomCharacterStore
      */
     public static function stagedFolder(int $userId, string $hash): string
     {
-        return self::ROOT."/{$userId}/".self::STAGED."/{$hash}";
+        return static::ROOT."/{$userId}/".self::STAGED."/{$hash}";
     }
 
     /**
@@ -96,7 +99,7 @@ class CustomCharacterStore
      */
     public function baseUrl(int $userId, string $hash, bool $staged = false): string
     {
-        $folder = $staged ? self::stagedFolder($userId, $hash) : self::folder($userId, $hash);
+        $folder = $staged ? static::stagedFolder($userId, $hash) : static::folder($userId, $hash);
         $url = $this->disk()->url($folder);
         $host = parse_url($url, PHP_URL_HOST);
 
@@ -136,7 +139,7 @@ class CustomCharacterStore
         $startedAt = microtime(true);
         $encoded = array_map(fn (array $strip): string => $this->encode($strip['image']), $strips);
         $hash = substr(sha1(implode('', $encoded)), 0, self::HASH_LENGTH);
-        $folder = self::stagedFolder($userId, $hash);
+        $folder = static::stagedFolder($userId, $hash);
         $disk = $this->usableDisk();
         $existed = $this->safely(fn (): bool => $disk->exists("{$folder}/idle.png"));
 
@@ -161,11 +164,46 @@ class CustomCharacterStore
     }
 
     /**
+     * Copies a staged version into the confirmed folder and leaves the staged copy
+     * where it is. The staged files stay whole until all four strips are in place, so
+     * a failure half way leaves the draft usable and no half-confirmed folder. A
+     * version that is already confirmed (the same strips confirmed before, or an
+     * earlier try that copied and then met a database failure) is left as it is.
+     *
+     * The caller drops the staged copy (discardStaged) once its database change is in.
+     *
+     * @param  int  $userId  the owner
+     * @param  string  $hash  the version hash
+     * @return void
+     *
+     * @throws CustomCharacterStorageException when the version was never staged, or a file cannot be copied
+     */
+    public function copyStaged(int $userId, string $hash): void
+    {
+        $startedAt = microtime(true);
+        $disk = $this->usableDisk();
+        $from = static::stagedFolder($userId, $hash);
+        $to = static::folder($userId, $hash);
+
+        if ($this->isComplete($disk, $to)) {
+            $this->guardDeadline($startedAt);
+
+            return;
+        }
+
+        if (! $this->isComplete($disk, $from)) {
+            throw new CustomCharacterStorageException('The built sprite\'s files are gone. Please build it again.');
+        }
+
+        $this->copyStrips($disk, $from, $to, $startedAt);
+
+        $this->guardDeadline($startedAt);
+    }
+
+    /**
      * Copies a staged version into the confirmed folder, then drops the staged
-     * copy. The staged files stay whole until all four strips are in place, so a
-     * failure half way leaves the draft usable and no half-confirmed folder. A
-     * version that is already confirmed (the same strips confirmed before) just
-     * loses its staged copy; a confirmed folder missing some strips is completed.
+     * copy: copyStaged() followed by the delete, for a caller whose database change
+     * cannot fail between the two (a fighter's confirm, which keeps every version).
      *
      * @param  int  $userId  the owner
      * @param  string  $hash  the version hash
@@ -175,22 +213,132 @@ class CustomCharacterStore
      */
     public function promote(int $userId, string $hash): void
     {
+        $this->copyStaged($userId, $hash);
+
+        $this->safely(fn () => $this->usableDisk()->deleteDirectory(static::stagedFolder($userId, $hash)));
+    }
+
+    /**
+     * Copies another folder's four strips (on the same disk) into the staged area,
+     * as a draft's files, leaving the source alone. A version that is already staged
+     * is left as it is; a failure half way removes the half-written folder.
+     *
+     * @param  int  $userId  the owner
+     * @param  string  $hash  the version hash the copy is staged under
+     * @param  string  $fromFolder  the folder, on the disk, that holds the four strips
+     * @return void
+     *
+     * @throws CustomCharacterStorageException when the source is incomplete, a file cannot be copied, or too little lock lifetime remains
+     */
+    public function adoptStaged(int $userId, string $hash, string $fromFolder): void
+    {
         $startedAt = microtime(true);
         $disk = $this->usableDisk();
-        $from = self::stagedFolder($userId, $hash);
-        $to = self::folder($userId, $hash);
+        $to = static::stagedFolder($userId, $hash);
 
         if ($this->isComplete($disk, $to)) {
             $this->guardDeadline($startedAt);
-            $this->safely(fn () => $disk->deleteDirectory($from));
 
             return;
         }
 
-        if (! $this->isComplete($disk, $from)) {
-            throw new CustomCharacterStorageException('The built fighter\'s files are gone. Please build it again.');
+        if (! $this->isComplete($disk, $fromFolder)) {
+            throw new CustomCharacterStorageException('The files to copy are gone. Please try again.');
         }
 
+        $this->copyStrips($disk, $fromFolder, $to, $startedAt);
+        $this->guardDeadline($startedAt);
+    }
+
+    /**
+     * Deletes every staged version of the user except the one named.
+     *
+     * @param  int  $userId  the owner
+     * @param  string  $keep  the staged version hash to keep
+     * @return void
+     */
+    public function pruneStaged(int $userId, string $keep): void
+    {
+        $this->safely(function () use ($userId, $keep): void {
+            $disk = $this->disk();
+
+            foreach ($disk->directories(static::ROOT."/{$userId}/".self::STAGED) as $directory) {
+                if (basename($directory) !== $keep) {
+                    $this->safely(fn () => $disk->deleteDirectory($directory));
+                }
+            }
+        });
+    }
+
+    /**
+     * Deletes the user's whole staged area (their draft's files).
+     *
+     * @param  int  $userId  the owner
+     * @return void
+     */
+    public function discardStaged(int $userId): void
+    {
+        $this->safely(fn () => $this->disk()->deleteDirectory(static::ROOT."/{$userId}/".self::STAGED));
+    }
+
+    /**
+     * Deletes every confirmed version of the user except the ones listed. The
+     * staged area is never touched.
+     *
+     * @param  int  $userId  the owner
+     * @param  list<string>  $keep  the version hashes to keep
+     * @return void
+     */
+    public function prune(int $userId, array $keep): void
+    {
+        $this->safely(function () use ($userId, $keep): void {
+            $disk = $this->disk();
+
+            foreach ($disk->directories(static::ROOT."/{$userId}") as $directory) {
+                if (basename($directory) !== self::STAGED && ! in_array(basename($directory), $keep, true)) {
+                    $this->safely(fn () => $disk->deleteDirectory($directory));
+                }
+            }
+        });
+    }
+
+    /**
+     * Deletes one confirmed version's files.
+     *
+     * @param  int  $userId  the owner
+     * @param  string  $hash  the version hash
+     * @return void
+     */
+    public function forgetVersion(int $userId, string $hash): void
+    {
+        $this->safely(fn () => $this->disk()->deleteDirectory(static::folder($userId, $hash)));
+    }
+
+    /**
+     * Deletes everything stored for the user.
+     *
+     * @param  int  $userId  the owner
+     * @return void
+     */
+    public function forget(int $userId): void
+    {
+        $this->safely(fn () => $this->disk()->deleteDirectory(static::ROOT."/{$userId}"));
+    }
+
+    /**
+     * Copies the four strips from one folder to another, checking the result. A
+     * failure removes the half-written target and never touches the source.
+     *
+     * @param  Filesystem  $disk  the disk
+     * @param  string  $from  the source folder
+     * @param  string  $to  the target folder
+     * @param  float  $startedAt  when the calling operation began
+     * @return void
+     *
+     * @throws CustomCharacterStorageException when a file cannot be copied or too little lock lifetime remains
+     */
+    private function copyStrips(Filesystem $disk, string $from, string $to, float $startedAt): void
+    {
         try {
             foreach (self::ANIMATIONS as $animation) {
                 $this->guardDeadline($startedAt);
@@ -208,84 +356,6 @@ class CustomCharacterStore
 
             throw $exception instanceof CustomCharacterStorageException ? $exception : new CustomCharacterStorageException;
         }
-
-        $this->guardDeadline($startedAt);
-        $this->safely(fn () => $disk->deleteDirectory($from));
-    }
-
-    /**
-     * Deletes every staged version of the user except the one named.
-     *
-     * @param  int  $userId  the owner
-     * @param  string  $keep  the staged version hash to keep
-     * @return void
-     */
-    public function pruneStaged(int $userId, string $keep): void
-    {
-        $this->safely(function () use ($userId, $keep): void {
-            $disk = $this->disk();
-
-            foreach ($disk->directories(self::ROOT."/{$userId}/".self::STAGED) as $directory) {
-                if (basename($directory) !== $keep) {
-                    $this->safely(fn () => $disk->deleteDirectory($directory));
-                }
-            }
-        });
-    }
-
-    /**
-     * Deletes the user's whole staged area (their draft's files).
-     *
-     * @param  int  $userId  the owner
-     * @return void
-     */
-    public function discardStaged(int $userId): void
-    {
-        $this->safely(fn () => $this->disk()->deleteDirectory(self::ROOT."/{$userId}/".self::STAGED));
-    }
-
-    /**
-     * Deletes every confirmed version of the user except the ones listed. The
-     * staged area is never touched.
-     *
-     * @param  int  $userId  the owner
-     * @param  list<string>  $keep  the version hashes to keep
-     * @return void
-     */
-    public function prune(int $userId, array $keep): void
-    {
-        $this->safely(function () use ($userId, $keep): void {
-            $disk = $this->disk();
-
-            foreach ($disk->directories(self::ROOT."/{$userId}") as $directory) {
-                if (basename($directory) !== self::STAGED && ! in_array(basename($directory), $keep, true)) {
-                    $this->safely(fn () => $disk->deleteDirectory($directory));
-                }
-            }
-        });
-    }
-
-    /**
-     * Deletes one confirmed version's files.
-     *
-     * @param  int  $userId  the owner
-     * @param  string  $hash  the version hash
-     * @return void
-     */
-    public function forgetVersion(int $userId, string $hash): void
-    {
-        $this->safely(fn () => $this->disk()->deleteDirectory(self::folder($userId, $hash)));
-    }
-
-    /**
-     * Deletes everything stored for the user.
-     *
-     * @param  int  $userId  the owner
-     * @return void
-     */
-    public function forget(int $userId): void
-    {
-        $this->safely(fn () => $this->disk()->deleteDirectory(self::ROOT."/{$userId}"));
     }
 
     /**

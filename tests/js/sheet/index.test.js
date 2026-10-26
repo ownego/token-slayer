@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, expect, test, vi } from 'vitest';
-import { FINISH_RUN_MS, agoTicker, clawdBuddyPanel, createSheetShell, fighterSheetShell, sheetFrame } from '@battlefield/sheet/index.js';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { CHARACTER_TABS, FINISH_RUN_MS, agoTicker, characterTabAfter, characterTabs, clawdBuddyPanel, createSheetShell, fighterSheetShell, sheetFrame, switchTab } from '@battlefield/sheet/index.js';
 
 function buildDom() {
   document.body.innerHTML = `
@@ -365,4 +365,156 @@ test('the sheet announces it is ready once its first render is up', () => {
   expect(ready).toHaveBeenCalledTimes(1);
   window.removeEventListener('fighter-sheet-ready', ready);
   shell.destroy();
+});
+
+const SUBTABS = `<div class="char-subtabs" role="tablist">
+    <button class="sheet-tab" role="tab" id="char-tab-fighter" data-char-tab="fighter" aria-selected="true">Fighter</button>
+    <button class="sheet-tab" role="tab" id="char-tab-minions" data-char-tab="minions" aria-selected="false">Minions</button>
+  </div>`;
+
+test('the Character sub-tabs are not sheet tabs: switching the sheet never unselects them, and clicking them never switches the sheet', () => {
+  const { root } = buildDom();
+  root.insertAdjacentHTML('beforeend', `${SUBTABS}<div id="tab-profile" class="tab-panel"></div><div id="tab-character" class="tab-panel"></div>`);
+  const onTab = vi.fn();
+  const shell = createSheetShell(root, { onClose: vi.fn(), onTab });
+
+  document.getElementById('char-tab-minions').click();
+  expect(onTab).not.toHaveBeenCalled();
+
+  switchTab(root, 'character');
+  expect(document.getElementById('char-tab-fighter').getAttribute('aria-selected')).toBe('true');
+  expect(root.querySelector('[data-tab="character"]').getAttribute('aria-selected')).toBe('true');
+  shell.destroy();
+});
+
+describe('characterTabAfter', () => {
+  test('the arrows step through the sub-tabs and wrap round', () => {
+    expect(characterTabAfter('fighter', 'ArrowRight')).toBe('minions');
+    expect(characterTabAfter('minions', 'ArrowRight')).toBe('fighter');
+    expect(characterTabAfter('fighter', 'ArrowLeft')).toBe('minions');
+    expect(characterTabAfter('minions', 'ArrowLeft')).toBe('fighter');
+  });
+
+  test('Home and End jump to the ends, and any other key is not the strip\'s', () => {
+    expect(characterTabAfter('minions', 'Home')).toBe(CHARACTER_TABS[0]);
+    expect(characterTabAfter('fighter', 'End')).toBe(CHARACTER_TABS.at(-1));
+    expect(characterTabAfter('fighter', 'Enter')).toBeNull();
+    expect(characterTabAfter('fighter', 'ArrowDown')).toBeNull();
+  });
+});
+
+describe('characterTabs', () => {
+  let tabs = null;
+
+  /**
+   * Mounts the sub-tabs component on a root holding the strip, as Alpine would.
+   *
+   * @return {object} The component.
+   */
+  function mountTabs() {
+    document.body.innerHTML = `<div id="char-root">${SUBTABS}</div>`;
+    tabs = characterTabs();
+    tabs.$el = document.getElementById('char-root');
+    tabs.init();
+
+    return tabs;
+  }
+
+  afterEach(() => {
+    tabs?.destroy();
+    tabs = null;
+    delete window.__openCustomEditor;
+  });
+
+  test('opens on Fighter and shows one sub-tab at a time; an unknown one is ignored', () => {
+    const view = mountTabs();
+
+    expect(view.tab).toBe('fighter');
+    expect(view.select('minions')).toBe(true);
+    expect(view.tab).toBe('minions');
+    expect(view.select('minions')).toBe(false);
+    expect(view.select('nonsense')).toBe(false);
+    expect(view.tab).toBe('minions');
+  });
+
+  test('a deep link to the editor for minions lands on Minions with focus on its tab; for the fighter, or with no tab, it lands on Fighter and leaves focus alone', () => {
+    const view = mountTabs();
+    window.__openCustomEditor = 'minions';
+
+    window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+    expect(view.tab).toBe('minions');
+    expect(document.activeElement).toBe(document.getElementById('char-tab-minions'));
+    expect(window.__openCustomEditor).toBe(false);
+
+    document.getElementById('char-tab-minions').blur();
+    window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'fighter' } }));
+    expect(view.tab).toBe('fighter');
+    expect(document.activeElement).toBe(document.body);
+
+    window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+    window.dispatchEvent(new Event('open-custom-editor'));
+    expect(view.tab).toBe('fighter');
+  });
+
+  test('a link that arrived before the sheet rendered is found in the boot flag, and used up; the fighter\'s flag is left for its stage', () => {
+    window.__openCustomEditor = 'minions';
+    expect(mountTabs().tab).toBe('minions');
+    expect(window.__openCustomEditor).toBe(false);
+
+    tabs.destroy();
+    window.__openCustomEditor = true;
+    expect(mountTabs().tab).toBe('fighter');
+    expect(window.__openCustomEditor).toBe(true);
+  });
+
+  test('"Change character" on the Profile asks for Character with the Fighter sub-tab; nothing else moves it', () => {
+    const view = mountTabs();
+    view.select('minions');
+
+    window.dispatchEvent(new CustomEvent('sheet-open-tab', { detail: { tab: 'character' } }));
+    window.dispatchEvent(new CustomEvent('sheet-open-tab', { detail: { tab: 'profile', subtab: 'fighter' } }));
+    window.dispatchEvent(new CustomEvent('sheet-open-tab', { detail: { tab: 'character', subtab: 'nonsense' } }));
+    expect(view.tab).toBe('minions');
+
+    window.dispatchEvent(new CustomEvent('sheet-open-tab', { detail: { tab: 'character', subtab: 'fighter' } }));
+    expect(view.tab).toBe('fighter');
+  });
+
+  test('the strip\'s arrow keys move between the sub-tabs with the focus, and never reach the sheet\'s own tabs', () => {
+    const { root } = buildDom();
+    root.insertAdjacentHTML('beforeend', `<div id="char-root">${SUBTABS}</div>`);
+    tabs = characterTabs();
+    tabs.$el = document.getElementById('char-root');
+    tabs.init();
+    // what the blade's @keydown does
+    document.querySelector('.char-subtabs').addEventListener('keydown', event => tabs.onKeydown(event));
+    const onTab = vi.fn();
+    const shell = createSheetShell(root, { onClose: vi.fn(), onTab });
+    const fighter = document.getElementById('char-tab-fighter');
+    const minions = document.getElementById('char-tab-minions');
+    fighter.focus();
+
+    fighter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    expect(tabs.tab).toBe('minions');
+    expect(document.activeElement).toBe(minions);
+
+    minions.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    expect(tabs.tab).toBe('fighter');
+    expect(document.activeElement).toBe(fighter);
+    expect(onTab).not.toHaveBeenCalled();
+
+    // the same key anywhere else in the sheet still switches the sheet's own tab
+    root.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(onTab).toHaveBeenCalledTimes(1);
+    shell.destroy();
+  });
+
+  test('stops answering once the sheet is gone', () => {
+    const view = mountTabs();
+
+    view.destroy();
+    window.dispatchEvent(new CustomEvent('open-custom-editor', { detail: { tab: 'minions' } }));
+
+    expect(view.tab).toBe('fighter');
+  });
 });

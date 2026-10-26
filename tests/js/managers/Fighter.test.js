@@ -21,6 +21,12 @@ vi.mock('@battlefield/fighter/flair-font.js', () => ({
 
 vi.mock('@battlefield/fighter/custom-fighter-loader.js', () => ({ loadCustomFighter: vi.fn() }));
 
+vi.mock('@battlefield/fighter/avatar.js', () => ({
+  loadAvatarTexture: vi.fn(() => Promise.resolve('fighter-avatar')),
+  makeFallbackAvatarTexture: vi.fn(() => 'fallback-avatar'),
+  makePermanentFallbackAvatarTexture: vi.fn(() => 'permanent-avatar'),
+}));
+
 import { Fighter } from '@battlefield/fighter.js';
 import { LAYOUTS } from '@battlefield/config.js';
 
@@ -1096,5 +1102,130 @@ describe('custom fighters: a swap running while the fighter leaves', () => {
 
     expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-next');
     expect(scene.textures.remove).toHaveBeenCalledWith('custom-1-old');
+  });
+});
+
+describe('the minion pool on the fighter entry', () => {
+  const MINION_WIRE = [
+    { version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } } },
+  ];
+  const POOL_WIRE = { rev: 3, defaults: ['demon-a', 'smw-bowser'], custom: MINION_WIRE };
+
+  /** A Phaser-ish object whose every method returns itself, for the display calls addFighter makes. */
+  const chain = () => new Proxy(function () {}, { get: (_, prop) => (prop === 'then' ? undefined : chain()), apply: () => chain() });
+
+  const addScene = () => ({
+    fighters: new Map(),
+    damageTotals: new Map(),
+    add: chain(),
+    tweens: chain(),
+    time: chain(),
+    textures: { exists: () => false, getFrame: () => null },
+    anims: { get: () => undefined, exists: () => false },
+    addSharpText: () => chain(),
+    currentUserId: 99,
+    reducedMotion: true,
+    mode: 'landscape',
+    layout: LAYOUTS.landscape,
+  });
+
+  test('addFighter stores the normalised minionPool from the boot payload', () => {
+    const scene = addScene();
+
+    new Fighter(scene).addFighter({ id: 7, handle: 'a', minionPool: POOL_WIRE }, { x: 100, y: 100 }, { displaySize: 48 });
+
+    expect(scene.fighters.get(7).minionPool).toEqual({
+      rev: 3,
+      defaults: ['demon-a', 'smw-bowser'],
+      custom: [{ version: 'abc', urlBase: '/storage/custom-minions/7/abc', animations: MINION_WIRE[0].animations, bodyPx: 22 }],
+    });
+  });
+
+  test.each([
+    ['no pool key (older boot payload)', {}],
+    ['a null pool', { minionPool: null }],
+    ['a pool without a rev', { minionPool: { defaults: [], custom: [] } }],
+    ['the old list shape', { minionPool: [] }],
+    ['a non-object value', { minionPool: 'abc' }],
+  ])('addFighter gives a fighter with %s a null pool: no information', (_, extra) => {
+    const scene = addScene();
+
+    new Fighter(scene).addFighter({ id: 7, handle: 'a', ...extra }, { x: 100, y: 100 }, { displaySize: 48 });
+
+    expect(scene.fighters.get(7).minionPool).toBeNull();
+  });
+
+  test('handleFighterJoined maps minion_pool onto the new fighter', () => {
+    const scene = addScene();
+    const fighter = new Fighter(scene);
+    const addFighter = vi.spyOn(fighter, 'addFighter').mockImplementation(() => {});
+
+    fighter.handleFighterJoined({ user_id: 7, slack_handle: 'a', minion_pool: POOL_WIRE });
+
+    expect(addFighter).toHaveBeenCalledWith(expect.objectContaining({ id: 7, minionPool: POOL_WIRE }), expect.anything(), expect.anything());
+  });
+
+  describe('a re-join of a fighter already on the field', () => {
+    const sceneWithFighter = () => {
+      const entry = { id: 7, minionPool: { rev: 1, defaults: [], custom: [] } };
+
+      return { entry, scene: { fighters: new Map([[7, entry]]), minions: { handleMinionsChanged: vi.fn() } } };
+    };
+
+    test('forwards the raw minion_pool to minions, which decides by rev', () => {
+      const { scene } = sceneWithFighter();
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, minion_pool: POOL_WIRE });
+
+      expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith({ user_id: 7, minion_pool: POOL_WIRE });
+    });
+
+    test('forwards a pool that names nothing: it is still a pool', () => {
+      const { scene } = sceneWithFighter();
+      const empty = { rev: 4, defaults: [], custom: [] };
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, minion_pool: empty });
+
+      expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith({ user_id: 7, minion_pool: empty });
+    });
+
+    test.each([
+      ['missing', {}],
+      ['null', { minion_pool: null }],
+      ['not an object', { minion_pool: 'abc' }],
+    ])('forwards nothing when minion_pool is %s', (_, extra) => {
+      const { scene } = sceneWithFighter();
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, ...extra });
+
+      expect(scene.minions.handleMinionsChanged).not.toHaveBeenCalled();
+    });
+
+    test('does not write entry.minionPool itself', () => {
+      const { entry, scene } = sceneWithFighter();
+      const before = entry.minionPool;
+
+      new Fighter(scene).handleFighterJoined({ user_id: 7, minion_pool: POOL_WIRE });
+
+      expect(entry.minionPool).toBe(before);
+    });
+
+    test('a scene whose minions manager is not wired yet is a no-op', () => {
+      const { scene } = sceneWithFighter();
+      delete scene.minions;
+
+      expect(() => new Fighter(scene).handleFighterJoined({ user_id: 7, minion_pool: POOL_WIRE })).not.toThrow();
+    });
+  });
+
+  test('updateCharacters (the boss-change path) leaves entry.minionPool alone', () => {
+    const pool = { rev: 2, defaults: ['demon-a'], custom: [] };
+    const entry = { id: 7, ftype: { key: 'soldier' }, minionPool: pool, customRequest: { wantedKey: null, wantedSpec: null, loadingKey: null, failedKey: null, retryAt: 0 } };
+    const scene = { fighters: new Map([[7, entry]]), minions: { handleMinionsChanged: vi.fn() } };
+
+    new Fighter(scene).updateCharacters([{ user_id: 7, character: 'soldier', minion_pool: { rev: 9, defaults: [], custom: [] } }]);
+
+    expect(entry.minionPool).toBe(pool);
+    expect(scene.minions.handleMinionsChanged).not.toHaveBeenCalled();
   });
 });

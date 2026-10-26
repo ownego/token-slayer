@@ -205,3 +205,31 @@ describe('custom fighters', () => {
     expect(normalizeCustomCharacter(next.fighters[0].customCharacter)).toEqual(spec);
   });
 });
+
+describe('the minion pool', () => {
+  const anim = { idle: { frames: 6, rate: 8 }, walk: { frames: 8, rate: 16 }, attack: { frames: 6, rate: 12 }, death: { frames: 3, rate: 6 } };
+  const wire = {
+    rev: 6,
+    defaults: ['demon-a', 'smw-bowser'],
+    custom: [
+      { version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: anim },
+      { version: 'def', url_base: '/storage/custom-minions/7/def', body_px: 24, animations: anim },
+    ],
+  };
+
+  test('minionPool round-trips through normalizeMinionPool, rev included', async () => {
+    const { normalizeMinionPool } = await import('@battlefield/minion-custom.js');
+    const scene = fakeScene();
+    scene.fighters.get(7).minionPool = normalizeMinionPool(wire);
+
+    const next = snapshotState({}, scene);
+
+    expect(next.fighters[0].minionPool.rev).toBe(6);
+    expect(next.fighters[0].minionPool.custom).toHaveLength(2);
+    expect(normalizeMinionPool(next.fighters[0].minionPool)).toEqual(normalizeMinionPool(wire));
+  });
+
+  test('a fighter the server told nothing about snapshots a null pool, not an empty one', () => {
+    expect(snapshotState({}, fakeScene()).fighters[0].minionPool).toBeNull();
+  });
+});

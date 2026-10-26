@@ -4,6 +4,7 @@ namespace App\Services\CustomCharacter;
 
 use App\Exceptions\CustomCharacterBusyException;
 use App\Models\CustomCharacter;
+use App\Models\CustomCharacterVersion;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -42,10 +43,10 @@ class RemoveCustomCharacter
     {
         $owner = $character->user;
 
-        $this->lock->within($owner->id, function () use ($character, $owner): void {
-            DB::transaction(function () use ($character, $owner): void {
+        $this->lock->within($owner->id, function () use ($owner): void {
+            DB::transaction(function () use ($owner): void {
                 $owner->customCharacterDraft()->delete();
-                $character->delete();
+                CustomCharacterVersion::query()->where('user_id', $owner->id)->delete();
             });
 
             $this->store->forget($owner->id);

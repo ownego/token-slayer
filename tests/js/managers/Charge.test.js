@@ -78,6 +78,31 @@ describe('handleCharging for a fighter this client does not have', () => {
 
     expect(joined).toHaveBeenCalledWith(expect.objectContaining({ user_id: 7, character: 'soldier', custom_character: custom }));
   });
+
+  test('the synthesised join carries minion_pool', () => {
+    const joined = vi.fn();
+    const scene = { fighters: new Map(), charges: new Map(), fighter: { handleFighterJoined: joined } };
+    const pool = { rev: 3, defaults: ['demon-a'], custom: [{ version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: {} }] };
+
+    new Charge(scene).handleCharging({ user_id: 7, character: 'soldier', minion_pool: pool });
+
+    expect(joined).toHaveBeenCalledWith(expect.objectContaining({ user_id: 7, minion_pool: pool }));
+  });
+
+  test('a join that already carried minion_pool does not forward it again', () => {
+    const handleMinionsChanged = vi.fn();
+    const fighters = new Map();
+    const scene = {
+      fighters,
+      charges: new Map([[7, { activity: '' }]]),
+      minions: { handleMinionsChanged },
+      fighter: { handleFighterJoined: ({ user_id: id }) => fighters.set(id, { id, ftype: { key: 'soldier' }, sprite: {}, body: { play() {} } }), updateCharacters: vi.fn() },
+    };
+
+    new Charge(scene).handleCharging({ user_id: 7, character: 'soldier', minion_pool: { rev: 1, defaults: [], custom: [] } });
+
+    expect(handleMinionsChanged).not.toHaveBeenCalled();
+  });
 });
 
 describe('handleCharging for a fighter already on the field', () => {
@@ -110,5 +135,60 @@ describe('handleCharging for a fighter already on the field', () => {
     new Charge(scene).handleCharging({ user_id: 7, character: 'wizard', custom_character: null });
 
     expect(scene.fighter.updateCharacters).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleCharging and a fighter\'s minion pool', () => {
+  const pool = { rev: 4, defaults: ['demon-a'], custom: [{ version: 'abc', url_base: '/storage/custom-minions/7/abc', body_px: 22, animations: {} }] };
+  const sceneWith = entry => ({
+    fighters: new Map([[7, { id: 7, ftype: { key: 'soldier' }, sprite: {}, body: { play() {} }, ...entry }]]),
+    charges: new Map([[7, { activity: '' }]]),
+    fighter: { updateCharacters: vi.fn() },
+    minions: { handleMinionsChanged: vi.fn() },
+  });
+
+  test('forwards a minion_pool for a fighter on the field, raw: Minions decides by rev', () => {
+    const scene = sceneWith({});
+
+    new Charge(scene).handleCharging({ user_id: 7, minion_pool: pool });
+
+    expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith({ user_id: 7, minion_pool: pool });
+  });
+
+  test('forwards a pool that names nothing too: it is still a pool', () => {
+    const scene = sceneWith({});
+    const empty = { rev: 5, defaults: [], custom: [] };
+
+    new Charge(scene).handleCharging({ user_id: 7, minion_pool: empty });
+
+    expect(scene.minions.handleMinionsChanged).toHaveBeenCalledWith({ user_id: 7, minion_pool: empty });
+  });
+
+  test.each([
+    ['missing (scene.js seeds a charge without it)', {}],
+    ['null', { minion_pool: null }],
+    ['not an object', { minion_pool: 'abc' }],
+  ])('does not forward when minion_pool is %s', (_, extra) => {
+    const scene = sceneWith({});
+
+    new Charge(scene).handleCharging({ user_id: 7, activity: 'x', ...extra });
+
+    expect(scene.minions.handleMinionsChanged).not.toHaveBeenCalled();
+  });
+
+  test('never writes entry.minionPool itself', () => {
+    const own = { rev: 9, defaults: [], custom: [] };
+    const scene = sceneWith({ minionPool: own });
+
+    new Charge(scene).handleCharging({ user_id: 7, minion_pool: pool });
+
+    expect(scene.fighters.get(7).minionPool).toBe(own);
+  });
+
+  test('a scene whose minions manager is not wired yet is a no-op, not a crash', () => {
+    const scene = sceneWith({});
+    delete scene.minions;
+
+    expect(() => new Charge(scene).handleCharging({ user_id: 7, minion_pool: pool })).not.toThrow();
   });
 });

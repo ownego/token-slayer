@@ -33,3 +33,8 @@ it('forgets the account resolver maps', function () {
     expect(Cache::has(CacheKeys::ACCOUNTS_EMAIL_MAP))->toBeFalse();
     expect(Cache::has(CacheKeys::ACCOUNTS_ORG_MAP))->toBeFalse();
 });
+
+it('builds the custom sprite rate-limiter keys, one allowance for uploads shared by both editors', function () {
+    expect(CacheKeys::customCharacterUpload(7))->toBe('custom-character-upload:7');
+    expect(CacheKeys::customMinionChange(7))->toBe('custom-minion-change:7');
+});

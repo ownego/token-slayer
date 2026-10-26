@@ -34,6 +34,31 @@ final class CacheKeys
     }
 
     /**
+     * Rate-limiter key of a player's pose-sheet builds, shared by the fighter and the
+     * minion editor: both run the same pipeline, so they draw on one hourly allowance.
+     *
+     * @param  int  $userId  the player
+     * @return string
+     */
+    public static function customCharacterUpload(int $userId): string
+    {
+        return "custom-character-upload:{$userId}";
+    }
+
+    /**
+     * Rate-limiter key of a player's changes to their minion pool (a tick, a removal, a
+     * copy of their fighter, a change of a preview's target): each one broadcasts to the
+     * whole field.
+     *
+     * @param  int  $userId  the player
+     * @return string
+     */
+    public static function customMinionChange(int $userId): string
+    {
+        return "custom-minion-change:{$userId}";
+    }
+
+    /**
      * Global damage-totals aggregate key.
      *
      * @var string

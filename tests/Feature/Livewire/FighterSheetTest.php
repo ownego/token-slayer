@@ -8,12 +8,15 @@ use App\Models\Account;
 use App\Models\AccountUsageSnapshot;
 use App\Models\Boss;
 use App\Models\CustomCharacter;
+use App\Models\CustomMinion;
 use App\Models\Event as EventModel;
 use App\Models\User;
 use App\Services\ProviderServiceFactory;
+use App\Support\CacheKeys;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Renderless;
 use Livewire\Livewire;
 
@@ -757,7 +760,7 @@ test('equipping while another change of the player is running changes nothing an
     Event::fake([FighterCharacterChanged::class]);
     config(['token_slayer.custom_character.lock_seconds' => 0]);
     $user = User::factory()->create(['equipped_character' => FighterCharacter::Soldier]);
-    Cache::lock(App\Support\CacheKeys::customCharacterBuild($user->id), 30)->get();
+    Cache::lock(CacheKeys::customCharacterBuild($user->id), 30)->get();
 
     Livewire::actingAs($user)
         ->test(FighterSheet::class)
@@ -806,4 +809,72 @@ test('a refresh request is answered with the current state and no ceremony, and 
                 && ! array_key_exists('ceremony', $params);
         })
         ->assertNotDispatched('custom-character-changed');
+});
+
+it('seeds the mini stage with the player\'s minion pool', function () {
+    $user = User::factory()->create();
+    $minion = CustomMinion::factory()->create(['user_id' => $user->id]);
+
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class);
+
+    $pool = $user->fresh()->minionPoolState();
+    expect($sheet->get('minionPool'))->toBe($pool)
+        ->and($pool['custom'])->toHaveCount(1)
+        ->and($pool['defaults'])->toBe(config('token_slayer.custom_character.default_minions'));
+    $sheet->call('open', 'profile')->assertSeeHtml($minion->version_hash);
+});
+
+it('seeds a player with no minions of their own the five default looks', function () {
+    $sheet = Livewire::actingAs(User::factory()->create())->test(FighterSheet::class);
+
+    expect($sheet->get('minionPool')['custom'])->toBe([])
+        ->and($sheet->get('minionPool')['defaults'])->toBe(config('token_slayer.custom_character.default_minions'));
+});
+
+it('leaves the pool to the mini stage once seeded: a change elsewhere is not re-read into the sheet', function () {
+    $user = User::factory()->create();
+    $sheet = Livewire::actingAs($user)->test(FighterSheet::class);
+    $seeded = $sheet->get('minionPool');
+
+    CustomMinion::factory()->create(['user_id' => $user->id]);
+    $sheet->call('open', 'profile')->call('open', 'character');
+
+    expect($sheet->get('minionPool'))->toBe($seeded);
+});
+
+it('offers one link from Profile into Character', function () {
+    Livewire::actingAs(User::factory()->create())
+        ->test(FighterSheet::class)
+        ->call('open', 'profile')
+        ->assertSeeHtml('id="change-character"')
+        ->assertSee('Change character')
+        ->assertDontSeeHtml('id="customize-minions"')
+        ->assertDontSee('Customize minions');
+});
+
+it('shows Fighter and Minions sub-tabs in Character', function () {
+    $html = Livewire::actingAs(User::factory()->create())
+        ->test(FighterSheet::class)
+        ->call('open', 'character')
+        ->assertSeeHtml('data-char-tab="fighter"')
+        ->assertSeeHtml('data-char-tab="minions"')
+        ->assertDontSeeHtml('data-forge-tab')
+        ->html();
+
+    // each sub-tab has a panel of its own, and both editors are mounted lazily inside them
+    expect($html)->toMatch('~>Fighter</button>.*>Minions</button>~s')
+        ->and($html)->toContain('id="char-pane-fighter"')
+        ->and($html)->toContain('id="char-pane-minions"')
+        ->and(substr_count($html, '__lazyLoad'))->toBe(2);
+});
+
+it('hands the Character stage no minion draft: the Minions tab owns it', function () {
+    $user = User::factory()->create();
+    Storage::fake('public');
+    $draft = stagedMinionFor($user);
+
+    Livewire::actingAs($user)
+        ->test(FighterSheet::class)
+        ->call('open', 'character')
+        ->assertDontSeeHtml($draft->version_hash);
 });

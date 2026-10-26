@@ -9,18 +9,20 @@
 @endphp
 <aside class="fighter">
     <div>
-        <div wire:ignore x-data="miniStage(@js($equipped), {{ $minions['busy'] }}, {{ auth()->id() }}, @js($customCharacter))">
+        <div wire:ignore x-data="miniStage(@js($equipped), {{ $minions['busy'] }}, {{ auth()->id() }}, @js($customCharacter), @js($minionPool))">
             <div class="mini-stage" id="mini-stage" x-ref="stage">
                 <div class="mini-floor"><span class="mf-ring"></span><span class="mf-ticks"></span><span class="mf-pad"></span></div>
                 <span class="mini-glow"></span>
                 <template x-for="m in minionSpots" :key="m.i">
-                    <span class="mini-minion" :class="[m.kind, m.busy ? 'busy' : '']" :style="`--mx:${m.x}px;--my:${m.y}px`" :title="m.busy ? 'working' : 'idle'"></span>
+                    <span class="mini-minion" :class="[m.kind, m.busy ? 'busy' : '']" :style="spotStyle(m)" :title="spotTitle(m)"></span>
                 </template>
                 <span class="mini-fighter" id="mini-fighter" x-ref="fighter"></span>
             </div>
             <div class="stage-foot" style="margin-top:8px">
                 <b id="mini-name" x-text="name"></b>
-                <button class="link" type="button" id="change-character" @click="$dispatch('sheet-open-tab', { tab: 'character' })">Change character</button>
+                <span class="stage-links">
+                    <button class="link" type="button" id="change-character" @click="$dispatch('sheet-open-tab', { tab: 'character', subtab: 'fighter' })">Change character</button>
+                </span>
             </div>
             <div class="mini-stats has-data">
                 <div class="stat crew" :title="`${counts.busy} ${counts.busy === 1 ? 'minion' : 'minions'} working, ${counts.idle} idle`">

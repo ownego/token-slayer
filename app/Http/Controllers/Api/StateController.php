@@ -15,13 +15,14 @@ class StateController extends Controller
         $boss = Boss::where('status', 'alive')->orderByDesc('number')->first();
         $cutoff = now()->subMinutes(config('game.idle_minutes'));
 
-        $fighters = User::with('customCharacter')
+        $fighters = User::with(['customCharacter', 'customMinions'])
             ->where('last_event_at', '>=', $cutoff)
             ->orderByDesc('last_event_at')
-            ->get(['id', 'name', 'slack_handle', 'display_name', 'avatar_url', 'last_event_at'])
-            ->map(fn (User $u) => array_merge($u->toArray(), [
+            ->get(['id', 'name', 'slack_handle', 'display_name', 'avatar_url', 'last_event_at', 'minion_pool'])
+            ->map(fn (User $u) => array_merge($u->makeHidden(['minion_pool', 'customMinions'])->toArray(), [
                 'character' => $u->characterForBoss($boss?->id),
                 'custom_character' => $u->customFighterState(),
+                'minion_pool' => $u->minionPoolState(),
             ]));
 
         $log = Event::with('user:id,slack_handle')

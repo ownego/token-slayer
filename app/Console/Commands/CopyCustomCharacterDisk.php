@@ -9,7 +9,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('custom-characters:copy-disk {from : The disk the files are on now} {to : The disk they should be on}')]
-#[Description('Copy every custom fighter file to another disk, before pointing custom_character.disk at it')]
+#[Description('Copy every custom fighter and minion file to another disk, before pointing custom_character.disk at it')]
 class CopyCustomCharacterDisk extends Command
 {
     /**

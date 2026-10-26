@@ -209,6 +209,15 @@ return [
         'name_max' => 24,
         // Uploads a user may attempt per hour; building a sheet costs about a second of CPU.
         'uploads_per_hour' => 10,
+        // How many custom minions a player may hold at once; each subagent they dispatch summons one of them at random.
+        'minions_max' => 3,
+        // The looks every player's subagent summons draw from before they add any of their own, in the order the
+        // pool lists them. Keys of MINION_TYPES in resources/js/battlefield/config/companions.js
+        // (CustomCharacterConfigTest keeps the two equal). A player un-ticks the ones they do not want; unticking
+        // all of them (with or without custom minions) falls back to this whole list, so the pool is never empty.
+        'default_minions' => ['demon-a', 'blood-monster-a', 'smw-goomba', 'smw-babybowser', 'smw-bowser'],
+        // Ticks, replaces and removals of minions a player may make per minute; each one broadcasts the pool to the battlefield.
+        'minion_changes_per_minute' => 30,
         // Bump when the sheet layout or the prompt below changes in a way that invalidates sheets made with the old one.
         'prompt_version' => 1,
         // The prompt template users paste into an image AI, together with a picture of their character.

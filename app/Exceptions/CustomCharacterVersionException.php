@@ -2,12 +2,10 @@
 
 namespace App\Exceptions;
 
-use Exception;
-
 /**
  * Thrown when a player asks for a fighter or version they do not have, or one that cannot be touched (the one in use).
  */
-class CustomCharacterVersionException extends Exception
+class CustomCharacterVersionException extends PlayerFacingException
 {
     /**
      * The message the player sees.

@@ -78,8 +78,8 @@ class CustomCharacterResource extends Resource
                     ->state(fn (CustomCharacter $record): string => $record->user->displayHandle())
                     ->searchable(['users.slack_handle', 'users.display_name', 'users.name'], isIndividual: false, isGlobal: false)
                     ->sortable(false),
-                TextColumn::make('name')->label('Fighter')->searchable()->sortable(),
-                IconColumn::make('active')->label('Equipped')->boolean()->sortable(),
+                TextColumn::make('name')->label('Fighter')->searchable(['data.name'])->sortable(['data.name']),
+                IconColumn::make('active')->label('Equipped')->boolean()->sortable(['enabled']),
                 TextColumn::make('versions_count')->label('Versions')->numeric()->sortable(),
                 TextColumn::make('updated_at')->label('Updated')->since()->sortable(),
             ])

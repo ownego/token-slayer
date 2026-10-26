@@ -111,3 +111,18 @@ test('character guide opens the editor deep link in the same tab', function () {
         ->assertSee('href="'.route('battlefield.open-sheet', 'editor').'"', escape: false)
         ->assertDontSee('target="_blank"', escape: false);
 });
+
+test('character guide explains the minion pool and opens the Minions tab in the same tab', function () {
+    $this->actingAs(User::factory()->create());
+
+    $this->get('/character')
+        ->assertOk()
+        ->assertSee('3. Or make it a minion')
+        ->assertSee('Use my fighter')
+        ->assertSee('keeping its slot, name and tick')
+        ->assertSee('Open the Minions tab')
+        ->assertDontSee('Add my fighter')
+        ->assertDontSee('Customize minions')
+        ->assertSee('href="'.route('battlefield.open-sheet', 'minions').'"', escape: false)
+        ->assertDontSee('target="_blank"', escape: false);
+});

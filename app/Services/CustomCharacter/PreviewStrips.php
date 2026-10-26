@@ -5,9 +5,10 @@ namespace App\Services\CustomCharacter;
 use App\Models\User;
 
 /**
- * Describes a fighter version for a preview: its four strips (where each is served
- * from, its frame count and rate, and the name the player sees for it, the
- * sheet's own words: "Death" for the strip stored as `death`) and the payload the sheet plays it from.
+ * Describes a custom sprite for a preview. For a fighter version: its four strips
+ * (where each is served from, its frame count and rate, and the name the player sees
+ * for it, the sheet's own words: "Death" for the strip stored as `death`) and the
+ * payload the sheet plays it from.
  */
 class PreviewStrips
 {
@@ -21,10 +22,12 @@ class PreviewStrips
     /**
      * Create the describer.
      *
-     * @param  CustomCharacterStore  $store  knows where the strips are served from
+     * @param  CustomCharacterStore  $store  knows where the fighter's strips are served from
      * @return void
      */
-    public function __construct(private readonly CustomCharacterStore $store) {}
+    public function __construct(
+        private readonly CustomCharacterStore $store,
+    ) {}
 
     /**
      * Describes the strips of one version.
@@ -84,7 +87,7 @@ class PreviewStrips
             return null;
         }
 
-        $name = $user->customCharacter()->value('name') ?? (string) config('token_slayer.custom_character.default_name');
+        $name = $user->customCharacter()->first()?->name ?? (string) config('token_slayer.custom_character.default_name');
 
         return [
             'hash' => $draft->version_hash,

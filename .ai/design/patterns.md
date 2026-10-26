@@ -44,7 +44,7 @@ A built draft is a `DRAFT` roster slot. Selecting it keeps the editor available 
 
 ## Links and buttons that leave the view
 
-Links from the live battlefield (including its HUD and fighter sheet) to another page open a new tab (`target="_blank" rel="noopener"`) so the arena and any edit in progress remain open. Links between outer pages, including `partials/account-nav.blade.php` and the `/character` guide, stay in the same tab; the current page is plain text. In-page actions stay in the page. New deep links use `/battlefield/open/{character|editor}` and a one-time session flash; old query-parameter links redirect through that route. The sheet and editor wait for `battlefield-ready`, with a 15-second ceiling if the arena does not load.
+Links from the live battlefield (including its HUD and fighter sheet) to another page open a new tab (`target="_blank" rel="noopener"`) so the arena and any edit in progress remain open. Links between outer pages, including `partials/account-nav.blade.php` and the `/character` guide, stay in the same tab; the current page is plain text. In-page actions stay in the page. New deep links use `/battlefield/open/{character|editor|minions}` (`minions` also flashes `editor_tab`, so the editor opens on the Minions tab) and a one-time session flash; old query-parameter links redirect through that route. The sheet and editor wait for `battlefield-ready`, with a 15-second ceiling if the arena does not load.
 
 ## Who made it
 
