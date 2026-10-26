@@ -1,14 +1,24 @@
 // The Minions tab's stage: the look of the selected cell at stage size (idle until a move of the hotbar under it
 // is played), and under that an "At field size" strip with the equipped fighter beside the minion, each drawn
-// in the proportion the battlefield draws them. The blade re-creates the stage element (a new `wire:key`) whenever the selected
-// cell or its version changes, so one instance shows one look; `showLook` is what `init` calls, and what
-// a caller can use to swap the look in place.
-import { BY_KEY } from './sprite-strip.js';
+// in the proportion the battlefield draws them. There is one stage for the whole tab (`wire:ignore`): it sits inside
+// the pool's `minionPool` scope and follows its `sel` (the pick), its `board` (a minion replaced in place brings a
+// new version) and its `entered` (the pane came into view), summoning each look it is given like the Fighter stage.
+import { BY_KEY, strip as playStrip } from './sprite-strip.js';
 import { BOX, stripUrl } from './sheet-roster.js';
 import { CUSTOM_KEY, registerCustomRoster } from './custom-roster.js';
 import { fieldSizeFighterScale, fieldSizeMinionScale } from './minion-preview.js';
 import { lookOf, lookStyle, thumbStyle } from './minion-thumb.js';
 import { movePlan, moveSet, playbackStyle } from './minion-moves.js';
+
+/**
+ * The summon's circle and burst: the necromancer strips the Fighter stage summons with.
+ *
+ * @type {Object<string, {url: string, frames: number, rate: number}>}
+ */
+const SUMMON_FX = {
+  circle: { url: '/assets/battlefield/companions/necromancer/summon-circle.png', frames: 7, rate: 14 },
+  burst: { url: '/assets/battlefield/companions/necromancer/appear-burst.png', frames: 6, rate: 12 },
+};
 
 /**
  * The height, in px, the stage gives the selected look's body.
@@ -26,7 +36,8 @@ export const STAGE_BODY_PX = 96;
 export const FIELD_SCALE = 3;
 
 /**
- * How long the summon pop lasts, in ms: the CSS animation of `.ms-sprite.summon` runs for this long.
+ * How long the summon pop of a look with no death strip to rise from lasts, in ms: the CSS animation of
+ * `.ms-sprite.summon` runs for this long.
  *
  * @type {number}
  */
@@ -96,9 +107,14 @@ export function minionStage(initial = {}) {
     preview: false,
     reduced: false,
     summoning: false,
-    summoned: false,
     summonTimer: null,
+    summonSeq: 0,
+    landed: 0,
+    lookKey: null,
+    lookName: null,
+    shownVersion: null,
     onChanged: null,
+    onFall: null,
     moveSet: null,
     moves: [],
     move: 'idle',
@@ -107,19 +123,66 @@ export function minionStage(initial = {}) {
     twin: true,
     moveTimer: null,
     /**
-     * Reads the viewer's motion preference, draws the first look and listens for the pool changing.
+     * Reads the viewer's motion preference, draws the first look, listens for the pool changing and for a Remove
+     * (`minion-stage-fall`, the look falls before its slot empties), and follows the pool's pick and board.
      *
      * @return {void}
      */
     init() {
       this.reduced = prefersReducedMotion();
       this.fighter = this.equippedFighter();
+      this.lookKey = initial.lookKey ?? null;
+      this.lookName = this.board?.looks?.[this.lookKey]?.name ?? null;
+      this.shownVersion = this.board?.looks?.[this.lookKey]?.version ?? null;
       this.showLook(initial.look, initial.preview === true);
       this.onChanged = event => this.onPoolChanged(event.detail);
       window.addEventListener('custom-minions-changed', this.onChanged);
+      this.onFall = () => {
+        if (!this.reduced) {
+          this.play('fall');
+        }
+      };
+      window.addEventListener('minion-stage-fall', this.onFall);
+      if (typeof this.$watch === 'function') {
+        this.$watch('sel', cell => this.showCell(cell));
+        this.$watch('entered', () => this.summon());
+      }
+      this.$wire?.$watch?.('board', () => this.onBoard());
 
       if (initial.summon === true) {
         this.summon();
+      }
+    },
+    /**
+     * Puts a cell of the pool's board on the stage and summons it. A cell with nothing to draw (an empty slot)
+     * leaves the stage as it was; the pool hides it.
+     *
+     * @param {string} cell The cell (`default:<key>`, `slot:<n>`, `overflow`).
+     * @return {void}
+     */
+    showCell(cell) {
+      const shown = this.board?.looks?.[cell];
+
+      if (!shown?.spec) {
+        return;
+      }
+      this.lookKey = cell;
+      this.lookName = shown.name;
+      this.shownVersion = shown.version;
+      this.showLook(shown.spec, shown.preview === true);
+      this.summon();
+    },
+    /**
+     * Draws the cell on the stage again when the server's board brings it in another version (a minion
+     * replaced in its slot, a new preview).
+     *
+     * @return {void}
+     */
+    onBoard() {
+      const shown = this.board?.looks?.[this.sel];
+
+      if (shown?.spec && shown.version !== this.shownVersion) {
+        this.showCell(this.sel);
       }
     },
     /**
@@ -129,8 +192,10 @@ export function minionStage(initial = {}) {
      */
     destroy() {
       window.removeEventListener('custom-minions-changed', this.onChanged);
+      window.removeEventListener('minion-stage-fall', this.onFall);
       clearTimeout(this.summonTimer);
       clearTimeout(this.moveTimer);
+      this.summonSeq++;
     },
     /**
      * The equipped fighter for the field-size strip: a roster fighter as is, the custom fighter after it
@@ -240,28 +305,74 @@ export function minionStage(initial = {}) {
      * @return {void}
      */
     onPoolChanged(detail) {
-      if (initial.lookKey && detail?.changed === initial.lookKey) {
+      if (detail?.changed && detail.changed === (this.sel ?? this.lookKey)) {
         this.summon();
       }
     },
     /**
-     * Plays the summon pop once. Nothing under reduced motion: the toast and the lit cell say it.
+     * Summons the look on the stage, the way the Fighter stage summons a fighter: the necromancer circle and
+     * burst under it, the look rising (its death strip played backwards when it gets up from one, else a pop),
+     * then a small landing. A newer summon (a quick second pick) cuts this one short before it lands. Nothing
+     * plays under reduced motion: the toast and the lit cell say it.
      *
      * @return {void}
      */
     summon() {
-      if (this.summoned) {
-        return;
-      }
-      this.summoned = true;
+      const seq = ++this.summonSeq;
+      clearTimeout(this.summonTimer);
+      this.summoning = false;
 
       if (this.reduced) {
         return;
       }
-      this.summoning = true;
+      this.playFx();
+      const rise = this.moveSet?.fall?.getUp ? movePlan(this.moveSet, 'fall').at(-1) : null;
+
+      if (rise) {
+        clearTimeout(this.moveTimer);
+        this.move = 'idle';
+        this.beat([rise], 0);
+        clearTimeout(this.moveTimer);
+      } else {
+        this.summoning = true;
+      }
       this.summonTimer = setTimeout(() => {
         this.summoning = false;
-      }, SUMMON_MS);
+        if (seq !== this.summonSeq) {
+          return;
+        }
+        this.settle();
+        this.land();
+      }, rise ? rise.ms : SUMMON_MS);
+    },
+    /**
+     * Plays the circle and the burst strips under the stage sprite.
+     *
+     * @return {void}
+     */
+    playFx() {
+      ['circle', 'burst'].forEach(name => {
+        const el = this.$el?.querySelector?.(`.fx-${name}`);
+
+        if (!el) {
+          return;
+        }
+        const fx = SUMMON_FX[name];
+        el.style.opacity = 1;
+        playStrip(el, fx.url, fx.frames, fx.rate).then(() => { el.style.opacity = 0; });
+      });
+    },
+    /**
+     * The landing at the end of a summon: a squash on the sprite.
+     *
+     * @return {void}
+     */
+    land() {
+      this.landed++;
+      this.$el?.querySelector?.('.ms-stage .ms-sprite')?.animate?.([
+        { transform: 'scale(1.18, 0.82)' },
+        { transform: 'scale(1, 1)' },
+      ], { duration: 260, easing: 'cubic-bezier(.34,1.56,.64,1)' });
     },
   };
 }

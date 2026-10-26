@@ -55,6 +55,7 @@ Anything above the sheet (a confirm, a toast) uses 70; a new layer needs a new r
 - A phone's primary `.equip-row` is sticky at the bottom, full width. The `.inspector` row sticks directly above it using `--actions-h`. A visible draft note gets its own row above Discard and Use. Build preview fills the narrow file card instead of extending beyond it.
 - The toast uses `--bar-h`, measured from the visible sticky rows by `character-stage.js`, plus the safe-area inset and 12 px clearance. It must never cover a control.
 - The show stage is 280 px on desktop, 190 px in phone portrait and 120 px in phone landscape. The desktop roster has four columns, the phone roster five and a 170 px scroller; tablets keep a 220 px roster column.
+- The Minions tab puts the pool and the stage side by side from desktop width (1001 px) and stacks the stage under the pool on a tablet and in phone portrait, where a pick scrolls the stage into view. Its Save pool row is sticky at the bottom in phone portrait with a full-width Save. In phone landscape the pool and a 120 px stage sit side by side and the "At field size" strip is left out.
 - Long names and handles stay on one line with ellipsis in tiles and bubbles. Controls added after lazy load must not shift the button a player is about to tap.
 
 ## Per-class checklist

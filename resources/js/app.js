@@ -7,6 +7,7 @@ import { accountCard } from './battlefield/sheet/account-card.js';
 import { modelPicker, periodTabs } from './battlefield/sheet/pickers.js';
 import { miniStage } from './battlefield/sheet/mini-stage.js';
 import { characterStage } from './battlefield/sheet/character-stage.js';
+import { minionPool } from './battlefield/sheet/minion-pool.js';
 import { minionStage } from './battlefield/sheet/minion-stage.js';
 import { minionThumb } from './battlefield/sheet/minion-thumb.js';
 import { posePrototype } from './battlefield/sheet/pose-prototype.js';
@@ -40,6 +41,7 @@ document.addEventListener('alpine:init', () => {
   window.Alpine.data('clawdBuddyPanel', clawdBuddyPanel);
   window.Alpine.data('characterTabs', characterTabs);
   window.Alpine.data('characterStage', characterStage);
+  window.Alpine.data('minionPool', minionPool);
   window.Alpine.data('minionStage', minionStage);
   window.Alpine.data('minionThumb', minionThumb);
   window.Alpine.data('posePrototype', posePrototype);
