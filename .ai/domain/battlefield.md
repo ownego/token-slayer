@@ -114,7 +114,7 @@ Ambient actors are neither a **fighter** (player-controlled, keyed by `user_id`)
 - `camera-focus.js` — the 2.2x push-in pan/zoom onto a fighter (the sheet's Equip hand-off).
 - `scene-ready.js` — runs a callback once the scene is created and again after every restart, for DOM HUD code wired before Phaser finishes preloading.
 
-See `resources/js/battlefield/CLAUDE.md`'s Key Files and Test Files tables for each module's exact API and test coverage.
+See the Key Files and Test Files tables in `resources/js/battlefield/FILES.md` for each module's exact API and test coverage.
 
 ## HUD (DOM, not Phaser)
 

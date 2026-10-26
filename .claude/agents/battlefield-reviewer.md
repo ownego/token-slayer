@@ -20,7 +20,8 @@ Before reviewing, read `.ai/domain/battlefield.md` (invariants #1–#11 + Compan
 5. **Mid-tween baselines (invariant #9).** Flag any persistent value (`entry.pos`, a rest scale, a home position) read off a sprite property that another tween may be animating. Moves/hits must plan from `moveOrigin(...)`, flinch from a tracked rest scale.
 6. **Layout/scale.** Coordinates are logical (`LAYOUTS`), never canvas pixels; sizes derive from `fighterDisplayConfig`/`displaySize`/`charHeight`, not hard-coded px. Any canvas resize goes through `render-scale.js` (invariant #10).
 7. **Config/asset contracts.** `FIGHTER_TYPES` order = PHP `FighterCharacter` order (append only); `BOSS_TYPES` reorder changes every boss number's visual; minion strips share one frame size, face right, attacks' `hitFrame`/`travel` inside the strip; edited non-atlas PNGs get a new `?v=`; generated `atlas-version.js`/atlas files never committed.
-8. **Docs drift.** New/removed module → row in `resources/js/battlefield/CLAUDE.md` Key Files (and Test Files); new companion behaviour/invariant → `.ai/domain/battlefield.md`.
+8. **Interaction rules** (sheet and stage changes, `resources/js/battlefield/sheet/**` and their blades). Check the diff against the Interaction rules in `.ai/guidelines/frontend.md`: a pick or toggle that calls `$wire`/`wire:click`, a preview element whose `wire:key` follows the selection, something that appears or changes with no motion, a commit that changes the field without folding onto it, a server action with no busy or refusal state, a screen with no phone portrait or phone landscape rule (or a breakpoint outside the four layout classes).
+9. **Docs drift.** New/removed module → row in `resources/js/battlefield/FILES.md` Key Files (and Test Files); new companion behaviour/invariant → `.ai/domain/battlefield.md`.
 
 ## How to work
 

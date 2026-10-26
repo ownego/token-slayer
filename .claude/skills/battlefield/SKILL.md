@@ -8,7 +8,7 @@ description: Use when working in resources/js/battlefield/ — the Phaser 3 real
 A Phaser 3 scene rendering live combat driven by Reverb broadcasts. Code: `resources/js/battlefield/`. Booted by `window.bootBattlefield(mount, state)` from `resources/views/livewire/battlefield.blade.php`, which carries a `data-battlefield-state` payload built by `App\Livewire\Battlefield`.
 
 Read alongside (don't duplicate here):
-- `resources/js/battlefield/CLAUDE.md` — code conventions, wiring order, entry/minion shapes, Key Files, testing pattern.
+- `resources/js/battlefield/CLAUDE.md` — code conventions, wiring order, entry/minion shapes, testing pattern; `FILES.md` beside it — Key Files and Test Files.
 - `.ai/domain/battlefield.md` — invariants + companion behaviour.
 - `public/assets/battlefield/CLAUDE.md` — sprite formats and cache-busting.
 - `.ai/domain/broadcasting.md` — PHP↔JS payload contract rules.

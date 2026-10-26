@@ -18,9 +18,9 @@ hooks on dev machines ──POST /api/events──▶ EventController
 - Same thin-entrypoint rule applies to **artisan commands, jobs, and Filament actions**: they parse/iterate/delegate/report, and hand non-trivial per-item logic to an `app/Services/` class. Pattern: `ProbeAccountUsage` → `UsageProber`, `SyncAccountProfiles` → `AccountProfileSyncer`, the Connect action → `AccountConnectService`.
 - `app/Services/` — all business logic. New aggregation/probing logic goes here, one class per responsibility.
 - `app/Events/` — broadcastables (`ShouldBroadcastNow` on the public `battlefield` channel) plus one plain domain event, `AccountTokenRejected` (→ `SendReauthAlert` listener). The PHP↔JS contract rules live in `.ai/domain/broadcasting.md`; changes there require the `broadcast-reviewer` agent.
-- `app/Livewire/` — page components (Battlefield, FighterSheet, Setup, AdminUsage). The old CharacterSelect/Profile components were removed in the battlefield-redesign PR chain — FighterSheet's Profile/Character tabs replace both.
+- `app/Livewire/` — page components (Battlefield, FighterSheet, CustomCharacterEditor, Setup, AdminUsage). The old CharacterSelect/Profile components were removed in the battlefield-redesign PR chain — FighterSheet's Profile/Character tabs replace both.
 - `app/Filament/` — admin panel at `/dashboard` (`AdminPanelProvider`; old `/admin/*` URLs redirect there). Roles/permissions via Filament Shield + spatie/permission; a user is an admin when they hold any role (`User::isAdministrator()`, `Gate 'admin'`). `/admin/usage` gates on `can:view_usage_analytics`.
-- Routes: `routes/api.php` (hook, provisioning, IDE, CCRC, Codex admin), `routes/web.php` (pages + served install scripts/userscript/wheel; every team page — `/battlefield`, `/history`, `/avatars/{user}` — sits behind `auth`, with `EstablishIdeSession` given priority over the authenticator in `bootstrap/app.php` so the IDE plugins' one-time `?_t=` session URL signs them in first), `routes/channels.php` (broadcast auth), `routes/console.php` (schedules).
+- Routes: `routes/api.php` (hook, provisioning, IDE, CCRC, Codex admin), `routes/web.php` (pages + served install scripts/userscript/wheel; every team page — `/battlefield`, `/history`, `/character`, `/avatars/{user}` — sits behind `auth`, with `EstablishIdeSession` given priority over the authenticator in `bootstrap/app.php` so the IDE plugins' one-time `?_t=` session URL signs them in first), `routes/channels.php` (broadcast auth), `routes/console.php` (schedules).
 - Install scripts are Blade-rendered shell scripts (`resources/views/install-script.blade.php`, `install-script-ps1.blade.php`, `cowork-install-script.blade.php`, `cowork-watcher.blade.php`, `userscript.blade.php`) served over HTTP — they are code, review them like code, and keep them idempotent (re-running is the upgrade path). `/install` and `/install.ps1` are served from `ReleaseArtifacts` so the bytes match the digest the ingest response publishes.
 - `extensions/vscode/` and `extensions/jetbrains/` — IDE plugins embedding the battlefield; they talk to `routes/api.php` `/api/ide/*` (bearer = `IdeAccessToken`). Each has its own README/SMOKE.md.
 
@@ -28,18 +28,21 @@ hooks on dev machines ──POST /api/events──▶ EventController
 
 | Path | Holds |
 |---|---|
-| `Services/` (root) | Core pipeline + cross-cutting: `DamageService` (apply damage, chain kills), `BossArena` (current/next boss), `DamageTotals` (cached rolling-window aggregates), `AccountResolver` (hook claim → org account), `FighterChargingCache` / `FighterPositionCache` / `SubagentCountCache` (battlefield live state), `HookTokenRotator`, `InstallCommandPresenter`, `QuotaProjection`, `ProviderServiceFactory` (Claude vs Codex implementation per account) |
+| `Services/` (root) | Core pipeline + cross-cutting: `DamageService` (apply damage, chain kills), `BossArena` (current/next boss), `DamageTotals` (cached rolling-window aggregates), `AccountResolver` (hook claim → org account), `FighterChargingCache` / `FighterPositionCache` / `SubagentCountCache` (battlefield live state), `HookTokenRotator`, `InstallCommandPresenter`, `QuotaProjection`, `SlayerWheelProvider`, `BossNameGenerator`, `ProviderServiceFactory` (Claude vs Codex implementation per account) |
 | `Services/` (root, accounts) | Claude: `AnthropicOAuthClient`, `AccountTokenRefresher`, `UsageProber`, `SessionAnchorer`, `AccountProfileSyncer`, `AccountConnectService`, `AccountProvisioningService`. Codex: `CodexOAuthClient`, `CodexConnectService`, `CodexProvisioningService`, `CodexUsageProber` |
 | `Services/Accounts/` | Membership recording/caching + the rebalance/capacity model (`AccountRebalanceRecommender`, `RebalancePlanner`, `FleetSnapshot`, capacity/demand estimators) — see `.ai/domain/accounts.md` |
 | `Services/Analytics/` | One query class per `/dashboard` analytics widget (`*Query`), shared `UsageFilters` + `Concerns/ScopesEventsByFilters` |
+| `Services/CustomCharacter/` | Players' own fighters: the pose-sheet pipeline (decode → key → locate → strip stray marks → validate → pixelate → outline → strips), `CustomCharacterStore` (every path and write, on the configured disk), the single-action flow services (`Stage`/`Confirm`/`Discard`/`Rename`/`EquipVersion`/`DeleteVersion`/`Remove`), `CustomCharacterLock`, `CharacterPromptBuilder` — see `.ai/domain/custom-characters.md` |
 | `Services/Attribution/` | Unrecognized/unattached/expiring-account queries + `EventAttributionBackfiller` |
 | `Services/Battlefield/` | Model flair (`ModelFlairResolver`, `AiModelSyncer`) |
-| `Services/Events/` | `ModelUsageParser` / `TurnUsage` — hook `models` map → `events.model` |
+| `Services/Events/` | `ModelUsageParser` / `TurnUsage` — hook `models` map → `events.model`; `IncompleteUsageFlag` (per-user incomplete-usage counter) |
+| `Services/Pricing/` | Event cost: `EventCostCalculator`, `ModelPriceLookup`, `EventCostResolver` (ingest), the LiteLLM feed (`LiteLlmPriceFeed`, `PriceFeedParser`, `ModelPriceSyncer`), `MissingModelCostFiller` — see `.ai/domain/token-tracking.md` |
+| `Services/Profile/` | Fighter-sheet view models: damage by period/model, hourly damage, boss kills, account cards/quota/alerts/refresh, roommates, `OtherCustomCharacters` |
 | `Services/Provisioning/`, `Connect/`, `Contracts/` | Device grant resolution/backfills; connect-flow value objects; provider contracts (`UsageProberContract`, `GrantRevokerContract`, `AccountDisconnecterContract`) |
 | `Services/GitHub/`, `Client/` | slayer-cli release relay (`GitHubClient`, `ReleaseResolver`, `CachedLatestVersion`); `ReleaseArtifacts` (rendered install scripts + digests) |
 | `Services/Recap/`, `Slack/`, `Roles/` | Scheduled Slack recap; Slack display-name fetch; Shield default-role permissions |
 | `Support/` | `CacheKeys` (central cache-key registry + invalidation), `DamageResult`, `HookVersionStatus`, `ModelName` |
-| `Enums/`, `Exceptions/`, `Listeners/`, `Notifications/`, `Policies/` | String-backed enums (`Provider`, `AccountStatus`, `MembershipStatus`, …); named domain exceptions; `AnnounceBossKill`, `SendReauthAlert`; Slack notifications; Filament policies |
+| `Enums/`, `Exceptions/`, `Listeners/`, `Notifications/`, `Policies/` | String-backed enums (`Provider`, `AccountStatus`, `MembershipStatus`, …); named domain exceptions; `AnnounceBossKill`, `ClearCharacterRoommatesCache`, `SendReauthAlert`; Slack notifications; Filament policies |
 
 ## Rules
 
@@ -101,9 +104,23 @@ These rules extend the Boost/Laravel defaults above. When they conflict, these w
 
 # Frontend (project-specific)
 
+Look and behaviour of every screen (tokens, components, states, motion, layout, accessibility, copy) are documented in `.ai/design/`; read `.ai/design/README.md` before touching UI.
+
+## Interaction rules (every screen a player uses)
+
+The working flows are the reference: the Fighter tab's roster and Equip, and the battlefield itself. Before building or changing a screen, open the closest working flow and match how it responds; a deliberate difference is named in the PR.
+
+- **Instant.** Picking, previewing, toggling, and switching tabs or moves run in the browser and change the screen in the same frame. A server call is for an action that stores, builds or broadcasts. Example: the Fighter roster picks, previews and plays moves in the browser and calls the server only on Equip.
+- **One stage.** An element that draws a preview stays mounted and swaps its content. Give it a fixed `wire:key` (or `wire:ignore`); a key that changes with the selection re-creates it, so its animation restarts and every strip reloads.
+- **Alive.** Anything that appears, changes or leaves on a stage or on the field plays the game's own motion for it (summon circle and burst, Clawd poof, pop, a death strip played backwards), timed by `.ai/design/motion.md`; under reduced motion it changes at once.
+- **Lands on the field.** A commit that changes what the field shows (Equip) ends where the player sees the result: the sheet folds and the camera pushes onto their fighter (`fighter-equipped`). When the field has nothing to show yet, the toast says where it will show.
+- **Busy and refused.** A server action shows it is running (button disabled, a verb with an ellipsis), ignores a second press, and on a refusal keeps what the player chose and says why in the panel.
+- **Fits every screen.** A new or changed screen works in the four layout classes of `.ai/design/layout.md`, using their media queries and no new breakpoint: desktop, tablet `(max-width: 1000px) and (min-width: 641px)`, phone portrait `(max-width: 640px)` and phone landscape `(max-height: 500px) and (orientation: landscape)`. On a phone the screen's primary action row is sticky at the bottom with full-width buttons, touch targets are at least 44 px, a stage stacked under its list scrolls into view when the player picks, and in landscape the stage and its actions fit without scrolling past them. `tests/js/sheet/fighter-sheet-css.test.js` gets a case for each phone rule the screen adds.
+- **Measured on staging.** Before the PR, use every new control on staging with the network panel open (a pick or a toggle sends nothing, a commit sends one request), and look at the screen at the four layout sizes (devtools device mode is enough: 1280 x 800, 900 x 700, 390 x 844, 844 x 390). The PR template's checklist records both.
+
 ## Livewire 4 + Alpine
 
-- State lives server-side in the Livewire component; Alpine handles purely client-side interactivity (overlays, toggles, canvas HUD positioning). Don't duplicate server state into Alpine stores.
+- What is stored lives in the Livewire component: what the database holds and what its actions check. What the player is choosing before a commit (the selected cell, unsaved ticks, the move on a stage, an open overlay) lives in Alpine (see Interaction rules); this narrows the generic Livewire advice to keep state server-side, which covers stored state only. Alpine reads stored state from the component (a `#[Locked]` property through `$wire`) rather than keeping its own copy.
 - Blade views receive already-shaped data from services — no query building or aggregation in blades or Livewire `render()` beyond delegating to a service.
 - Check `resources/views/livewire/` and `resources/views/partials/` for an existing component before writing a new one.
 - Admin UI is Filament v5 (`app/Filament/`, custom views in `resources/views/filament/`) — build admin pages/widgets there, not as new Livewire pages. Widget data comes from a `Services/Analytics/*Query` class.
@@ -114,15 +131,15 @@ These rules extend the Boost/Laravel defaults above. When they conflict, these w
 - Decision logic must be extractable: pure functions in their own modules so Vitest can cover them without a Phaser runtime.
 - Fighter sprite sheets are `frameWidth: 100` — never upscale or regenerate sheets at other sizes.
 - Import game modules via the `@battlefield/...` alias (defined in both `vite.config.js` and `vitest.config.js`), not relative `../../` paths.
-- Adding/removing a module under `resources/js/battlefield/**` → update the Key Files table in `resources/js/battlefield/CLAUDE.md` in the same commit. Changes there should go through the `battlefield-reviewer` agent.
-- Adding a fighter/boss/companion/minion sprite → follow `public/assets/battlefield/CLAUDE.md` (formats, naming) and credit it in `CREDITS.md`. Fighter source frames live in `resources/assets/battlefield/fighters/` and are packed into a gitignored atlas by `scripts/pack-sprites.js` (runs automatically in `npm run build` / `npm run dev`).
-- Tunables live in `resources/js/battlefield/config/` (`fighters.js`, `bosses.js`, `companions.js`, `layouts.js`, `timings.js`), not as literals in managers.
+- Adding/removing a module under `resources/js/battlefield/**` → update its row in `resources/js/battlefield/FILES.md` (Key Files, and Test Files for its test) in the same commit. Changes there should go through the `battlefield-reviewer` agent.
+- Adding a fighter/boss/companion/minion sprite → follow `public/assets/battlefield/CLAUDE.md` (formats, naming) and credit it in `CREDITS.md`. Fighter source frames live in `resources/assets/battlefield/fighters/` and are packed into a gitignored atlas by `scripts/pack-sprites.js`; hero strips live in `resources/assets/battlefield/heroes/` and are packed into a second atlas by `npm run pack-heroes` (both run automatically in `npm run build` / `npm run dev`).
+- Tunables live in `resources/js/battlefield/config/` (`fighters.js`, `heroes.js`, `bosses.js`, `companions.js`, `layouts.js`, `timings.js`), not as literals in managers.
 - New real-time event → use the `scaffold-broadcast-event` skill (PHP event → `ECHO_EVENT_MAP` in `resources/js/battlefield/constants.js` → scene bus key).
 
 ## Build & verification
 
 - Every JS/CSS change needs `npm run build` before it exists anywhere but your editor.
-- Vite entry points: `resources/css/app.css`, `resources/js/app.js` (Echo + lazily-imported battlefield), `resources/js/ide-bridge.js` (IDE webview bridge). `VITE_REVERB_*` env values are baked in at build time — build with the target environment's values.
+- Vite entry points: `resources/css/app.css`, `resources/css/battlefield-hud.css`, `resources/css/fighter-sheet.css`, `resources/js/app.js` (Echo + lazily-imported battlefield), `resources/js/ide-bridge.js` (IDE webview bridge). `VITE_REVERB_*` env values are baked in at build time — build with the target environment's values.
 - The team does not test locally — changes are verified on staging. Build, then deploy per the standing staging workflow (rsync `public/build/`), then verify in the browser there.
 - Tailwind 4 (CSS-first config); prefer existing utility patterns in the blades over new custom CSS.
 
@@ -141,9 +158,9 @@ Every behavior change starts with a failing test (see the `tdd` skill for the en
 - Use factories (with custom states) for all models; check for an existing state before hand-rolling attributes.
 - Data-driven cases use Pest datasets with named keys, not copy-pasted test bodies.
 - Scope runs tightly: `spin exec php php artisan test --compact --filter=Name` or a filename. Full suite only before finishing a branch.
-- External HTTP (Anthropic OAuth/usage API, Codex, GitHub, Slack) is always faked via `Http::fake`. Canonical response fixtures live in `tests/fixtures/anthropic/*.json` and `tests/fixtures/codex/*.json` — captured from real responses, never hand-invented. Use the `fakeAnthropic()` helper in `tests/Pest.php` (it also calls `Http::preventStrayRequests()`; pass per-endpoint overrides to simulate failures).
+- External HTTP (Anthropic OAuth/usage API, Codex, GitHub, Slack, the LiteLLM price feed) is always faked via `Http::fake`. Canonical response fixtures live in `tests/fixtures/anthropic/*.json`, `tests/fixtures/codex/*.json` and `tests/fixtures/litellm/` — captured from real responses, never hand-invented. Use the `fakeAnthropic()` helper in `tests/Pest.php` (it also calls `Http::preventStrayRequests()`; pass per-endpoint overrides to simulate failures).
 - Redis: no real server in the test environment. Anything touching `SubagentCountCache` uses the `fakeRedis(array &$store)` helper in `tests/Pest.php`; mutate `$store` to simulate key expiry.
-- `tests/Pest.php` also has `livesOn()` for seeding a user's daily usage on an account (rebalance/capacity tests) — check it for existing helpers before writing setup code.
+- `tests/Pest.php` also has `livesOn()` for seeding a user's daily usage on an account (rebalance/capacity tests) — check it for existing helpers before writing setup code (the custom-character tests share `poseSheetImage()`, `markedPoseSheet()`, `pngBytes()`, `imageBytes()` and `stagedFor()`).
 - phpunit.xml runs tests on sqlite with `CACHE_STORE=array`, `QUEUE_CONNECTION=sync`, `BROADCAST_CONNECTION=null`.
 - Suites: `tests/Unit`, `tests/Feature` (mirrors `app/` — see the `tdd` skill's path mapping), `tests/Browser` (Pest 4 browser smoke tests).
 - New broadcast event → add its case to `tests/Feature/Events/BroadcastShapeTest.php` first.

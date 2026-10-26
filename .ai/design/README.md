@@ -26,16 +26,17 @@ Rules: anything a player does while the battlefield is open (choose, create, edi
 
 0. For a new feature or a change to a flow, start from a short design brief (`.claude/skills/game-design/`) placed on the map in `game.md`: journeys, flows, feel, rules, states, edge cases. The steps below are what the brief's answers are built from.
 
-1. Pick the world above and reuse its classes and tokens; do not add colours, fonts, radii or shadows that are not in `tokens.md`.
-2. Look for the piece in `components.md` first; if it does not exist, build it from the same tokens and add it there in the same PR.
-3. Cover every state: default, hover, focus-visible, active, selected, disabled, loading, empty, error, success (`patterns.md`).
-4. Destructive or irreversible action: use the in-game confirm of `patterns.md`, never `window.confirm` / `wire:confirm`.
-5. Motion: durations from `motion.md`, a `prefers-reduced-motion` rule, no animation that runs faster than the one in the game.
-6. Responsive: use the four layout classes, recipes and per-class checklist in `layout.md`; keep every touch target at least 44 px.
-7. Keyboard and screen reader: reachable and operable by keyboard, a visible focus ring, labelled controls (`layout.md`).
-8. Copy: developer audience, no sentence that explains the obvious (`patterns.md`).
-9. Verify on staging with a screenshot per state, desktop and phone width; the team verifies on staging, not locally.
-10. Add or update the rows in this folder and, for a changed domain area, the matching `.ai/domain/*.md`.
+1. Interaction: follow the Interaction rules in `.ai/guidelines/frontend.md` (instant picks, one stage, alive, lands on the field, busy and refused, fits every screen, measured on staging), starting from the closest working flow.
+2. Pick the world above and reuse its classes and tokens; do not add colours, fonts, radii or shadows that are not in `tokens.md`.
+3. Look for the piece in `components.md` first; if it does not exist, build it from the same tokens and add it there in the same PR.
+4. Cover every state: default, hover, focus-visible, active, selected, disabled, loading, empty, error, success (`patterns.md`).
+5. Destructive or irreversible action: use the in-game confirm of `patterns.md`, never `window.confirm` / `wire:confirm`.
+6. Motion: durations from `motion.md`, a `prefers-reduced-motion` rule, no animation that runs faster than the one in the game.
+7. Responsive: use the four layout classes, recipes and per-class checklist in `layout.md`; keep every touch target at least 44 px.
+8. Keyboard and screen reader: reachable and operable by keyboard, a visible focus ring, labelled controls (`layout.md`).
+9. Copy: developer audience, no sentence that explains the obvious (`patterns.md`).
+10. Verify on staging with a screenshot per state, desktop and phone width; the team verifies on staging, not locally.
+11. Add or update the rows in this folder and, for a changed domain area, the matching `.ai/domain/*.md`.
 
 ## Keeping this folder true
 
