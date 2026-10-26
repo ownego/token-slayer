@@ -267,3 +267,22 @@ test('the move on the Minions stage is chosen by the variables the stage sets, a
   expect(keyframes).toEqual(expect.arrayContaining(['fs-pool-play', 'fs-ms-once', 'fs-ms-once-b', 'fs-ms-back', 'fs-ms-back-b']));
   expect(stopped).toBe('none');
 });
+
+test('the Minions tab keeps its two-column grid around the browser state, pops its cells in, and summons on its own stage', () => {
+  const root = postcss.parse(readFileSync('resources/css/fighter-sheet.css', 'utf8'));
+  const decls = selector => {
+    const found = {};
+    root.walkRules(rule => {
+      if (rule.parent.type === 'root' && rule.selectors.includes(selector)) {
+        rule.walkDecls(d => { found[d.prop] = d.value; });
+      }
+    });
+
+    return found;
+  };
+
+  expect(decls('.fs .cme-body').display).toBe('contents');
+  expect(decls('.fs .pool-cell.enter').animation).toMatch(/^fs-slot-pop .*calc\(var\(--i, 0\) \* /);
+  expect(decls('.fs .ms-stage .fx-circle').bottom).toBeDefined();
+  expect(decls('.fs .ms-stage .fx-burst').bottom).toBeDefined();
+});

@@ -117,13 +117,7 @@ class MinionPoolCells
             return $previewLook;
         }
 
-        $looks = [
-            ...array_column($pool['defaults'], 'look'),
-            ...array_column($pool['slots'], 'look'),
-            ...($pool['overflowDraft'] !== null ? ['overflow'] : []),
-        ];
-
-        if (in_array($selected, $looks, true)) {
+        if (in_array($selected, $this->looksOf($pool), true)) {
             return $selected;
         }
 
@@ -162,6 +156,71 @@ class MinionPoolCells
         }
 
         return new MinionStage(MinionStageMode::Minion, $selected, $cell['name'], null, $cell['idle'], $cell['ticked'], $cell['slot']);
+    }
+
+    /**
+     * What the stage shows for every cell of the pool, by cell, so the tab can switch between them
+     * in the browser.
+     *
+     * @param  array<string, mixed>  $pool  the pool as `get()` returned it
+     * @return array<string, MinionStage>
+     */
+    public function stagesOf(array $pool): array
+    {
+        $stages = [];
+
+        foreach ($this->looksOf($pool) as $look) {
+            $stages[$look] = $this->stageOf($pool, $look);
+        }
+
+        return $stages;
+    }
+
+    /**
+     * What the browser draws the pool from: `saved`, each look a tick can put in or out of the
+     * pool and whether it is in it as stored, and `looks`, each cell's spec, the version that spec
+     * draws (so a replaced minion is drawn again), whether it is a preview, its name, slot and the
+     * hash of the minion it holds.
+     *
+     * @param  array<string, mixed>  $pool  the pool as `get()` returned it, from the stored selection
+     * @return array{saved: array<string, bool>, looks: array<string, array{spec: ?array<string, mixed>, version: ?string, preview: bool, name: ?string, slot: ?int, hash: ?string}>}
+     */
+    public function boardOf(array $pool): array
+    {
+        $saved = [];
+        $looks = [];
+
+        foreach ($this->stagesOf($pool) as $look => $stage) {
+            if ($stage->isTickable()) {
+                $saved[$look] = $stage->ticked;
+            }
+
+            $looks[$look] = [
+                'spec' => $stage->spec,
+                'version' => $stage->spec['version'] ?? $stage->spec['key'] ?? null,
+                'preview' => $stage->isPreview(),
+                'name' => $stage->name,
+                'slot' => $stage->slot,
+                'hash' => $stage->mode === MinionStageMode::Minion ? $pool['hashes'][$stage->slot] ?? null : null,
+            ];
+        }
+
+        return ['saved' => $saved, 'looks' => $looks];
+    }
+
+    /**
+     * Every cell of the pool, in the order the tab draws them.
+     *
+     * @param  array<string, mixed>  $pool  the pool as `get()` returned it
+     * @return list<string>
+     */
+    private function looksOf(array $pool): array
+    {
+        return [
+            ...array_column($pool['defaults'], 'look'),
+            ...array_column($pool['slots'], 'look'),
+            ...($pool['overflowDraft'] !== null ? ['overflow'] : []),
+        ];
     }
 
     /**

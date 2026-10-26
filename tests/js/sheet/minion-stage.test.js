@@ -333,36 +333,36 @@ describe('reduced motion', () => {
 });
 
 describe('the summon after an Add or Replace', () => {
-  test('plays once on the cell the pool change names, then stops', () => {
+  test('plays on the cell the pool change names, every time it is added again', () => {
     const stage = start({ look: mine, lookKey: 'slot:2' });
     expect(stage.summoning).toBe(false);
 
     poolChanged('slot:2');
-    expect(stage.summoning).toBe(true);
+    expect(stage.summoning || stage.phase === 'back').toBe(true);
 
-    vi.advanceTimersByTime(SUMMON_MS);
+    vi.advanceTimersByTime(5000);
     expect(stage.summoning).toBe(false);
+    expect(stage.phase).toBe('loop');
 
     poolChanged('slot:2');
-    expect(stage.summoning).toBe(false);
+    expect(stage.summoning || stage.phase === 'back').toBe(true);
   });
 
-  test('ignores a change to another cell, and a change that names none (a tick)', () => {
+  test('ignores a change to another cell, and a change that names none', () => {
     const stage = start({ look: mine, lookKey: 'slot:2' });
 
     poolChanged('slot:1');
     poolChanged(null);
 
     expect(stage.summoning).toBe(false);
+    expect(stage.phase).toBe('loop');
   });
 
-  test('plays at start when the stage was made by the Add itself, and the event after it adds nothing', () => {
-    const stage = start({ look: mine, lookKey: 'slot:2', summon: true });
+  test('plays at start when the stage was made by the Add itself', () => {
+    const stage = start({ look: bowser, lookKey: 'default:smw-bowser', summon: true });
+
     expect(stage.summoning).toBe(true);
-
     vi.advanceTimersByTime(SUMMON_MS);
-    poolChanged('slot:2');
-
     expect(stage.summoning).toBe(false);
   });
 
@@ -373,6 +373,121 @@ describe('the summon after an Add or Replace', () => {
     poolChanged('slot:2');
 
     expect(stage.summoning).toBe(false);
+    expect(stage.phase).toBe('loop');
+  });
+});
+
+describe('one stage that follows the pick', () => {
+  const board = {
+    saved: {},
+    looks: {
+      'default:demon-a': { spec: demon, version: 'demon-a', preview: false, name: 'Demon', slot: null, hash: null },
+      'default:smw-bowser': { spec: bowser, version: 'smw-bowser', preview: false, name: 'Bowser', slot: null, hash: null },
+      'slot:2': { spec: mine, version: 'abc123def456', preview: false, name: 'Minion 2', slot: 2, hash: 'abc123def456' },
+      'slot:3': { spec: null, version: null, preview: false, name: null, slot: 3, hash: null },
+    },
+  };
+
+  /**
+   * A stage inside the pool's scope, the way Alpine nests it: `sel`, `entered` and `board` come from the pool.
+   *
+   * @return {{stage: object, watch: Object<string, Function>, boardChanged: Function}}
+   */
+  function nested() {
+    const watch = {};
+    let onBoard = () => {};
+    const stage = minionStage({ look: demon, lookKey: 'default:demon-a' });
+    Object.assign(stage, {
+      sel: 'default:demon-a',
+      entered: 0,
+      board: structuredClone(board),
+      $watch: (name, fn) => { watch[name] = fn; },
+      $wire: { $watch: (name, fn) => { if (name === 'board') onBoard = fn; } },
+    });
+    stage.init();
+    stages.push(stage);
+
+    return { stage, watch, boardChanged: () => onBoard() };
+  }
+
+  test('a pick swaps the look in place and summons it', () => {
+    const { stage, watch } = nested();
+
+    stage.sel = 'default:smw-bowser';
+    watch.sel('default:smw-bowser');
+
+    expect(stage.look.url).toBe(MINION_TYPES.find(type => type.key === 'smw-bowser').animFiles.idle.file);
+    expect(stage.lookName).toBe('Bowser');
+    expect(stage.summoning).toBe(true);
+  });
+
+  test('a look with a death strip rises by playing it backwards, then stands idle', () => {
+    const { stage, watch } = nested();
+
+    stage.sel = 'slot:2';
+    watch.sel('slot:2');
+
+    expect(stage.phase).toBe('back');
+    expect(stage.strip).toBe('fall');
+    vi.advanceTimersByTime(5000);
+    expect(stage.phase).toBe('loop');
+    expect(stage.strip).toBe('idle');
+  });
+
+  test('two quick picks land once, on the second look', () => {
+    const { stage, watch } = nested();
+
+    stage.sel = 'default:smw-bowser';
+    watch.sel('default:smw-bowser');
+    vi.advanceTimersByTime(100);
+    stage.sel = 'slot:2';
+    watch.sel('slot:2');
+    vi.advanceTimersByTime(5000);
+
+    expect(stage.landed).toBe(1);
+    expect(stage.lookName).toBe('Minion 2');
+  });
+
+  test('a pick of an empty slot keeps the stage as it was and summons nothing', () => {
+    const { stage, watch } = nested();
+
+    stage.sel = 'slot:3';
+    watch.sel('slot:3');
+
+    expect(stage.lookName).toBe('Demon');
+    expect(stage.summoning).toBe(false);
+  });
+
+  test('a minion replaced in place is drawn again when the board brings its new version', () => {
+    const { stage, watch, boardChanged } = nested();
+    stage.sel = 'slot:2';
+    watch.sel('slot:2');
+    vi.advanceTimersByTime(5000);
+
+    stage.board.looks['slot:2'] = { ...stage.board.looks['slot:2'], version: 'fff000fff000', spec: { ...mine, version: 'fff000fff000', url_base: '/storage/custom-minions/7/fff000fff000' } };
+    boardChanged();
+
+    expect(stage.look.url).toContain('fff000fff000');
+  });
+
+  test('coming into view summons the look on the stage again', () => {
+    const { stage, watch } = nested();
+
+    watch.entered(1);
+
+    expect(stage.summoning || stage.phase === 'back').toBe(true);
+  });
+
+  test('summons nothing under reduced motion, but still swaps the look', () => {
+    reducedMotion(true);
+    const { stage, watch } = nested();
+
+    stage.sel = 'slot:2';
+    watch.sel('slot:2');
+
+    expect(stage.lookName).toBe('Minion 2');
+    expect(stage.summoning).toBe(false);
+    expect(stage.phase).toBe('loop');
   });
 });
 

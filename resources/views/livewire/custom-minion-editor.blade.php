@@ -1,13 +1,13 @@
 {{-- The Minions tab (Character > Fighter | Minions): the pool on the left, the stage and the one thing you can do with the
      selected cell on the right (stacked on a phone). Built from the fighter editor's pieces (.cce upload form, .alert,
      .confirm-row) plus the pool classes at the end of fighter-sheet.css; listed in .ai/design/components.md.
-     Every button is a wire:click of this component, so nothing waits for a browser event to reach a component that
-     might not be mounted yet. What is selected, replaced or being confirmed lives in locked component state.
-     A change to the pool is announced as `custom-minions-changed {pool, changed}`; a result line as `sheet-toast`.
-     Ticking a look only changes the choice held in the component ($unsaved); Save is the one button that stores it,
-     with the hash of every cell this view drew ($pool['hashes']) so a tab that drew an older set is turned away. --}}
-{{-- No Alpine state on this root, for the reason given in custom-character-editor.blade.php: what is pending
-     (a confirm row) lives in $confirming. --}}
+     Picking a cell, ticking a look, Reset and the hotbar run in the browser (`minionPool` in sheet/minion-pool.js and
+     `minionStage` in sheet/minion-stage.js), like the Fighter tab's roster: no request, no re-render. Every cell's panel
+     is rendered here and shown by the pick; the stage is one element that follows it. Save, Remove, Replace, the upload
+     and the preview actions are wire:click actions of this component. A change to the pool is announced as
+     `custom-minions-changed {pool, changed}`; a result line as `sheet-toast`. --}}
+{{-- No Alpine state on this root, for the reason given in custom-character-editor.blade.php: the browser state lives on
+     .cme-body inside it (display: contents, so the root's grid still places the two sections). --}}
 @use('App\Enums\MinionStageMode')
 @php($id = $this->getId())
 <div class="cce cme" id="cme-{{ $id }}">
@@ -15,91 +15,93 @@
         <div class="alert crit" role="alert"><span>{{ $message }}</span></div>
     @enderror
 
-    <section class="cme-pool" aria-label="Your minion pool">
-        <div class="cme-group">
-            <div class="cce-head"><h3>Default</h3></div>
-            <ul class="pool-grid" aria-label="Default minions">
-                @foreach ($pool['defaults'] as $cell)
-                    <li class="pool-cell {{ $selected === $cell['look'] ? 'is-selected' : '' }} {{ $cell['ticked'] ? '' : 'is-off' }}" wire:key="cell-{{ $cell['look'] }}">
-                        <button type="button" class="pool-pick" id="cme-pick-{{ $cell['look'] }}-{{ $id }}" wire:click="select('{{ $cell['look'] }}')" aria-current="{{ $selected === $cell['look'] ? 'true' : 'false' }}" aria-label="Show {{ $cell['label'] }} on the stage">
-                            <span class="pool-thumb" aria-hidden="true"><span class="pool-sprite" wire:key="thumb-{{ $cell['look'] }}" x-data="minionThumb(@js($cell['idle']))" x-bind:style="style"></span></span>
-                            <span class="pool-name">{{ $cell['label'] }}</span>
-                        </button>
-                        <button type="button" class="pool-tick" aria-pressed="{{ $cell['ticked'] ? 'true' : 'false' }}" aria-label="{{ $cell['label'] }} in the pool" wire:click="toggleTick('{{ $cell['look'] }}', {{ $cell['ticked'] ? 'false' : 'true' }})">
-                            <span class="pool-tick-box" aria-hidden="true"></span>
-                            <span aria-hidden="true">In the pool</span>
-                        </button>
-                    </li>
-                @endforeach
-            </ul>
-        </div>
-
-        <div class="cme-group">
-            <div class="cce-head">
-                <h3>Yours</h3>
-                <span class="cce-note">{{ $pool['used'] }} of {{ $pool['max'] }}@if ($pool['used'] >= $pool['max']) · Replace one to change it @endif</span>
-            </div>
-            <ul class="pool-grid" aria-label="Your minions">
-                @foreach ($pool['slots'] as $cell)
-                    @php($preview = $cell['draft'])
-                    <li class="pool-cell {{ $selected === $cell['look'] ? 'is-selected' : '' }} {{ $changed === $cell['look'] ? 'is-lit' : '' }} {{ $preview ? 'is-preview' : '' }} {{ $cell['idle'] === null && ! $preview ? 'is-empty' : '' }} {{ $cell['idle'] !== null && ! $cell['ticked'] && ! $preview ? 'is-off' : '' }}" wire:key="cell-{{ $cell['look'] }}">
-                        <button type="button" class="pool-pick" id="cme-pick-{{ $cell['look'] }}-{{ $id }}" wire:click="select('{{ $cell['look'] }}')" aria-current="{{ $selected === $cell['look'] ? 'true' : 'false' }}"
-                            aria-label="{{ $preview ? 'Preview '.$preview['name'] : ($cell['idle'] === null ? 'Empty slot '.$cell['slot'] : 'Show '.$cell['name'].' on the stage') }}">
-                            <span class="pool-thumb" aria-hidden="true">
-                                @if ($preview)
-                                    <span class="pool-sprite" wire:key="thumb-{{ $cell['look'] }}-{{ $preview['hash'] }}" x-data="minionThumb(@js($preview['spec']))" x-bind:style="style"></span>
-                                @elseif ($cell['idle'] !== null)
-                                    <span class="pool-sprite" wire:key="thumb-{{ $cell['look'] }}-{{ $cell['idle']['version'] }}" x-data="minionThumb(@js($cell['idle']))" x-bind:style="style"></span>
-                                @else
-                                    <span class="pool-plus">+</span>
-                                @endif
-                            </span>
-                            <span class="pool-name">{{ $preview ? $preview['name'] : ($cell['name'] ?? 'Empty slot') }}</span>
-                            @if ($preview)
-                                <span class="pool-badge">Preview</span>
-                            @endif
-                        </button>
-                        @if ($cell['idle'] !== null && ! $preview)
-                            <button type="button" class="pool-tick" aria-pressed="{{ $cell['ticked'] ? 'true' : 'false' }}" aria-label="{{ $cell['name'] }} in the pool" wire:click="toggleTick('{{ $cell['look'] }}', {{ $cell['ticked'] ? 'false' : 'true' }})">
+    <div class="cme-body" x-data="minionPool(@js(['selected' => $selected]))">
+        <section class="cme-pool" aria-label="Your minion pool">
+            <div class="cme-group">
+                <div class="cce-head"><h3>Default</h3></div>
+                <ul class="pool-grid" aria-label="Default minions">
+                    @foreach ($pool['defaults'] as $cell)
+                        <li class="pool-cell {{ $selected === $cell['look'] ? 'is-selected' : '' }} {{ $cell['ticked'] ? '' : 'is-off' }}" style="--i: {{ $loop->index }}" wire:key="cell-{{ $cell['look'] }}"
+                            x-bind:class="{ 'is-selected': sel === @js($cell['look']), 'is-off': ! ticked(@js($cell['look'])) }">
+                            <button type="button" class="pool-pick" id="cme-pick-{{ $cell['look'] }}-{{ $id }}" x-on:click="pick(@js($cell['look']))" aria-current="{{ $selected === $cell['look'] ? 'true' : 'false' }}" x-bind:aria-current="String(sel === @js($cell['look']))" aria-label="Show {{ $cell['label'] }} on the stage">
+                                <span class="pool-thumb" aria-hidden="true"><span class="pool-sprite" wire:key="thumb-{{ $cell['look'] }}" x-data="minionThumb(@js($cell['idle']))" x-bind:style="style"></span></span>
+                                <span class="pool-name">{{ $cell['label'] }}</span>
+                            </button>
+                            <button type="button" class="pool-tick" aria-pressed="{{ $cell['ticked'] ? 'true' : 'false' }}" x-bind:aria-pressed="String(ticked(@js($cell['look'])))" aria-label="{{ $cell['label'] }} in the pool" x-on:click="toggle(@js($cell['look']))">
                                 <span class="pool-tick-box" aria-hidden="true"></span>
                                 <span aria-hidden="true">In the pool</span>
                             </button>
-                        @endif
-                    </li>
-                @endforeach
-                @if ($pool['overflowDraft'])
-                    @php($preview = $pool['overflowDraft'])
-                    <li class="pool-cell is-preview {{ $selected === 'overflow' ? 'is-selected' : '' }}" wire:key="cell-overflow">
-                        <button type="button" class="pool-pick" id="cme-pick-overflow-{{ $id }}" wire:click="select('overflow')" aria-current="{{ $selected === 'overflow' ? 'true' : 'false' }}" aria-label="Preview {{ $preview['name'] }}">
-                            <span class="pool-thumb" aria-hidden="true"><span class="pool-sprite" wire:key="thumb-overflow-{{ $preview['hash'] }}" x-data="minionThumb(@js($preview['spec']))" x-bind:style="style"></span></span>
-                            <span class="pool-name">{{ $preview['name'] }}</span>
-                            <span class="pool-badge">Preview</span>
-                        </button>
-                    </li>
-                @endif
-            </ul>
-        </div>
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
 
-        @if ($pool['nothingTicked'])
-            <p class="cce-note" role="status">Nothing ticked: subagents summon the defaults.@if ($unsaved) Not saved yet. @endif</p>
-        @endif
+            <div class="cme-group">
+                <div class="cce-head">
+                    <h3>Yours</h3>
+                    <span class="cce-note">{{ $pool['used'] }} of {{ $pool['max'] }}@if ($pool['used'] >= $pool['max']) · Replace one to change it @endif</span>
+                </div>
+                <ul class="pool-grid" aria-label="Your minions">
+                    @foreach ($pool['slots'] as $cell)
+                        @php($preview = $cell['draft'])
+                        @php($held = $cell['idle'] !== null && ! $preview)
+                        <li class="pool-cell {{ $selected === $cell['look'] ? 'is-selected' : '' }} {{ $changed === $cell['look'] ? 'is-lit' : '' }} {{ $preview ? 'is-preview' : '' }} {{ $cell['idle'] === null && ! $preview ? 'is-empty' : '' }} {{ $held && ! $cell['ticked'] ? 'is-off' : '' }}" style="--i: {{ 5 + $loop->index }}" wire:key="cell-{{ $cell['look'] }}"
+                            x-bind:class="{ 'is-selected': sel === @js($cell['look']) @if ($held), 'is-off': ! ticked(@js($cell['look'])) @endif }">
+                            <button type="button" class="pool-pick" id="cme-pick-{{ $cell['look'] }}-{{ $id }}" x-on:click="pick(@js($cell['look']))" aria-current="{{ $selected === $cell['look'] ? 'true' : 'false' }}" x-bind:aria-current="String(sel === @js($cell['look']))"
+                                aria-label="{{ $preview ? 'Preview '.$preview['name'] : ($cell['idle'] === null ? 'Empty slot '.$cell['slot'] : 'Show '.$cell['name'].' on the stage') }}">
+                                <span class="pool-thumb" aria-hidden="true">
+                                    @if ($preview)
+                                        <span class="pool-sprite" wire:key="thumb-{{ $cell['look'] }}-{{ $preview['hash'] }}" x-data="minionThumb(@js($preview['spec']))" x-bind:style="style"></span>
+                                    @elseif ($cell['idle'] !== null)
+                                        <span class="pool-sprite" wire:key="thumb-{{ $cell['look'] }}-{{ $cell['idle']['version'] }}" x-data="minionThumb(@js($cell['idle']))" x-bind:style="style"></span>
+                                    @else
+                                        <span class="pool-plus">+</span>
+                                    @endif
+                                </span>
+                                <span class="pool-name">{{ $preview ? $preview['name'] : ($cell['name'] ?? 'Empty slot') }}</span>
+                                @if ($preview)
+                                    <span class="pool-badge">Preview</span>
+                                @endif
+                            </button>
+                            @if ($held)
+                                <button type="button" class="pool-tick" aria-pressed="{{ $cell['ticked'] ? 'true' : 'false' }}" x-bind:aria-pressed="String(ticked(@js($cell['look'])))" aria-label="{{ $cell['name'] }} in the pool" x-on:click="toggle(@js($cell['look']))">
+                                    <span class="pool-tick-box" aria-hidden="true"></span>
+                                    <span aria-hidden="true">In the pool</span>
+                                </button>
+                            @endif
+                        </li>
+                    @endforeach
+                    @if ($pool['overflowDraft'])
+                        @php($preview = $pool['overflowDraft'])
+                        <li class="pool-cell is-preview {{ $selected === 'overflow' ? 'is-selected' : '' }}" style="--i: 8" wire:key="cell-overflow" x-bind:class="{ 'is-selected': sel === 'overflow' }">
+                            <button type="button" class="pool-pick" id="cme-pick-overflow-{{ $id }}" x-on:click="pick('overflow')" aria-current="{{ $selected === 'overflow' ? 'true' : 'false' }}" x-bind:aria-current="String(sel === 'overflow')" aria-label="Preview {{ $preview['name'] }}">
+                                <span class="pool-thumb" aria-hidden="true"><span class="pool-sprite" wire:key="thumb-overflow-{{ $preview['hash'] }}" x-data="minionThumb(@js($preview['spec']))" x-bind:style="style"></span></span>
+                                <span class="pool-name">{{ $preview['name'] }}</span>
+                                <span class="pool-badge">Preview</span>
+                            </button>
+                        </li>
+                    @endif
+                </ul>
+            </div>
 
-        <div class="equip-row">
-            <span class="equip-note" id="cme-save-note-{{ $id }}" role="status">{{ $unsaved ? 'Not saved yet.' : 'Saved.' }}</span>
-            @if ($unsaved)
-                <button type="button" class="btn" id="cme-reset-{{ $id }}" wire:click="resetPending" wire:loading.attr="disabled" wire:target="save">Reset</button>
-            @endif
-            <button type="button" class="btn primary" id="cme-save-{{ $id }}" wire:click="save(@js($pool['hashes']))" wire:loading.attr="disabled" wire:target="save" @disabled(! $unsaved) aria-describedby="cme-save-note-{{ $id }}">
-                <span wire:loading.remove wire:target="save">Save pool</span><span wire:loading wire:target="save">Saving…</span>
-            </button>
-        </div>
-    </section>
+            <p class="cce-note" role="status" @if (! $pool['nothingTicked']) style="display: none" @endif x-show="nothingTicked">Nothing ticked: subagents summon the defaults.</p>
 
-    <section class="cme-panel" aria-labelledby="cme-stage-title-{{ $id }}">
-        @if ($stage->mode !== MinionStageMode::Empty)
+            <div class="equip-row">
+                <span class="equip-note" id="cme-save-note-{{ $id }}" role="status" x-text="unsaved ? 'Not saved yet.' : 'Saved.'">Saved.</span>
+                <button type="button" class="btn" id="cme-reset-{{ $id }}" style="display: none" x-show="unsaved" x-on:click="reset()" x-bind:disabled="saving">Reset</button>
+                <button type="button" class="btn primary" id="cme-save-{{ $id }}" x-on:click="saveChoice()" disabled x-bind:disabled="! unsaved || saving" x-bind:aria-busy="String(saving)" aria-describedby="cme-save-note-{{ $id }}">
+                    <span x-text="saving ? 'Saving…' : 'Save pool'">Save pool</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="cme-panel" aria-labelledby="cme-stage-title-{{ $id }}">
+            {{-- One stage for every cell: it follows the pick and the board without being drawn again by the server. --}}
             <div
                 class="ms"
-                wire:key="stage-{{ $stage->mode->value }}-{{ $stage->look }}-{{ $stage->spec['version'] ?? $stage->spec['key'] }}"
+                wire:ignore
+                @if ($stage->mode === MinionStageMode::Empty) style="display: none" @endif
+                x-show="hasStage"
                 x-data="minionStage(@js([
                     'look' => $stage->spec,
                     'lookKey' => $stage->look,
@@ -110,57 +112,92 @@
                 ]))"
             >
                 <div class="ms-stage" aria-hidden="true">
+                    <span class="fx-circle"></span>
+                    <span class="fx-burst"></span>
                     <span class="ms-sprite" x-bind:class="{ summon: summoning }" x-bind:style="spriteStyle"></span>
                 </div>
-                <div class="ms-moves" role="toolbar" aria-label="{{ $stage->name }} moves">
+                <div class="ms-moves" role="toolbar" x-bind:aria-label="(lookName || 'Minion') + ' moves'" aria-label="{{ $stage->name }} moves">
                     <template x-for="m in moves" x-bind:key="m.id">
                         <button type="button" class="btn ms-move" x-on:click="play(m.id)" x-bind:aria-pressed="move === m.id ? 'true' : 'false'" x-text="m.label"></button>
                     </template>
                 </div>
-                <div class="ms-field" role="group" aria-label="{{ $stage->name }} at field size, beside your fighter">
+                <div class="ms-field" role="group" x-bind:aria-label="(lookName || 'Minion') + ' at field size, beside your fighter'">
                     <span class="ms-field-cap" aria-hidden="true">At field size</span>
                     <span class="ms-sprite ms-fighter" aria-hidden="true" x-show="field.fighter" x-bind:style="field.fighter"></span>
                     <span class="ms-sprite ms-minion" aria-hidden="true" x-bind:style="field.minion"></span>
                 </div>
             </div>
-        @endif
 
-        <div class="ms-info">
-            <strong id="cme-stage-title-{{ $id }}">{{ $stage->mode === MinionStageMode::Empty ? 'Empty slot '.$stage->slot : $stage->name }}</strong>
-            @if ($stage->isPreview())
-                <span class="show-state previewing">Preview</span>
-            @elseif ($stage->isTickable())
-                @php($inPool = $stage->ticked || ($stage->mode === MinionStageMode::Default && $pool['nothingTicked']))
-                <span class="show-state {{ $inPool ? '' : 'previewing' }}">{{ $inPool ? 'In the pool' : 'Not in the pool' }}@if ($stageUnsaved) · not saved @endif</span>
-            @endif
-        </div>
-
-        @if ($stage->mode === MinionStageMode::Minion && ! $replacingSelected)
-            @if ($confirmingSelected)
-                <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $stage->name }}" wire:keydown.escape.stop.prevent="dismissConfirm">
-                    <span>Remove {{ $stage->name }}? Your subagents stop summoning it.</span>
-                    <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
-                    <button type="button" class="btn blood" wire:click="removeMinion({{ $stage->slot }}, '{{ $pool['hashes'][$stage->slot] }}')" wire:loading.attr="disabled" wire:target="removeMinion">
-                        <span wire:loading.remove wire:target="removeMinion">Remove</span><span wire:loading wire:target="removeMinion">Removing…</span>
-                    </button>
-                </div>
-            @else
-                <div class="cce-row ms-actions">
-                    <button type="button" class="btn" id="cme-remove-open-{{ $id }}" wire:click="askToConfirm('slot-{{ $stage->slot }}')">Remove</button>
-                    <button type="button" class="btn primary" id="cme-replace-open-{{ $id }}" wire:click="startReplace({{ $stage->slot }})">Replace</button>
-                </div>
-            @endif
-        @endif
-
-        @if ($stage->mode === MinionStageMode::Empty || ($stage->mode === MinionStageMode::Minion && $replacingSelected))
-            <div class="cme-make">
-                @if ($replacingSelected)
-                    <div class="cce-head">
-                        <h3>Replace {{ $stage->name }}</h3>
-                        <button type="button" class="cce-link" wire:click="cancelReplace">Cancel</button>
+            @foreach ($stages as $look => $cellStage)
+                @php($replacingThis = $cellStage->mode === MinionStageMode::Minion && $replacing === $cellStage->slot)
+                <div class="cme-cell" wire:key="panel-{{ $look }}" @if ($look !== $selected) style="display: none" @endif x-show="sel === @js($look)">
+                    <div class="ms-info" aria-live="polite">
+                        <strong @if ($look === $selected) id="cme-stage-title-{{ $id }}" @endif>{{ $cellStage->mode === MinionStageMode::Empty ? 'Empty slot '.$cellStage->slot : $cellStage->name }}</strong>
+                        @if ($cellStage->isPreview())
+                            <span class="show-state previewing">Preview</span>
+                        @elseif ($cellStage->isTickable())
+                            <span class="show-state" x-bind:class="{ previewing: ! inPool(@js($look)) }" x-text="(inPool(@js($look)) ? 'In the pool' : 'Not in the pool') + (isChanged(@js($look)) ? ' · not saved' : '')">{{ $cellStage->ticked ? 'In the pool' : 'Not in the pool' }}</span>
+                        @endif
                     </div>
-                @endif
 
+                    @if ($cellStage->mode === MinionStageMode::Minion && ! $replacingThis)
+                        @if ($confirming === 'slot-'.$cellStage->slot)
+                            <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $cellStage->name }}" wire:keydown.escape.stop.prevent="dismissConfirm">
+                                <span>Remove {{ $cellStage->name }}? Your subagents stop summoning it.</span>
+                                <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
+                                <button type="button" class="btn blood" wire:click="removeMinion({{ $cellStage->slot }}, '{{ $pool['hashes'][$cellStage->slot] }}')" wire:loading.attr="disabled" wire:target="removeMinion">
+                                    <span wire:loading.remove wire:target="removeMinion">Remove</span><span wire:loading wire:target="removeMinion">Removing…</span>
+                                </button>
+                            </div>
+                        @else
+                            <div class="cce-row ms-actions">
+                                <button type="button" class="btn" id="cme-remove-open-{{ $cellStage->slot }}-{{ $id }}" wire:click="askToConfirm('slot-{{ $cellStage->slot }}')">Remove</button>
+                                <button type="button" class="btn primary" id="cme-replace-open-{{ $cellStage->slot }}-{{ $id }}" wire:click="startReplace({{ $cellStage->slot }})">Replace</button>
+                            </div>
+                        @endif
+                    @endif
+
+                    @if ($replacingThis)
+                        <div class="cce-head">
+                            <h3>Replace {{ $cellStage->name }}</h3>
+                            <button type="button" class="cce-link" wire:click="cancelReplace">Cancel</button>
+                        </div>
+                    @endif
+
+                    @if ($cellStage->mode === MinionStageMode::Draft)
+                        @php($draft = $cellStage->draft)
+                        <p class="cce-note">Not in the pool until you add it.</p>
+                        <div class="cce-row ms-actions">
+                            <button type="button" class="btn" wire:click="discard('{{ $draft['hash'] }}')" wire:loading.attr="disabled" wire:target="discard">Discard</button>
+                            <button type="button" class="btn primary" id="cme-primary-{{ $id }}" wire:click="confirm('{{ $draft['hash'] }}', {{ $draft['slot'] ?? 'null' }})" wire:loading.attr="disabled" wire:target="confirm">
+                                @if ($draft['replaces'] !== null)
+                                    <span wire:loading.remove wire:target="confirm">Replace {{ $draft['replaces'] }}</span><span wire:loading wire:target="confirm">Replacing…</span>
+                                @else
+                                    <span wire:loading.remove wire:target="confirm">Add to minions</span><span wire:loading wire:target="confirm">Adding…</span>
+                                @endif
+                            </button>
+                        </div>
+                    @endif
+
+                    @if ($cellStage->mode === MinionStageMode::Overflow)
+                        @php($draft = $cellStage->draft)
+                        @php($heldCells = collect($pool['slots'])->filter(fn (array $cell): bool => $cell['idle'] !== null)->values())
+                        <p class="cce-note" role="status">Your set filled up. Pick a minion to replace, or discard this preview.</p>
+                        <div class="cce-row" role="group" aria-label="Minions you can replace">
+                            @foreach ($heldCells as $cell)
+                                <button type="button" class="btn" @if ($loop->first) id="cme-primary-{{ $id }}" @endif wire:click="retarget('{{ $draft['hash'] }}', {{ $cell['slot'] }})" wire:loading.attr="disabled" wire:target="retarget" aria-label="Replace {{ $cell['name'] }} with this preview">{{ $cell['name'] }}</button>
+                            @endforeach
+                        </div>
+                        <div class="cce-row ms-actions">
+                            <button type="button" class="btn" wire:click="discard('{{ $draft['hash'] }}')" wire:loading.attr="disabled" wire:target="discard">Discard</button>
+                        </div>
+                    @endif
+                </div>
+            @endforeach
+
+            {{-- One upload form, for an empty slot or the minion being replaced. --}}
+            @php($makeLooks = collect($stages)->filter(fn ($cellStage): bool => $cellStage->mode === MinionStageMode::Empty || ($cellStage->mode === MinionStageMode::Minion && $replacing === $cellStage->slot))->keys()->values()->all())
+            <div class="cme-make" @if (! in_array($selected, $makeLooks, true)) style="display: none" @endif x-show="@js($makeLooks).includes(sel)">
                 {{-- Choosing a file (and sending it to the server) is one step; building the preview from it is the next. --}}
                 <form
                     wire:key="upload-form"
@@ -236,35 +273,6 @@
                     @endif
                 </div>
             </div>
-        @endif
-
-        @if ($stage->mode === MinionStageMode::Draft)
-            @php($draft = $stage->draft)
-            <p class="cce-note">Not in the pool until you add it.</p>
-            <div class="cce-row ms-actions">
-                <button type="button" class="btn" wire:click="discard('{{ $draft['hash'] }}')" wire:loading.attr="disabled" wire:target="discard">Discard</button>
-                <button type="button" class="btn primary" id="cme-primary-{{ $id }}" wire:click="confirm('{{ $draft['hash'] }}', {{ $draft['slot'] ?? 'null' }})" wire:loading.attr="disabled" wire:target="confirm">
-                    @if ($draft['replaces'] !== null)
-                        <span wire:loading.remove wire:target="confirm">Replace {{ $draft['replaces'] }}</span><span wire:loading wire:target="confirm">Replacing…</span>
-                    @else
-                        <span wire:loading.remove wire:target="confirm">Add to minions</span><span wire:loading wire:target="confirm">Adding…</span>
-                    @endif
-                </button>
-            </div>
-        @endif
-
-        @if ($stage->mode === MinionStageMode::Overflow)
-            @php($draft = $stage->draft)
-            @php($held = collect($pool['slots'])->filter(fn (array $cell): bool => $cell['idle'] !== null)->values())
-            <p class="cce-note" role="status">Your set filled up. Pick a minion to replace, or discard this preview.</p>
-            <div class="cce-row" role="group" aria-label="Minions you can replace">
-                @foreach ($held as $cell)
-                    <button type="button" class="btn" @if ($loop->first) id="cme-primary-{{ $id }}" @endif wire:click="retarget('{{ $draft['hash'] }}', {{ $cell['slot'] }})" wire:loading.attr="disabled" wire:target="retarget" aria-label="Replace {{ $cell['name'] }} with this preview">{{ $cell['name'] }}</button>
-                @endforeach
-            </div>
-            <div class="cce-row ms-actions">
-                <button type="button" class="btn" wire:click="discard('{{ $draft['hash'] }}')" wire:loading.attr="disabled" wire:target="discard">Discard</button>
-            </div>
-        @endif
-    </section>
+        </section>
+    </div>
 </div>

@@ -3,7 +3,6 @@
 namespace App\Livewire;
 
 use App\Enums\CustomMinionOutcome;
-use App\Enums\MinionStageMode;
 use App\Exceptions\CustomMinionDuplicateException;
 use App\Exceptions\CustomMinionMissingException;
 use App\Exceptions\MinionLookUnknownException;
@@ -19,7 +18,6 @@ use App\Services\CustomCharacter\DiscardCustomMinionDraft;
 use App\Services\CustomCharacter\MinionPool;
 use App\Services\CustomCharacter\MinionPoolCells;
 use App\Services\CustomCharacter\MinionPoolSelection;
-use App\Services\CustomCharacter\MinionStage;
 use App\Services\CustomCharacter\RemoveCustomMinion;
 use App\Services\CustomCharacter\RetargetCustomMinionDraft;
 use App\Services\CustomCharacter\StageCustomMinion;
@@ -40,32 +38,33 @@ use Throwable;
  * with the one thing the player can do with it (replace it, remove it, build a new one into an
  * empty slot, add or discard a preview).
  *
- * Ticking a look is choosing, not saving: the ticks are held in `$pending` (component state, no
- * database write, no revision, no broadcast) until the player presses Save, which sends the whole
- * selection with the hash of every cell it drew and is one write, one revision and one broadcast
- * (see ApplyMinionPool). Reset drops the choice, and so does a refresh from another tab.
+ * Picking a cell and ticking a look happen in the browser (`sheet/minion-pool.js`), like the
+ * Fighter tab's roster: no request, no re-render. The browser keeps the ticks it has not saved and
+ * reads what the server holds from `$board`. Save sends the whole choice with the hash of every
+ * cell it drew and is one write, one revision and one broadcast (see ApplyMinionPool). A refresh
+ * from another tab tells the browser to drop its unsaved choice (`minion-pool-reset`).
  *
- * Every button is a `wire:click` of this component: nothing here waits for a browser event
- * to reach a component that might not be mounted yet. A change that touches the pool tells
- * the page around it with the `custom-minions-changed` browser event (`{pool, changed}`: the
- * pool the swarm now draws from, and the cell that was just added or replaced) so the
- * Profile's mini stage follows without a reload, and a result worth a line is a `sheet-toast`.
+ * The browser writes `$selected` without a request (it is sent with the next action), so an action
+ * that moves the stage can follow the cell the player is on; nothing trusts it, every action takes
+ * and checks its own slot and hash. A change that touches the pool tells the page around it with the
+ * `custom-minions-changed` browser event (`{pool, changed}`: the pool the swarm now draws from, and
+ * the cell that was just added or replaced) so the Profile's mini stage follows without a reload,
+ * and a result worth a line is a `sheet-toast`.
  *
- * What is selected, which slot is being replaced, the choice not yet saved and what is awaiting a
- * confirm are locked: the browser changes them only by calling the actions below, which check them.
+ * Which slot is being replaced, the lit cell, the board and what is awaiting a confirm are locked:
+ * the browser changes them only by calling the actions below, which check them.
  */
 class CustomMinionEditor extends Component
 {
-    use ConfirmsInPlace, ActsAsSheetPanel, UploadsPoseSheet;
+    use ActsAsSheetPanel, ConfirmsInPlace, UploadsPoseSheet;
 
     /**
      * The cell on the stage: `default:<key>`, `slot:<n>` or `overflow` (the preview that has no
-     * slot to sit in). An unknown or vanished cell falls back to the preview's cell, else the
-     * first default look, when it is drawn.
+     * slot to sit in). The browser writes it as the player picks; an unknown or vanished cell
+     * falls back to the preview's cell, else the first default look, when it is drawn.
      *
      * @var string
      */
-    #[Locked]
     public string $selected = '';
 
     /**
@@ -86,14 +85,14 @@ class CustomMinionEditor extends Component
     public ?string $changed = null;
 
     /**
-     * The ticks the player has chosen and not saved: the default keys left out and the slots left
-     * out. Null while the choice is the saved one. Held in the component only; nothing is stored,
-     * counted or broadcast until Save.
+     * What the browser draws the pool from: `saved` (each look that can be ticked, and whether it is
+     * in the pool as stored) and `looks` (each cell's spec, version, slot and minion hash). Refilled
+     * by every render, so the browser follows a change the server made.
      *
-     * @var array{defaults_off: list<string>, slots_off: list<int>}|null
+     * @var array{saved: array<string, bool>, looks: array<string, array{spec: ?array<string, mixed>, version: ?string, slot: ?int, hash: ?string}>}
      */
     #[Locked]
-    public ?array $pending = null;
+    public array $board = ['saved' => [], 'looks' => []];
 
     /**
      * What `Use my fighter` says while the player has no custom fighter to copy.
@@ -125,7 +124,9 @@ class CustomMinionEditor extends Component
     }
 
     /**
-     * Puts a cell of the pool on the stage. A cell that does not exist is drawn as the fallback.
+     * Leaves a Replace or a confirm question for another cell. The browser picks cells on its own;
+     * it calls this only while one of those is open, and may already have written `$selected`, so
+     * the Replace is kept only when the cell is the slot being replaced.
      *
      * @param  string  $cell  `default:<key>`, `slot:<n>` or `overflow`
      * @return void
@@ -138,7 +139,7 @@ class CustomMinionEditor extends Component
             return;
         }
 
-        if ($cell !== $this->selected) {
+        if ($cell !== "slot:{$this->replacing}") {
             $this->replacing = null;
         }
 
@@ -148,85 +149,34 @@ class CustomMinionEditor extends Component
     }
 
     /**
-     * Ticks a look into the choice or out of it. Nothing is saved: the choice waits in `$pending`
-     * for Save. Bound to the state the player saw, so asking twice is harmless; a look that is not
-     * theirs is turned away and the page is told the pool as it is.
-     *
-     * @param  string  $look  `default:<key>` or `slot:<n>`
-     * @param  bool  $ticked  whether the look should be in the pool
-     * @return void
-     *
-     * @throws MinionLookUnknownException when the look is not a default look or a minion the player holds, handled by run()
-     */
-    public function toggleTick(string $look, bool $ticked): void
-    {
-        $this->run(function () use ($look, $ticked): void {
-            $user = $this->player();
-            $saved = MinionPoolSelection::of($user);
-            $chosen = $this->chosen($saved);
-
-            if (preg_match('/^default:(.+)$/', $look, $match) === 1 && in_array($match[1], MinionPoolSelection::defaultKeys(), true)) {
-                $next = $chosen->withDefault($match[1], $ticked);
-            } elseif (preg_match('/^slot:([1-9]\d*)$/', $look, $match) === 1 && $user->customMinions->contains('slot', (int) $match[1])) {
-                $next = $chosen->withSlot((int) $match[1], $ticked);
-            } else {
-                throw new MinionLookUnknownException;
-            }
-
-            $this->pending = $next->sameChoiceAs($saved, $this->heldSlots($user))
-                ? null
-                : ['defaults_off' => $next->defaultsOff, 'slots_off' => $next->slotsOff];
-            $this->changed = null;
-        });
-    }
-
-    /**
-     * Saves the choice: every default look, and every minion the tab drew with the hash it drew,
-     * as one change of the pool. Counts once against the per-minute allowance. A tab that drew
-     * minions another tab has since changed is turned away, and its choice is kept.
+     * Saves the choice the browser holds: the default looks left out, the slots left out, and the
+     * hash of every minion the tab drew, as one change of the pool. Counts once against the
+     * per-minute allowance. A tab that drew minions another tab has since changed, or a look the
+     * player cannot choose, is turned away and nothing is written.
      *
      * @param  array<int|string, mixed>  $hashes  the version hash of each minion the tab drew, by slot
+     * @param  array<int, mixed>  $defaultsOff  the default keys left out of the pool
+     * @param  array<int, mixed>  $slotsOff  the slots left out of the pool
      * @param  ApplyMinionPool  $apply  stores the selection
-     * @return void
+     * @return bool whether the pool was written
      */
-    public function save(array $hashes, ApplyMinionPool $apply): void
+    public function save(array $hashes, array $defaultsOff, array $slotsOff, ApplyMinionPool $apply): bool
     {
         if (! $this->withinChangeLimit()) {
-            return;
+            return false;
         }
 
-        $this->run(function () use ($hashes, $apply): void {
-            $chosen = $this->chosen(MinionPoolSelection::of($this->player()));
-            $defaults = [];
-            $slots = [];
+        $written = false;
 
-            foreach (MinionPoolSelection::defaultKeys() as $key) {
-                $defaults[$key] = $chosen->defaultTicked($key);
-            }
+        $this->run(function () use ($hashes, $defaultsOff, $slotsOff, $apply, &$written): void {
+            $written = $apply->execute(auth()->user(), $this->defaultsFrom($defaultsOff), $this->slotsFrom($hashes, $slotsOff));
 
-            foreach ($hashes as $slot => $hash) {
-                $slots[(int) $slot] = ['hash' => is_scalar($hash) ? (string) $hash : '', 'ticked' => $chosen->slotTicked((int) $slot)];
-            }
-
-            $written = $apply->execute(auth()->user(), $defaults, $slots);
-
-            $this->pending = null;
             $this->changed = null;
             $this->toast($written ? 'Pool saved.' : 'Pool already saved.');
             $this->announce();
         });
-    }
 
-    /**
-     * Drops the choice that is not saved: the ticks go back to the saved ones.
-     *
-     * @return void
-     */
-    public function resetPending(): void
-    {
-        $this->resetErrorBag();
-        $this->pending = null;
-        $this->confirming = null;
+        return $written;
     }
 
     /**
@@ -260,8 +210,9 @@ class CustomMinionEditor extends Component
      */
     public function cancelReplace(): void
     {
+        $opener = "cme-replace-open-{$this->replacing}-";
         $this->replacing = null;
-        $this->focusOn('cme-replace-open-');
+        $this->focusOn($opener);
     }
 
     /**
@@ -340,10 +291,6 @@ class CustomMinionEditor extends Component
             }
 
             $name = $result->minion->name ?? "Minion {$result->minion->slot}";
-
-            if ($result->outcome === CustomMinionOutcome::Added) {
-                $this->forgetPendingSlot($result->minion->slot);
-            }
 
             $this->changed = $look;
             $this->toast(($result->outcome === CustomMinionOutcome::Replaced ? 'Replaced ' : 'Added ').$name);
@@ -432,7 +379,6 @@ class CustomMinionEditor extends Component
             $this->changed = null;
 
             if ($removed) {
-                $this->forgetPendingSlot($slot);
                 $this->toast("{$name} removed");
             }
 
@@ -443,19 +389,20 @@ class CustomMinionEditor extends Component
 
     /**
      * Re-renders after the pool changed somewhere else (an admin removed a minion, or another
-     * tab changed it): the sheet hears the battlefield broadcast and asks for this. The choice
-     * that was not saved goes back to the saved ticks, since it was made against a pool that is gone.
+     * tab changed it): the sheet hears the battlefield broadcast and asks for this. The browser
+     * drops the choice it has not saved, since it was made against a pool that is gone.
      *
      * @return void
      */
     #[On('custom-minions-refresh')]
     public function refresh(): void
     {
-        $this->pending = null;
+        $this->dispatch('minion-pool-reset');
     }
 
     /**
-     * Renders the tab with the player's pool, what is on the stage and what can be done with it.
+     * Renders the tab with the player's pool, what is on the stage and what can be done with it, and
+     * fills the board the browser draws from. A selected cell that is not one of the player's falls back.
      *
      * @param  MinionPoolCells  $cells  the pool as the tab draws it
      * @return View
@@ -463,20 +410,14 @@ class CustomMinionEditor extends Component
     public function render(MinionPoolCells $cells): View
     {
         $user = $this->player();
-        $saved = MinionPoolSelection::of($user);
-        $chosen = $this->chosen($saved);
-        $pool = $cells->get($user, $chosen);
-        $selected = $cells->resolveSelected($pool, $this->selected);
-        $stage = $cells->stageOf($pool, $selected);
+        $pool = $cells->get($user);
+        $this->selected = $cells->resolveSelected($pool, $this->selected);
+        $this->board = $cells->boardOf($pool);
 
         return view('livewire.custom-minion-editor', [
             'pool' => $pool,
-            'selected' => $selected,
-            'stage' => $stage,
-            'unsaved' => ! $chosen->sameChoiceAs($saved, $this->heldSlots($user)),
-            'stageUnsaved' => $this->stageUnsaved($stage, $saved),
-            'replacingSelected' => $stage->mode === MinionStageMode::Minion && $this->replacing === $stage->slot,
-            'confirmingSelected' => $stage->mode === MinionStageMode::Minion && $this->confirming === 'slot-'.$stage->slot,
+            'stage' => $cells->stageOf($pool, $this->selected),
+            'stages' => $cells->stagesOf($pool),
             'fighterOffer' => $this->fighterOffer($user),
             'fieldFighter' => [
                 'key' => $user->equippedFighterKey(app(BossArena::class)->current()->id),
@@ -508,7 +449,7 @@ class CustomMinionEditor extends Component
      */
     protected function confirmOpener(): string
     {
-        return 'cme-remove-open-';
+        return 'cme-remove-open-'.Str::after((string) $this->confirming, 'slot-').'-';
     }
 
     /**
@@ -581,7 +522,7 @@ class CustomMinionEditor extends Component
     {
         $user = $this->player();
         $cells = app(MinionPoolCells::class);
-        $pool = $cells->get($user, $this->chosen(MinionPoolSelection::of($user)));
+        $pool = $cells->get($user);
         $this->selected = $cells->resolveSelected($pool, $this->selected, preferPreview: true);
         $this->replacing = null;
         $this->changed = null;
@@ -590,61 +531,54 @@ class CustomMinionEditor extends Component
     }
 
     /**
-     * The selection the player is looking at: the saved one, with the ticks they chose and have
-     * not saved laid over it.
+     * Every default look as the save sends it to the pool: in it unless the browser left it out.
      *
-     * @param  MinionPoolSelection  $saved  the selection stored for the player
-     * @return MinionPoolSelection
+     * @param  array<int, mixed>  $defaultsOff  the default keys the browser left out
+     * @return array<string, bool>
+     *
+     * @throws MinionLookUnknownException when a key is not a default look
      */
-    private function chosen(MinionPoolSelection $saved): MinionPoolSelection
+    private function defaultsFrom(array $defaultsOff): array
     {
-        if ($this->pending === null) {
-            return $saved;
+        $keys = MinionPoolSelection::defaultKeys();
+
+        foreach ($defaultsOff as $key) {
+            if (! is_string($key) || ! in_array($key, $keys, true)) {
+                throw new MinionLookUnknownException;
+            }
         }
 
-        return $saved->withChoice($this->pending['defaults_off'] ?? [], $this->pending['slots_off'] ?? []);
+        return array_combine($keys, array_map(fn (string $key): bool => ! in_array($key, $defaultsOff, true), $keys));
     }
 
     /**
-     * The slots that hold a minion.
+     * Every minion the tab drew as the save sends it to the pool: its hash, and whether it is in it.
+     * A slot left out that the tab did not draw is refused; the hashes themselves are checked
+     * against the minions held by ApplyMinionPool.
      *
-     * @param  User  $user  the player, with `customMinions` loaded
-     * @return list<int>
+     * @param  array<int|string, mixed>  $hashes  the version hash of each minion the tab drew, by slot
+     * @param  array<int, mixed>  $slotsOff  the slots the browser left out
+     * @return array<int, array{hash: string, ticked: bool}>
+     *
+     * @throws MinionLookUnknownException when a slot left out is not one the tab drew
      */
-    private function heldSlots(User $user): array
+    private function slotsFrom(array $hashes, array $slotsOff): array
     {
-        return $user->customMinions->pluck('slot')->map(fn (mixed $slot): int => (int) $slot)->values()->all();
-    }
+        $slots = [];
 
-    /**
-     * Stops leaving a slot out of the unsaved choice, for a minion that was just added there or
-     * removed from it: the slot's tick starts again from the saved selection (which the write dropped
-     * it from).
-     *
-     * @param  int  $slot  the slot
-     * @return void
-     */
-    private function forgetPendingSlot(int $slot): void
-    {
-        if ($this->pending !== null) {
-            $this->pending['slots_off'] = array_values(array_diff($this->pending['slots_off'] ?? [], [$slot]));
+        foreach ($hashes as $slot => $hash) {
+            $slots[(int) $slot] = ['hash' => is_scalar($hash) ? (string) $hash : '', 'ticked' => true];
         }
-    }
 
-    /**
-     * Whether the look on the stage is ticked differently from what is saved.
-     *
-     * @param  MinionStage  $stage  what the stage shows
-     * @param  MinionPoolSelection  $saved  the selection stored for the player
-     * @return bool
-     */
-    private function stageUnsaved(MinionStage $stage, MinionPoolSelection $saved): bool
-    {
-        return match ($stage->mode) {
-            MinionStageMode::Default => $saved->defaultTicked(Str::after($stage->look, 'default:')) !== $stage->ticked,
-            MinionStageMode::Minion => $saved->slotTicked((int) $stage->slot) !== $stage->ticked,
-            default => false,
-        };
+        foreach ($slotsOff as $slot) {
+            if (! is_int($slot) || ! isset($slots[$slot])) {
+                throw new MinionLookUnknownException;
+            }
+
+            $slots[$slot]['ticked'] = false;
+        }
+
+        return $slots;
     }
 
     /**

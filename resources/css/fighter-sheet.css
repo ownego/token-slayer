@@ -1795,7 +1795,14 @@
 .fs .ms-stage::after, .fs .ms-field::after { content: ''; position: absolute; left: 0; right: 0; bottom: var(--floor); height: 1px; background: rgba(251,191,36,0.25); }
 .fs .ms-field-cap { position: absolute; left: 8px; top: 4px; font: 500 11px var(--display); color: var(--dim); }
 .fs .ms .ms-sprite { bottom: calc(var(--floor) - var(--below, 0px)); translate: -50% 0; transform-origin: 50% 100%; animation-play-state: var(--play, running); }
-.fs .ms-stage .ms-sprite { left: 50%; }
+.fs .ms-stage .ms-sprite { left: 50%; z-index: 1; }
+/* the browser state of the Minions tab sits between .cme and its two sections without a box of its own */
+.fs .cme-body { display: contents; }
+/* the pool cells pop in one after another each time the pane comes into view (sheet/minion-pool.js) */
+.fs .pool-cell.enter { animation: fs-slot-pop 0.35s cubic-bezier(.2,.8,.2,1) calc(var(--i, 0) * 40ms) both; }
+/* the Fighter stage's summon circle and burst, sized to the smaller minion stage */
+.fs .ms-stage .fx-circle { left: 50%; bottom: calc(var(--floor) - 46px); scale: 1.8 0.8; z-index: 0; }
+.fs .ms-stage .fx-burst { left: 50%; bottom: calc(var(--floor) - 20px); scale: 1.5; z-index: 2; }
 .fs .ms-fighter { left: 36%; }
 .fs .ms-minion { left: 62%; }
 .fs .ms-sprite.summon { animation: fs-pool-play calc(var(--frames) / var(--rate) * 1s) steps(var(--frames)) infinite, fs-ms-summon 0.7s ease-out 1; }

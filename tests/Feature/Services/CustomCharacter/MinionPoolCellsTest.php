@@ -218,3 +218,41 @@ describe('the cell on the stage', function () {
         expect(collect(MinionStageMode::cases())->map->value->all())->toBe(['overflow', 'default', 'draft', 'empty', 'minion']);
     });
 });
+
+describe('the board', function () {
+    it('lists every cell for the browser, and the saved tick of every look a tick can change', function () {
+        $user = User::factory()->create(['minion_pool' => ['rev' => 1, 'defaults_off' => ['smw-goomba'], 'slots_off' => []]]);
+        cellsMinions($user, 1);
+        $draft = stagedMinionFor($user);
+        $cells = app(MinionPoolCells::class);
+
+        $board = $cells->boardOf($cells->get(cellsUser($user)));
+
+        expect(array_keys($board['looks']))->toBe(['default:demon-a', 'default:blood-monster-a', 'default:smw-goomba', 'default:smw-babybowser', 'default:smw-bowser', 'slot:1', 'slot:2', 'slot:3'])
+            ->and($board['saved'])->toBe([
+                'default:demon-a' => true,
+                'default:blood-monster-a' => true,
+                'default:smw-goomba' => false,
+                'default:smw-babybowser' => true,
+                'default:smw-bowser' => true,
+                'slot:1' => true,
+            ])
+            ->and($board['looks']['slot:2'])->toMatchArray(['preview' => true, 'version' => $draft->version_hash, 'hash' => null, 'slot' => 2])
+            ->and($board['looks']['slot:3'])->toMatchArray(['spec' => null, 'version' => null, 'preview' => false])
+            ->and($board['looks']['default:smw-goomba'])->toMatchArray(['version' => 'smw-goomba', 'name' => 'Goomba']);
+    });
+
+    it('gives the preview a cell of its own when the set is full', function () {
+        $user = User::factory()->create();
+        cellsMinions($user, 2);
+        stagedMinionFor($user);
+        CustomMinion::factory()->create(['user_id' => $user->id, 'slot' => 3]);
+        $cells = app(MinionPoolCells::class);
+
+        $pool = $cells->get(cellsUser($user));
+
+        expect($cells->boardOf($pool)['looks'])->toHaveKey('overflow')
+            ->and(array_keys($cells->stagesOf($pool)))->toContain('overflow')
+            ->and($cells->stagesOf($pool)['overflow']->mode)->toBe(MinionStageMode::Overflow);
+    });
+});
