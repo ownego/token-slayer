@@ -1,10 +1,11 @@
 {{-- The Minions tab (Character > Fighter | Minions): the pool on the left, the stage and the one thing you can do with the
      selected cell on the right (stacked on a phone). Built from the fighter editor's pieces (.cce upload form, .alert,
      .confirm-row) plus the pool classes at the end of fighter-sheet.css; listed in .ai/design/components.md.
-     Picking a cell, ticking a look, Reset and the hotbar run in the browser (`minionPool` in sheet/minion-pool.js and
-     `minionStage` in sheet/minion-stage.js), like the Fighter tab's roster: no request, no re-render. Every cell's panel
-     is rendered here and shown by the pick; the stage is one element that follows it. Save, Remove, Replace, the upload
-     and the preview actions are wire:click actions of this component. A change to the pool is announced as
+     Picking a cell, ticking a look, Reset, the hotbar, opening a Replace and the Remove question run in the browser
+     (`minionPool` in sheet/minion-pool.js and `minionStage` in sheet/minion-stage.js), like the Fighter tab's roster: no
+     request, no re-render (.ai/guidelines/frontend.md, Interaction rules). Every cell's panel is rendered here and shown
+     by the pick; the stage is one element that follows it. Save, Remove, the build, Use my fighter and the preview
+     actions are the only calls to this component. A change to the pool is announced as
      `custom-minions-changed {pool, changed}`; a result line as `sheet-toast`. --}}
 {{-- No Alpine state on this root, for the reason given in custom-character-editor.blade.php: the browser state lives on
      .cme-body inside it (display: contents, so the root's grid still places the two sections). --}}
@@ -129,7 +130,6 @@
             </div>
 
             @foreach ($stages as $look => $cellStage)
-                @php($replacingThis = $cellStage->mode === MinionStageMode::Minion && $replacing === $cellStage->slot)
                 <div class="cme-cell" wire:key="panel-{{ $look }}" @if ($look !== $selected) style="display: none" @endif x-show="sel === @js($look)">
                     <div class="ms-info" aria-live="polite">
                         <strong @if ($look === $selected) id="cme-stage-title-{{ $id }}" @endif>{{ $cellStage->mode === MinionStageMode::Empty ? 'Empty slot '.$cellStage->slot : $cellStage->name }}</strong>
@@ -140,27 +140,22 @@
                         @endif
                     </div>
 
-                    @if ($cellStage->mode === MinionStageMode::Minion && ! $replacingThis)
-                        @if ($confirming === 'slot-'.$cellStage->slot)
-                            <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $cellStage->name }}" wire:keydown.escape.stop.prevent="dismissConfirm">
-                                <span>Remove {{ $cellStage->name }}? Your subagents stop summoning it.</span>
-                                <button type="button" class="btn" x-init="$el.focus()" wire:click="dismissConfirm">Cancel</button>
-                                <button type="button" class="btn blood" wire:click="removeMinion({{ $cellStage->slot }}, '{{ $pool['hashes'][$cellStage->slot] }}')" wire:loading.attr="disabled" wire:target="removeMinion">
-                                    <span wire:loading.remove wire:target="removeMinion">Remove</span><span wire:loading wire:target="removeMinion">Removing…</span>
-                                </button>
-                            </div>
-                        @else
-                            <div class="cce-row ms-actions">
-                                <button type="button" class="btn" id="cme-remove-open-{{ $cellStage->slot }}-{{ $id }}" wire:click="askToConfirm('slot-{{ $cellStage->slot }}')">Remove</button>
-                                <button type="button" class="btn primary" id="cme-replace-open-{{ $cellStage->slot }}-{{ $id }}" wire:click="startReplace({{ $cellStage->slot }})">Replace</button>
-                            </div>
-                        @endif
-                    @endif
-
-                    @if ($replacingThis)
-                        <div class="cce-head">
+                    @if ($cellStage->mode === MinionStageMode::Minion)
+                        @php($slot = $cellStage->slot)
+                        <div class="alert crit confirm-row" role="alertdialog" aria-label="Remove {{ $cellStage->name }}" style="display: none" x-show="asking === {{ $slot }}" x-on:keydown.escape.stop.prevent="dismiss()">
+                            <span>Remove {{ $cellStage->name }}? Your subagents stop summoning it.</span>
+                            <button type="button" class="btn" id="cme-remove-cancel-{{ $slot }}-{{ $id }}" x-on:click="dismiss()">Cancel</button>
+                            <button type="button" class="btn blood" x-on:click="remove({{ $slot }}, @js($pool['hashes'][$slot]))" x-bind:disabled="removing" x-bind:aria-busy="String(removing)">
+                                <span x-text="removing ? 'Removing…' : 'Remove'">Remove</span>
+                            </button>
+                        </div>
+                        <div class="cce-row ms-actions" x-show="asking !== {{ $slot }} && replacing !== {{ $slot }}">
+                            <button type="button" class="btn" id="cme-remove-open-{{ $slot }}-{{ $id }}" x-on:click="ask({{ $slot }})">Remove</button>
+                            <button type="button" class="btn primary" id="cme-replace-open-{{ $slot }}-{{ $id }}" x-on:click="startReplace({{ $slot }})">Replace</button>
+                        </div>
+                        <div class="cce-head" style="display: none" x-show="replacing === {{ $slot }}">
                             <h3>Replace {{ $cellStage->name }}</h3>
-                            <button type="button" class="cce-link" wire:click="cancelReplace">Cancel</button>
+                            <button type="button" class="cce-link" x-on:click="cancelReplace()">Cancel</button>
                         </div>
                     @endif
 
@@ -195,9 +190,8 @@
                 </div>
             @endforeach
 
-            {{-- One upload form, for an empty slot or the minion being replaced. --}}
-            @php($makeLooks = collect($stages)->filter(fn ($cellStage): bool => $cellStage->mode === MinionStageMode::Empty || ($cellStage->mode === MinionStageMode::Minion && $replacing === $cellStage->slot))->keys()->values()->all())
-            <div class="cme-make" @if (! in_array($selected, $makeLooks, true)) style="display: none" @endif x-show="@js($makeLooks).includes(sel)">
+            {{-- One upload form, for an empty slot or the minion being replaced; the build and the copy are aimed at the slot being replaced. --}}
+            <div class="cme-make" @if ($stage->mode !== MinionStageMode::Empty) style="display: none" @endif x-show="makeOpen">
                 {{-- Choosing a file (and sending it to the server) is one step; building the preview from it is the next. --}}
                 <form
                     wire:key="upload-form"
@@ -206,7 +200,7 @@
                     x-on:livewire-upload-progress="progress = $event.detail.progress"
                     x-on:livewire-upload-finish="phase = 'ready'"
                     x-on:livewire-upload-error="phase = 'failed'"
-                    x-on:submit.prevent="phase = 'building'; $wire.build().finally(() => { phase = 'idle'; clearThumb(); })"
+                    x-on:submit.prevent="phase = 'building'; build().finally(() => { phase = 'idle'; clearThumb(); })"
                     class="cce-form"
                     data-minion-add="ready"
                 >
@@ -264,7 +258,7 @@
 
                 <div class="cce-row">
                     @if ($fighterOffer['reason'] === null)
-                        <button type="button" class="btn" data-minion-add-fighter="ready" wire:click="useFighter" wire:loading.attr="disabled" wire:target="useFighter">
+                        <button type="button" class="btn" data-minion-add-fighter="ready" x-on:click="useFighter()" wire:loading.attr="disabled" wire:target="useFighter">
                             <span wire:loading.remove wire:target="useFighter">Use my fighter</span><span wire:loading wire:target="useFighter">Building…</span>
                         </button>
                     @else

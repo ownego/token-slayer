@@ -114,6 +114,7 @@ export function minionStage(initial = {}) {
     lookName: null,
     shownVersion: null,
     onChanged: null,
+    onFall: null,
     moveSet: null,
     moves: [],
     move: 'idle',
@@ -122,7 +123,8 @@ export function minionStage(initial = {}) {
     twin: true,
     moveTimer: null,
     /**
-     * Reads the viewer's motion preference, draws the first look and listens for the pool changing.
+     * Reads the viewer's motion preference, draws the first look, listens for the pool changing and for a Remove
+     * (`minion-stage-fall`, the look falls before its slot empties), and follows the pool's pick and board.
      *
      * @return {void}
      */
@@ -135,6 +137,12 @@ export function minionStage(initial = {}) {
       this.showLook(initial.look, initial.preview === true);
       this.onChanged = event => this.onPoolChanged(event.detail);
       window.addEventListener('custom-minions-changed', this.onChanged);
+      this.onFall = () => {
+        if (!this.reduced) {
+          this.play('fall');
+        }
+      };
+      window.addEventListener('minion-stage-fall', this.onFall);
       if (typeof this.$watch === 'function') {
         this.$watch('sel', cell => this.showCell(cell));
         this.$watch('entered', () => this.summon());
@@ -184,6 +192,7 @@ export function minionStage(initial = {}) {
      */
     destroy() {
       window.removeEventListener('custom-minions-changed', this.onChanged);
+      window.removeEventListener('minion-stage-fall', this.onFall);
       clearTimeout(this.summonTimer);
       clearTimeout(this.moveTimer);
       this.summonSeq++;

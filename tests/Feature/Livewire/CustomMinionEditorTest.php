@@ -303,28 +303,33 @@ test('the Save button saves the choice the browser holds', function () {
         ->assertSeeHtml('x-on:click="saveChoice()"');
 });
 
-test('leaving the slot being replaced, or a confirm question, clears it even after the browser already moved the selection', function () {
+test('Replace, its Cancel and the Remove question open in the browser: no request opens or closes them', function () {
     $user = User::factory()->create();
     minionsFor($user, 2);
 
     minionEditorFor($user)
-        ->call('startReplace', 1)
-        ->call('askToConfirm', 'slot-1')
-        ->set('selected', 'slot:2')
-        ->call('select', 'slot:2')
-        ->assertSet('replacing', null)
-        ->assertSet('confirming', null)
-        ->assertSet('selected', 'slot:2');
+        ->assertSeeHtml('x-on:click="startReplace(1)"')
+        ->assertSeeHtml('x-on:click="cancelReplace()"')
+        ->assertSeeHtml('x-on:click="ask(2)"')
+        ->assertDontSeeHtml('wire:click="startReplace')
+        ->assertDontSeeHtml('wire:click="askToConfirm')
+        ->assertDontSeeHtml('wire:click="cancelReplace')
+        ->assertDontSeeHtml('wire:click="dismissConfirm');
 });
 
-test('picking the slot being replaced keeps the Replace open', function () {
+test('Use my fighter aimed at a slot builds a preview that replaces that minion', function () {
     $user = User::factory()->create();
+    confirmedFighterFor($user);
     minionsFor($user, 2);
 
-    minionEditorFor($user)
-        ->call('startReplace', 1)
-        ->call('select', 'slot:1')
-        ->assertSet('replacing', 1);
+    minionEditorFor($user->fresh())
+        ->set('selected', 'slot:2')
+        ->call('useFighter', 2)
+        ->assertHasNoErrors()
+        ->assertSet('selected', 'slot:2')
+        ->assertSee('Replace Minion 2');
+
+    expect($user->fresh()->customMinionDraft->slot)->toBe(2);
 });
 
 test('a selection the browser sent that is not a cell is drawn as the fallback', function () {
@@ -338,7 +343,7 @@ test('building into an empty slot previews it in that slot', function () {
     minionsFor($user, 1);
 
     $editor = minionEditorFor($user)
-        ->call('select', 'slot:2')
+        ->set('selected', 'slot:2')
         ->assertSee('Upload sheet')
         ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
         ->call('build')
@@ -358,25 +363,29 @@ test('replacing builds a preview aimed at the minion\'s slot', function () {
     minionsFor($user, 1);
 
     minionEditorFor($user)
-        ->call('select', 'slot:1')
-        ->call('startReplace', 1)
-        ->assertSet('replacing', 1)
+        ->set('selected', 'slot:1')
         ->assertSee('Replace Minion 1')
         ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
-        ->call('build')
+        ->call('build', 1)
         ->assertHasNoErrors()
-        ->assertSet('replacing', null)
         ->assertSet('selected', 'slot:1')
         ->assertSee('Replace Minion 1');
 
     expect($user->fresh()->customMinionDraft->slot)->toBe(1);
 });
 
-test('starting to replace a slot the player does not hold is turned away', function () {
-    minionEditorFor(User::factory()->create())
-        ->call('startReplace', 2)
-        ->assertSet('replacing', null)
+test('building or copying into a slot the player does not hold is turned away', function () {
+    $user = User::factory()->create();
+    confirmedFighterFor($user);
+
+    minionEditorFor($user->fresh())
+        ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
+        ->call('build', 2)
+        ->assertHasErrors('sheet')
+        ->call('useFighter', 2)
         ->assertHasErrors('action');
+
+    expect($user->fresh()->customMinionDraft)->toBeNull();
 });
 
 test('adding a preview toasts the minion by name and lights its cell', function () {
@@ -402,9 +411,8 @@ test('replacing a minion toasts "Replaced" with its name and keeps its slot', fu
     $before = minionsFor($user, 1)->first();
 
     $editor = minionEditorFor($user)
-        ->call('startReplace', 1)
         ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
-        ->call('build');
+        ->call('build', 1);
 
     $editor->call('confirm', $user->fresh()->customMinionDraft->version_hash, 1)
         ->assertDispatched('sheet-toast', message: 'Replaced Minion 1')
@@ -435,7 +443,7 @@ test('asking again for a preview that is already in the set does not say it was 
 
 test('Use my fighter is locked with its reason while the player has no custom fighter', function () {
     $editor = minionEditorFor(User::factory()->create())
-        ->call('select', 'slot:1')
+        ->set('selected', 'slot:1')
         ->assertSee('Use my fighter')
         ->assertSeeHtml('data-minion-add-fighter="disabled"')
         ->assertSee('No custom fighter yet. Make one in the Fighter tab.');
@@ -450,7 +458,7 @@ test('Use my fighter builds a preview first, and adds nothing until it is added'
     confirmedFighterFor($user);
 
     minionEditorFor($user->fresh())
-        ->call('select', 'slot:1')
+        ->set('selected', 'slot:1')
         ->assertSeeHtml('data-minion-add-fighter="ready"')
         ->call('useFighter')
         ->assertHasNoErrors()
@@ -469,7 +477,7 @@ test('Use my fighter says so when that fighter is already a minion', function ()
     $editor = minionEditorFor($user->fresh())->call('useFighter');
     $editor->call('confirm', $user->fresh()->customMinionDraft->version_hash, null);
 
-    $editor->call('select', 'slot:2')
+    $editor->set('selected', 'slot:2')
         ->assertSee((new CustomMinionDuplicateException)->getMessage())
         ->assertSeeHtml('data-minion-add-fighter="disabled"')
         ->call('useFighter')
@@ -516,7 +524,7 @@ test('shows a sheet problem with its hint', function () {
     $user = User::factory()->create();
 
     minionEditorFor($user)
-        ->call('select', 'slot:1')
+        ->set('selected', 'slot:1')
         ->set('sheet', minionSheetUpload(pngBytes(poseSheetImage(background: 'white'))))
         ->call('build')
         ->assertHasErrors('sheet')
@@ -544,7 +552,7 @@ test('a second build while one is running is turned away with a message', functi
     $held->get();
 
     minionEditorFor($user)
-        ->call('select', 'slot:1')
+        ->set('selected', 'slot:1')
         ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
         ->call('build')
         ->assertHasErrors('sheet')
@@ -561,7 +569,7 @@ test('building shares the hourly allowance with the fighter editor', function ()
     }
 
     minionEditorFor($user)
-        ->call('select', 'slot:1')
+        ->set('selected', 'slot:1')
         ->set('sheet', minionSheetUpload(pngBytes(variantPoseSheet(0))))
         ->call('build')
         ->assertHasErrors('sheet')
@@ -629,24 +637,17 @@ test('removing asks first, in the right-hand panel, and then removes by name', f
     $minion = minionsFor($user, 1)->first();
 
     $editor = minionEditorFor($user)
-        ->call('select', 'slot:1')
-        ->call('askToConfirm', 'slot-1')
-        ->assertSet('confirming', 'slot-1')
+        ->set('selected', 'slot:1')
         ->assertSee('Remove Minion 1? Your subagents stop summoning it.')
-        ->assertSeeHtml('wire:keydown.escape.stop.prevent="dismissConfirm"')
-        ->assertSeeHtml('x-init="$el.focus()"')
-        ->assertSeeHtml("removeMinion(1, '{$minion->version_hash}')")
+        ->assertSeeHtml('x-show="asking === 1"')
+        ->assertSeeHtml('x-on:keydown.escape.stop.prevent="dismiss()"')
+        ->assertSeeHtml("x-on:click=\"remove(1, '{$minion->version_hash}')\"")
         ->assertDontSeeHtml('wire:confirm');
 
     expect($user->customMinions()->count())->toBe(1);
 
-    $editor->call('dismissConfirm')->assertSet('confirming', null)->assertDontSeeHtml('confirm-row');
-    expect($user->customMinions()->count())->toBe(1);
-
-    $editor->call('askToConfirm', 'slot-1')
-        ->call('removeMinion', 1, $minion->version_hash)
+    $editor->call('removeMinion', 1, $minion->version_hash)
         ->assertHasNoErrors()
-        ->assertSet('confirming', null)
         ->assertSet('selected', 'slot:1')
         ->assertDispatched('sheet-toast', message: 'Minion 1 removed')
         ->assertDispatched('custom-minions-changed', fn (string $event, array $params): bool => $params['pool']['custom'] === []);
@@ -671,7 +672,7 @@ test('removing a cell another tab has just replaced is refused, and the new mini
     $user = User::factory()->create();
     $shown = minionsFor($user, 1)->first();
     $shownHash = $shown->version_hash;
-    $editor = minionEditorFor($user)->call('select', 'slot:1');
+    $editor = minionEditorFor($user)->set('selected', 'slot:1');
 
     // another tab replaces slot 1 with a different look
     $shown->update(['version_hash' => 'f00dfeed1234']);
@@ -689,7 +690,7 @@ test('removing a cell another tab has just replaced is refused, and the new mini
 test('removing a minion that is already gone says nothing was removed', function () {
     $user = User::factory()->create();
     $shown = minionsFor($user, 1)->first();
-    $editor = minionEditorFor($user)->call('select', 'slot:1');
+    $editor = minionEditorFor($user)->set('selected', 'slot:1');
     $service = Mockery::mock(RemoveCustomMinion::class);
     $service->shouldReceive('execute')->once()->andReturn(false);
     app()->instance(RemoveCustomMinion::class, $service);
@@ -715,26 +716,21 @@ test('a busy lock on remove shows the busy message and keeps the minion', functi
     expect($user->customMinions()->count())->toBe(1);
 });
 
-test('what is pending a confirm cannot be set from the browser', function () {
-    expect(fn () => minionEditorFor(User::factory()->create())->set('confirming', 'slot-1'))
-        ->toThrow(CannotUpdateLockedPropertyException::class);
-});
-
-test('what is replaced, lit or handed to the browser cannot be set from the browser either', function (string $property, mixed $value) {
+test('what is lit or handed to the browser cannot be set from the browser', function (string $property, mixed $value) {
     expect(fn () => minionEditorFor(User::factory()->create())->set($property, $value))
         ->toThrow(CannotUpdateLockedPropertyException::class);
 })->with([
-    'replacing' => ['replacing', 1],
     'changed' => ['changed', 'slot:1'],
     'board' => ['board', ['saved' => [], 'looks' => []]],
 ]);
 
-test('a confirm token that is not a held slot is forgotten, and none of it reaches a script', function () {
-    minionEditorFor(User::factory()->create())
-        ->call('askToConfirm', 'slot-1"); alert(1);//')
-        ->assertSet('confirming', null)
-        ->call('askToConfirm', '../etc')
-        ->assertSet('confirming', null);
+test('a slot or hash the browser sends to Remove reaches no script, and a slot that is not held is refused', function () {
+    $user = User::factory()->create();
+
+    minionEditorFor($user)
+        ->call('removeMinion', 9, '"); alert(1);//')
+        ->assertHasErrors('action')
+        ->assertDontSeeHtml('alert(1)');
 });
 
 test('changes to the pool are rate limited per minute, in words that fit the wait', function () {
@@ -827,15 +823,15 @@ test('the stage is a value object the view only reads', function () {
     $user = User::factory()->create();
     minionsFor($user, 1);
 
-    $editor = minionEditorFor($user)->call('select', 'slot:1');
+    $editor = minionEditorFor($user)->set('selected', 'slot:1');
     $stage = $editor->viewData('stage');
 
     expect($stage)->toBeInstanceOf(MinionStage::class)
         ->and($stage->mode)->toBe(MinionStageMode::Minion)
         ->and($stage->slot)->toBe(1);
-    $editor->call('select', 'slot:2');
+    $editor->set('selected', 'slot:2');
     expect($editor->viewData('stage')->mode)->toBe(MinionStageMode::Empty);
-    $editor->call('select', 'default:smw-goomba');
+    $editor->set('selected', 'default:smw-goomba');
     expect($editor->viewData('stage')->mode)->toBe(MinionStageMode::Default);
 });
 
@@ -854,7 +850,7 @@ test('confirming a preview another tab re-aimed at a different slot is refused, 
     $user = User::factory()->create();
     confirmedFighterFor($user);
     $other = minionsFor($user, 2);
-    $editor = minionEditorFor($user->fresh())->call('startReplace', 1)->call('useFighter');
+    $editor = minionEditorFor($user->fresh())->call('useFighter', 1);
     $hash = $user->fresh()->customMinionDraft->version_hash;
     $slot = $user->fresh()->customMinionDraft->slot;
     expect($slot)->toBe(1);

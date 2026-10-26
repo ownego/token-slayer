@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
+  LEAVE_MS,
   SAVE_FOLD_DELAY_MS,
   choicePayload,
   isUnsaved,
@@ -112,8 +113,10 @@ describe('the minionPool component', () => {
       confirming: null,
       $set: vi.fn(),
       $watch: vi.fn((name, fn) => { watchers[name] = fn; }),
-      select: vi.fn(),
       save: vi.fn(async () => true),
+      removeMinion: vi.fn(async () => undefined),
+      build: vi.fn(async () => undefined),
+      useFighter: vi.fn(async () => undefined),
     };
     document.body.innerHTML = '<div class="fs"><div class="cce cme"><div class="cme-body"><button id="cme-save-x"></button></div></div></div>';
     host = document.querySelector('.cme-body');
@@ -132,17 +135,84 @@ describe('the minionPool component', () => {
 
     expect(pool.sel).toBe('slot:1');
     expect(wire.$set).toHaveBeenCalledWith('selected', 'slot:1', false);
-    expect(wire.select).not.toHaveBeenCalled();
+    expect(wire.save).not.toHaveBeenCalled();
   });
 
-  test('a pick away from an open Replace or confirm asks the server to close it', () => {
-    wire.replacing = 1;
+  test('Replace and the Remove question open and close in the browser, and a pick elsewhere closes them', () => {
+    const pool = started();
+    pool.pick('slot:1');
+
+    pool.startReplace(1);
+    expect(pool.replacing).toBe(1);
+    expect(pool.makeOpen).toBe(true);
+    pool.cancelReplace();
+    expect(pool.replacing).toBe(null);
+
+    pool.ask(1);
+    expect(pool.asking).toBe(1);
+    pool.dismiss();
+    expect(pool.asking).toBe(null);
+
+    pool.ask(1);
+    pool.startReplace(1);
+    pool.pick('default:demon-a');
+    expect(pool.asking).toBe(null);
+    expect(pool.replacing).toBe(null);
+    expect(wire.$set).toHaveBeenLastCalledWith('selected', 'default:demon-a', false);
+  });
+
+  test('the upload area shows for an empty slot and for the slot being replaced only', () => {
     const pool = started();
 
-    pool.pick('default:demon-a');
+    pool.pick('slot:3');
+    expect(pool.makeOpen).toBe(true);
+    pool.pick('slot:1');
+    expect(pool.makeOpen).toBe(false);
+  });
 
-    expect(pool.sel).toBe('default:demon-a');
-    expect(wire.select).toHaveBeenCalledWith('default:demon-a');
+  test('a build and a copy are aimed at the slot being replaced, else add a minion', async () => {
+    const pool = started();
+    pool.pick('slot:3');
+
+    await pool.build();
+    expect(wire.build).toHaveBeenLastCalledWith(null);
+
+    pool.pick('slot:2');
+    pool.startReplace(2);
+    await pool.useFighter();
+    expect(wire.useFighter).toHaveBeenLastCalledWith(2);
+  });
+
+  test('a preview landing in the slot being replaced ends the Replace', () => {
+    const pool = started();
+    pool.pick('slot:2');
+    pool.startReplace(2);
+
+    wire.board = { saved, looks: { ...looks, 'slot:2': { ...looks['slot:2'], preview: true, version: 'ddd444', hash: null } } };
+    watchers.board();
+
+    expect(pool.replacing).toBe(null);
+  });
+
+  test('Remove plays the fall on the stage, keeps the stage up while it plays, and sends one request', async () => {
+    const falls = [];
+    window.addEventListener('minion-stage-fall', () => falls.push(1));
+    const pool = started();
+    pool.pick('slot:1');
+    pool.ask(1);
+
+    const done = pool.remove(1, 'aaa111');
+    pool.remove(1, 'aaa111');
+    wire.board = { saved, looks: { ...looks, 'slot:1': { ...looks['slot:1'], spec: null, hash: null, version: null } } };
+    await done;
+
+    expect(falls).toHaveLength(1);
+    expect(wire.removeMinion).toHaveBeenCalledTimes(1);
+    expect(wire.removeMinion).toHaveBeenCalledWith(1, 'aaa111');
+    expect(pool.hasStage).toBe(true);
+    vi.advanceTimersByTime(LEAVE_MS);
+    expect(pool.hasStage).toBe(false);
+    expect(pool.asking).toBe(null);
   });
 
   test('a cell the server moved the stage to is followed', () => {

@@ -13,6 +13,13 @@
 export const SAVE_FOLD_DELAY_MS = 400;
 
 /**
+ * How long the stage stays up after Remove so the minion's fall plays before its slot empties.
+ *
+ * @type {number}
+ */
+export const LEAVE_MS = 700;
+
+/**
  * Whether a look is in the choice: the player's own tick when they toggled it, else the stored one.
  *
  * @param {Object<string, boolean>} saved Look => ticked as stored.
@@ -166,6 +173,10 @@ export function minionPool(initial = {}) {
     sel: initial.selected ?? '',
     pending: {},
     saving: false,
+    replacing: null,
+    asking: null,
+    removing: false,
+    leaving: false,
     entered: 0,
     onReset: null,
     observer: null,
@@ -178,6 +189,10 @@ export function minionPool(initial = {}) {
     init() {
       this.$wire.$watch('board', () => {
         this.pending = pruned(this.board.saved, this.pending, this.board.looks);
+        const replaced = this.board.looks[`slot:${this.replacing}`];
+        if (this.replacing !== null && (!replaced?.spec || replaced.preview)) {
+          this.replacing = null;
+        }
       });
       this.$wire.$watch('selected', cell => {
         if (cell && cell !== this.sel) {
@@ -233,7 +248,17 @@ export function minionPool(initial = {}) {
      * @return {boolean}
      */
     get hasStage() {
-      return Boolean(this.board.looks[this.sel]?.spec);
+      return this.leaving || Boolean(this.board.looks[this.sel]?.spec);
+    },
+    /**
+     * Whether the upload area shows: for an empty slot, and for the slot whose minion is being replaced.
+     *
+     * @return {boolean}
+     */
+    get makeOpen() {
+      const cell = this.board.looks[this.sel];
+
+      return Boolean(cell && cell.slot !== null && !cell.preview && (!cell.spec || this.sel === `slot:${this.replacing}`));
     },
     /**
      * Whether a look is ticked in the choice.
@@ -263,22 +288,114 @@ export function minionPool(initial = {}) {
       return look in pruned(this.board.saved, this.pending, this.board.looks);
     },
     /**
-     * Puts a cell on the stage at once. The server learns it with the next request; only leaving an open
-     * Replace or confirm question asks it straight away, since that closes something it drew.
+     * Puts a cell on the stage at once and closes a Replace or a Remove question left open on another cell. The
+     * server learns the cell with the next request.
      *
      * @param {string} look The cell.
      * @return {void}
      */
     pick(look) {
-      this.sel = look;
-      if (this.$wire.replacing !== null || this.$wire.confirming !== null) {
-        this.$wire.select(look);
-      } else {
-        this.$wire.$set('selected', look, false);
+      if (look !== this.sel) {
+        this.replacing = null;
+        this.asking = null;
       }
+      this.sel = look;
+      this.$wire.$set('selected', look, false);
       if (typeof matchMedia === 'function' && matchMedia('(max-width: 759px)').matches) {
         this.$el.querySelector('.cme-panel')?.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
       }
+    },
+    /**
+     * Opens the Replace of a minion: the upload area and Use my fighter now aim at its slot.
+     *
+     * @param {number} slot The minion's slot.
+     * @return {void}
+     */
+    startReplace(slot) {
+      this.asking = null;
+      this.replacing = slot;
+      this.focusLater('cme-upload-');
+    },
+    /**
+     * Closes the Replace: the minion stays as it is.
+     *
+     * @return {void}
+     */
+    cancelReplace() {
+      const slot = this.replacing;
+      this.replacing = null;
+      this.focusLater(`cme-replace-open-${slot}-`);
+    },
+    /**
+     * Asks before a Remove, in the panel.
+     *
+     * @param {number} slot The minion's slot.
+     * @return {void}
+     */
+    ask(slot) {
+      this.replacing = null;
+      this.asking = slot;
+      this.focusLater(`cme-remove-cancel-${slot}-`);
+    },
+    /**
+     * Drops the Remove question and puts focus back on the button that opened it.
+     *
+     * @return {void}
+     */
+    dismiss() {
+      const slot = this.asking;
+      this.asking = null;
+      this.focusLater(`cme-remove-open-${slot}-`);
+    },
+    /**
+     * Removes a minion: the stage plays its fall while the request runs and stays up until the fall has played,
+     * then the slot shows empty. A second press while one is running does nothing.
+     *
+     * @param {number} slot The minion's slot.
+     * @param {string} hash The version the cell showed, so a minion another tab replaced is not removed.
+     * @return {Promise<void>}
+     */
+    async remove(slot, hash) {
+      if (this.removing) {
+        return;
+      }
+      this.removing = true;
+      this.leaving = true;
+      window.dispatchEvent(new CustomEvent('minion-stage-fall'));
+      setTimeout(() => { this.leaving = false; }, LEAVE_MS);
+
+      try {
+        await this.$wire.removeMinion(slot, hash);
+      } finally {
+        this.removing = false;
+        this.asking = null;
+      }
+    },
+    /**
+     * Builds the chosen sheet into a preview, aimed at the slot being replaced, else into the first empty one.
+     *
+     * @return {Promise<void>}
+     */
+    build() {
+      return this.$wire.build(this.replacing);
+    },
+    /**
+     * Copies the player's custom fighter into a preview, aimed like a build.
+     *
+     * @return {Promise<void>}
+     */
+    useFighter() {
+      return this.$wire.useFighter(this.replacing);
+    },
+    /**
+     * Moves focus to one of the tab's elements once it is shown. The id is a constant prefix and a slot, then
+     * the component's id.
+     *
+     * @param {string} prefix The id up to the component id.
+     * @return {void}
+     */
+    focusLater(prefix) {
+      this.$nextTick(() => document.getElementById(`${prefix}${this.$wire.$id ?? ''}`)?.focus());
     },
     /**
      * Ticks a look in or out of the choice. Nothing is sent.

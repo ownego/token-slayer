@@ -8,7 +8,6 @@ use App\Exceptions\CustomMinionMissingException;
 use App\Exceptions\MinionLookUnknownException;
 use App\Exceptions\MinionPoolChangedException;
 use App\Livewire\Concerns\ActsAsSheetPanel;
-use App\Livewire\Concerns\ConfirmsInPlace;
 use App\Livewire\Concerns\UploadsPoseSheet;
 use App\Models\User;
 use App\Services\BossArena;
@@ -25,7 +24,6 @@ use App\Services\CustomCharacter\StageMinionFromFighter;
 use App\Support\CacheKeys;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Js;
-use Illuminate\Support\Str;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -38,8 +36,8 @@ use Throwable;
  * with the one thing the player can do with it (replace it, remove it, build a new one into an
  * empty slot, add or discard a preview).
  *
- * Picking a cell and ticking a look happen in the browser (`sheet/minion-pool.js`), like the
- * Fighter tab's roster: no request, no re-render. The browser keeps the ticks it has not saved and
+ * Picking a cell, ticking a look, opening a Replace and asking before a Remove happen in the browser
+ * (`sheet/minion-pool.js`), like the Fighter tab's roster: no request, no re-render. The browser keeps the ticks it has not saved and
  * reads what the server holds from `$board`. Save sends the whole choice with the hash of every
  * cell it drew and is one write, one revision and one broadcast (see ApplyMinionPool). A refresh
  * from another tab tells the browser to drop its unsaved choice (`minion-pool-reset`).
@@ -51,12 +49,13 @@ use Throwable;
  * the cell that was just added or replaced) so the Profile's mini stage follows without a reload,
  * and a result worth a line is a `sheet-toast`.
  *
- * Which slot is being replaced, the lit cell, the board and what is awaiting a confirm are locked:
- * the browser changes them only by calling the actions below, which check them.
+ * The slot a build or a copy replaces comes with the call, and the stage service refuses a slot the
+ * player does not hold. The lit cell and the board are locked: the browser changes them only by
+ * calling the actions below, which check them.
  */
 class CustomMinionEditor extends Component
 {
-    use ActsAsSheetPanel, ConfirmsInPlace, UploadsPoseSheet;
+    use ActsAsSheetPanel, UploadsPoseSheet;
 
     /**
      * The cell on the stage: `default:<key>`, `slot:<n>` or `overflow` (the preview that has no
@@ -66,14 +65,6 @@ class CustomMinionEditor extends Component
      * @var string
      */
     public string $selected = '';
-
-    /**
-     * The slot whose minion the next build will replace; null when a build adds a minion.
-     *
-     * @var int|null
-     */
-    #[Locked]
-    public ?int $replacing = null;
 
     /**
      * The cell the last Add or Replace landed in, so the pool lights it and the stage plays the
@@ -124,31 +115,6 @@ class CustomMinionEditor extends Component
     }
 
     /**
-     * Leaves a Replace or a confirm question for another cell. The browser picks cells on its own;
-     * it calls this only while one of those is open, and may already have written `$selected`, so
-     * the Replace is kept only when the cell is the slot being replaced.
-     *
-     * @param  string  $cell  `default:<key>`, `slot:<n>` or `overflow`
-     * @return void
-     */
-    public function select(string $cell): void
-    {
-        $this->resetErrorBag();
-
-        if (preg_match('/^(default:[a-z0-9-]+|slot:[1-9]\d*|overflow)$/', $cell) !== 1) {
-            return;
-        }
-
-        if ($cell !== "slot:{$this->replacing}") {
-            $this->replacing = null;
-        }
-
-        $this->selected = $cell;
-        $this->changed = null;
-        $this->confirming = null;
-    }
-
-    /**
      * Saves the choice the browser holds: the default looks left out, the slots left out, and the
      * hash of every minion the tab drew, as one change of the pool. Counts once against the
      * per-minute allowance. A tab that drew minions another tab has since changed, or a look the
@@ -180,49 +146,15 @@ class CustomMinionEditor extends Component
     }
 
     /**
-     * Starts replacing one of the player's minions: the next build or `Use my fighter` takes over
-     * its slot, and it keeps its slot, name and tick.
-     *
-     * @param  int  $slot  the slot of a minion the player holds
-     * @return void
-     */
-    public function startReplace(int $slot): void
-    {
-        $this->resetErrorBag();
-
-        if (! $this->player()->customMinions->contains('slot', $slot)) {
-            $this->fail(new CustomMinionMissingException, 'action');
-
-            return;
-        }
-
-        $this->replacing = $slot;
-        $this->selected = "slot:{$slot}";
-        $this->changed = null;
-        $this->confirming = null;
-        $this->focusOn('cme-upload-');
-    }
-
-    /**
-     * Stops replacing: the minion stays as it is.
-     *
-     * @return void
-     */
-    public function cancelReplace(): void
-    {
-        $opener = "cme-replace-open-{$this->replacing}-";
-        $this->replacing = null;
-        $this->focusOn($opener);
-    }
-
-    /**
-     * Builds the chosen sheet into a preview: into the slot being replaced, else into the first
-     * empty one. Nothing joins the set until the preview is added.
+     * Builds the chosen sheet into a preview: into the slot whose minion the player is replacing
+     * (the browser holds that choice and sends it), else into the first empty one. A slot the
+     * player does not hold is refused. Nothing joins the set until the preview is added.
      *
      * @param  StageCustomMinion  $stage  builds and stages the preview
+     * @param  int|null  $slot  the slot being replaced; null when the build adds a minion
      * @return void
      */
-    public function build(StageCustomMinion $stage): void
+    public function build(StageCustomMinion $stage, ?int $slot = null): void
     {
         $bytes = $this->takeSheetBytes();
 
@@ -231,7 +163,7 @@ class CustomMinionEditor extends Component
         }
 
         try {
-            $stage->execute(auth()->user(), $bytes, $this->replacing);
+            $stage->execute(auth()->user(), $bytes, $slot);
             $this->showPreview();
         } catch (Throwable $exception) {
             $this->fail($exception, 'sheet');
@@ -242,19 +174,20 @@ class CustomMinionEditor extends Component
 
     /**
      * Builds a preview from the player's custom fighter, to look at before it is added like any
-     * other. It is aimed at the slot being replaced, else the first empty one.
+     * other. It is aimed at the slot whose minion the player is replacing, else the first empty one.
      *
      * @param  StageMinionFromFighter  $stage  copies the fighter into a preview
+     * @param  int|null  $slot  the slot being replaced; null when the copy adds a minion
      * @return void
      */
-    public function useFighter(StageMinionFromFighter $stage): void
+    public function useFighter(StageMinionFromFighter $stage, ?int $slot = null): void
     {
         if (! $this->withinChangeLimit()) {
             return;
         }
 
-        $this->run(function () use ($stage): void {
-            $stage->execute(auth()->user(), $this->replacing);
+        $this->run(function () use ($stage, $slot): void {
+            $stage->execute(auth()->user(), $slot);
             $this->showPreview();
         });
     }
@@ -280,7 +213,6 @@ class CustomMinionEditor extends Component
             $look = "slot:{$result->minion->slot}";
 
             $this->selected = $look;
-            $this->replacing = null;
             $this->focusOn('cme-pick-'.$look.'-');
 
             if ($result->outcome === CustomMinionOutcome::AlreadyInSet) {
@@ -375,7 +307,6 @@ class CustomMinionEditor extends Component
             $removed = $remove->execute($minion);
 
             $this->selected = "slot:{$slot}";
-            $this->replacing = null;
             $this->changed = null;
 
             if ($removed) {
@@ -437,22 +368,6 @@ class CustomMinionEditor extends Component
     }
 
     /**
-     * @inheritDoc
-     */
-    protected function confirmPattern(): string
-    {
-        return '/^slot-[1-9]\d*$/';
-    }
-
-    /**
-     * @inheritDoc
-     */
-    protected function confirmOpener(): string
-    {
-        return 'cme-remove-open-'.Str::after((string) $this->confirming, 'slot-').'-';
-    }
-
-    /**
      * Tells the page around the tab what the pool is now (`custom-minions-changed`), and the cell
      * that was just added or replaced, if one was. Also sent after a refusal, so a pool the server
      * did not take is shown as it is and a preview that vanished is dropped.
@@ -485,7 +400,6 @@ class CustomMinionEditor extends Component
      */
     private function run(callable $change): void
     {
-        $this->confirming = null;
         $this->resetErrorBag();
 
         try {
@@ -524,7 +438,6 @@ class CustomMinionEditor extends Component
         $cells = app(MinionPoolCells::class);
         $pool = $cells->get($user);
         $this->selected = $cells->resolveSelected($pool, $this->selected, preferPreview: true);
-        $this->replacing = null;
         $this->changed = null;
         $this->toast('Preview ready.');
         $this->focusOn('cme-primary-');

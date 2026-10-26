@@ -377,6 +377,21 @@ describe('the summon after an Add or Replace', () => {
   });
 });
 
+describe('the fall before a Remove', () => {
+  test('plays the look\'s Fall when the pool removes it, and nothing under reduced motion', () => {
+    const stage = start({ look: mine, lookKey: 'slot:2' });
+
+    window.dispatchEvent(new CustomEvent('minion-stage-fall'));
+    expect(stage.move).toBe('fall');
+
+    stage.destroy();
+    reducedMotion(true);
+    const still = start({ look: mine, lookKey: 'slot:2' });
+    window.dispatchEvent(new CustomEvent('minion-stage-fall'));
+    expect(still.phase).toBe('loop');
+  });
+});
+
 describe('one stage that follows the pick', () => {
   const board = {
     saved: {},
