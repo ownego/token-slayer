@@ -26,7 +26,7 @@ Rules: anything a player does while the battlefield is open (choose, create, edi
 
 0. For a new feature or a change to a flow, start from a short design brief (`.claude/skills/game-design/`) placed on the map in `game.md`: journeys, flows, feel, rules, states, edge cases. The steps below are what the brief's answers are built from.
 
-1. Interaction: follow the Interaction rules in `.ai/guidelines/frontend.md` (instant picks, one stage, alive, lands on the field, busy and refused, measured on staging), starting from the closest working flow.
+1. Interaction: follow the Interaction rules in `.ai/guidelines/frontend.md` (instant picks, one stage, alive, lands on the field, busy and refused, fits every screen, measured on staging), starting from the closest working flow.
 2. Pick the world above and reuse its classes and tokens; do not add colours, fonts, radii or shadows that are not in `tokens.md`.
 3. Look for the piece in `components.md` first; if it does not exist, build it from the same tokens and add it there in the same PR.
 4. Cover every state: default, hover, focus-visible, active, selected, disabled, loading, empty, error, success (`patterns.md`).

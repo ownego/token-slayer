@@ -20,7 +20,8 @@
 - [ ] Alive: what appears, changes or leaves plays the game's motion; reduced motion changes at once
 - [ ] Lands on the field: a commit that changes the field folds the sheet onto it, or says where it will show
 - [ ] Busy and refused: in-flight label, second press ignored, a refusal keeps the choice and says why
-- [ ] Phone width and keyboard checked
+- [ ] Fits every screen: looked at on staging at 1280 x 800, 900 x 700, 390 x 844 (primary action row sticky, full-width) and 844 x 390 (stage and actions fit)
+- [ ] Keyboard: every control reachable, focus visible
 
 ## Verification
 
