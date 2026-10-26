@@ -27,7 +27,9 @@ import { loadStackedType } from '@battlefield/fighter/custom-fighter-loader.js';
 import { CUSTOM_RETRY_MS } from '@battlefield/fighter/custom-fighter-requests.js';
 import { MINION_TYPES, TIMINGS } from '@battlefield/config.js';
 import { customMinionKey, normalizeMinionPool } from '@battlefield/minion-custom.js';
+import { CUSTOM_FOOT_ROW, CUSTOM_FRAME } from '@battlefield/fighter/custom-fighter.js';
 import { Minions } from '@battlefield/minions.js';
+import { toolRingRadius, TOOL_RING_STROKE_PX } from '@battlefield/minion-layout.js';
 import { minionPoolPayloads } from '@battlefield/resync.js';
 
 const DEFAULT_KEYS = MINION_TYPES.map(type => type.key);
@@ -934,6 +936,121 @@ describe('tool rings', () => {
 
     expect(scene.rings).toHaveLength(1);
     expect([scene.rings[0].x, scene.rings[0].y]).toEqual([minion.sprite.x, minion.sprite.y]);
+  });
+});
+
+describe('avatar badge', () => {
+  /** A tool ring that records the circle the manager last drew on it (radius and stroke width). */
+  const fakeRing = () => {
+    const ring = Object.assign(makeSprite(), {
+      drawn: { radius: null, stroke: null },
+      clear() {},
+      lineStyle(width) {
+        ring.drawn.stroke = width;
+      },
+      strokeCircle(x, y, radius) {
+        ring.drawn.radius = radius;
+      },
+    });
+
+    return ring;
+  };
+
+  /**
+   * Where the head of a custom minion really starts, in world Y.
+   *
+   * @param {object} minion
+   * @param {number} pointY The sprite centre's world Y.
+   * @param {number} scale
+   * @return {number}
+   */
+  const headTopY = (minion, pointY, scale) => pointY + (CUSTOM_FOOT_ROW - minion.charHeight - CUSTOM_FRAME / 2) * scale;
+
+  it('stands on the head of a custom minion from the first frame of its summon', async () => {
+    const scene = makeScene();
+    const minions = new Minions(scene);
+    const [minion] = await minionsOut(scene, minions, poolWire(1, ['a']), 1);
+    const scale = minions._minionScale(scene.fighters.get(USER), minion.charHeight);
+    const [badge] = scene.images; // reduced motion: no poof, so the badge is the only image
+    const badgePx = scale * minion.charHeight * 0.55;
+
+    expect(minion.type.custom).toBe(true);
+    // The ring's outer bottom edge (at scale 1) sits on the head top, so the badge leaves room for it.
+    expect(badge.y + toolRingRadius(badgePx) + TOOL_RING_STROKE_PX / 2).toBeCloseTo(headTopY(minion, minion.spawnY, scale), 9);
+    expect(badge.y + badgePx / 2).toBeLessThan(headTopY(minion, minion.spawnY, scale));
+  });
+
+  it('keeps the badge where it is when the tool ring comes on and off', async () => {
+    const scene = makeScene();
+    const minions = new Minions(scene);
+    const [minion] = await minionsOut(scene, minions, poolWire(1, ['a']), 1);
+    const entry = scene.fighters.get(USER);
+    const point = { x: 120, y: 240 };
+    const scale = minions._minionScale(entry, minion.charHeight);
+
+    minions._positionBadge(minion, point, scale, 2, entry);
+    const before = minion.badge.y;
+    minion.toolRing = fakeRing();
+    minions._positionBadge(minion, point, scale, 2, entry);
+    minions._positionToolRing(minion, point, scale, 2);
+    const during = minion.badge.y;
+    minion.toolRing = null;
+    minions._positionBadge(minion, point, scale, 2, entry);
+
+    expect(during).toBe(before);
+    expect(minion.badge.y).toBe(before);
+  });
+
+  it('draws the ring on the badge with the shared radius and stroke', async () => {
+    const scene = makeScene();
+    const minions = new Minions(scene);
+    const [minion] = await minionsOut(scene, minions, poolWire(1, ['a']), 1);
+    const entry = scene.fighters.get(USER);
+    const point = { x: 120, y: 240 };
+    const scale = minions._minionScale(entry, minion.charHeight);
+    const badgePx = scale * minion.charHeight * 0.55;
+    minion.toolRing = fakeRing();
+
+    minions._positionBadge(minion, point, scale, 2, entry);
+    minions._positionToolRing(minion, point, scale, 2);
+
+    expect(minion.toolRing.y).toBe(minion.badge.y);
+    expect(minion.toolRing.drawn.radius).toBeCloseTo(toolRingRadius(badgePx));
+    expect(minion.toolRing.drawn.stroke).toBe(TOOL_RING_STROKE_PX);
+    expect(minion.toolRing.y + minion.toolRing.drawn.radius + TOOL_RING_STROKE_PX / 2).toBeCloseTo(headTopY(minion, point.y, scale), 9);
+  });
+
+  it('puts the tool ring on the badge and follows a look swap to the default formula and back', async () => {
+    const scene = makeScene();
+    const minions = new Minions(scene);
+    const [minion] = await minionsOut(scene, minions, poolWire(1, ['a']), 1);
+    const entry = scene.fighters.get(USER);
+    const point = { x: 120, y: 240 };
+    const customType = minion.type;
+    minion.toolRing = fakeRing();
+
+    const place = () => {
+      const scale = minions._minionScale(entry, minion.charHeight);
+      minions._positionBadge(minion, point, scale, 2, entry);
+      minions._positionToolRing(minion, point, scale, 2);
+
+      return scale;
+    };
+
+    let scale = place();
+    expect(minion.toolRing.y).toBe(minion.badge.y);
+    expect(minion.badge.y).toBeLessThan(point.y - 0.65 * scale * minion.charHeight); // higher than a default's, the body is taller
+
+    const defaultType = MINION_TYPES[0];
+    minions.looks._applyLook(minion, defaultType);
+    scale = place();
+    expect(minion.badge.y).toBeCloseTo(point.y - 0.65 * scale * defaultType.charHeight);
+    expect(minion.toolRing.y).toBe(minion.badge.y);
+
+    minions.looks._applyLook(minion, customType);
+    scale = place();
+    expect(minion.badge.y + (scale * customType.charHeight * 0.55) / 2).toBeLessThan(headTopY(minion, point.y, scale));
+    expect(minion.toolRing.y).toBe(minion.badge.y);
   });
 });
 
