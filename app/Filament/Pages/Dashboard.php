@@ -62,7 +62,7 @@ class Dashboard extends BaseDashboard
                     ->options([
                         'output' => 'Output tokens',
                         'total' => 'Total tokens',
-                        'cost' => 'Cost (USD)',
+                        'cost' => 'Model cost (USD)',
                     ])
                     ->default('output')
                     // Filament persists this form to the session
@@ -78,7 +78,7 @@ class Dashboard extends BaseDashboard
                     })
                     ->helperText(new HtmlString(
                         '<span style="display:block">Total = output + input + cache tokens.</span>'
-                        .'<span style="display:block">Cost = list-price USD; events from old or modified hooks have no cost.</span>'
+                        .'<span style="display:block">Model cost = list-price USD; events from old or modified hooks have no cost.</span>'
                     ))
                     ->columnSpan(2),
             ]);

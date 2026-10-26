@@ -139,7 +139,7 @@ test('in cost mode the bars, hover lines and caveat speak in dollars', function 
     $chart->pageFilters = ['range' => 'all', 'token_mode' => 'cost'];
 
     expect($chart->getChartData()['datasets'][0])
-        ->label->toBe('Cost (USD)')
+        ->label->toBe('Model cost (USD)')
         ->data->toBe([3.5])
         ->and($chart->getContributorLines())->toBe([['tung — $3.50']])
         ->and($chart->getDescription())->toContain('list-price USD')

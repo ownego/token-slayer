@@ -198,7 +198,7 @@ test('the chart widgets plot dollars under a cost label in cost mode', function 
 test('the leaderboards name their dataset by the amount in cost mode', function (string $widget) {
     $data = chartData(Livewire::test($widget, ['pageFilters' => ['range' => '7d', 'token_mode' => 'cost']])->instance());
 
-    expect($data['datasets'][0]['label'])->toBe('Cost (USD)');
+    expect($data['datasets'][0]['label'])->toBe('Model cost (USD)');
 })->with([
     'top users' => [TopUsersLeaderboard::class],
     'top accounts' => [TopAccountsLeaderboard::class],

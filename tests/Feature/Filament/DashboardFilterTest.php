@@ -63,13 +63,13 @@ it('keeps the token mode select showing Output tokens against a stale pre-featur
     expect($html)->toContain('token_mode&quot;:&quot;output&quot;');
 });
 
-it('offers Cost (USD) alongside Output and Total, and no longer Quota', function () {
+it('offers Model cost (USD) alongside Output and Total, and no longer Quota', function () {
     $admin = User::factory()->admin()->create();
 
     $this->actingAs($admin)
         ->get(Dashboard::getUrl(panel: 'admin'))
         ->assertOk()
-        ->assertSeeInOrder(['Output tokens', 'Total tokens', 'Cost (USD)'])
+        ->assertSeeInOrder(['Output tokens', 'Total tokens', 'Model cost (USD)'])
         ->assertSee('events from old or modified hooks have no cost', escape: false)
         ->assertDontSee('Quota tokens');
 });

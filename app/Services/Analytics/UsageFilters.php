@@ -209,7 +209,7 @@ final class UsageFilters
      */
     public function amountLabel(): string
     {
-        return $this->isCostMode() ? 'Cost (USD)' : 'Tokens';
+        return $this->isCostMode() ? 'Model cost (USD)' : 'Tokens';
     }
 
     /**
