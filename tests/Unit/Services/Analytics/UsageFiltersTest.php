@@ -116,7 +116,7 @@ test('formats amounts as dollars in cost mode and as token counts otherwise', fu
 
     expect($cost->formatAmount(1_234_560_000))->toBe('$1,234.56')
         ->and($cost->displayAmount(1_234_560_000))->toBe(1234.56)
-        ->and($cost->amountLabel())->toBe('Cost (USD)')
+        ->and($cost->amountLabel())->toBe('Model cost (USD)')
         ->and($output->formatAmount(1_234_560_000))->toBe('1,234,560,000')
         ->and($output->displayAmount(1_234_560_000))->toBe(1_234_560_000)
         ->and($output->amountLabel())->toBe('Tokens');
