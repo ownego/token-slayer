@@ -3,7 +3,7 @@
 ############################################
 
 # https://serversideup.net/open-source/docker-php/
-FROM serversideup/php:8.4-fpm-nginx-alpine-v5.0.2 AS base
+FROM serversideup/php:8.4-fpm-nginx-alpine-v5.1.5 AS base
 
 USER root
 RUN install-php-extensions gd intl pcntl pdo_pgsql pgsql
